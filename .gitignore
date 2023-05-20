@@ -5,6 +5,7 @@ __pycache__/
 
 # C extensions
 *.so
+desktop.ini
 
 # Distribution / packaging
 .Python
@@ -104,6 +105,7 @@ celerybeat.pid
 # Environments
 .env
 .venv
+.vscode
 env/
 venv/
 ENV/
