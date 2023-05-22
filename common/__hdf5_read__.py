@@ -1,4 +1,10 @@
-from .__directories__ import *
+import sys
+# Adds higher directory to python modules path.
+sys.path.append("./")
+
+from __directories__ import *
+import pandas as pd
+import numpy as np
 import h5py
 
 ####################################################### READ HDF5 FILE #######################################################
@@ -12,32 +18,34 @@ def read_hdf5(file, keys = [], verbose = False):
     if not os.path.exists(file):
         print(f"directory {file} does not exist")
         return data
+    try:
+        # check the file
+        if file.endswith('.h5'):
+            with h5py.File(file, "r") as f:
+                # all root level object names (aka keys) 
+                # these can be group or dataset names 
+                #keys = f.keys()
+                # get object names/keys; may or may NOT be a group
+                printV(f'keys:{list(f.keys())}', verbose)
+                a_group_keys = list(f.keys()) if len(keys) == 0 else keys
+                printV(f'my_keys:{a_group_keys}', verbose)
+                # get the object type for a_group_key: usually group or dataset
+                #print(type(f[a_group_key])) 
 
-    # check the file
-    if file.endswith('.h5'):
-        with h5py.File(file, "r") as f:
-            # all root level object names (aka keys) 
-            # these can be group or dataset names 
-            #keys = f.keys()
-            # get object names/keys; may or may NOT be a group
-            printV(f'keys:{list(f.keys())}', verbose)
-            a_group_keys = list(f.keys()) if len(keys) == 0 else keys
-            printV(f'my_keys:{a_group_keys}', verbose)
-            # get the object type for a_group_key: usually group or dataset
-            #print(type(f[a_group_key])) 
-
-            # If a_group_key is a dataset name, 
-            # this gets the dataset values and returns as a list
-            #data = list(f[a_group_key])
-            
-            # preferred methods to get dataset values:
-            #ds_obj = f[a_group_key]      # returns as a h5py dataset object
-            #ds_arr = f[a_group_key][()]  # returns as a numpy array
-            # iterate the keys
-            for i in a_group_keys:
-                data[i] = np.array(f[i][()])
+                # If a_group_key is a dataset name, 
+                # this gets the dataset values and returns as a list
+                #data = list(f[a_group_key])
                 
-    return data
+                # preferred methods to get dataset values:
+                #ds_obj = f[a_group_key]      # returns as a h5py dataset object
+                #ds_arr = f[a_group_key][()]  # returns as a numpy array
+                # iterate the keys
+                for i in a_group_keys:
+                    data[i] = np.array(f[i][()])     
+        return data
+    except:
+        print("can't open")
+        return {}
 
 ####################################################### SAVE HDF5 FILE #######################################################
     
@@ -61,7 +69,6 @@ def save_hdf5(directory, filename, data : np.ndarray, shape : tuple, keys = []):
     else:
         for i, lbl in enumerate(labels):
             hf.create_dataset(lbl, data=data[i].reshape(shape))
-    
     # close
     hf.close()
 

@@ -1,5 +1,5 @@
 import numpy as np
-
+import pandas as pd
 #################################### FINDERS ####################################
 
 ''' Find maximum index in a Dataframe'''
@@ -12,13 +12,13 @@ def findMaximumIdx(x):
 ''' Find the nearest value to the value given '''
 def findNearestVal(x, val, col):
     if isinstance(x, pd.DataFrame):
-        return df.loc[(df[col]-val).abs().idxmin()]
+        return x.loc[(x[col]-val).abs().idxmin()]
     else:
-        return array[(np.abs(array - value)).argmin()]
+        return array[(np.abs(x - val)).argmin()]
 
 ''' Find the nearest idx to the value given '''
-def findNearestIdx(x, val, col):
+def findNearestIdx(x, val, col = ''):
     if isinstance(x, pd.DataFrame):
-        return (df[col]-val).abs().idxmin()
+        return (x[col]-val).abs().idxmin()
     else:
-        return (np.abs(array - value)).argmin()
+        return (np.abs(x - val)).argmin()

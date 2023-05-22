@@ -1,6 +1,6 @@
 import os
 import random
-from .__flog__ import *
+from __flog__ import *
 
 ####################################### OS SEPARATOR AND OS BASED DEFINITIONS #########################################
 kPS = os.sep
