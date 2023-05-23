@@ -21,6 +21,8 @@ plt.rc('xtick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsi
 plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
 plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend fontsize
 plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
+mpl.rcParams['mathtext.fontset']    = 'stix'
+mpl.rcParams['font.family']         = 'STIXGeneral'
 plt.style.use(['science', 'no-latex'])
 
 
