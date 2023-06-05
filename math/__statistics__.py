@@ -101,12 +101,12 @@ Gaussian PDF
 '''
 def gauss(x : np.ndarray, mu, sig, *args):
     if len(args) == 0:
-        return 1/np.sqrt(2 * PI * sig**2) * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+        return 1/np.sqrt(2 * PI * sig**2) * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     elif len(args) == 1:
-        return args[0] * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+        return args[0] * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     elif len(args) == 2:
-        return args[1] + args[0] * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+        return args[1] + args[0] * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     else:
-        return 1/np.sqrt(2 * PI * sig**2) * np.exp(-(x - x0) ** 2 / (2 * sigma ** 2))
+        return 1/np.sqrt(2 * PI * sig**2) * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     
 ######################################################## FINDERS #####################################################
