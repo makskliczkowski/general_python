@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.gridspec import GridSpec
 from matplotlib.ticker import ScalarFormatter, NullFormatter
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 mpl.rcParams.update(mpl.rcParamsDefault)
 plt.rcParams['axes.facecolor']      =   'white'
