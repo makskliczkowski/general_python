@@ -54,7 +54,7 @@ from tensorflow.keras.losses import mean_squared_error, mean_squared_logarithmic
 from tqdm.keras import TqdmCallback
 
 #####################################
-
+import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 #####################################
