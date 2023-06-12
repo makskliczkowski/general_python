@@ -6,7 +6,7 @@ class ML_params:
                         reg     : dict  , loss  : str, 
                         fNum    : int   ,
                         shape   : tuple , 
-                        optimizer = Adam,
+                        optimizer,
                         saveDir         = lambda saveDir: start_dir + kPS + 'weights',
                         trainSize       = 0.7           , early_stopping = 20):
         self.epo            = epo

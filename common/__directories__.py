@@ -1,9 +1,24 @@
 import os
 import random
-from __flog__ import *
+from .__flog__ import *
 
 ####################################### OS SEPARATOR AND OS BASED DEFINITIONS #########################################
 kPS = os.sep
+
+################################################### MAKE DIRECTORY ####################################################
+
+'''
+[summary] 
+Given a set of folder it creates a directory with correct path separator
+'''
+def makeDir(*args):
+    directory = ""
+    for i, arg in enumerate(args):
+        if i == 0 and arg.endswith(kPS):
+            directory += arg
+        else:
+            directory += arg + kPS
+    return directory
 
 ################################################## GO UP DIRECTORY ####################################################
 '''

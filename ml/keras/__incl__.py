@@ -1,4 +1,3 @@
-
 ######## T E N S O R F L O W ########
 import tensorflow as tf
 
@@ -58,7 +57,7 @@ import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 
 #####################################
-from __general__ import *
+from .__general__ import *
 
 ######################################################## CALLBACK ########################################################
 

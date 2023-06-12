@@ -2,7 +2,7 @@ import sys
 # Adds higher directory to python modules path.
 sys.path.append("./")
 
-from __directories__ import *
+from .__directories__ import *
 import pandas as pd
 import numpy as np
 import h5py

@@ -9,7 +9,7 @@ import itertools
 import os
 
 """       Flogger      """
-from __flog__ import *
+from common.__flog__ import *
 loggingLvl  =   logging.INFO
 logger      =   Logger("", loggingLvl)
 logger.info("Including common files to the project.", 0)

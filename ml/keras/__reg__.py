@@ -1,5 +1,5 @@
 # include general tensorflow imports
-from __incl__ import *
+from .__incl__ import *
 from scipy.signal import find_peaks
 
 ####################################### FIRST DERIVATIVE #######################################
