@@ -173,13 +173,13 @@ class Square(Lattice):
     Set the name
     '''
     def __str__(self):
-        return f"square_d={self.dim},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"SQ,{'PBC' if self._BC == 0 else 'OBC'},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
     
     '''
     Set the representation of the lattice
     '''
     def __repr__(self):
-        return f"square_d={self.dim},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"SQ,{'PBC' if self._BC == 0 else 'OBC'},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
 
     ################################### GETTERS #######################################
     
