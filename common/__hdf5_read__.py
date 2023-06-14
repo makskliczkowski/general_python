@@ -4,6 +4,7 @@ import sys
 from .__directories__ import *
 import numpy as np
 import h5py
+import os
 
 ####################################################### READ HDF5 FILE #######################################################
 
@@ -24,9 +25,9 @@ def read_hdf5(file, keys = [], verbose = False):
                 # these can be group or dataset names 
                 #keys = f.keys()
                 # get object names/keys; may or may NOT be a group
-                printV(f'keys:{list(f.keys())}', verbose)
+                logging.info(f'keys:{list(f.keys())}')
                 a_group_keys = list(f.keys()) if len(keys) == 0 else keys
-                printV(f'my_keys:{a_group_keys}', verbose)
+                logging.debug(f'my_keys:{a_group_keys}')
                 # get the object type for a_group_key: usually group or dataset
                 #print(type(f[a_group_key])) 
 
@@ -41,8 +42,13 @@ def read_hdf5(file, keys = [], verbose = False):
                 for i in a_group_keys:
                     data[i] = np.array(f[i][()])     
         return data
-    except:
-        print("can't open")
+    except Exception as e:
+        logging.error(e)
+        if "truncated" in str(e):
+            logging.error(f"Removing {file}")
+            os.remove(file)
+        else:
+            logging.error(f"Can't open hdf5 file: {file}")
         return {}
 
 ####################################################### SAVE HDF5 FILE #######################################################
