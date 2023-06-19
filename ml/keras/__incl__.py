@@ -21,7 +21,8 @@ import gc
 from tensorflow.keras.models import Sequential
 
 # import optimizers
-from tensorflow.keras.optimizers import Adam, RMSprop, SGD
+from tensorflow.keras.optimizers.legacy import Adam, RMSprop
+from tensorflow.keras.optimizers.legacy import SGD
 
 # import layers
 from tensorflow.keras import layers, losses, Input, Model, callbacks
@@ -47,14 +48,14 @@ from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 
 # import losses
-from tensorflow.keras.losses import mean_squared_error, mean_squared_logarithmic_error , KLDivergence, log_cosh, huber,  categorical_crossentropy, mean_absolute_error, binary_crossentropy, sparse_categorical_crossentropy, BinaryCrossentropy, Poisson, Hinge, CategoricalCrossentropy
+from tensorflow.keras.losses import mean_squared_error, mean_squared_logarithmic_error , KLDivergence, log_cosh, huber, categorical_crossentropy, mean_absolute_error, binary_crossentropy, sparse_categorical_crossentropy, BinaryCrossentropy, Poisson, Hinge, CategoricalCrossentropy
 
 """ TQDM """
 from tqdm.keras import TqdmCallback
 
 #####################################
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
 #####################################
 from .__general__ import *
@@ -93,8 +94,8 @@ def giveCallbacks(savename, save = False, verbose = False, gc = False, patience 
     if save:
         # save best models as h5 files to load that later
         callback.append(keras.callbacks.ModelCheckpoint(savename + ".h5", save_best_only=True))
-    if verbose == 2 or verbose == 1:
-        callback.append(TqdmCallback(verbose=verbose))
+    
+    callback.append(TqdmCallback(verbose=verbose))
     return callback
 
 ######################################################## RESET ########################################################

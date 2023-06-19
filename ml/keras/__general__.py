@@ -1,3 +1,5 @@
+import os
+
 '''
 Parameters to use in the learning procedure
 '''
@@ -7,7 +9,7 @@ class ML_params:
                         fNum    : int   ,
                         shape   : tuple , 
                         optimizer,
-                        saveDir         = lambda saveDir: start_dir + kPS + 'weights',
+                        saveDir         = lambda saveDir: saveDir + os.pathsep + 'weights',
                         trainSize       = 0.7           , early_stopping = 20):
         self.epo            = epo
         self.batch          = batch

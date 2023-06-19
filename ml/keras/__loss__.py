@@ -15,12 +15,12 @@ def Custom_Hamming_Loss(y_true, y_pred):
 ############################ CHI SQUARED ############################
 
 def chi_2_loss(y_true, y_pred):
-    diff = y_true - y_pred
-    cov = tfp.stats.covariance(tf.transpose(y_pred), event_axis = 1)
-    mull = K.dot(tf.linalg.inv(cov), diff)
-    mull2 = K.dot(mull, tf.transpose(diff))
-    dist = tf.sqrt(mull2)
-    return dist
+    diff    = y_true - y_pred
+    cov     = tfp.stats.covariance(tf.transpose(y_pred), event_axis = 2)
+    mull    = K.dot(tf.linalg.inv(cov), diff)
+    mull2   = K.dot(mull, diff)
+    dist    = tf.sqrt(mull2)
+    return tf.reduce_mean(dist)
 
 ############################ CROSSENTRO AVERAGED ############################
 
@@ -36,13 +36,18 @@ def cat_crossentro_av(y_true, y_pred):
     
 ############################ MSE AVERAGED ############################
 
+def mse_my(y_true, y_pred):
+    return tf.reduce_mean(tf.square(y_true-y_pred, dtype = tf.float64), dtype = tf.float64)
+
 '''
 Take the average before taking the mean squared error
 '''
 def mse_av(y_true, y_pred):
-    y_t = tf.reduce_mean(y_true, axis =0)
+    y_t         =   tf.reduce_mean(y_true, axis = 0)
     #y_p = tf.transpose(y_pred, [0, 2, 1])
-    return tf.reduce_mean(tf.square(y_t - y_pred))
+    y_t         =   tf.reduce_mean(tf.square(y_t - y_pred), axis = -1)
+    return tf.reduce_mean(y_t)
+
 
 def L_i(i):
     return lambda y_true, y_pred: tf.reduce_mean(tf.math.pow(y_true - y_pred, i))
@@ -133,6 +138,8 @@ def getLoss(loss_str : str):
         return L_i(int(loss_str[1]))
     elif loss_str == ("chi2"):
         return chi_2_loss
+    elif loss_str == 'mse_my':
+        return mse_my
     else:
         print("\t\t->Loss: mse")
     print(f'\t\t->Loss: {loss_str}')      
