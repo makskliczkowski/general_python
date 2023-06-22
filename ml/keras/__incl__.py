@@ -28,6 +28,7 @@ from tensorflow.keras.optimizers.legacy import SGD
 from tensorflow.keras import layers, losses, Input, Model, callbacks
 from tensorflow.keras.layers import Dense, LeakyReLU, ELU, BatchNormalization, Input, LayerNormalization, Dropout
 from tensorflow.keras.layers import Conv2D, AveragePooling1D, Conv2DTranspose, Dropout, Dense, Input, BatchNormalization, AveragePooling2D, MaxPooling2D, MaxPooling1D, Flatten, GlobalAveragePooling2D, Dot, Lambda, Reshape, Conv1DTranspose
+from tensorflow.keras.layers import DenseFeatures, DepthwiseConv1D, ConvLSTM1D,LocallyConnected1D
 from tensorflow.keras.layers import TimeDistributed, Conv1D, SpatialDropout1D, Conv1DTranspose, LSTM, UpSampling2D, Average, Embedding, Bidirectional,RepeatVector
 from keras.layers import CuDNNLSTM, ConvLSTM1D, UpSampling1D
 
