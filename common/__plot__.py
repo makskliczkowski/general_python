@@ -27,8 +27,8 @@ mpl.rcParams['font.family']         = 'STIXGeneral'
 plt.style.use(['science', 'no-latex'])
 
 
-colorsList                          =   (list(mcolors.TABLEAU_COLORS)[:120])
-colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS)[:120])
+colorsList                          =   (list(mcolors.TABLEAU_COLORS))
+colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
 markersList                         =   ['o','s','v', '+', 'o', '*']
 markersCycle                        =   itertools.cycle(markersList)
 

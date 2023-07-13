@@ -44,7 +44,7 @@ def read_hdf5(file, keys = [], verbose = False):
         return data
     except Exception as e:
         logging.error(e)
-        if "truncated" in str(e):
+        if "truncated" in str(e) or "doesn't exist" in str(e):
             logging.error(f"Removing {file}")
             os.remove(file)
         else:
