@@ -12,7 +12,7 @@ import os
 Read the hdf5 saved file
 - keys : if we input keys, they will be used for reading. Otherwise use the available ones.
 '''
-def read_hdf5(file, keys = [], verbose = False):
+def read_hdf5(file, keys = [], verbose = False, removeBad = False):
     data = {}
     if not os.path.exists(file):
         print(f"directory {file} does not exist")
@@ -44,7 +44,7 @@ def read_hdf5(file, keys = [], verbose = False):
         return data
     except Exception as e:
         logging.error(e)
-        if "truncated" in str(e) or "doesn't exist" in str(e):
+        if "truncated" in str(e) or "doesn't exist" in str(e) and removeBad:
             logging.error(f"Removing {file}")
             os.remove(file)
         else:
@@ -65,7 +65,7 @@ def save_hdf5(directory, filename, data : np.ndarray, shape : tuple, keys = []):
     hf = h5py.File(directory + filename + '.h5', 'w')
     
     # create the labels
-    labels = keys if len(keys) == len(data) else ['green']
+    labels = keys if len(keys) == len(data) else ([keys[0]] if len(keys) != 0 else 'green')
     
     # save the file
     if len(labels) == 1:
