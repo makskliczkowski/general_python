@@ -14,13 +14,30 @@ def Custom_Hamming_Loss(y_true, y_pred):
 
 ############################ CHI SQUARED ############################
 
+def tf_cov(x):
+    mean_x = tf.reduce_mean(x, axis=0, keep_dims=True)
+    mx = tf.matmul(tf.transpose(mean_x), mean_x)
+    vx = tf.matmul(tf.transpose(x), x)/tf.cast(tf.shape(x)[0], tf.float32)
+    cov_xx = vx - mx
+    return cov_xx
+
 def chi_2_loss(y_true, y_pred):
-    diff    = y_true - y_pred
-    cov     = tfp.stats.covariance(tf.transpose(y_pred), event_axis = -1)
-    mull    = K.dot(tf.linalg.inv(cov), tf.transpose(diff))
-    mull2   = K.dot(mull, diff)
-    dist    = tf.sqrt(mull2)
-    return tf.reduce_mean(dist)
+    shape   = tf.shape(y_pred)
+    y_t     = tf.reshape(y_true, (shape[0], shape[1]))
+    y_p     = tf.reshape(y_pred, (shape[0], shape[1]))
+    # take the difference
+    diff    = (y_t - y_p)
+    cov     = tfp.stats.covariance(y_t, sample_axis = 0, event_axis = -1)
+    
+    # inverse covariance
+    covinv  = tf.linalg.pinv(cov)
+    covinv  = tf.expand_dims(covinv, 0)
+    covinv  = tf.repeat(covinv, tf.shape(diff)[0], axis = 0)
+
+    # multiply
+    mull    = tf.einsum('kij,ki->kj', covinv, diff)
+    mull2   = tf.einsum('ki,ki->k', diff, mull)
+    return tf.reduce_mean(mull2)
 
 ############################ CROSSENTRO AVERAGED ############################
 
