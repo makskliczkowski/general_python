@@ -1,6 +1,7 @@
 import itertools
 import scienceplots
 ########################## matplotlib ##########################
+import latex
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -16,7 +17,7 @@ plt.rcParams['savefig.facecolor']   =   'w'
 SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
 BIGGER_SIZE                         =   16
-#plt.rc('font', size=MEDIUM_SIZE)                                       # controls default text sizes
+plt.rc('font', size=MEDIUM_SIZE)                                       # controls default text sizes
 plt.rc('axes'   , titlesize=MEDIUM_SIZE , labelsize=MEDIUM_SIZE )       # fontsize of the axes title
 plt.rc('xtick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
 plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
@@ -24,8 +25,13 @@ plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend
 plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
-plt.style.use(['science', 'no-latex'])
-
+plt.rcParams['text.usetex']         = True
+latex_engine                        = 'pdflatex'
+latex_elements                      = {
+                                        'extrapackages': r'\usepackage{physics}',
+                                        'extrapackages': r'\usepackage{amsmath}'
+                                    }
+plt.style.use(['science'])
 
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
 colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
