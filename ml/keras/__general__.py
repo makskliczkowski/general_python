@@ -22,7 +22,7 @@ class ML_params:
         self.early_stopping = early_stopping
         
         self.saveDir = saveDir
-        self.optimizer = optimizer(self.lr)
+        self.optimizer = optimizer
         # get the shape of the basic input
         self.shape = shape
     

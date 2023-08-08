@@ -88,8 +88,10 @@ def getReg(ml_p : ML_params, verbose = False, logger = None) -> dict:
         reg = None
         if r    ==  'l1':
             reg = tf.keras.regularizers.L1(val)
+            val = 1
         elif r  ==  'l2':
             reg = tf.keras.regularizers.L2(val)
+            val = 1
         elif r  ==  'l1l2':
             reg = tf.keras.regularizers.L1L2(val[0], val[1])
         # --------------------------- first derivative ---------------------------

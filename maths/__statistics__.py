@@ -10,26 +10,25 @@ PIHALF      = math.pi / 2
 '''
 Calculates a bin average of an array. Does so by computing the new shape of the array
 '''
-def rebin(arr, av_num, d : int, verbose = False):
+def rebin(arr, av_num : int, d : int):
     
     # check if the array ain't too small
     if len(arr)/av_num < 1 or av_num == 1:
-        printV("Too small number of averages", verbose)
+        logger.info("Too small number of averages", 3)
         return arr
     
     # cut the last part of an array to calculate the mean
-    printV(f'\t->To rebin must take out {len(arr)%av_num} states', verbose)
-    arr = arr[0:len(arr) - (len(arr)%av_num)]
-    
+    shuffled = arr[0:len(arr) - (len(arr)%av_num)]
+    np.random.shuffle(shuffled)
+
     if d == 3:
-        return arr.reshape(av_num, arr.shape[0]//av_num, arr.shape[1], arr.shape[2]).mean(0)
+        return shuffled.reshape(av_num, shuffled.shape[0]//av_num, shuffled.shape[1], shuffled.shape[2]).mean(0)
     elif d == 2: 
-        return arr.reshape(av_num, arr.shape[0]//av_num, arr.shape[1]).mean(0)
+        return shuffled.reshape(av_num, shuffled.shape[0]//av_num, shuffled.shape[1]).mean(0)
     else:
-        return arr.reshape(av_num, arr.shape[0]//av_num).mean(0)
-
+        return shuffled.reshape(av_num, shuffled.shape[0]//av_num).mean(0) 
+    
 #################################################### PERMUTATION ####################################################
-
 
 '''
 Apply a random permutation to arrays - any number really
