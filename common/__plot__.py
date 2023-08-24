@@ -25,13 +25,13 @@ plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend
 plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
-plt.rcParams['text.usetex']         = True
-latex_engine                        = 'pdflatex'
-latex_elements                      = {
-                                        'extrapackages': r'\usepackage{physics}',
-                                        'extrapackages': r'\usepackage{amsmath}'
-                                    }
-plt.style.use(['science'])
+# plt.rcParams['text.usetex']         = True
+# latex_engine                        = 'pdflatex'
+# latex_elements                      = {
+#                                         'extrapackages': r'\usepackage{physics}',
+#                                         'extrapackages': r'\usepackage{amsmath}'
+#                                     }
+# plt.style.use(['science', 'nolatex'])
 
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
 colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))

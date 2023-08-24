@@ -3,15 +3,53 @@ from .__reg__ import *
 ############################# MAHALONOBIS ############################
 
 '''
+Returns the Mahalonobis distance between the variables.
+Uses the Cholesky decomposition calculated beforehand.
+'''
+def mahalonobisCH(CholeskyW):
+    def lossfun(y_true, y_pred):
+        y_t     = tf.reduce_mean(y_true, axis = -1)
+        y_p     = tf.reduce_mean(y_pred, axis = -1)
+        
+        out     = tf.linalg.matvec(CholeskyW, y_t - y_p)
+        # tf.print(tf.shape(out))
+        out     = tf.math.reduce_euclidean_norm(out, axis=1)# / tf.math.reduce_variance(y_t, axis = 1) / tf.cast(tf.shape(out)[1], dtype = tf.float64)
+        # tf.print(out)
+        return tf.math.sqrt(tf.reduce_mean(out)) 
+    return lossfun
+
+'''
 Returns the Mahalonobis distance between the variables
 '''
 def mahalonobis(y_true, y_pred):
-    diff    = y_true - y_pred
-    cov     = tfp.stats.covariance(tf.transpose(y_true))
-    mull    = K.dot(tf.linalg.inv(cov), diff)
-    mull2   = K.dot(mull, tf.transpose(diff))
-    dist    = tf.sqrt(mull2)
-    return tf.reduce_mean(dist)
+    y_t     = tf.reduce_mean(y_true, axis = -1)
+    y_p     = tf.reduce_mean(y_pred, axis = -1)
+    # create the covariance matrix
+    cov     = tfp.stats.covariance(y_t)
+    # tf.print(tf.shape(cov))    
+    covi    = tf.linalg.inv(cov)
+    W       = tf.linalg.cholesky(covi)
+    # tf.print(tf.shape(W))
+    out     = tf.linalg.matvec(W, y_t - y_p)
+    # tf.print(tf.shape(out))
+    out     = tf.math.reduce_euclidean_norm(out, axis=1) / tf.math.reduce_std(y_t, axis = 1)
+    # tf.print(out)
+    return tf.math.sqrt(tf.reduce_mean(out))
+
+'''
+Use the Mahalonobis distance with the pseudoinverse of Kernel 
+to ensure the importnace.
+- Kinv : inverse of the integral kernel
+'''
+def mahalonobis_pseudo(Kinv):
+    def lossfun(y_true, y_pred):
+        diff    = y_true - y_pred
+        cov     = tfp.stats.covariance(tf.transpose(y_true))
+        mull    = K.dot(tf.linalg.inv(cov), diff)
+        mull2   = K.dot(mull, tf.transpose(diff))
+        dist    = tf.sqrt(mull2)
+        return tf.reduce_mean(Kinv * dist)
+    return lossfun
 
 ############################### IMAGES ###############################
 
@@ -64,6 +102,14 @@ def cat_crossentro_av(y_true, y_pred):
     y_p = tf.transpose(y_pred, [0, 2, 1])
     return tf.reduce_mean(tf.reduce_mean(categorical_crossentropy(y_t, y_p, from_logits=False, axis = -1), axis = -1), axis = -1)
     
+############################ MSA AVERAGED ############################
+
+def msa_pinv(Kinv):
+    def losfun(y_true, y_pred):
+        out = tf.reduce_mean(y_true - y_pred, axis = -1)
+        out = tf.reduce_mean(out, axis = 0)
+        return tf.reduce_mean(tf.abs(Kinv * out))
+
 ############################ MSE AVERAGED ############################
 
 def mse_my(y_true, y_pred):
@@ -127,7 +173,8 @@ def nll(epos, epo = 1):
 '''
 Returns a loss function for the model
 '''
-def getLoss(loss_str : str):
+def getLoss(loss_str : str, Kinv = None):
+    print(f"Using {loss_str}", 2)
     # mean squared error by default
     if loss_str == 'crossentropy_average':
         return crossentro_av
@@ -155,6 +202,10 @@ def getLoss(loss_str : str):
         return log_cosh
     elif loss_str == 'msel':
         return mean_squared_logarithmic_error
+    ############## MSA ##############
+    elif loss_str == 'msa_pinv':
+        return msa_pinv(Kinv)
+    ############## MSE ##############
     elif loss_str == 'msea':
         return mse_av       
     elif loss_str == 'maea':
@@ -168,6 +219,12 @@ def getLoss(loss_str : str):
     ############# OTHER #############
     elif loss_str == 'mahalonobis':
         return mahalonobis
+    elif loss_str == 'mahalonobis_ch':
+        return mahalonobisCH(Kinv)
+    elif loss_str == 'mahalonobis_k':
+        return mahalonobisCH(Kinv)
+    elif loss_str == 'mahalonobis_pinv':
+        return mahalonobis_pseudo(Kinv)
     ############ L NORMS ############
     elif loss_str.startswith("L") and len(loss_str) == 2:
         return L_i(int(loss_str[1]))
@@ -177,7 +234,8 @@ def getLoss(loss_str : str):
         return mse_my
     elif loss_str == 'mse':
         return tf.keras.losses.mean_squared_error
+    elif loss_str == 'none':
+        return None
     else:
         print("\t\t->Loss: mse")
-    print(f'\t\t->Loss: {loss_str}')      
     return mean_squared_error
