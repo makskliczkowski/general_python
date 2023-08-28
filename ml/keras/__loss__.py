@@ -15,8 +15,8 @@ def mahalonobisCH(CholeskyW):
         # tf.print(tf.shape(out))
         out     = tf.math.reduce_euclidean_norm(out, axis=1)# / tf.math.reduce_variance(y_t, axis = 1) / tf.cast(tf.shape(out)[1], dtype = tf.float64)
         # tf.print(out)
-        return tf.math.sqrt(tf.reduce_mean(out)) 
-    return lossfun
+        return tf.math.sqrt(tf.reduce_mean(out)) + mean_absolute_error(y_t, y_p)
+    return lossfun 
 
 '''
 Returns the Mahalonobis distance between the variables
