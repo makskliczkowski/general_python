@@ -39,6 +39,7 @@ class Logger:
     '''
     Print standard message with a tabulator
     '''
+    @staticmethod
     def printTab(lvl = 0):
         ret = ""
         for _ in range(lvl):
@@ -47,8 +48,11 @@ class Logger:
             ret += '->'
         return ret
     
+    @staticmethod
     def print(msg, lvl = 0):
-        return Logger.printTab(lvl) + msg
+        now         = datetime.now()
+        nowStr      = now.strftime("%d/%m/%Y %H:%M:%S")
+        return "[" + nowStr + "]" + Logger.printTab(lvl) + msg
     
     def info(self, msg : str, lvl = 0):
         if logging.INFO >=self.lvl:

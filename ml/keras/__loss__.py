@@ -6,7 +6,7 @@ from .__reg__ import *
 Returns the Mahalonobis distance between the variables.
 Uses the Cholesky decomposition calculated beforehand.
 '''
-def mahalonobisCH(CholeskyW):
+def mahalonobisCH(CholeskyW, rCond = 1):
     def lossfun(y_true, y_pred):
         y_t     = tf.reduce_mean(y_true, axis = -1)
         y_p     = tf.reduce_mean(y_pred, axis = -1)
@@ -15,7 +15,7 @@ def mahalonobisCH(CholeskyW):
         # tf.print(tf.shape(out))
         out     = tf.math.reduce_euclidean_norm(out, axis=1)# / tf.math.reduce_variance(y_t, axis = 1) / tf.cast(tf.shape(out)[1], dtype = tf.float64)
         # tf.print(out)
-        return tf.math.sqrt(tf.reduce_mean(out)) + mean_absolute_error(y_t, y_p)
+        return tf.math.sqrt(tf.math.sqrt(rCond) * tf.reduce_mean(out)) + mean_absolute_error(y_t, y_p)
     return lossfun 
 
 '''
@@ -173,7 +173,7 @@ def nll(epos, epo = 1):
 '''
 Returns a loss function for the model
 '''
-def getLoss(loss_str : str, Kinv = None):
+def getLoss(loss_str : str, Kinv = None, rCond = 1):
     print(f"Using {loss_str}", 2)
     # mean squared error by default
     if loss_str == 'crossentropy_average':
@@ -222,7 +222,7 @@ def getLoss(loss_str : str, Kinv = None):
     elif loss_str == 'mahalonobis_ch':
         return mahalonobisCH(Kinv)
     elif loss_str == 'mahalonobis_k':
-        return mahalonobisCH(Kinv)
+        return mahalonobisCH(Kinv, rCond)
     elif loss_str == 'mahalonobis_pinv':
         return mahalonobis_pseudo(Kinv)
     ############ L NORMS ############
