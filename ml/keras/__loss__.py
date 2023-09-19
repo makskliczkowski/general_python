@@ -31,6 +31,7 @@ def mahalonobis(y_true, y_pred):
     W       = tf.linalg.cholesky(covi)
     # tf.print(tf.shape(W))
     out     = tf.linalg.matvec(W, y_t - y_p)
+    # out     = tf.linalg.matvec(W, tf.reduce_mean(y_t, axis = 0)) - tf.linalg.matvec(W, y_p)
     # tf.print(tf.shape(out))
     out     = tf.math.reduce_euclidean_norm(out, axis=1) / tf.math.reduce_std(y_t, axis = 1)
     # tf.print(out)
@@ -173,7 +174,7 @@ def nll(epos, epo = 1):
 '''
 Returns a loss function for the model
 '''
-def getLoss(loss_str : str, Kinv = None, rCond = 1):
+def getLoss(loss_str : str, Kinv = None, rCond = 1.0):
     print(f"Using {loss_str}", 2)
     # mean squared error by default
     if loss_str == 'crossentropy_average':
