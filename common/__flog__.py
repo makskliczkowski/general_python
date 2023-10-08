@@ -69,7 +69,9 @@ class Logger:
         if logging.ERROR >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.error(Logger.print(msg, lvl))
-
+    def BREAK(self, n : int):
+        for i in range(n):
+            print("\n")
 ############################################### PRINT THE OUTPUT BASED ON CONDITION ###############################################
 
 '''

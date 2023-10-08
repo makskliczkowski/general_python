@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+
 #################################### FINDERS ####################################
 
 ''' Find maximum index in a Dataframe'''
@@ -22,3 +23,21 @@ def findNearestIdx(x, val, col = ''):
         return (x[col]-val).abs().idxmin()
     else:
         return (np.abs(x - val)).argmin()
+    
+##################################### RANDOM #####################################
+
+'''
+Create the CUE matrix using QR decomposition
+- n     : size of the matrix (n X n)
+- simple: use the straightforward method
+'''
+def CUE_QR( n        :   int,
+            simple   =   True):
+    x       =   np.random.normal(size = (n, n)) + 1j * np.random.normal(size = (n, n))
+    x       /=  np.sqrt(2)
+    Q, R    =   np.linalg.qr(x)
+    if not simple:
+        d       =   np.diagonal(R)
+        ph      =   d / np.abs(d)
+        Q       =   np.matmul(Q, ph) * Q
+    return Q
