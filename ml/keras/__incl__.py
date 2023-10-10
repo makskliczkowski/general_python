@@ -30,7 +30,7 @@ from tensorflow.keras.layers import Dense, LeakyReLU, ELU, BatchNormalization, I
 from tensorflow.keras.layers import Conv2D, AveragePooling1D, Conv2DTranspose, Dropout, Dense, Input, BatchNormalization, AveragePooling2D, MaxPooling2D, MaxPooling1D, Flatten, GlobalAveragePooling2D, Dot, Lambda, Reshape, Conv1DTranspose
 from tensorflow.keras.layers import DenseFeatures, DepthwiseConv1D, ConvLSTM1D,LocallyConnected1D
 from tensorflow.keras.layers import TimeDistributed, Conv1D, SpatialDropout1D, Conv1DTranspose, LSTM, UpSampling2D, Average, Embedding, Bidirectional,RepeatVector
-from keras.layers import CuDNNLSTM, ConvLSTM1D, UpSampling1D
+# from keras.layers import CuDNNLSTM, ConvLSTM1D, UpSampling1D
 
 # import activations
 from tensorflow.keras.activations import relu, softmax, elu
@@ -42,7 +42,7 @@ from tensorflow.keras.utils import plot_model
 from plot_keras_history import show_history, plot_history
 
 # constraints
-from keras.constraints import max_norm, MinMaxNorm
+from tensorflow.keras.constraints import max_norm, MinMaxNorm
 
 # from tensorflow.keras.applications import ResNet50V2
 from tensorflow.keras import initializers
