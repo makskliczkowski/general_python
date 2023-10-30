@@ -7,11 +7,11 @@ kPS = os.sep
 
 ################################################### MAKE DIRECTORY ####################################################
 
-'''
-[summary] 
-Given a set of folder it creates a directory with correct path separator
-'''
 def makeDir(*args):
+    '''
+    [summary] 
+    Given a set of folder it creates a directory with correct path separator
+    '''
     directory = ""
     for i, arg in enumerate(args):
         if i == 0 and arg.endswith(kPS):
@@ -21,16 +21,27 @@ def makeDir(*args):
     return directory
 
 ################################################## GO UP DIRECTORY ####################################################
-'''
-[summary] 
-Reproduction of ../
-'''
 def upDir(dir : str):
+    '''
+    [summary] 
+    Reproduction of ../
+    
+    [parameters]
+    - dir : directory
+    '''
     tmp = dir
+      
+    # check if the directory has path separator at the end already
     if tmp[-1] == kPS:
         tmp = tmp[:-1]
-    while tmp[-1] != kPS and len(tmp) > 0:
+    # remove while we don't get the path separator or to the end of the directory
+    while tmp[-1] != kPS and tmp[-1] != '.' and len(tmp) > 0:
         tmp = tmp[:-1]
+    # check if it's just a current directory 
+    if tmp == '.':
+        return ".." + kPS
+    elif tmp[-2] + tmp[-1] == '..':
+        return ".." + kPS + tmp + kPS
     return tmp
 
 ################################################### CREATE DIRECTORY ##################################################

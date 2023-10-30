@@ -1,9 +1,11 @@
-import os
-
-'''
-Parameters to use in the learning procedure
-'''
+import os     
+        
 class ML_params:
+
+    '''
+    Parameters to use in the learning procedure
+    '''
+    
     def __init__(self,  epo     : int   , batch : int   , lr    : float,
                         reg     : dict  , loss  : str, 
                         fNum    : int   ,

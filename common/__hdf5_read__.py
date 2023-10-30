@@ -25,9 +25,9 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
                 # these can be group or dataset names 
                 #keys = f.keys()
                 # get object names/keys; may or may NOT be a group
-                logging.info(f'keys:{list(f.keys())}')
+                logging.info(f'keys:{list(f.keys())}', 1)
                 a_group_keys = list(f.keys()) if len(keys) == 0 else keys
-                logging.debug(f'my_keys:{a_group_keys}')
+                logging.debug(f'my_keys:{a_group_keys}', 1)
                 # get the object type for a_group_key: usually group or dataset
                 #print(type(f[a_group_key])) 
 

@@ -1,4 +1,3 @@
-from abc import abstractclassmethod
 import numpy as np
 
 class Lattice(object):
@@ -6,29 +5,34 @@ class Lattice(object):
     b = 1
     c = 1
     
+    '''
+    Initialize the general lattice model
+    '''
     def __init__(self, dim, Lx, Ly, Lz, _BC, *args, **kwargs):
-        self.dim = dim
-        self._BC = _BC
-        self.Lx = Lx
-        self.Ly = Ly
-        self.Lz = Lz
-        self.Ns = Lx * Ly * Lz
+        self.dim    = dim
+        self._BC    = _BC
+        self.Lx     = Lx
+        self.Ly     = Ly
+        self.Lz     = Lz
+        self.Ns     = Lx * Ly * Lz
         
         # helping lists
-        self.coordinates = None
+        self.coordinates    = []
         
         # matrices for real space and inverse space vectors
-        self.vectors = np.zeros((3,3))
-        self.rvectors = np.zeros((self.Ns,3))
-        self.kvectors = np.zeros((self.Ns,3))
-        self.dft = np.zeros((self.Ns, self.Ns))
+        self.vectors        = np.zeros((3,3))
+        self.rvectors       = np.zeros((self.Ns,3))
+        self.kvectors       = np.zeros((self.Ns,3))
+        # initialize dft matrix
+        self.dft            = np.zeros((self.Ns, self.Ns))
         
-        # symmetries for momenta
-        self.sym_norm = self.calculate_norm_sym()
-        self.sym_map = {}
+        # symmetries for momenta (if one uses the symmetry, 
+        # returning to original one may result in using normalization)
+        self.sym_norm       = self.calculate_norm_sym()
+        self.sym_map        = {}
         
     def __str__(self):
-        return "Noname"   
+        return "General Lattice"   
     
     ################################### GETTERS ###################################   
     def get_Lx(self):
@@ -60,6 +64,8 @@ class Lattice(object):
     
     '''
     Returns the site difference between sites
+    - i - i'th lattice site
+    - j - j'th lattice site
     '''
     def get_site_diff(self, i, j):
         return self.get_coordinates(j) - self.get_coordinates(i)
@@ -115,6 +121,7 @@ class Lattice(object):
     '''
     Calculates the DFT matrix. Can be faster with using FFT -> to think about
     @url https://en.wikipedia.org/wiki/DFT_matrix
+    - phase - shall add a complex phase to the k-vectors?
     '''
     def calculate_dft_matrix(self, phase = False):
         self.dft = np.zeros((self.Ns, self.Ns), dtype = np.complex128)
@@ -127,15 +134,15 @@ class Lattice(object):
         # do double loop - not perfect solution
         
         for row in np.arange(self.Ns):
-            x_row, y_row, z_row = self.get_coordinates(row)
+            x_row, y_row, z_row     = self.get_coordinates(row)
             for col in np.arange(self.Ns):
                 x_col, y_col, z_col = self.get_coordinates(col)
                 # to shift by -PI
-                phase_x = (e_min_pi if not x_col % 2 == 0 else 1) if phase else 1
-                phase_y = (e_min_pi if not y_col % 2 == 0 else 1) if phase else 1
-                phase_z = (e_min_pi if not z_col % 2 == 0 else 1) if phase else 1
+                phase_x             = (e_min_pi if not x_col % 2 == 0 else 1) if phase else 1
+                phase_y             = (e_min_pi if not y_col % 2 == 0 else 1) if phase else 1
+                phase_z             = (e_min_pi if not z_col % 2 == 0 else 1) if phase else 1
                 # set the omegas not optimal powers, but is calculated once
-                self.dft[row, col] = np.power(omega_x, x_row * x_col) * np.power(omega_y, y_row * y_col) * np.power(omega_z, z_row * z_col) * phase_x * phase_y * phase_z
+                self.dft[row, col]  = np.power(omega_x, x_row * x_col) * np.power(omega_y, y_row * y_col) * np.power(omega_z, z_row * z_col) * phase_x * phase_y * phase_z
     
     '''
     Calculates the norm for a given symmetry
@@ -152,15 +159,15 @@ class Square(Lattice):
     c = 1.
 
     '''
-    Initializer
+    Initializer of the square lattice
     '''
     def __init__(self, dim, Lx, Ly, Lz, _BC, *args, **kwargs):
         super().__init__(dim, Lx, Ly, Lz, _BC, *args, **kwargs)
 
-        self.Ns = Lx * Ly * Lz
-        self.vectors = np.array([[Square.a,0,0],[0,Square.b,0],[0,0,Square.c]])
-        self.kvectors = np.zeros((self.Ns, 3))
-        self.rvectors = np.zeros((self.Ns, 3))
+        self.Ns         = Lx * Ly * Lz
+        self.vectors    = np.array([[Square.a,0,0],[0,Square.b,0],[0,0,Square.c]])
+        self.kvectors   = np.zeros((self.Ns, 3))
+        self.rvectors   = np.zeros((self.Ns, 3))
         #self.kvectors = np.zeros((self.Lx, self.Ly))
         
         self.calculate_coordinates()
@@ -188,19 +195,32 @@ class Square(Lattice):
     '''
     def get_k_vec_idx(self, sym = False):
         all_momenta = []
-        for qx in range(self.Lx):
-            for qy in range(self.Ly):
-                all_momenta.append((qx,qy))
+        
+        # two dimensions
+        if self.dim == 2:   
+            for qx in range(self.Lx):
+                for qy in range(self.Ly):
+                    all_momenta.append((qx,qy))
+
+            # calculate the triangle symmetry
+            if sym:
+                momenta = []
+                # calculate symmetric momenta
+                for i in range(self.Lx//2 + 1):
+                    for j in range(i, self.Ly//2 + 1):
+                        momenta.append((i,j))
+                return [i for i in np.arange(self.Ns) if all_momenta[i] in momenta]
+            else:
+                return [i for i in np.arange(self.Ns)]
+        # three dimensions
+        elif self.dim == 3:
+            for qx in range(self.Lx):
+                for qy in range(self.Ly):
+                    for qz in range(self.Lz):
+                        all_momenta.append((qx,qy,qz))
                         
-        if sym:
-            momenta = []
-            # calculate symmetric momenta
-            for i in range(self.Lx//2 + 1):
-                for j in range(i, self.Ly//2 + 1):
-                    momenta.append((i,j))
-            return [i for i in np.arange(self.Ns) if all_momenta[i] in momenta]
-        else:
             return [i for i in np.arange(self.Ns)]
+
     
     ################################### CALCULATORS ###################################
 
@@ -240,7 +260,7 @@ class Square(Lattice):
         for x in range(self.Lx):
             for y in range(self.Ly):
                 for z in range(self.Lz):
-                    iter = z * self.Lx * self.Ly * z + self.Lx * y + x
+                    iter                = self.Lx * self.Ly * z + self.Lx * y + x
                     self.rvectors[iter] = self.vectors[:, 0] * x + self.vectors[:, 1] * y + self.vectors[:, 2] * z
     
     '''
@@ -248,25 +268,30 @@ class Square(Lattice):
     '''
     def calculate_norm_sym(self):
         # set the norm dictionary
-        self.sym_norm = super().calculate_norm_sym()
-        self.sym_map = {}
+        self.sym_norm   = super().calculate_norm_sym()
+        self.sym_map    = {}
         
-        # iterate to set all possible momenta norm to 0
-        for i in range(self.Lx//2 + 1):
-            for j in range(i, self.Ly//2 + 1):
-                mom = (i, j)
-                self.sym_norm[mom] = 0
-        
-        # go through all momenta
-        for y in range(self.Ly):
-            ky = y
-            if y > int(self.Ly/2): ky = (-(ky - (self.Ly//2))) % (self.Ly//2)
-            for x in range(self.Lx):
-                kx = x
-                if x > int(self.Lx/2): kx = (-(kx - (self.Lx//2))) % (self.Lx//2)
-                mom = (kx, ky)    
-                if kx > ky: mom = (ky, kx)
-                
-                # set the mapping
-                self.sym_norm[mom] += 1
-                self.sym_map[(x, y)] = mom
+        if self.dim == 2:
+            # iterate to set all possible momenta norm to 0
+            for i in range(self.Lx//2 + 1):
+                for j in range(i, self.Ly//2 + 1):
+                    mom                 = (i, j)
+                    self.sym_norm[mom]  = 0
+            
+            # go through all momenta
+            for y in range(self.Ly):
+                ky      = y
+                if y > int(self.Ly/2): ky = (-(ky - (self.Ly//2))) % (self.Ly//2)
+                for x in range(self.Lx):
+                    kx  = x
+                    # change from -
+                    if x > int(self.Lx/2): 
+                        kx = (-(kx - (self.Lx//2))) % (self.Lx//2)
+                    mom = (kx, ky)    
+                    # reverse the order if necessary
+                    if kx > ky: 
+                        mom     =   (ky, kx)
+                    
+                    # set the mapping
+                    self.sym_norm[mom]      +=  1
+                    self.sym_map[(x, y)]    =   mom

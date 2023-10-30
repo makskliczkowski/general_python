@@ -63,19 +63,61 @@ class Logger:
         if logging.DEBUG >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.debug(Logger.print(msg, lvl))
-    
+
+    '''
+    Create warning log
+    '''   
     def warning(self, msg : str, lvl = 0):
         if logging.WARNING >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.warning(Logger.print(msg, lvl))
-        
+     
+    '''
+    Create error log
+    '''   
     def error(self, msg : str, lvl = 0):
         if logging.ERROR >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.error(Logger.print(msg, lvl))
-    def BREAK(self, n : int):
+    
+    '''
+    Create n breaklines in the log
+    '''
+    @staticmethod
+    def BREAK(n : int):
         for i in range(n):
-            print("\n")
+            Logger.print("\n")
+    
+    '''
+    Create a title for - printing in the middle
+    '''
+    def TITLE(self, tail :str, desiredSize : int, fill : str, lvl = 0):
+        tailLength  = len(tail)
+        lvlLen      = 2 + lvl * 3 * 2
+        # check the length
+        if tailLength + lvlLen >= desiredSize:
+            self.info(tail, lvl)
+            return
+        
+        # check the size of the fill
+        fillSize    = desiredSize   - tailLength // 2 - lvlLen 
+        fillSize    = fillSize      + (0 if not tailLength == 0 else 2)
+        fillSize    = fillSize      - (1 if not tailLength % 2 == 0 else 0)
+        
+        out         = ""
+        for i in range(fillSize):
+            out     = out + fill
+        
+        # append text
+        if not tailLength == 0:
+            out     = out + " " + tail + " "
+            
+        # append last
+        for i in range(fillSize):
+            out     = out + fill\
+        
+        self.info(out, lvl)
+        
 ############################################### PRINT THE OUTPUT BASED ON CONDITION ###############################################
 
 '''

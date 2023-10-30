@@ -1,7 +1,7 @@
 from .__initial__ import *
 from scipy.signal import find_peaks
 
-####################################### FIRST DERIVATIVE #######################################
+########################################### FIRST DERIVATIVE ##########################################
 
 '''
 First derivative regularization using two point method
@@ -21,7 +21,7 @@ First derivative using center formula
 def reg_1_center_point(x):
     return tf.reduce_mean(tf.reduce_mean(tf.reduce_mean(tf.abs((x[:,:,2:]-x[:,:,:-2])/2), axis = 2), axis = -1))
 
-####################################### SECOND DERIVATIVE #######################################
+########################################## SECOND DERIVATIVE #########################################
 
 '''
 Second derivative using three point formula
@@ -36,7 +36,7 @@ def reg_2_five_point(x):
     return tf.reduce_mean(tf.reduce_mean(tf.abs((-x[:,:,:-4] + 16*x[:,:,1:-3] -30*x[:,:,2:-2] + 16 * x[:,:,3:-1] - x[:,:,4:])/12), axis = 2))
 
 
-####################################### POSITIVITY #######################################
+############################################# POSITIVITY #############################################
 
 '''
 Regulariser that does restrict the values to be positive.
@@ -51,7 +51,7 @@ def reg_zeros(x):
     res = tf.reduce_sum(tf.math.count_nonzero(x_t))
     return tf.cast(res, TF_TYPE)
 
-####################################### PEAK DETECTION #######################################
+########################################### PEAK DETECTION ###########################################
 
 def reg_peak_many(x):
     peaks = tf.reshape(x, [-1])
@@ -129,7 +129,7 @@ def getReg(ml_p : ML_params, verbose = False, logger = None) -> dict:
         regs[r] = val, reg
     return regs
 
-####################################### REG LAYER ##########################################
+############################################## REG LAYER ##############################################
 
 ''' 
 Layer for calculation of the regularization
@@ -169,4 +169,43 @@ class RegLayer(tf.keras.layers.Layer):
     def from_config(cls, config):
         return cls(**config)
 
+############################################## ACTIVATION #############################################
 
+def sigmoidCustom(mult):
+    '''
+    Custom sigmoid multiplied by multiplier - m * sigmoid(x)
+    '''
+    def sigm(x):
+        return mult * tf.keras.activations.sigmoid(x)
+    return sigm    
+
+def sigmoidCustom2(mult):
+    '''
+    Custom sigmoid multiplied by multiplier in the argument - sigmoid(m * x)
+    '''
+    def sigm(x):
+        return tf.keras.activations.sigmoid(mult * x)
+    return sigm    
+
+def sigmoidCustom3(mult):
+    '''
+    Custom sigmoid multiplied by multiplier and
+    divided by multiplier in the argument - mult * sigmoid(x / mult)
+    '''
+    def sigm(x):
+        return mult * tf.keras.activations.sigmoid(1.0/mult * x)
+    return sigm    
+
+def sigmoidCustom4(mult):
+    '''
+    Custom sigmoid multiplied by multiplier and
+    multiplied by multiplier in the argument - mult * sigmoid(x * mult)
+    '''
+    def sigm(x):
+        return mult * tf.keras.activations.sigmoid(mult * x)
+    return sigm  
+
+def softpluscut(mult):
+    def soft(x):
+        return tf.clip_by_value(tf.keras.activations.softplus(x), 0.0, mult)
+    return soft

@@ -1,4 +1,5 @@
 ######## T E N S O R F L O W ########
+import os
 import tensorflow as tf
 
 TF_TYPE = tf.float64
@@ -9,10 +10,9 @@ if TF_TYPE == tf.float64:
     policy = tf.keras.mixed_precision.Policy("float64")
     tf.keras.mixed_precision.set_global_policy(policy)
 
-import tensorflow_probability as tfp
-
 ########## S K   L E A R N ##########
 from sklearn.model_selection import train_test_split
+
 ############# K E R A S #############
 from tensorflow import keras
 import gc
@@ -30,7 +30,6 @@ from tensorflow.keras.layers import Dense, LeakyReLU, ELU, BatchNormalization, I
 from tensorflow.keras.layers import Conv2D, AveragePooling1D, Conv2DTranspose, Dropout, Dense, Input, BatchNormalization, AveragePooling2D, MaxPooling2D, MaxPooling1D, Flatten, GlobalAveragePooling2D, Dot, Lambda, Reshape, Conv1DTranspose
 from tensorflow.keras.layers import DenseFeatures, DepthwiseConv1D, ConvLSTM1D,LocallyConnected1D
 from tensorflow.keras.layers import TimeDistributed, Conv1D, SpatialDropout1D, Conv1DTranspose, LSTM, UpSampling2D, Average, Embedding, Bidirectional,RepeatVector
-# from keras.layers import CuDNNLSTM, ConvLSTM1D, UpSampling1D
 
 # import activations
 from tensorflow.keras.activations import relu, softmax, elu
@@ -56,10 +55,38 @@ from tqdm.keras import TqdmCallback
 
 #####################################
 import os
+import sys
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+# sys.path.append(os.path.join(os.path.join(os.curdir, '../../')))
 
 #####################################
 from .__general__ import *
+# import logger
+
+# from common.__flog__ import *    
+
+######################################################## INITIAL ########################################################
+
+def initializeTensorflow(gpuChoice : int):
+    """
+    Initialize the tensorflow to use the GPU of a given choice.
+    """
+    
+    # set the graphics card
+    try:
+        # logger.TITLE("INITIALIZING TENSORFLOW", 50, '%', 1)
+        gpus            =   tf.config.list_physical_devices('GPU')
+        if len(gpus) > 0:
+            tf.config.set_visible_devices(gpus[gpuChoice], 'GPU')
+            print("\t->Available devices=")
+            for i, gpu in enumerate(gpus):
+                print("\t\t->" + str(gpu) + (" [CHOOSEN]" if gpuChoice == i else "")) 
+        else:
+            print("\t\t->Using CPU")
+        print("\t->TF version=" + str(tf.__version__))
+    except RuntimeError as e:
+        # Visible devices must be set at program startup
+        print("Error: " + str(e))
 
 ######################################################## CALLBACK ########################################################
 

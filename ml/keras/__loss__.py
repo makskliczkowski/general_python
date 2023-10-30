@@ -167,8 +167,6 @@ def nll(epos, epo = 1):
         return K.sum(K.binary_crossentropy(y_true, y_pred), axis=-1)# * weight
     return nlll
 
-
-
 ############################ CHOOSE THE LOSS FUNCTION ############################
 
 '''
@@ -240,3 +238,28 @@ def getLoss(loss_str : str, Kinv = None, rCond = 1.0):
     else:
         print("\t\t->Loss: mse")
     return mean_squared_error
+
+############################ DISTANCES ############################
+
+'''
+Bhattacharyya distance
+'''
+def Bhattacharyya(x):
+    return (lambda p1, p2: np.trapz(np.sqrt(p1 * p2), x = x))
+
+'''
+Chi probabilistic distance
+'''
+def chiDistance(p1, p2):
+    difference = p1 - p2
+    suma       = (p1 + p2) 
+    return np.sqrt(np.sum(np.square(difference) / suma)) 
+
+
+from scipy.stats import entropy
+
+'''
+Bhattacharyya distance
+'''
+def KLDivergence(p1, p2):
+    return entropy(p1, p2)
