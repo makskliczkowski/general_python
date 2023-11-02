@@ -100,7 +100,7 @@ class Logger:
             return
         
         # check the size of the fill
-        fillSize    = desiredSize   - tailLength // 2 - lvlLen 
+        fillSize    = desiredSize // len(fill) - tailLength // 2 - lvlLen 
         fillSize    = fillSize      + (0 if not tailLength == 0 else 2)
         fillSize    = fillSize      - (1 if not tailLength % 2 == 0 else 0)
         
