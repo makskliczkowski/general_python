@@ -8,11 +8,11 @@ import os
 
 ####################################################### READ HDF5 FILE #######################################################
 
-'''
-Read the hdf5 saved file
-- keys : if we input keys, they will be used for reading. Otherwise use the available ones.
-'''
 def read_hdf5(file, keys = [], verbose = False, removeBad = False):
+    '''
+    Read the hdf5 saved file
+    - keys : if we input keys, they will be used for reading. Otherwise use the available ones.
+    '''
     data = {}
     if not os.path.exists(file):
         print(f"directory {file} does not exist")
@@ -53,14 +53,14 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
 
 ####################################################### SAVE HDF5 FILE #######################################################
     
-'''
-Creates and saves an ndarray as hdf5 file.
-- filename : name of the file to be saved
-- data : data to be saved
-- shape : shape of which the data shall be
-- keys : if len(keys) == len(data) we sample that and save each iteration
-'''
 def save_hdf5(directory, filename, data : np.ndarray, shape : tuple, keys = []):
+    '''
+    Creates and saves an ndarray as hdf5 file.
+    - filename : name of the file to be saved
+    - data : data to be saved
+    - shape : shape of which the data shall be
+    - keys : if len(keys) == len(data) we sample that and save each iteration
+    '''
     # create a file first
     hf = h5py.File(directory + filename + '.h5', 'w')
     
@@ -76,11 +76,11 @@ def save_hdf5(directory, filename, data : np.ndarray, shape : tuple, keys = []):
     # close
     hf.close()
 
-'''
-Appends hdf5 file
-- key : given key to append the data with
-'''
 def app_hdf5(directory, filename, data : np.ndarray, key : str):
+    '''
+    Appends hdf5 file
+    - key : given key to append the data with
+    '''
     # create a file first
     hf = h5py.File(directory + filename + '.h5', 'a')
     # save

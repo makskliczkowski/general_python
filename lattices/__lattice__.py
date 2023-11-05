@@ -30,9 +30,10 @@ class Lattice(object):
         # returning to original one may result in using normalization)
         self.sym_norm       = self.calculate_norm_sym()
         self.sym_map        = {}
+        super(*args, **kwargs)
         
     def __str__(self):
-        return "General Lattice"   
+        return "General Lattice"  
     
     ################################### GETTERS ###################################   
     def get_Lx(self):
@@ -44,45 +45,48 @@ class Lattice(object):
     def get_Lz(self):
         return self.Lz
     
-    '''
-    For a given site return the real space coordinates
-    '''
+    def get_Ls(self):
+        return self.Lx, self.Ly, self.Lz
+    
     def get_coordinates(self, *args):
+        '''
+        For a given site return the real space coordinates
+        '''
         if len(args) == 0:
             return self.coordinates
         else:
             return self.coordinates[args[0]]
-    
-    '''
-    Returns the k-vectors
-    '''
+        
     def get_k_vectors(self, *args):
+        '''
+        Returns the k-vectors
+        '''
         if len(args) == 0:
             return self.kvectors
         else:
             return self.kvectors[args[0]]
     
-    '''
-    Returns the site difference between sites
-    - i - i'th lattice site
-    - j - j'th lattice site
-    '''
     def get_site_diff(self, i, j):
+        '''
+        Returns the site difference between sites
+        - i - i'th lattice site
+        - j - j'th lattice site
+        '''
         return self.get_coordinates(j) - self.get_coordinates(i)
     
-    '''
-    Returns the real vector at lattice site i or all of them
-    '''
     def get_r_vectors(self,*args):
+        '''
+        Returns the real vector at lattice site i or all of them
+        '''
         if len(args) == 0:
             return self.rvectors
         else:
             return self.rvectors[args[0]]
         
-    '''
-    Returns the DFT matrix
-    '''
     def get_dft(self, *args):
+        '''
+        Returns the DFT matrix
+        '''
         if len(args) == 0:
             return self.dft
         elif len(args) == 1:
@@ -92,38 +96,38 @@ class Lattice(object):
             # return element
             return self.dft[args[0], args[1]]
     
-    '''
-    Returns the indices of kvectors if symmetries are to be concerned
-    '''
     def get_k_vec_idx(self, sym = False):
+        '''
+        Returns the indices of kvectors if symmetries are to be concerned
+        '''
         pass
     
     ################################### ABSTRACT CALCULATORS ###################################
     
-    '''
-    Calculates the real lattice coordinates based on a lattice site
-    '''
     def calculate_coordinates(self):
+        '''
+        Calculates the real lattice coordinates based on a lattice site
+        '''
         pass
     
-    '''
-    Calculates all possible vectors in real space
-    '''
     def calculate_r_vectors(self):
+        '''
+        Calculates all possible vectors in real space
+        '''
         pass
     
-    '''
-    Calculates the inverse space vectors
-    '''
     def calculate_k_vectors(self):
+        '''
+        Calculates the inverse space vectors
+        '''
         pass
     
-    '''
-    Calculates the DFT matrix. Can be faster with using FFT -> to think about
-    @url https://en.wikipedia.org/wiki/DFT_matrix
-    - phase - shall add a complex phase to the k-vectors?
-    '''
     def calculate_dft_matrix(self, phase = False):
+        '''
+        Calculates the DFT matrix. Can be faster with using FFT -> to think about
+        @url https://en.wikipedia.org/wiki/DFT_matrix
+        - phase - shall add a complex phase to the k-vectors?
+        '''
         self.dft = np.zeros((self.Ns, self.Ns), dtype = np.complex128)
         
         omega_x = np.exp(-np.complex(0,1.0) * 2.0 * np.pi * self.a / self.Lx)
@@ -133,8 +137,10 @@ class Lattice(object):
         e_min_pi = np.exp(np.complex(0.0,1.0) * np.pi)
         # do double loop - not perfect solution
         
+        # rvectors
         for row in np.arange(self.Ns):
             x_row, y_row, z_row     = self.get_coordinates(row)
+            # kvectors
             for col in np.arange(self.Ns):
                 x_col, y_col, z_col = self.get_coordinates(col)
                 # to shift by -PI
@@ -142,12 +148,12 @@ class Lattice(object):
                 phase_y             = (e_min_pi if not y_col % 2 == 0 else 1) if phase else 1
                 phase_z             = (e_min_pi if not z_col % 2 == 0 else 1) if phase else 1
                 # set the omegas not optimal powers, but is calculated once
-                self.dft[row, col]  = np.power(omega_x, x_row * x_col) * np.power(omega_y, y_row * y_col) * np.power(omega_z, z_row * z_col) * phase_x * phase_y * phase_z
-    
-    '''
-    Calculates the norm for a given symmetry
-    '''
+                self.dft[row, col]  = np.power(omega_x, x_row * x_col) * np.power(omega_y, y_row * y_col) * np.power(omega_z, z_row * z_col) * phase_x * phase_y * phase_z      
+
     def calculate_norm_sym(self):
+        '''
+        Calculates the norm for a given symmetry
+        '''
         return {}
     
 ############################################## SQUARE LATTICE ##############################################
@@ -157,11 +163,10 @@ class Square(Lattice):
     a = 1.
     b = 1.
     c = 1.
-
-    '''
-    Initializer of the square lattice
-    '''
     def __init__(self, dim, Lx, Ly, Lz, _BC, *args, **kwargs):
+        '''
+        Initializer of the square lattice
+        '''
         super().__init__(dim, Lx, Ly, Lz, _BC, *args, **kwargs)
 
         self.Ns         = Lx * Ly * Lz
@@ -190,10 +195,10 @@ class Square(Lattice):
 
     ################################### GETTERS #######################################
     
-    '''
-    Returns the indices of kvectors if symmetries are to be concerned
-    '''
     def get_k_vec_idx(self, sym = False):
+        '''
+        Returns the indices of kvectors if symmetries are to be concerned
+        '''
         all_momenta = []
         
         # two dimensions
@@ -224,10 +229,10 @@ class Square(Lattice):
     
     ################################### CALCULATORS ###################################
 
-    '''
-    Calculates the real lattice coordinates based on a lattice site
-    '''
     def calculate_coordinates(self):
+        '''
+        Calculates the real lattice coordinates based on a lattice site
+        '''
         self.coordinates = []
         for i in range(self.Ns):
             x = i % self.Lx

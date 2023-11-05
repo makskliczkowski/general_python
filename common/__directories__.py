@@ -21,6 +21,7 @@ def makeDir(*args):
     return directory
 
 ################################################## GO UP DIRECTORY ####################################################
+
 def upDir(dir : str):
     '''
     [summary] 
@@ -46,19 +47,21 @@ def upDir(dir : str):
 
 ################################################### CREATE DIRECTORY ##################################################
 
-'''
-Create single folder listed as a directory
-'''
 def createFolder(folder : str, silent = False):
+    '''
+    Create single folder listed as a directory
+    - folder : folder to be created
+    - silent : talk?
+    '''
     if not os.path.isdir(folder):
         os.makedirs(folder)
         if not silent:
            printV(f"Created a directory : {folder}", silent)
 
-'''
-Create folders from the list of directories.
-'''
 def createFolders(directories : list, silent = False):
+    '''
+    Create folders from the list of directories.
+    '''
     for folder in directories:
         try:
             createFolder(folder, silent)
@@ -67,10 +70,12 @@ def createFolders(directories : list, silent = False):
             
 ########################################### READ A RANDOM FILE FROM A DIRECTORY #######################################
 
-'''
-Reading a random file
-'''
 def readRandomFile(folder : str, cond, withoutFolder = False):
+    '''
+    Reading a random file from a folder
+    - folder        : folder to read from
+    - withoutFolder : give path without the folder
+    '''
     choice = random.choice(os.listdir(folder))
     maxlen = len(os.listdir(folder))
     counter = 0
@@ -86,14 +91,58 @@ def readRandomFile(folder : str, cond, withoutFolder = False):
     
 ############################################## CLEAR THE FILES FROM A DIRECTORY ########################################
 
-'''
-Clears the empty files in a directory
-'''
 def clear_files(directory : str, filelist = [], empty = True):
+    '''
+    Clears the empty files in a directory
+    - directory     : shall clear this up!
+    - fileList      : fileToGoThrough
+    '''
     filelist = list(os.listdir(directory)) if len(filelist) == 0 else filelist
+    fileLeft = []
+    # go through list of files
     for filename in filelist:
         removing = not empty
-        removing = (not removing) and (os.stat(directory + filename).st_size == 0)
-        if removing:
-            os.remove(directory + filename)
-            printV(f"removed {directory + filename}", True, 2)
+        try:
+            # try removing if empty file
+            removing = (not removing) and (os.stat(directory + filename).st_size == 0)
+            if removing:
+                os.remove(directory + filename)
+                printV(f"removed {directory + filename}", True, 2)
+            else:
+                fileLeft.append(filename)
+        except Exception as inst:
+            printV(f"Problem with reading: {inst} - {directory}/{filename}", True, 1)
+    return fileLeft
+            
+################################################### LIST DIRECTORY ####################################################
+
+def list_dir(directory      :   str, 
+             clearEmpty     =   False, 
+             conditions     =   []):
+    '''
+    Lists a specific directory and gives the files that match a condition.
+    - directory     : directory to be listed
+    - clearEmpty    : shall clear empty files?
+    - conditions    : lambda functions to be applied to filenames or files
+    '''
+    files   =   list(os.listdir(directory))
+    # check clear
+    if clearEmpty:
+        files   =   clear_files(directory, files)
+
+    # go through conditions
+    for condition in conditions:
+        files   =   list(filter(condition, files))
+    return list(files)
+    
+################################################### SAVE DIRECTORY ####################################################
+
+def make_saving_dir(directory      :   str, 
+                    verbose        =   False):
+    '''
+    Makes saving directory with its creation
+    '''
+    createFolder(directory, not verbose)
+    return directory
+
+################################################### SAVE DIRECTORY ####################################################
