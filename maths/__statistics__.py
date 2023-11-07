@@ -1,4 +1,7 @@
+from scipy.signal import savgol_filter
+import pandas as pd
 import numpy as np
+
 import math
 
 TWOPI       = math.pi * 2
@@ -7,11 +10,10 @@ PIHALF      = math.pi / 2
 
 ############################################### STATISTICAL AVERAGING ###############################################
 
-'''
-Calculates a bin average of an array. Does so by computing the new shape of the array
-'''
 def rebin(arr, av_num : int, d : int):
-    
+    '''
+    Calculates a bin average of an array. Does so by computing the new shape of the array
+    ''' 
     # check if the array ain't too small
     if len(arr)/av_num < 1 or av_num == 1:
         logger.info("Too small number of averages", 3)
@@ -40,10 +42,10 @@ def permute(*args):
 
 ###################################################### AVERAGES #####################################################
 
-""" 
-Calculate the bin average of an array
-"""
 def avgBin(myArray, N=2):
+    """ 
+    Calculate the bin average of an array
+    """
     cum = np.cumsum(myArray,0)
     result = cum[N-1::N]/float(N)
     result[1:] = result[1:] - result[:-1]
@@ -60,38 +62,43 @@ def avgBin(myArray, N=2):
 
 ################################################### MOVING AVERAGES
 
-""" 
-Moving average with cumsum
-"""
 def moveAverage(a, n : int) :
+    """ 
+    Moving average with cumsum
+    """
     if isinstance(a, np.ndarray):
         ret         =       np.cumsum(a, dtype=float)
         ret[n:]     =       ret[n:] - ret[:-n]
         return      ret[n - 1:] / n
     elif isinstance(a, pd.DataFrame):
-        df_tmp = a.copy()
-        for i, row in df_tmp.iterrows():
-            df_tmp.loc[i] = savgol_filter(row, window, 3)
-        return df_tmp 
-        # return df.rolling(window, axis=1).mean().dropna(axis = 1), en[:-window+1]
+        df_tmp      =       []
+        for idx, row in a.iterrows():
+            df_tmp.append(moveAverage(np.array(row), n))
+        return pd.DataFrame(np.array(df_tmp))
         # return np.array(pd.Series(x).rolling(window=n).mean().iloc[n-1:].values)
     else:
-        beg = int(n/2)
-        end = len(x) - int(n/2)
-        zeros = [0 for i in range(beg)]
+        beg     = int(n/2)
+        end     = len(a) - int(n/2)
+        zeros   = [0 for i in range(beg)]
         for k in range(beg, end):
-            begin = int(k-n/2)
-            av = np.sum(x[begin:begin + n])
-            x[k] = x[k] - (av/float(n))
-        return x[beg:-beg]
+            begin   = int(k-n/2)
+            av      = np.sum(a[begin:begin + n])
+            a[k]    = a[k] - (av/float(n))
+        return a[beg:-beg]
 
 ################################################# CONSIDER FLUCTUATIONS 
 
-""" 
-Neglect average in data and leave fluctuations only
-"""
-def removeMean(a, n : int):
-    return a[n-1:] - moveAverage(a,n)
+def removeMean(a, 
+               n : int, 
+               moving_average = None):
+    """ 
+    Neglect average in data and leave fluctuations only
+    """
+    N = min(n, len(a))
+    if moving_average is not None:
+        return a[N-1:] - moveAverage(a,N)
+    else:
+        return a[min(len(a), len(moving_average)):] - moving_average
 
 ##################################################### DISTRIBUTIONS ##################################################
 

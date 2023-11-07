@@ -19,12 +19,12 @@ plt.rcParams['savefig.facecolor']   =   'w'
 SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
 BIGGER_SIZE                         =   16
-plt.rc('font', size=MEDIUM_SIZE)                                       # controls default text sizes
-plt.rc('axes'   , titlesize=MEDIUM_SIZE , labelsize=MEDIUM_SIZE )       # fontsize of the axes title
-plt.rc('xtick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
-plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
-plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend fontsize
-plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
+# plt.rc('font', size=MEDIUM_SIZE)                                       # controls default text sizes
+# plt.rc('axes'   , titlesize=MEDIUM_SIZE , labelsize=MEDIUM_SIZE )       # fontsize of the axes title
+# plt.rc('xtick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
+# plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
+# plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend fontsize
+# plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
 # plt.rcParams['text.usetex']         = True
@@ -44,10 +44,63 @@ markersCycle                        =   itertools.cycle(markersList)
 
 class Plotter:
     
-    ########## T I C K S ##########
+    ########## A N N O T ##########
     
+    def set_annotate(   ax,
+                        elem    : str,
+                        x       : float,
+                        y       : float,
+                        fontsize= None,
+                        xycoords= 'axes fraction',
+                        **kwargs):
+        '''
+        Make an annotation
+        '''
+        ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
+    
+    ########## F I T T S ##########
+    
+    def plot_fit(   ax,   
+                    funct,
+                    x,
+                    **kwargs):
+        y   =   funct(x)
+        ax.plot(x, y, **kwargs)
+    
+    ########## L I N E S ##########
+    
+    def hline(ax, 
+                val     : float,
+                ls      = '-',
+                lw      = 2,
+                color   = 'black',
+                label   = None,
+                **kwargs):
+        '''
+        HLINE
+        '''
+        ax.axhline(val, ls = ls,  lw = lw, 
+                label = label if (label is not None and len(label) != 0) else None, 
+                color = color)
+        
+    def vline(ax, 
+                val     : float,
+                ls      = '-',
+                lw      = 2,
+                color   = 'black',
+                label   = None,
+                **kwargs):
+        '''
+        VLINE
+        '''
+        ax.axvline(val, ls = ls,  lw = lw, 
+                label = label if (label is not None and len(label) != 0) else None, 
+                color = color)
+    
+    ########## T I C K S ##########
+    @staticmethod
     def set_tickparams( ax,
-                        labelsize   =   MEDIUM_SIZE,
+                        labelsize   =   None,
                         left        =   True,
                         right       =   True,
                         top         =   True,
@@ -61,28 +114,31 @@ class Plotter:
         ax.tick_params(axis="both",which='major', left=left, right=right, top=top, bottom=bottom, direction="in",length=6)
         ax.tick_params(axis="both",which='minor', left=left, right=right, top=top, bottom=bottom, direction="in",length=3)
     
+    @staticmethod
     def set_ax_params(  ax, 
                         which       :   str,
                         label       :   str,
                         labelPad    =   0,
                         lim         =   None,
                         title       =   '',
-                        fontsize    =   MEDIUM_SIZE):
+                        fontsize    =   None):
         '''
         Sets the parameters of the axes
         '''
         # check x axis
         if 'x' in which:
-            ax.set_xlabel(label, 
-                          fontsize = fontsize,
-                          labelpad = labelPad if labelPad != 0 else None)
+            if label != "":
+                ax.set_xlabel(label, 
+                            fontsize = fontsize,
+                            labelpad = labelPad if labelPad != 0 else None)
             if lim is not None:
                 ax.set_xlim(lim[0], lim[1])
         # check y axis
         if 'y' in which:
-            ax.set_ylabel(label, 
-                          fontsize = fontsize,
-                          labelpad = labelPad if labelPad != 0 else None)
+            if label != "":
+                ax.set_ylabel(label, 
+                            fontsize = fontsize,
+                            labelpad = labelPad if labelPad != 0 else None)
             if lim is not None:
                 ax.set_ylim(lim[0], lim[1])             
                 
@@ -90,8 +146,9 @@ class Plotter:
         if len(title) != 0:
             ax.set_title(title)       
     
+    @staticmethod
     def set_ax_labels(  ax,
-                        fontsize    =   MEDIUM_SIZE,
+                        fontsize    =   None,
                         xlabel      =   "",
                         ylabel      =   "",
                         title       =   "",
@@ -101,16 +158,19 @@ class Plotter:
         '''
         Sets the labels of the x and y axes
         '''
-        ax.set_xlabel(xlabel, 
-                        fontsize = fontsize,
-                        labelpad = xPad if xPad != 0 else None)
-        ax.set_ylabel(ylabel, 
-                        fontsize = fontsize,
-                        labelpad = yPad if yPad != 0 else None)
+        if xlabel != "":
+            ax.set_xlabel(xlabel, 
+                            fontsize = fontsize,
+                            labelpad = xPad if xPad != 0 else None)
+        if ylabel != "":
+            ax.set_ylabel(ylabel, 
+                            fontsize = fontsize,
+                            labelpad = yPad if yPad != 0 else None)
         # check the title
         if len(title) != 0:
             ax.set_title(title)    
-    
+
+    @staticmethod
     def unset_spines(   ax,
                         xticks      =   False,
                         yticks      =   False,
@@ -131,8 +191,19 @@ class Plotter:
         if not yticks:
             ax.set_yticks([])
 
+    @staticmethod
+    def unset_ticks(    ax,
+                        xticks      =   False,
+                        yticks      =   False
+                    ):
+        '''
+        Disables the ticks on the axis
+        '''
+        Plotter.unset_spines(ax, xticks = xticks, yticks = yticks, left = True, right = True, top = True, bottom = True)
+            
     ########## G R I D S ##########
-
+    
+    @staticmethod
     def get_grid(nrows          :   int,
                  ncols          :   int,
                  wspace         =   None,
@@ -162,6 +233,7 @@ class Plotter:
                                            height_ratios=   height_ratios,
                                            **kwargs)
     
+    @staticmethod
     def get_grid_subplot(gs,
                          fig,    
                          i      :   int, 
@@ -174,8 +246,9 @@ class Plotter:
 
     ######### L E G E N D #########
     
+    @staticmethod
     def set_legend(ax,
-                   fontsize     =   16,
+                   fontsize     =   None,
                    frameon      =   False,
                    loc          =   'best',
                    alignment    =   'left',
@@ -188,16 +261,17 @@ class Plotter:
         ax.legend(fontsize      = fontsize, 
                   frameon       = frameon, 
                   loc           = loc,
-                  alignment     = alignment, 
+                #   alignment     = alignment, 
                   markerfirst   = markerfirst,
                   **kwargs)  
         
     ######### S U B A X S #########
 
-    def get_subplots(n  :   int,
-                     sizex  =   10,
-                     sizey  =   10,
-                     **kwargs):
+    @staticmethod
+    def get_subplots(   n  :   int,
+                        sizex  =   10,
+                        sizey  =   10,
+                        **kwargs):
         if n == 1:
             fig, ax = plt.subplots(n, figsize = (sizex, sizey), **kwargs)
             return fig, [ax]
