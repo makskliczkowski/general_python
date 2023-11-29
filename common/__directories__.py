@@ -53,11 +53,14 @@ def createFolder(folder : str, silent = False):
     - folder : folder to be created
     - silent : talk?
     '''
-    if not os.path.isdir(folder):
-        os.makedirs(folder)
-        if not silent:
-           printV(f"Created a directory : {folder}", silent)
-
+    try:
+        if not os.path.isdir(folder):
+            os.makedirs(folder)
+            if not silent:
+                printV(f"Created a directory : {folder}", silent)
+    except OSError:
+        printV("Creation of the directory %s failed" % folder, silent)      
+        
 def createFolders(directories : list, silent = False):
     '''
     Create folders from the list of directories.
@@ -82,7 +85,7 @@ def readRandomFile(folder : str, cond, withoutFolder = False):
     while not cond(choice):
         choice = random.choice(os.listdir(folder))
         if counter > maxlen:
-            raise
+            raise Exception("Outside file scope")
         counter += 1
     if withoutFolder:
         return choice
@@ -91,11 +94,12 @@ def readRandomFile(folder : str, cond, withoutFolder = False):
     
 ############################################## CLEAR THE FILES FROM A DIRECTORY ########################################
 
-def clear_files(directory : str, filelist = [], empty = True):
+def clear_files(directory : str, filelist, empty = True):
     '''
     Clears the empty files in a directory
     - directory     : shall clear this up!
     - fileList      : fileToGoThrough
+    - empty         : removes empty files if set to true
     '''
     filelist = list(os.listdir(directory)) if len(filelist) == 0 else filelist
     fileLeft = []
@@ -118,7 +122,8 @@ def clear_files(directory : str, filelist = [], empty = True):
 
 def list_dir(directory      :   str, 
              clearEmpty     =   False, 
-             conditions     =   []):
+             conditions     =   [],
+             sortCondition  =   None):
     '''
     Lists a specific directory and gives the files that match a condition.
     - directory     : directory to be listed
@@ -133,6 +138,9 @@ def list_dir(directory      :   str,
     # go through conditions
     for condition in conditions:
         files   =   list(filter(condition, files))
+        
+    if sortCondition is not None:
+        files   =   sorted(files, key = sortCondition)
     return list(files)
     
 ################################################### SAVE DIRECTORY ####################################################
