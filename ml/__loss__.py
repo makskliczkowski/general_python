@@ -1,12 +1,12 @@
-from .__reg__ import *
+from .keras.__reg__ import *
 
 ############################# MAHALONOBIS ############################
 
-'''
-Returns the Mahalonobis distance between the variables.
-Uses the Cholesky decomposition calculated beforehand.
-'''
 def mahalonobisCH(CholeskyW, rCond = 1):
+    '''
+    Returns the Mahalonobis distance between the variables.
+    Uses the Cholesky decomposition calculated beforehand.
+    '''
     def lossfun(y_true, y_pred):
         y_t     = tf.reduce_mean(y_true, axis = -1)
         y_p     = tf.reduce_mean(y_pred, axis = -1)
@@ -18,10 +18,10 @@ def mahalonobisCH(CholeskyW, rCond = 1):
         return tf.math.sqrt(tf.math.sqrt(rCond) * tf.reduce_mean(out)) + mean_absolute_error(y_t, y_p)
     return lossfun 
 
-'''
-Returns the Mahalonobis distance between the variables
-'''
 def mahalonobis(y_true, y_pred):
+    '''
+    Returns the Mahalonobis distance between the variables
+    '''
     y_t     = tf.reduce_mean(y_true, axis = -1)
     y_p     = tf.reduce_mean(y_pred, axis = -1)
     # create the covariance matrix
@@ -37,12 +37,12 @@ def mahalonobis(y_true, y_pred):
     # tf.print(out)
     return tf.math.sqrt(tf.reduce_mean(out))
 
-'''
-Use the Mahalonobis distance with the pseudoinverse of Kernel 
-to ensure the importnace.
-- Kinv : inverse of the integral kernel
-'''
 def mahalonobis_pseudo(Kinv):
+    '''
+    Use the Mahalonobis distance with the pseudoinverse of Kernel 
+    to ensure the importnace.
+    - Kinv : inverse of the integral kernel
+    '''
     def lossfun(y_true, y_pred):
         diff    = y_true - y_pred
         cov     = tfp.stats.covariance(tf.transpose(y_true))
@@ -131,10 +131,10 @@ def L_i(i):
 
 ############################ MAE AVERAGED ############################
 
-'''
-Take the average before taking the mean squared error
-'''
 def mae_av(y_true, y_pred):
+    '''
+    Take the average before taking the mean squared error
+    '''
     y_ta = tf.reduce_mean(y_true, axis = 0)
     y_pa = tf.reduce_mean(y_pred, axis = 0)
     return (tf.reduce_mean(tf.reduce_mean(tf.abs(y_ta - y_pa), axis = 1), axis = -1))
@@ -146,20 +146,20 @@ def kl(y_true, y_pred):
     y_p = tf.transpose(y_pred, [0, 2, 1])
     return abs(tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(y_t * tf.math.log(tf.math.divide_no_nan(y_t, tf.abs(y_p))),axis = 2), axis = 1)))
 
-'''
-Inverse ...
-'''
 def kl_inv(y_true, y_pred):
+    '''
+    Inverse ...
+    '''
     y_t = tf.transpose(y_true, [0, 2, 1])
     y_p = tf.transpose(y_pred, [0, 2, 1])
     return abs(tf.reduce_mean(tf.reduce_mean(tf.reduce_sum(y_p * tf.math.log(tf.math.divide_no_nan(y_t, tf.abs(y_p))),axis = 2), axis = 1)))
 
 ######################## BERNOULLI LIKELIHOOD ########################
 
-'''
-Negative log likelihood (Bernoulli). 
-'''
 def nll(epos, epo = 1):
+    '''
+    Negative log likelihood (Bernoulli). 
+    '''
     # keras.losses.binary_crossentropy gives the mean
     # over the last axis. we require the sum
     def nlll(y_true, y_pred):
@@ -169,10 +169,10 @@ def nll(epos, epo = 1):
 
 ############################ CHOOSE THE LOSS FUNCTION ############################
 
-'''
-Returns a loss function for the model
-'''
 def getLoss(loss_str : str, Kinv = None, rCond = 1.0):
+    '''
+    Returns a loss function for the model
+    '''
     print(f"Using {loss_str}", 2)
     # mean squared error by default
     if loss_str == 'crossentropy_average':
@@ -191,8 +191,6 @@ def getLoss(loss_str : str, Kinv = None, rCond = 1.0):
         return BinaryCrossentropy()
     elif loss_str == 'poisson':
         return Poisson()
-    elif loss_str == 'kld':
-        return KLDivergence()
     elif loss_str == 'hinge':
         return Hinge()
     elif loss_str == 'huber':

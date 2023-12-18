@@ -16,7 +16,7 @@ def findNearestVal(x, val, col):
     if isinstance(x, pd.DataFrame):
         return x.loc[(x[col]-val).abs().idxmin()]
     else:
-        return np.array[(np.abs(x - val)).argmin()]
+        return np.array((np.abs(x - val)).argmin())
 
 ''' Find the nearest idx to the value given '''
 def findNearestIdx(x, val, col = ''):

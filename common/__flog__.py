@@ -54,6 +54,7 @@ class Logger:
     def printTab(lvl = 0):
         '''
         Print standard message with a tabulator
+        - lvl : number of tabulators
         '''
         ret = ""
         for _ in range(lvl):
@@ -64,6 +65,11 @@ class Logger:
     
     @staticmethod
     def print(msg, lvl = 0):
+        '''
+        Prints a message appending it with a current timestamp!
+        - msg   :   message to be printed
+        - lvl   :   tabulator level
+        '''
         now         = datetime.now()
         nowStr      = now.strftime("%d/%m/%Y %H:%M:%S")
         return "[" + nowStr + "]" + Logger.printTab(lvl) + msg
@@ -74,7 +80,10 @@ class Logger:
             log = 0,
             lvl = 0):
         '''
-        Print multiple informations
+        Print multiple messages.
+        - end   :   shall add endline?
+        - log   :   log level (info, debug, warning, error); integer for each ascending
+        - lvl   :   tab level
         '''
         argss   =   [str(a) for a in args]
         out     =   ' '.join(argss)
@@ -97,7 +106,11 @@ class Logger:
                     self.warning(out, lvl)
                 else:
                     self.error(out, lvl)
-            
+    
+    def verbose(self, msg : str, lvl : int, verbose : bool):
+        if(verbose): 
+            self.info(msg, lvl)
+    
     def info(self, msg : str, lvl = 0):
         if logging.INFO >=self.lvl:
             print(Logger.print(msg, lvl))
@@ -137,9 +150,9 @@ class Logger:
         Create a title for - printing in the middle
         '''
         tailLength  = len(tail)
-        lvlLen      = 2 + lvl * 3 * 2
+        lvlLen      = 2 + lvl * 3 * 2 # arrow plus tab, *2 because it is moved to the middle
         # check the length
-        if tailLength + lvlLen >= desiredSize:
+        if tailLength + lvlLen > desiredSize:
             self.info(tail, lvl)
             return
         

@@ -1,4 +1,4 @@
-from .__initial__ import *
+from ml.keras.__init__ import *
 from scipy.signal import find_peaks
 
 ########################################### FIRST DERIVATIVE ##########################################
@@ -81,10 +81,10 @@ Returns a choosen regression function
 - ml_p      : params for ML model
 - verbose   : wanna talk?
 '''
-def getReg(ml_p : ML_params, verbose = False, logger = None) -> dict:
+def getReg(reg, verbose = False, logger = None) -> dict:
     # create a dictionary of regularizers
     regs = {}
-    for r, val in ml_p.reg.items():
+    for r, val in reg.items():
         reg = None
         if r    ==  'l1':
             reg = tf.keras.regularizers.L1(val)
@@ -131,24 +131,24 @@ def getReg(ml_p : ML_params, verbose = False, logger = None) -> dict:
 
 ############################################## REG LAYER ##############################################
 
-''' 
-Layer for calculation of the regularization
-'''
 class RegLayer(tf.keras.layers.Layer):
+    ''' 
+    Layer for calculation of the regularization.
+    '''
     
-    '''
-    Constructor of the class
-    '''
-    def __init__(self, ml_p : ML_params, *args, **kwargs):
+    def __init__(self, reg, *args, **kwargs):
+        '''
+        Constructor of the class
+        '''
         self.is_placeholder = False
-        self.ml_p           = ml_p
-        self.regs           = getReg(ml_p)
+        self.reg            = reg
+        self.regs           = getReg(reg)
         super(RegLayer, self).__init__(*args, **kwargs)
         
-    '''
-    Fundamental call function
-    '''
     def call(self, inputs):
+        '''
+        Fundamental call function
+        '''
         # iterate moments with their corresponding value
         for r, (v, f) in self.regs.items():
             val         =       v * f(inputs)
@@ -159,10 +159,11 @@ class RegLayer(tf.keras.layers.Layer):
                 
         return inputs
     
-    ''' 
-    For saving 
-    '''
     def get_config(self):
+        
+        ''' 
+        For saving 
+        '''
         return {}
     
     @classmethod

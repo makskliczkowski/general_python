@@ -11,8 +11,7 @@ from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 from matplotlib.patches import Polygon
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition,
-                                                  mark_inset)
+from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
 
 mpl.rcParams.update(mpl.rcParamsDefault)
 plt.rcParams['axes.facecolor']      =   'white'
@@ -58,7 +57,15 @@ class Plotter:
                         xycoords= 'axes fraction',
                         **kwargs):
         '''
-        Make an annotation
+        @staticmethod
+        
+        Make an annotation on the plot.
+        - ax        :   axis to annotate on
+        - elem      :   annotation string
+        - x         :   x coordinate
+        - y         :   y coordinate
+        - fontsize  :   fontsize
+        - xycoords  :   how to interpret the coordinates (from MPL)
         '''
         ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
     
@@ -319,15 +326,19 @@ class Plotter:
     ######### S U B A X S #########
 
     @staticmethod
-    def get_subplots(   n  :   int,
+    def get_subplots(   nrows  :   int,
                         sizex  =   10,
                         sizey  =   10,
+                        ncols  =   1,
                         **kwargs):
-        if n == 1:
-            fig, ax = plt.subplots(n, figsize = (sizex, sizey), **kwargs)
+        if ncols == 1 and nrows == 1:
+            fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
             return fig, [ax]
+        elif (ncols == 1 and nrows > 1) or (nrows == 1 and ncols > 1):
+            return plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
         else:
-            return plt.subplots(n, figsize = (sizex, sizey), **kwargs)
+            fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
+            return [axis for row in ax for axis in row]
         
     ######### S A V I N G #########
 

@@ -38,7 +38,6 @@ from tensorflow.keras.activations import relu, softmax, elu
 import tensorflow_probability as tfp
 from tensorflow.keras import backend as K
 from tensorflow.keras.utils import plot_model
-from plot_keras_history import show_history, plot_history
 
 # constraints
 from tensorflow.keras.constraints import max_norm, MinMaxNorm
@@ -60,7 +59,7 @@ os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # sys.path.append(os.path.join(os.path.join(os.curdir, '../../')))
 
 #####################################
-from .__general__ import *
+from ..__general__ import *
 # import logger
 
 # from common.__flog__ import *    

@@ -1,7 +1,6 @@
 from scipy.signal import savgol_filter
 import pandas as pd
 import numpy as np
-
 import math
 
 TWOPI       = math.pi * 2

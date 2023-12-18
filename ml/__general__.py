@@ -1,0 +1,69 @@
+import os  
+import matplotlib.pyplot as plt   
+from sklearn.model_selection import train_test_split
+from plot_keras_history import show_history, plot_history
+   
+#########################################################################    
+   
+class MLParams:
+    '''
+    Parameters to use in the learning procedure. Includes the most general information about
+    the MachineLearning model
+    !TODO
+    '''
+    
+    def __init__(self,  epo     : int   ,
+                        batch   : int   , 
+                        lr      : float ,
+                        reg     : dict  , 
+                        loss, 
+                        fNum    : int   ,
+                        shape   : tuple , 
+                        optimizer       ,
+                        saveDir         = lambda directory: directory + os.pathsep + 'weights',
+                        trainSize       = 0.7, 
+                        early_stopping  = 20):
+        """
+        Initializes The Machine Learning Parameters class
+        Args:
+            epo (int)           : number of epochs to be used
+            batch (int)         : the batch size
+            lr (float)          : learning rate for the optimizer
+            reg (dict)          : regression parameters
+            loss                : loss function for the model
+            fNum (int)          : number of files to read
+            shape (tuple)       : shape of the input data
+            optimizer (_type_)  : optimizer
+            saveDir             : directory to be the weights to
+            trainSize           : training percentage from the database
+            early_stopping (int, optional): _description_. Defaults to 20.
+        """
+
+        self.epo            = epo
+        self.batch          = batch
+        self.lr             = lr
+        self.loss           = loss                          
+        self.reg            = reg                              
+        self.fNum           = fNum
+        self.trainSize      = trainSize
+        self.early_stopping = early_stopping
+        
+        self.saveDir        = saveDir
+        self.optimizer      = optimizer
+        # get the shape of the basic input
+        self.shape          = shape
+
+        self.history        = {}
+        
+    def plotHistory(self, logscale = True):
+        """
+        Plots the history of the training
+        Args:
+            logscale (bool, optional): _description_. Defaults to True.
+        """
+                    # plot history
+        plt.figure(2)
+        plot_history(self.history, log_scale_metrics = logscale)    
+#########################################################################
+
+    

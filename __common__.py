@@ -14,13 +14,12 @@ loggingLvl  =   logging.INFO
 logger      =   Logger("", loggingLvl)
 logger.info("Including common files to the project.", 0)
 
-
 ############################################### CHECK ALL EQUAL ELEMENTS ###############################################
-'''
-In iterable, check if all items are equal.
-- iterator : iterator to be checked
-'''
 def allEqual(iterator):
+    '''
+    In iterable, check if all items are equal.
+    - iterator : iterator to be checked
+    '''
     iterator = iter(iterator)
     try:
         first = next(iterator)
@@ -29,13 +28,12 @@ def allEqual(iterator):
     return all(first == x for x in iterator)
 
 ############################################ CHECK THE INDICES OF DUPLICATES ###########################################
-
-'''
-In a given sequence find the list of duplicate indices
-- seq : sequence to find in
-- item : item that is repeated
-'''
 def listDups(seq, item):
+    '''
+    In a given sequence find the list of duplicate indices
+    - seq   : sequence to find in
+    - item  : item that is repeated
+    '''
     start_at    = -1
     locs        = []
     while True:

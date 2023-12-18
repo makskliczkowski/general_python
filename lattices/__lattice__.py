@@ -45,6 +45,9 @@ class Lattice(object):
     def get_Lz(self):
         return self.Lz
     
+    def get_Ns(self):
+        return self.Lx * self.Ly * self.Lz
+    
     def get_Ls(self):
         return self.Lx, self.Ly, self.Lz
     
@@ -101,8 +104,38 @@ class Lattice(object):
         Returns the indices of kvectors if symmetries are to be concerned
         '''
         pass
+
+    def get_difference_idx_matrix(self, cut = True) -> list:
+        '''
+        Returns the matrix with indcies corresponding to a slice from the QMC. 
+        A usefull function for reading the position Green's function saved from:
+        @url https://github.com/makskliczkowski/DQMC
+        The Green's functions are saved in the following manner. If cut is True, data 
+        has (2L_i - 1) possible position differences, otherwise we skip the negative ones and use L_i.
+        For 1D simulation: 1 column and (2 * Lx - 1) rows for possition differences (-Lx, -Lx + 1, ..., 0, ..., Lx)
+        For 2D simulation: (2 * Lx - 1) rows for possition differences (-Lx, -Lx + 1, ..., 0, ..., Lx) and (2 * Ly - 1) columns for possition differences (-Ly, -Ly + 1, ..., 0, ..., Ly)
+        For 3D simulation: Same as in 2D but after (2 * Lx - 1) x (2 * Ly - 1) matrix has finished, a new slice for Lz appears for next columns Lz * (2*Ly - 1)
+        - cut : if true (2L_i - 1) possible position differences, otherwise we skip the negative ones and use L_i.
+        '''
+        Lx, Ly, Lz  = self.get_Ls()
+        xnum        = 2 * Lx - 1 if cut else Lx
+        ynum        = 2 * Ly - 1 if cut else Ly
+        znum        = 2 * Lz - 1 if cut else Lz
+        
+        _slice  = [[[0, 0, 0] for _ in range(ynum * znum)] for _ in range(xnum)]
+        for k in range(znum):
+            z   = k - (Lz if cut else 0)
+            for i in range(xnum):
+                x = i - (Lx if cut else 0)
+                for j in range(ynum):
+                    y = j - (Ly if cut else 0)
+                    # x's are the rows and y's (*z's) are the columns 
+                    _slice[i][j + k * ynum][0] = x
+                    _slice[i][j + k * ynum][1] = y
+                    _slice[i][j + k * ynum][2] = z                    
+        return [[tuple(_slice[i][j]) for j in range(ynum * znum)] for i in range(xnum)]
     
-    ################################### ABSTRACT CALCULATORS ###################################
+    ############################ ABSTRACT CALCULATORS #############################
     
     def calculate_coordinates(self):
         '''
@@ -159,6 +192,10 @@ class Lattice(object):
 ############################################## SQUARE LATTICE ##############################################
 
 class Square(Lattice):
+    """ 
+    General Square Lattice type up to three dimensions!
+    """
+    
     # Lattice constants
     a = 1.
     b = 1.
