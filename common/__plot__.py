@@ -76,6 +76,15 @@ class Plotter:
                     funct,
                     x,
                     **kwargs):
+        """ 
+        @staticmethod
+        
+        Plots the fitting function provided by the user on a given axis using 
+        the **kwargs provider afterwards.
+        - ax        :   axis to annotate on
+        - funct     :   function to use for the fitting
+        - x         :   arguments to the function
+        """
         y   =   funct(x)
         ax.plot(x, y, **kwargs)
     

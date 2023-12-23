@@ -1,5 +1,7 @@
 ######## T E N S O R F L O W ########
 import os
+os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+
 import tensorflow as tf
 
 TF_TYPE = tf.float64
@@ -70,7 +72,6 @@ def initializeTensorflow(gpuChoice : int):
     """
     Initialize the tensorflow to use the GPU of a given choice.
     """
-    
     # set the graphics card
     try:
         # logger.TITLE("INITIALIZING TENSORFLOW", 50, '%', 1)
@@ -80,6 +81,8 @@ def initializeTensorflow(gpuChoice : int):
             print("\t->Available devices=")
             for i, gpu in enumerate(gpus):
                 print("\t\t->" + str(gpu) + (" [CHOOSEN]" if gpuChoice == i else "")) 
+            tf.config.experimental.set_virtual_device_configuration(gpus[gpuChoice],
+                        [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5120)])
         else:
             print("\t\t->Using CPU")
         print("\t->TF version=" + str(tf.__version__))

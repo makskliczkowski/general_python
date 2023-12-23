@@ -161,13 +161,13 @@ class Lattice(object):
         @url https://en.wikipedia.org/wiki/DFT_matrix
         - phase - shall add a complex phase to the k-vectors?
         '''
-        self.dft = np.zeros((self.Ns, self.Ns), dtype = np.complex128)
+        self.dft = np.zeros((self.Ns, self.Ns), dtype = complex)
         
-        omega_x = np.exp(-np.complex(0,1.0) * 2.0 * np.pi * self.a / self.Lx)
-        omega_y = np.exp(-np.complex(0,1.0) * 2.0 * np.pi * self.b / self.Ly)
-        omega_z = np.exp(-np.complex(0,1.0) * 2.0 * np.pi * self.c / self.Lz)
+        omega_x = np.exp(-complex(0,1.0) * 2.0 * np.pi * self.a / self.Lx)
+        omega_y = np.exp(-complex(0,1.0) * 2.0 * np.pi * self.b / self.Ly)
+        omega_z = np.exp(-complex(0,1.0) * 2.0 * np.pi * self.c / self.Lz)
         
-        e_min_pi = np.exp(np.complex(0.0,1.0) * np.pi)
+        e_min_pi = np.exp(complex(0.0,1.0) * np.pi)
         # do double loop - not perfect solution
         
         # rvectors
