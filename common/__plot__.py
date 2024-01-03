@@ -27,6 +27,7 @@ BIGGER_SIZE                         =   16
 # plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
 # plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend fontsize
 # plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
+plt.style.use(['science', 'no-latex', 'colors5-light'])
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
 # plt.rcParams['text.usetex']         = True
@@ -35,7 +36,6 @@ mpl.rcParams['font.family']         = 'STIXGeneral'
 #                                         'extrapackages': r'\usepackage{physics}',
 #                                         'extrapackages': r'\usepackage{amsmath}'
 #                                     }
-# plt.style.use(['science', 'nolatex'])
 
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
 colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
@@ -116,7 +116,9 @@ class Plotter:
         '''
         VLINE
         '''
-        ax.axvline(val, ls = ls,  lw = lw, 
+        ax.axvline(val, 
+                ls = ls,  
+                lw = lw, 
                 label = label if (label is not None and len(label) != 0) else None, 
                 color = color)
     
@@ -232,16 +234,23 @@ class Plotter:
     @staticmethod
     def unset_ticks(    ax,
                         xticks      =   False,
-                        yticks      =   False
+                        yticks      =   False,
+                        erease      =   False,
+                        spines      =   True
                     ):
         '''
         Disables the ticks on the axis
         '''
-        if not xticks:
+        if not xticks and erease:
             ax.set_xticks([])
-        if not yticks:
+        if not yticks and erease:
             ax.set_yticks([])            
-        Plotter.unset_spines(ax, xticks = xticks, yticks = yticks, left = True, right = True, top = True, bottom = True)
+        Plotter.unset_spines(ax,    xticks = xticks, 
+                                    yticks = yticks, 
+                                    left = not ((not spines) and (not yticks)), 
+                                    right = not((not spines) and (not yticks)), 
+                                    top = not ((not spines) and (not xticks)), 
+                                    bottom = not ((not spines) and (not xticks)))
             
     ########## G R I D S ##########
     
@@ -310,7 +319,7 @@ class Plotter:
                    loc          =   'best',
                    alignment    =   'left',
                    markerfirst  =   False,
-                   framealpha   =   1,
+                   framealpha   =   1.0,
                    reverse      =   False,
                    **kwargs
                    ):
@@ -347,7 +356,7 @@ class Plotter:
             return plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
         else:
             fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
-            return [axis for row in ax for axis in row]
+            return fig, [axis for row in ax for axis in row]
         
     ######### S A V I N G #########
 
@@ -406,9 +415,12 @@ class PlotterSave:
         toSave[:, 1]    = y
         
         if typ == '.npy':
-            np.save(directory + fileName + ".npy", toSave)
+            np.save(directory + fileName + typ, toSave)
         elif typ == '.txt':
-            np.savetxt(directory + fileName + ".npy", toSave)
+            np.savetxt(directory + fileName + typ, toSave)
+        elif typ == '.dat':
+            np.savetxt(directory + fileName + typ, toSave)
+            
         
 #################################################   
     @staticmethod
