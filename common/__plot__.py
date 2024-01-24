@@ -8,6 +8,7 @@ import matplotlib.colors as mcolors
 
 ########################## grids
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
+import matplotlib.ticker as mticker
 from matplotlib.patches import Polygon
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -43,6 +44,34 @@ markersList                         =   ['o','s','v', '+', 'o', '*']
 markersCycle                        =   itertools.cycle(markersList)
 
 ########################## functions ##########################
+
+class MathTextSciFormatter(mticker.Formatter):
+    def __init__(self, fmt="%1.2e"):
+        """
+        Initialize the object with a format string.
+        
+        Args:
+        fmt (str): The format string to be used for formatting.
+        """
+        self.fmt = fmt
+        
+    def __call__(self, x, pos=None):
+        # get formating
+        s               = self.fmt % x
+        decimal_point   = '.'
+        positive_sign   = '+'
+        tup             = s.split('e')
+        significand     = tup[0].rstrip(decimal_point)
+        sign            = tup[1][0].replace(positive_sign, '')
+        exponent        = tup[1][1:].lstrip('0')
+        if exponent:
+            exponent    = '10^{%s%s}' % (sign, exponent)
+        if significand and exponent:
+            s           =  r'%s{\times}%s' % (significand, exponent)
+        else:
+            s           =  r'%s%s' % (significand, exponent)
+        return "${}$".format(s)
+
 
 class Plotter:
     
@@ -210,6 +239,25 @@ class Plotter:
         if len(title) != 0:
             ax.set_title(title)    
 
+    @staticmethod
+    def set_formater(ax, 
+                     formater = "%.1e",
+                     axis     = 'both'
+                     ):
+        """
+        Sets the formatter for the given axis on the plot.
+        Args:
+            ax (object): The axis object on which to set the formatter.
+            formater (str, optional): The format string for the axis labels. Defaults to "%.1e".
+            axis (str, optional): The axis on which to set the formatter. Defaults to 'both'.
+        Returns:
+            None
+        """
+        if axis == 'y' or axis == 'both':
+            ax.yaxis.set_major_formatter(MathTextSciFormatter(formater))
+        if axis == 'x' or axis == 'both':
+            ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
+        
     @staticmethod
     def unset_spines(   ax,
                         xticks      =   False,
