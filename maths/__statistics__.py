@@ -15,7 +15,7 @@ def rebin(arr, av_num : int, d : int):
     ''' 
     # check if the array ain't too small
     if len(arr)/av_num < 1 or av_num == 1:
-        logger.info("Too small number of averages", 3)
+        # logger.info("Too small number of averages", 3)
         return arr
     
     # cut the last part of an array to calculate the mean

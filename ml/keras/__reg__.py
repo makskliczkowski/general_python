@@ -154,7 +154,7 @@ class RegLayer(tf.keras.layers.Layer):
             val         =       v * f(inputs)
             self.add_metric(val / v,
                             aggregation =   'mean',
-                            name        =   f'{self.ml_p.reg[r]:.1e}*{r}')
+                            name        =   f'{self.reg[r]:.1e}*{r}')
             self.add_loss(val)
                 
         return inputs

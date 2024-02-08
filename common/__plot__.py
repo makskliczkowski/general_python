@@ -28,7 +28,26 @@ BIGGER_SIZE                         =   16
 # plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
 # plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend fontsize
 # plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
-plt.style.use(['science', 'no-latex', 'colors5-light'])
+
+ADDITIONAL_LINESTYLES = {
+     'loosely dotted'        : (0, (1, 5)),
+     'dotted'                : (0, (1, 1)),
+     'densely dotted'        : (0, (1, 1)),
+     'loosely dashed'        : (0, (2, 5)),
+     'dashed'                : (0, (5, 5)),
+     'densely dashed'        : (0, (5, 1)),
+     'loosely dashdotted'    : (0, (3, 10, 1, 10)),
+     'dashdotted'            : (0, (3, 5, 1, 5)),
+     'densely dashdotted'    : (0, (3, 1, 1, 1)),
+     'dashdotdotted'         : (0, (3, 5, 1, 5, 1, 5)),
+     'loosely dashdotdotted' : (0, (3, 10, 1, 10, 1, 10)),
+     'densely dashdotdotted' : (0, (3, 1, 1, 1, 1, 1))
+}
+
+try:
+    plt.style.use(['science', 'no-latex', 'colors5-light'])
+except Exception as e:
+    print(e)
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
 # plt.rcParams['text.usetex']         = True
@@ -238,12 +257,29 @@ class Plotter:
         # check the title
         if len(title) != 0:
             ax.set_title(title)    
-
+            
+    @staticmethod 
+    def set_label_cords(ax, 
+                        which   : str,
+                        inX     = 0.0,
+                        inY     = 0.0,
+                        **kwargs):
+        '''
+        Sets the coordinates of the labels
+        '''
+        if 'x' in which:
+            ax.xaxis.set_label_coords(inX, inY, **kwargs)
+        if 'y' in which:
+            ax.yaxis.set_label_coords(inX, inY, **kwargs)
+        if 'both' in which:
+            ax.xaxis.set_label_coords(inX, inY, **kwargs)
+            ax.yaxis.set_label_coords(inX, inY, **kwargs)
+        
+    
     @staticmethod
     def set_formater(ax, 
                      formater = "%.1e",
-                     axis     = 'both'
-                     ):
+                     axis     = 'both'):
         """
         Sets the formatter for the given axis on the plot.
         Args:

@@ -288,10 +288,13 @@ class Square(Lattice):
     
         for qx in range(self.Lx):
             kx = -np.pi + two_pi_over_Lx * qx
+            # kx = two_pi_over_Lx * qx
             for qy in range(self.Ly):
                 ky = -np.pi + two_pi_over_Ly * qy
+                # ky = two_pi_over_Ly * qy
                 for qz in range(self.Lz):
                     kz = -np.pi + two_pi_over_Lz * qz
+                    # kz = two_pi_over_Lz * qz
                     iter = qz * self.Lx * self.Ly + qy * self.Ly + qx
                     self.kvectors[iter,:] = np.array([kx, ky, kz])
                     
@@ -432,11 +435,14 @@ class Hexagonal(Lattice):
         two_pi_over_Lz = 2 * np.pi / Square.c / self.Lz;
     
         for qx in range(self.Lx):
-            kx = -np.pi + two_pi_over_Lx * qx
+            # kx = -np.pi + two_pi_over_Lx * qx
+            kx = two_pi_over_Lx * qx
             for qy in range(self.Ly):
-                ky = -np.pi + two_pi_over_Ly * qy
+                # ky = -np.pi + two_pi_over_Ly * qy
+                ky = two_pi_over_Ly * qy
                 for qz in range(self.Lz):
-                    kz = -np.pi + two_pi_over_Lz * qz
+                    # kz = -np.pi + two_pi_over_Lz * qz
+                    kz = two_pi_over_Lz * qz
                     iter = qz * self.Lx * self.Ly + qy * self.Ly + qx
                     self.kvectors[iter,:] = np.array([kx, ky, kz])
                     
