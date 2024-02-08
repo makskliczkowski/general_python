@@ -59,8 +59,9 @@ mpl.rcParams['font.family']         = 'STIXGeneral'
 
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
 colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
+colorsCyclePlastic                  =   itertools.cycle(list(["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"]))
 markersList                         =   ['o','s','v', '+', 'o', '*']
-markersCycle                        =   itertools.cycle(markersList)
+markersCycle                        =   itertools.cycle(["4", "2", "3", "1", "+", "x", "."] + markersList)
 
 ########################## functions ##########################
 
@@ -151,7 +152,8 @@ class Plotter:
         '''
         ax.axhline(val, ls = ls,  lw = lw, 
                 label = label if (label is not None and len(label) != 0) else None, 
-                color = color)
+                color = color, 
+                **kwargs)
     
     @staticmethod
     def vline(ax, 
@@ -168,7 +170,8 @@ class Plotter:
                 ls = ls,  
                 lw = lw, 
                 label = label if (label is not None and len(label) != 0) else None, 
-                color = color)
+                color = color,
+                **kwargs)
     
     ########## T I C K S ##########
     @staticmethod
@@ -186,7 +189,7 @@ class Plotter:
         Sets tickparams to the desired ones
         '''
         ax.tick_params(axis='both', which='major', left=left, right=right, top=top, bottom=bottom, labelsize=labelsize)
-        ax.tick_params(axis="both", which='major', left=left, right=right, top=top, bottom=bottom, direction="in",length=6)
+        ax.tick_params(axis="both", which='major', left=left, right=right, top=top, bottom=bottom, direction="in",length=6, **kwargs)
         ax.tick_params(axis="both", which='minor', left=left, right=right, top=top, bottom=bottom, direction="in",length=3)
 
         if xticks is not None:
