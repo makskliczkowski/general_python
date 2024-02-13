@@ -22,13 +22,6 @@ plt.rcParams['savefig.facecolor']   =   'w'
 SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
 BIGGER_SIZE                         =   16
-# plt.rc('font', size=MEDIUM_SIZE)                                       # controls default text sizes
-# plt.rc('axes'   , titlesize=MEDIUM_SIZE , labelsize=MEDIUM_SIZE )       # fontsize of the axes title
-# plt.rc('xtick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
-# plt.rc('ytick'  , labelsize=SMALL_SIZE  , direction='in'        )       # fontsize of the tick labels
-# plt.rc('legend' , fontsize=SMALL_SIZE   , loc = 'best'          )       # legend fontsize
-# plt.rc('figure' , titlesize=BIGGER_SIZE                         )       # fontsize of the figure title
-
 ADDITIONAL_LINESTYLES = {
      'loosely dotted'        : (0, (1, 5)),
      'dotted'                : (0, (1, 1)),
@@ -50,6 +43,7 @@ except Exception as e:
     print(e)
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
+
 # plt.rcParams['text.usetex']         = True
 # latex_engine                        = 'pdflatex'
 # latex_elements                      = {
@@ -75,7 +69,7 @@ class MathTextSciFormatter(mticker.Formatter):
         """
         self.fmt = fmt
         
-    def __call__(self, x, pos=None):
+    def __call__(self, x, pos = None):
         # get formating
         s               = self.fmt % x
         decimal_point   = '.'
@@ -92,8 +86,12 @@ class MathTextSciFormatter(mticker.Formatter):
             s           =  r'%s%s' % (significand, exponent)
         return "${}$".format(s)
 
+########################### plotter ###########################
 
 class Plotter:
+    """ 
+    A Plotter class that handles the methods of plotting.
+    """
     
     ########## A N N O T ##########
     
@@ -118,7 +116,7 @@ class Plotter:
         '''
         ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
     
-    ########## F I T T S ##########
+    ########### F I T S ###########
     
     @staticmethod
     def plot_fit(   ax,   
@@ -140,7 +138,7 @@ class Plotter:
     ########## L I N E S ##########
     
     @staticmethod
-    def hline(ax, 
+    def hline(  ax, 
                 val     : float,
                 ls      = '-',
                 lw      = 2,
@@ -156,7 +154,7 @@ class Plotter:
                 **kwargs)
     
     @staticmethod
-    def vline(ax, 
+    def vline(  ax, 
                 val     : float,
                 ls      = '-',
                 lw      = 2,
@@ -174,6 +172,7 @@ class Plotter:
                 **kwargs)
     
     ########## T I C K S ##########
+    
     @staticmethod
     def set_tickparams( ax,
                         labelsize   =   None,
@@ -277,26 +276,7 @@ class Plotter:
         if 'both' in which:
             ax.xaxis.set_label_coords(inX, inY, **kwargs)
             ax.yaxis.set_label_coords(inX, inY, **kwargs)
-        
     
-    @staticmethod
-    def set_formater(ax, 
-                     formater = "%.1e",
-                     axis     = 'both'):
-        """
-        Sets the formatter for the given axis on the plot.
-        Args:
-            ax (object): The axis object on which to set the formatter.
-            formater (str, optional): The format string for the axis labels. Defaults to "%.1e".
-            axis (str, optional): The axis on which to set the formatter. Defaults to 'both'.
-        Returns:
-            None
-        """
-        if axis == 'y' or axis == 'both':
-            ax.yaxis.set_major_formatter(MathTextSciFormatter(formater))
-        if axis == 'x' or axis == 'both':
-            ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
-        
     @staticmethod
     def unset_spines(   ax,
                         xticks      =   False,
@@ -338,7 +318,27 @@ class Plotter:
                                     right = not((not spines) and (not yticks)), 
                                     top = not ((not spines) and (not xticks)), 
                                     bottom = not ((not spines) and (not xticks)))
-            
+        
+    ######### F O R M A T #########
+        
+    @staticmethod
+    def set_formater(ax, 
+                     formater = "%.1e",
+                     axis     = 'both'):
+        """
+        Sets the formatter for the given axis on the plot.
+        Args:
+            ax (object): The axis object on which to set the formatter.
+            formater (str, optional): The format string for the axis labels. Defaults to "%.1e".
+            axis (str, optional): The axis on which to set the formatter. Defaults to 'both'.
+        Returns:
+            None
+        """
+        if axis == 'y' or axis == 'both':
+            ax.yaxis.set_major_formatter(MathTextSciFormatter(formater))
+        if axis == 'x' or axis == 'both':
+            ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
+              
     ########## G R I D S ##########
     
     @staticmethod
@@ -391,6 +391,8 @@ class Plotter:
         ip  = InsetPosition(ax, position)
         ax2.set_axes_locator(ip)
         return ax2
+    
+    ########### L O O K ###########
     
     @staticmethod
     def set_transparency(ax, 
