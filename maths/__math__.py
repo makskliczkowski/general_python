@@ -1,25 +1,38 @@
-import numpy as np
-import pandas as pd
 from scipy.optimize import curve_fit as fit
+import pandas as pd
+import numpy as np
 
 #################################### FINDERS ####################################
 
-''' Find maximum index in a Dataframe'''
 def findMaximumIdx(x):
+    ''' 
+    Find maximum index in a Dataframe
+    - x : Dataframe or numpy array
+    '''
     if isinstance(x, pd.DataFrame):
         return x.idxmax(axis=1)
     else:
         return np.argmax(x, axis = 1)
     
-''' Find the nearest value to the value given '''
 def findNearestVal(x, val, col):
+    ''' 
+    Find the nearest value to the value given 
+    - x     : a DataFrame or numpy array
+    - val   : a scalar
+    - col   : a string on which column to find the nearest
+    '''
     if isinstance(x, pd.DataFrame):
         return x.loc[(x[col]-val).abs().idxmin()]
     else:
         return np.array((np.abs(x - val)).argmin())
 
-''' Find the nearest idx to the value given '''
 def findNearestIdx(x, val, col = ''):
+    ''' 
+    Find the nearest idx to the value given 
+    - x     : a DataFrame or numpy array
+    - val   : a scalar
+    - col   : a string on which column to find the nearest
+    '''
     if isinstance(x, pd.DataFrame):
         return (x[col]-val).abs().idxmin()
     else:
@@ -27,14 +40,14 @@ def findNearestIdx(x, val, col = ''):
     
 ##################################### RANDOM #####################################
 
-'''
-Create the CUE matrix using QR decomposition
-- n     : size of the matrix (n X n)
-- simple: use the straightforward method
-'''
 def CUE_QR( n        :   int,
             simple   =   True):
-    x       =   np.random.normal(size = (n, n)) + 1j * np.random.normal(size = (n, n))
+    '''
+    Create the CUE matrix using QR decomposition
+    - n     : size of the matrix (n X n)
+    - simple: use the straightforward method
+    '''
+    x       =   np.random.Generator.normal(size = (n, n)) + 1j * np.random.Generator.normal(size = (n, n))
     x       /=  np.sqrt(2)
     Q, R    =   np.linalg.qr(x)
     if not simple:
@@ -43,7 +56,12 @@ def CUE_QR( n        :   int,
         Q       =   np.matmul(Q, ph) * Q
     return Q
 
+###################################### FITS ######################################
+
 class Fitter:
+    '''
+    Class that contains the fit functions and their general usage.
+    '''
     ########## F I T S ! ########## 
     
     @staticmethod

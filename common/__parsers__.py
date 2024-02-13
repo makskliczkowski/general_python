@@ -9,12 +9,12 @@ def parse_dataframe(df      : pd.DataFrame,
     Parses the dataframe according to some given dictionary of parameters
     '''
     if copy:
-        tmp         =       df.copy()
+        tmp = df.copy()
     else:
-        tmp         =       df
+        tmp = df
     # go through keys
     for key in params.keys():
-        tmp     =       tmp[tmp[key].isin(params[key])]
+        tmp = tmp[tmp[key].isin(params[key])]
     return tmp
 
 ######################################################## STRING PARSER ########################################################
@@ -26,6 +26,8 @@ class StringParser:
             prec : int):
         '''
         Prints the value in the scientific notation
+        - s : float to be printed
+        - prec : number of decimal places
         '''
         return format(s, f'.{prec}E').replace("E-0", "E-").replace("E+0", "E+")
     #######################
@@ -37,7 +39,7 @@ class StringParser:
         Parses the lists and returns the joint version of it.
         - lst           :   list of strings to be joined
         - elemParser    :   should we do something with the elements? lambda function!
-        - joinElem      :   how those should be joined together
+        - joinElem      :   how those should be joined together within a string
         '''
         return "[" + joinElem.join([elemParser(s) for s in lst]) + "]"
     ############## FILENAME CONVENTIONS ##############

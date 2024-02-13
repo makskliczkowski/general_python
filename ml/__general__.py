@@ -36,7 +36,7 @@ class MLParams:
             optimizer (_type_)  : optimizer
             saveDir             : directory to be the weights to
             trainSize           : training percentage from the database
-            early_stopping (int, optional): _description_. Defaults to 20.
+            early_stopping      : Defaults to 20.
         """
 
         self.epo            = epo
@@ -55,15 +55,17 @@ class MLParams:
 
         self.history        = {}
         
-    def plotHistory(self, logscale = True):
+    def plotHistory(self, logscale = True, fig = 2):
         """
         Plots the history of the training
         Args:
-            logscale (bool, optional): _description_. Defaults to True.
+            - logscale (bool, optional): Defaults to True.
+            - fig (int, optional): new figure index 
         """
                     # plot history
-        plt.figure(2)
+        plt.figure(fig)
         plot_history(self.history, log_scale_metrics = logscale)    
+
 #########################################################################
 
     

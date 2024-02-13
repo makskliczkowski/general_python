@@ -11,16 +11,19 @@ PIHALF      = math.pi / 2
 
 def rebin(arr, av_num : int, d : int):
     '''
-    Calculates a bin average of an array. Does so by computing the new shape of the array
+    Calculates a bin average of an array. Does so by computing the new shape of the array.
+    - arr : array to rebin
+    - av_num : average number
+    - d : dimensionality of the array
     ''' 
     # check if the array ain't too small
-    if len(arr)/av_num < 1 or av_num == 1:
+    if (len(arr) / av_num < 1) or av_num == 1:
         # logger.info("Too small number of averages", 3)
         return arr
     
     # cut the last part of an array to calculate the mean
     shuffled = arr[0:len(arr) - (len(arr)%av_num)]
-    np.random.shuffle(shuffled)
+    np.random.Generator.shuffle(shuffled)
 
     if d == 3:
         return shuffled.reshape(av_num, shuffled.shape[0]//av_num, shuffled.shape[1], shuffled.shape[2]).mean(0)
@@ -35,7 +38,7 @@ def rebin(arr, av_num : int, d : int):
 Apply a random permutation to arrays - any number really
 '''
 def permute(*args):
-    p = np.random.permutation(len(args[0]))
+    p = np.random.Generator.permutation(len(args[0]))
     t = tuple([i[p] for i in args])
     return t
 
@@ -44,15 +47,17 @@ def permute(*args):
 def avgBin(myArray, N=2):
     """ 
     Calculate the bin average of an array
+    - myArray   : array to average into bins
+    - N         : number of bins
     """
-    cum = np.cumsum(myArray,0)
-    result = cum[N-1::N]/float(N)
-    result[1:] = result[1:] - result[:-1]
+    cum         = np.cumsum(myArray,0)
+    result      = cum[N-1::N]/float(N)
+    result[1:]  = result[1:] - result[:-1]
 
-    remainder = myArray.shape[0] % N
+    remainder   = myArray.shape[0] % N
     if remainder != 0:
         if remainder < myArray.shape[0]:
-            lastAvg = (cum[-1]-cum[-1-remainder])/float(remainder)
+            lastAvg = (cum[-1]-cum[-1-remainder]) / float(remainder)
         else:
             lastAvg = cum[-1]/float(remainder)
         result = np.vstack([result, lastAvg])
@@ -74,11 +79,9 @@ def moveAverage(a, n : int) :
         for idx, row in a.iterrows():
             df_tmp.append(moveAverage(np.array(row), n))
         return pd.DataFrame(np.array(df_tmp))
-        # return np.array(pd.Series(x).rolling(window=n).mean().iloc[n-1:].values)
     else:
         beg     = int(n/2)
         end     = len(a) - int(n/2)
-        zeros   = [0 for i in range(beg)]
         for k in range(beg, end):
             begin   = int(k-n/2)
             av      = np.sum(a[begin:begin + n])
@@ -101,12 +104,12 @@ def removeMean(a,
 
 ##################################################### DISTRIBUTIONS ##################################################
 
-'''
-Gaussian PDF
-'''
 def gauss(x : np.ndarray, mu, sig, *args):
+    '''
+    Gaussian PDF
+    '''
     if len(args) == 0:
-        return 1/np.sqrt(2 * PI * sig**2) * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
+        return 1.0 / np.sqrt(2 * PI * sig**2) * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     elif len(args) == 1:
         return args[0] * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     elif len(args) == 2:
