@@ -154,3 +154,97 @@ def make_saving_dir(directory      :   str,
     return directory
 
 ################################################### SAVE DIRECTORY ####################################################
+
+
+class Directories(str):
+    """ 
+    Class representing a directory handler
+    """
+    
+    def __init__(self, *args, **kwargs) -> None:
+        self.s = str(Directories.make_dir_s(*args), **kwargs) 
+        
+    ############################################################################
+    
+    @staticmethod
+    def make_dir(*args):
+        '''
+        [summary] 
+        Given a set of folder it creates a directory with correct path separator
+        '''
+        directory = ""
+        for i, arg in enumerate(args):
+            if i == 0 and arg.endswith(kPS):
+                directory += arg
+            else:
+                directory += arg + kPS
+        return directory
+    
+    ############################################################################
+    
+    @staticmethod
+    def up_dir(direct : str):
+        '''
+        [summary] 
+        Reproduction of ../
+        
+        [parameters]
+        - dir : directory
+        '''
+        tmp = direct
+        
+        # check if the directory has path separator at the end already
+        if tmp[-1] == kPS:
+            tmp = tmp[:-1]
+        # remove while we don't get the path separator or to the end of the directory
+        while tmp[-1] != kPS and tmp[-1] != '.' and len(tmp) > 0:
+            tmp = tmp[:-1]
+        # check if it's just a current directory 
+        if tmp == '.':
+            return ".." + kPS
+        elif tmp[-2] + tmp[-1] == '..':
+            return ".." + kPS + tmp + kPS
+        return Directories(tmp)
+    
+    def go_up_dir(self):
+        self(Directories.up_dir())
+        
+    ############################################################################
+    
+    def create_folder(self, silent = False):
+        '''
+        Create single folder listed as a directory
+        - silent : talk?
+        '''
+        try:
+            if not os.path.isdir(self.s):
+                os.makedirs(self.s)
+                if not silent:
+                    printV(f"Created a directory : {self.s}", silent)
+        except OSError:
+            printV("Creation of the directory %s failed" % self.s, silent)     
+        
+    ############################################################################
+
+    def clear_files(self, filelist, empty = True):
+        '''
+        Clears the empty files in a directory
+        - fileList      : fileToGoThrough
+        - empty         : removes empty files if set to true
+        '''
+        filelist = list(os.listdir(self.s)) if len(filelist) == 0 else filelist
+        fileLeft = []
+        # go through list of files
+        for filename in filelist:
+            removing = not empty
+            try:
+                # try removing if empty file
+                removing = (not removing) and (os.stat(self.s + filename).st_size == 0)
+                if removing:
+                    os.remove(self.s + filename)
+                    printV(f"removed {self.s + filename}", True, 2)
+                else:
+                    fileLeft.append(filename)
+            except Exception as inst:
+                printV(f"Problem with reading: {inst} - {self.s} / {filename}", True, 1)
+        return fileLeft
