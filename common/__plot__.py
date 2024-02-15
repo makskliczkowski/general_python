@@ -93,7 +93,7 @@ class Plotter:
     A Plotter class that handles the methods of plotting.
     """
     
-    ########## A N N O T ##########
+    #################### A N N O T ####################
     
     @staticmethod
     def set_annotate(   ax,
@@ -115,8 +115,8 @@ class Plotter:
         - xycoords  :   how to interpret the coordinates (from MPL)
         '''
         ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
-    
-    ########### F I T S ###########
+
+    ##################### F I T S #####################
     
     @staticmethod
     def plot_fit(   ax,   
@@ -135,7 +135,7 @@ class Plotter:
         y   =   funct(x)
         ax.plot(x, y, **kwargs)
     
-    ########## L I N E S ##########
+    #################### L I N E S ####################
     
     @staticmethod
     def hline(  ax, 
@@ -171,7 +171,7 @@ class Plotter:
                 color = color,
                 **kwargs)
     
-    ########## T I C K S ##########
+    #################### T I C K S ####################
     
     @staticmethod
     def set_tickparams( ax,
@@ -319,7 +319,7 @@ class Plotter:
                                     top = not ((not spines) and (not xticks)), 
                                     bottom = not ((not spines) and (not xticks)))
         
-    ######### F O R M A T #########
+    ################### F O R M A T ###################
         
     @staticmethod
     def set_formater(ax, 
@@ -339,7 +339,7 @@ class Plotter:
         if axis == 'x' or axis == 'both':
             ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
               
-    ########## G R I D S ##########
+    #################### G R I D S ####################
     
     @staticmethod
     def get_grid(nrows          :   int,
@@ -382,7 +382,7 @@ class Plotter:
         '''
         return fig.add_subplot(gs[i], sharex = sharex, sharey = sharey)
 
-    ########## I N S E T ##########
+    #################### I N S E T ####################
 
     @staticmethod
     def get_inset(ax, 
@@ -392,14 +392,14 @@ class Plotter:
         ax2.set_axes_locator(ip)
         return ax2
     
-    ########### L O O K ###########
+    ##################### L O O K #####################
     
     @staticmethod
     def set_transparency(ax, 
                          alpha = 0.0):
         ax.patch.set_alpha(alpha)
     
-    ######### L E G E N D #########
+    ################### L E G E N D ###################
     
     @staticmethod
     def set_legend(ax,
@@ -462,7 +462,8 @@ class Plotter:
         plt.savefig(directory + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
         
 
-#####################################
+##########################################################################
+
 
 import numpy as np
     

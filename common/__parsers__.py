@@ -7,7 +7,12 @@ def parse_dataframe(df      : pd.DataFrame,
                     copy    = False):
     '''
     Parses the dataframe according to some given dictionary of parameters
+    The dictionary shall contain a given column name : [list of possible values]
+    - df        : pandas.DataFrame
+    - params    : dictionary of parameters
+    - copy      : shall copy the dataframe
     '''
+    tmp     = pd.DataFrame()
     if copy:
         tmp = df.copy()
     else:
@@ -20,16 +25,22 @@ def parse_dataframe(df      : pd.DataFrame,
 ######################################################## STRING PARSER ########################################################
 
 class StringParser:   
+    '''
+    A class that handles parsing of a string to different types
+    '''
+    
+    
     #######################
     @staticmethod
     def e(  s    : float,
             prec : int):
         '''
         Prints the value in the scientific notation
-        - s : float to be printed
-        - prec : number of decimal places
+        - s     : float to be printed
+        - prec  : number of decimal places
         '''
         return format(s, f'.{prec}E').replace("E-0", "E-").replace("E+0", "E+")
+    
     #######################
     @staticmethod
     def ls( lst,
@@ -42,6 +53,7 @@ class StringParser:
         - joinElem      :   how those should be joined together within a string
         '''
         return "[" + joinElem.join([elemParser(s) for s in lst]) + "]"
+    
     ############## FILENAME CONVENTIONS ##############
     @staticmethod
     def parseFileNameFloor( f        :   str,

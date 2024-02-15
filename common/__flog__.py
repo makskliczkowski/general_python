@@ -28,13 +28,17 @@ class Logger:
         self.logfile     = logfile
         self.working     = False
     
-    def configureLog(self, directory : str):
+    def configure(self, directory : str):
         '''
         Creates the log file and handler.
+        - directory : directory to be used for log files
         '''
+        
         self.logfile     = directory + os.sep + f'{self.nowStr if len(self.logfile) == 0 else self.logfile}.log'
-        # with open(self.logfile, 'w+') as f:
-        #     f.write('Log started!')
+        
+        with open(self.logfile, 'w+') as f:
+            f.write('Log started!')
+            
         self.fHandler    = logging.FileHandler(self.logfile)
         # set level
         self.fHandler.setLevel(self.lvl)
@@ -49,7 +53,9 @@ class Logger:
                             datefmt     = "%d_%m_%Y_%H-%M_%S",
                             filename    = self.logfile,
                             level       = self.lvl)
-        
+    
+    ###############################################
+    
     @staticmethod
     def printTab(lvl = 0):
         '''
@@ -63,6 +69,8 @@ class Logger:
             ret += '->'
         return ret
     
+    ###############################################
+    
     @staticmethod
     def print(msg, lvl = 0):
         '''
@@ -73,6 +81,8 @@ class Logger:
         now         = datetime.now()
         nowStr      = now.strftime("%d/%m/%Y %H:%M:%S")
         return "[" + nowStr + "]" + Logger.printTab(lvl) + msg
+    
+    ###############################################
     
     def say(self,
             *args,
@@ -86,8 +96,8 @@ class Logger:
         - lvl   :   tab level
         '''
         argss   =   [str(a) for a in args]
-        out     =   ' '.join(argss)
         if not end:
+            out =   ' '.join(argss)
             if log == 0:
                 self.info(out, lvl)
             elif log == 1:
@@ -106,20 +116,28 @@ class Logger:
                     self.warning(out, lvl)
                 else:
                     self.error(out, lvl)
+ 
+    ###############################################
     
     def verbose(self, msg : str, lvl : int, verbose : bool):
         if(verbose): 
             self.info(msg, lvl)
+
+    ###############################################
     
     def info(self, msg : str, lvl = 0):
         if logging.INFO >=self.lvl:
             print(Logger.print(msg, lvl))
         logging.info(Logger.print(msg, lvl))
 
+    ###############################################
+
     def debug(self, msg : str, lvl = 0):
         if logging.DEBUG >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.debug(Logger.print(msg, lvl))
+
+    ###############################################
 
     def warning(self, msg : str, lvl = 0):
         '''
@@ -128,6 +146,8 @@ class Logger:
         if logging.WARNING >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.warning(Logger.print(msg, lvl))
+
+    ###############################################
     
     def error(self, msg : str, lvl = 0):
         '''
@@ -136,18 +156,31 @@ class Logger:
         if logging.ERROR >= self.lvl:
             print(Logger.print(msg, lvl))
         logging.error(Logger.print(msg, lvl))
+
+    ###############################################
     
     @staticmethod
-    def BREAK(n : int):
+    def breakline(n : int):
         '''
         Create n breaklines in the log
+        - n : number of break lines
         '''
-        for i in range(n):
+        for _ in range(n):
             Logger.print("\n")
     
-    def TITLE(self, tail :str, desiredSize : int, fill : str, lvl = 0):
+    ###############################################
+
+    def title(self, 
+              tail          : str, 
+              desiredSize   : int, 
+              fill          : str, 
+              lvl           = 0):
         '''
-        Create a title for - printing in the middle
+        Create a title for the logger - printing in the middle
+        - tail          : message in the middle
+        - lvl           : level
+        - desiredSize   : length of the logger
+        - fill          : filler
         '''
         tailLength  = len(tail)
         lvlLen      = 2 + lvl * 3 * 2 # arrow plus tab, *2 because it is moved to the middle
@@ -162,30 +195,34 @@ class Logger:
         fillSize    = fillSize      - (1 if not tailLength % 2 == 0 else 0)
         
         out         = ""
-        for i in range(fillSize):
+        for _ in range(fillSize):
             out     = out + fill
         
         # append text
-        if not tailLength == 0:
+        if (tailLength != 0):
             out     = out + " " + tail + " "
             
         # append last
-        for i in range(fillSize):
-            out     = out + fill\
+        for _ in range(fillSize):
+            out     = out + fill
         
         self.info(out, lvl)
         
-############################################### PRINT THE OUTPUT BASED ON CONDITION ###############################################
+################################################ PRINT THE OUTPUT BASED ON CONDITION ###############################################
 
-def printV(what : str, v = True, tabulators = 0):
+def printV(what         : str, 
+           v            = True, 
+           tabulators   = 0):
     '''
-    Prints silently
+    Prints silently if necessary
+    - what         : message to be printed
+    - v            : verbosity
+    - tabulators   : number of tabulators
     '''
-    if v == True:
-        for i in range(tabulators):
+    if v:
+        for _ in range(tabulators):
             print("\t")
         print("->" + what)
-
 
 ######################################################## PRINT THE DICTIONARY ######################################################
 
@@ -194,22 +231,27 @@ def printDictionary(dict):
     Prints dictionary with a key and value
     dict - dictionary to be printed
     '''
-    string = ""
+    string      = ""
     for key in dict:
-        value = dict[key]
-        string += f'{key},{value},'
+        value   = dict[key]
+        string  += f'{key},{value},'
     return string[:-1]
 
 ###################################################### PRINT ELEMENTS WITH ADJUST ##################################################
 
-def justPrinter(file, sep="\t", elements=[], width=8, endline=True, scientific = False):
+def printJust(file, 
+              sep           =   "\t",
+              elements      =   [],
+              width         =   8, 
+              endline       =   True, 
+              scientific    =   False):
     """
     [summary] 
     Function that can print a list of elements creating indents
     The separator also can be used to clean the indents.
-    - width is governing the width of each column. 
-    - endline, if true, puts an endline after last element of the list
-    - scientific allows for scientific plotting
+    - width     :   is governing the width of each column. 
+    - endline   :   if true, puts an endline after last element of the list
+    - scientific:   allows for scientific printing
     """
     for item in elements:
         if not scientific:  

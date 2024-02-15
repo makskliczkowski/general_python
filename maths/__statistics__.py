@@ -1,11 +1,5 @@
 from scipy.signal import savgol_filter
-import pandas as pd
-import numpy as np
-import math
-
-TWOPI       = math.pi * 2
-PI          = math.pi
-PIHALF      = math.pi / 2
+from __math__ import *
 
 ############################################### STATISTICAL AVERAGING ###############################################
 
@@ -34,10 +28,10 @@ def rebin(arr, av_num : int, d : int):
     
 #################################################### PERMUTATION ####################################################
 
-'''
-Apply a random permutation to arrays - any number really
-'''
 def permute(*args):
+    '''
+    Apply a random permutation to arrays - any number really
+    '''
     p = np.random.Generator.permutation(len(args[0]))
     t = tuple([i[p] for i in args])
     return t
