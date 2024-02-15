@@ -146,7 +146,7 @@ class Plotter:
                 label   = None,
                 **kwargs):
         '''
-        HLINE
+        horizontal line plotting
         '''
         ax.axhline(val, ls = ls,  lw = lw, 
                 label = label if (label is not None and len(label) != 0) else None, 
@@ -162,7 +162,7 @@ class Plotter:
                 label   = None,
                 **kwargs):
         '''
-        VLINE
+        vertical line plotting
         '''
         ax.axvline(val, 
                 ls = ls,  
@@ -185,11 +185,22 @@ class Plotter:
                         **kwargs
                         ):
         '''
-        Sets tickparams to the desired ones
+        Sets tickparams to the desired ones.
+        - ax        :   axis to use
+        - labelsize :   fontsize
+        - left      :   whether to show the left side
+        - right     :   whether to show the right side
+        - top       :   whether to show the top side
+        - bottom    :   whether to show the bottom side
+        - xticks    :   list of xticks
+        - yticks    :   list of yticks
         '''
-        ax.tick_params(axis='both', which='major', left=left, right=right, top=top, bottom=bottom, labelsize=labelsize)
-        ax.tick_params(axis="both", which='major', left=left, right=right, top=top, bottom=bottom, direction="in",length=6, **kwargs)
-        ax.tick_params(axis="both", which='minor', left=left, right=right, top=top, bottom=bottom, direction="in",length=3)
+        ax.tick_params(axis='both', which='major', left=left, right=right, 
+                       top=top, bottom=bottom, labelsize=labelsize)
+        ax.tick_params(axis="both", which='major', left=left, right=right, 
+                       top=top, bottom=bottom, direction="in",length=6, **kwargs)
+        ax.tick_params(axis="both", which='minor', left=left, right=right, 
+                       top=top, bottom=bottom, direction="in",length=3, **kwargs)
 
         if xticks is not None:
             ax.set_xticks(xticks)
@@ -199,15 +210,24 @@ class Plotter:
     @staticmethod
     def set_ax_params(  ax, 
                         which       :   str,
+                        scale       =   'linear',
                         label       =   "",
                         labelPad    =   0.0,
                         lim         =   None,
-                        title       =   '',
                         fontsize    =   None,
-                        scale       =   'linear'):
+                        title       =   ''):
         '''
         Sets the parameters of the axes
+        - ax        : axis to use
+        - which     : string, x, y, xy
+        - scale     : linear, log
+        - label     : label for the axis
+        - labelPad  : label padding
+        - lim       : limits for the axis
+        - fontsize  : font size
+        - title     : title for the axis
         '''
+        
         # check x axis
         if 'x' in which:
             if label != "":
@@ -273,10 +293,9 @@ class Plotter:
             ax.xaxis.set_label_coords(inX, inY, **kwargs)
         if 'y' in which:
             ax.yaxis.set_label_coords(inX, inY, **kwargs)
-        if 'both' in which:
-            ax.xaxis.set_label_coords(inX, inY, **kwargs)
-            ax.yaxis.set_label_coords(inX, inY, **kwargs)
     
+    #################### U N S E T ####################
+
     @staticmethod
     def unset_spines(   ax,
                         xticks      =   False,
@@ -334,9 +353,9 @@ class Plotter:
         Returns:
             None
         """
-        if axis == 'y' or axis == 'both':
+        if 'y' in axis:
             ax.yaxis.set_major_formatter(MathTextSciFormatter(formater))
-        if axis == 'x' or axis == 'both':
+        if 'x' in axis:
             ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
               
     #################### G R I D S ####################
@@ -433,10 +452,10 @@ class Plotter:
     ######### S U B A X S #########
 
     @staticmethod
-    def get_subplots(   nrows  :   int,
+    def get_subplots(   nrows  =   1,
+                        ncols  =   1,
                         sizex  =   10,
                         sizey  =   10,
-                        ncols  =   1,
                         **kwargs):
         if ncols == 1 and nrows == 1:
             fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
