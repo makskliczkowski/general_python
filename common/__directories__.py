@@ -1,6 +1,6 @@
 import os
 import random
-from .__flog__ import *
+from __flog__ import *
 
 kPS = os.sep
 
@@ -13,13 +13,14 @@ class Directories(str):
     - class methods are represented with underscore
     """
     
-    def __init__(self, *args, **kwargs) -> None:
+    def __new__(cls, *args):
+        return str.__new__(cls, cls.makeDir(*args))
+    
+    def __init__(self, *args, create = False) -> None:
         '''
         Initialize a directory handler.
         '''
-        
-        self.makeDir(*args)
-        super(Directories, self).__init__(self.s, **kwargs)
+        super(Directories, self).__init__()
         
     ############################################################################
     
@@ -41,7 +42,7 @@ class Directories(str):
         return directory
     
     def make_dir(self, *args, create = False):
-        self.s = str(Directories.makeDir(*args, create = create)) 
+        self(Directories.makeDir(*args, create = create)) 
 
     ############################################################################
     
@@ -105,7 +106,7 @@ class Directories(str):
                 printV("Creation of the directory %s failed" % folder, silent)      
     
     def create_folder(self, silent = False):
-        Directories.createFolder(self.s, silent)
+        Directories.createFolder(self, silent)
         
     ############################################################################
 
@@ -138,7 +139,7 @@ class Directories(str):
         - cond          : lambda function to be applied to the file (if we shall consider it or not)
         - relative      : give path without the folder
         '''
-        return Directories.getRandomFile(self.s, cond, relative)
+        return Directories.getRandomFile(self, cond, relative)
         
     ############################################################################
 
@@ -168,7 +169,7 @@ class Directories(str):
         return fileLeft
 
     def clear_files(self, files = [], empty = True):
-        return Directories.clearFiles(self.s, files, empty)
+        return Directories.clearFiles(self, files, empty)
     
     ############################################################################
 
@@ -198,6 +199,6 @@ class Directories(str):
         return list(files)
     
     def list_dir(self, clearEmpty = False, conditions = [], sortCondition = None):
-        return Directories.listDir(self.s, clearEmpty, conditions, sortCondition)
+        return Directories.listDir(self, clearEmpty, conditions, sortCondition)
     
     ############################################################################
