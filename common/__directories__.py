@@ -1,6 +1,6 @@
 import os
 import random
-from __flog__ import *
+from .__flog__ import *
 
 kPS = os.sep
 
@@ -16,7 +16,7 @@ class Directories(str):
     def __new__(cls, *args):
         return str.__new__(cls, cls.makeDir(*args))
     
-    def __init__(self, *args, create = False) -> None:
+    def __init__(self, *args) -> None:
         '''
         Initialize a directory handler.
         '''
@@ -42,7 +42,7 @@ class Directories(str):
         return directory
     
     def make_dir(self, *args, create = False):
-        self(Directories.makeDir(*args, create = create)) 
+        return Directories(Directories.makeDir(*args, create = create))
 
     ############################################################################
     
@@ -72,10 +72,10 @@ class Directories(str):
         if isinstance(direct, str):
             return Directories(tmp)
         elif isinstance(direct, Directories):
-            return tmp.s
+            return str(tmp)
     
     def up_dir(self):
-        self(Directories.up_dir())
+        return Directories.upDir(self)
         
     ############################################################################
     

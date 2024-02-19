@@ -141,7 +141,7 @@ class Plotter:
     def hline(  ax, 
                 val     : float,
                 ls      = '-',
-                lw      = 2,
+                lw      = 2.0,
                 color   = 'black',
                 label   = None,
                 **kwargs):
@@ -157,7 +157,7 @@ class Plotter:
     def vline(  ax, 
                 val     : float,
                 ls      = '-',
-                lw      = 2,
+                lw      = 2.0,
                 color   = 'black',
                 label   = None,
                 **kwargs):
@@ -444,7 +444,6 @@ class Plotter:
                   fontsize      = fontsize, 
                   frameon       = frameon, 
                   loc           = loc,
-                #   alignment     = alignment, 
                   markerfirst   = markerfirst,
                   framealpha    = framealpha,
                   **kwargs)  
@@ -551,6 +550,27 @@ class PlotterSave:
         toSave[:, 1:]   = y
         
         if typ == '.npy':
-            np.save(directory + fileName + ".npy", toSave)
-        elif typ == '.txt':
-            np.savetxt(directory + fileName + ".npy", toSave)
+            np.save(directory + fileName + typ, toSave)
+        else:
+            np.savetxt(directory + fileName + typ, toSave)
+
+##########################################################################
+
+from sympy import Matrix, init_printing
+
+class MatrixPrinter:
+    
+    
+    def __init__(self):
+        init_printing()
+    
+    '''
+    Class for printing matrices
+    '''
+    @staticmethod
+    def print_matrix(matrix : np.ndarray):
+        '''
+        Prints the matrix in a nice form
+        '''
+        display(Matrix(matrix))
+        
