@@ -2,14 +2,17 @@ import numpy as np
 
 ##################################### RANDOM #####################################
 
-def CUE_QR( n        :   int,
-            simple   =   True):
+def CUE_QR( n       :   int,
+            simple  =   True,
+            rng     =   None):
     '''
     Create the CUE matrix using QR decomposition
     - n     : size of the matrix (n X n)
     - simple: use the straightforward method
     '''
-    x       =   np.random.Generator.normal(size = (n, n)) + 1j * np.random.Generator.normal(size = (n, n))
+    if rng is None:
+        rng = np.random.default_rng()
+    x       =   rng.random.Generator.normal(size = (n, n)) + 1j * rng.random.Generator.normal(size = (n, n))
     x       /=  np.sqrt(2)
     Q, R    =   np.linalg.qr(x)
     if not simple:

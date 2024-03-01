@@ -56,10 +56,10 @@ class Fitter:
         Class that stores only the parameters of the fit function
         '''
         
-        def __init__(self, fun = None, popt = [], pcov = []) -> None:
+        def __init__(self, funct = None, popt = [], pcov = []) -> None:
             self.popt   = popt
             self.pcov   = pcov
-            self.fun    = fun
+            self.funct  = funct
         
         def popt(self):
             return self.popt
@@ -79,9 +79,9 @@ class Fitter:
 
     
     ###################################################
-     
+    
     def apply(self, x : np.ndarray):
-        return self.fun(x) 
+        return self.funct(x) 
         
     ###################################################
     

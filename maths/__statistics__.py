@@ -3,13 +3,17 @@ from __math__ import *
 
 ############################################### STATISTICAL AVERAGING ###############################################
 
-def rebin(arr, av_num : int, d : int):
+def rebin(arr, av_num : int, d : int, rng = None):
     '''
     Calculates a bin average of an array. Does so by computing the new shape of the array.
     - arr : array to rebin
     - av_num : average number
     - d : dimensionality of the array
     ''' 
+    
+    if rng is None:
+        rng = np.random.default_rng()
+    
     # check if the array ain't too small
     if (len(arr) / av_num < 1) or av_num == 1:
         # logger.info("Too small number of averages", 3)
@@ -17,7 +21,7 @@ def rebin(arr, av_num : int, d : int):
     
     # cut the last part of an array to calculate the mean
     shuffled = arr[0:len(arr) - (len(arr)%av_num)]
-    np.random.Generator.shuffle(shuffled)
+    rng.random.Generator.shuffle(shuffled)
 
     if d == 3:
         return shuffled.reshape(av_num, shuffled.shape[0]//av_num, shuffled.shape[1], shuffled.shape[2]).mean(0)
@@ -28,11 +32,13 @@ def rebin(arr, av_num : int, d : int):
     
 #################################################### PERMUTATION ####################################################
 
-def permute(*args):
+def permute(*args, rng = None):
     '''
     Apply a random permutation to arrays - any number really
     '''
-    p = np.random.Generator.permutation(len(args[0]))
+    if rng is None:
+        rng = np.random.default_rng()
+    p = rng.random.Generator.permutation(len(args[0]))
     t = tuple([i[p] for i in args])
     return t
 
