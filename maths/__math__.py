@@ -1,4 +1,4 @@
-from __random__ import *
+from .__random__ import *
 from scipy.optimize import curve_fit as fit
 import pandas as pd
 

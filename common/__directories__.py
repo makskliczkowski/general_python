@@ -75,7 +75,7 @@ class Directories(str):
             return str(tmp)
     
     def up_dir(self):
-        return Directories.upDir(self)
+        return Directories(Directories.upDir(self))
         
     ############################################################################
     
@@ -184,6 +184,7 @@ class Directories(str):
         - clearEmpty    : shall clear empty files?
         - conditions    : lambda functions to be applied to filenames or files
         '''
+        print(directory)
         files       =   list(os.listdir(directory))
 
         # go through conditions

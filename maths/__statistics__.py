@@ -1,5 +1,5 @@
 from scipy.signal import savgol_filter
-from __math__ import *
+from .__math__ import *
 
 ############################################### STATISTICAL AVERAGING ###############################################
 
