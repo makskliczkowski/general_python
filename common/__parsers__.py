@@ -45,13 +45,16 @@ class StringParser:
     @staticmethod
     def ls( lst,
             elemParser  = lambda s: str(s),
-            joinElem    = ','):
+            joinElem    = ',',
+            withoutBrcts= False):
         '''
         Parses the lists and returns the joint version of it.
         - lst           :   list of strings to be joined
         - elemParser    :   should we do something with the elements? lambda function!
         - joinElem      :   how those should be joined together within a string
         '''
+        if withoutBrcts:
+            return joinElem.join([elemParser(s) for s in lst])
         return "[" + joinElem.join([elemParser(s) for s in lst]) + "]"
     
     ############## FILENAME CONVENTIONS ##############
