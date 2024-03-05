@@ -92,13 +92,13 @@ def moveAverage(a, n : int) :
 
 def removeMean(a, 
                n : int, 
-               moving_average = None):
+               moving_average = []):
     """ 
     Neglect average in data and leave fluctuations only
     """
     N = min(n, len(a))
     if moving_average is not None:
-        return a[N-1:] - moveAverage(a,N)
+        return a[N-1:] - moveAverage(a, N)
     else:
         return a[min(len(a), len(moving_average)):] - moving_average
 

@@ -21,7 +21,20 @@ class Directories(str):
         Initialize a directory handler.
         '''
         super(Directories, self).__init__()
-        
+    
+    ############################################################################
+    
+    def format_str(self, *args, **kwargs) -> "Directories":
+        if not args and not kwargs:
+            return Directories("")
+        return Directories(self.format(*args, **kwargs))
+    
+    ############################################################################
+    
+    @staticmethod
+    def win(st : str) -> "Directories":
+        return Directories(*st.split('\\'))
+    
     ############################################################################
     
     @staticmethod
@@ -184,7 +197,6 @@ class Directories(str):
         - clearEmpty    : shall clear empty files?
         - conditions    : lambda functions to be applied to filenames or files
         '''
-        print(directory)
         files       =   list(os.listdir(directory))
 
         # go through conditions

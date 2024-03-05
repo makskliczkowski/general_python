@@ -484,9 +484,37 @@ class Plotter:
 
 
 import numpy as np
-    
+import json
     
 class PlotterSave:
+    
+#################################################
+
+    @staticmethod
+    def dict2json(  directory    :   str,
+                    fileName     :   str,
+                    data):
+        '''
+        Save dictionary to json file
+        - directory : directory to save the file
+        - fileName  : name of the file
+        - data      : dictionary to save
+        '''
+        with open(directory + fileName + '.json', 'w') as fp:
+            json.dump(data, fp)
+
+#################################################
+
+    @staticmethod
+    def json2dict(  directory    :   str,
+                    fileName     :   str) -> dict:
+        '''
+        Load dictionary from json file
+        '''
+        dict2load = {}
+        with open(directory + f"{fileName}.json", "r") as readfile:
+            dict2load = json.loads(readfile.read())
+        return dict2load
     
 #################################################
 

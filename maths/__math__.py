@@ -46,42 +46,41 @@ def findNearestIdx(x, val, col = ''):
     
 ###################################### FITS ######################################
 
+class FitterParams(object):
+    '''
+    Class that stores only the parameters of the fit function
+    '''
+    
+    def __init__(self, funct = None, popt = [], pcov = []) -> None:
+        self.popt   = popt
+        self.pcov   = pcov
+        self.funct  = funct
+    
+    def get_popt(self):
+        return self.popt
+    
+    def get_pcov(self):
+        return self.pcov
+    
+    def get_fun(self):
+        return self.funct
+    
+
 class Fitter:
     '''
     Class that contains the fit functions and their general usage.
     '''
-    
-    class FitterParams(object):
-        '''
-        Class that stores only the parameters of the fit function
-        '''
-        
-        def __init__(self, funct = None, popt = [], pcov = []) -> None:
-            self.popt   = popt
-            self.pcov   = pcov
-            self.funct  = funct
-        
-        def popt(self):
-            return self.popt
-        
-        def pcov(self):
-            return self.pcov
-        
-        def fun(self):
-            return self.fun
-        
     ###################################################
     
     def __init__(self, x : np.ndarray, y : np.ndarray):
         self.x      = x
         self.y      = y
-        self.fitter = Fitter.FitterParams()
+        self.fitter = FitterParams()
 
-    
     ###################################################
     
     def apply(self, x : np.ndarray):
-        return self.funct(x) 
+        return self.fitter.funct(x) 
         
     ###################################################
     
@@ -111,7 +110,7 @@ class Fitter:
         '''
         xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
         a, b            =       np.polyfit(xfit, yfit, 1)
-        self.fitter     =       Fitter.FitterParams(lambda x: a * x + b, [a, b], [])
+        self.fitter     =       FitterParams(lambda x: a * x + b, [a, b], [])
 
     @staticmethod
     def fitLinear(  x,
@@ -127,7 +126,7 @@ class Fitter:
         '''
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         a, b            =       np.polyfit(xfit, yfit, 1)
-        return Fitter.FitterParams(lambda x: a * x + b, [a, b], [])
+        return FitterParams(lambda x: a * x + b, [a, b], [])
 
     #############
     def fit_exp(self,
@@ -141,7 +140,7 @@ class Fitter:
         xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
         funct           =       lambda x, a, b: a * np.exp(-b * x)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       Fitter.FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        self.fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
         
     @staticmethod
     def fitExp( x,
@@ -158,7 +157,7 @@ class Fitter:
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         funct           =       lambda x, a, b: a * np.exp(-b * x)
         popt, pcov      =       fit(funct, xfit, yfit)
-        return Fitter.FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        return FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
     
     #############
 
@@ -173,7 +172,7 @@ class Fitter:
         xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       Fitter.FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        self.fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
         
     @staticmethod
     def fitXPlusX2( x,
@@ -190,7 +189,7 @@ class Fitter:
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
-        return Fitter.FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        return FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
      
     #################### G E N R L #################### 
 
@@ -206,7 +205,7 @@ class Fitter:
         '''
         xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       Fitter.FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        self.fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
     
     @staticmethod
     def fitAny( x,
@@ -224,4 +223,4 @@ class Fitter:
         '''
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         popt, pcov      =       fit(funct, xfit, yfit)
-        return Fitter.FitterParams(lambda x: funct(x, *popt), popt, pcov)
+        return FitterParams(lambda x: funct(x, *popt), popt, pcov)
