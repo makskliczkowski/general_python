@@ -1,5 +1,8 @@
 from .__random__ import *
 from scipy.optimize import curve_fit as fit
+from scipy.interpolate import splrep, BSpline
+from scipy import interpolate
+# fit the functions
 import pandas as pd
 
 import math
@@ -96,8 +99,8 @@ class Fitter:
         - skipF :   number of first elements to skip
         - skipL :   number of last elements to skip
         '''
-        xfit            =       x[skipF if skipF!= 0 else None : skipL if skipL!= 0 else None]
-        yfit            =       y[skipF if skipF!= 0 else None : skipL if skipL!= 0 else None]
+        xfit            =       x[skipF if skipF!= 0 else None : -skipL if skipL!= 0 else None]
+        yfit            =       y[skipF if skipF!= 0 else None : -skipL if skipL!= 0 else None]
         return xfit, yfit
     
     #################### F I T S ! #################### 
@@ -190,7 +193,39 @@ class Fitter:
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
         return FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
-     
+    
+    #############
+    
+    def fit_power(self, 
+                  skipF = 0,
+                  skipL = 0):
+        '''
+        Fits function [a*x**b]
+        - skipF :   number of elements to skip on the left
+        - skipR :   number of elements to skip on the right
+        '''
+        xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
+        funct           =       lambda x, a, b: a * x ** b
+        popt, pcov      =       fit(funct, xfit, yfit)
+        self.fitter     =       FitterParams(funct, popt, pcov)
+        
+    @staticmethod
+    def fitPower( x,
+                  y,
+                  skipF = 0,
+                  skipL = 0):
+        '''
+        Fits function [a*x**b]
+        - x     :   arguments to the fit
+        - y     :   values to the fit
+        - skipF :   number of elements to skip on the left
+        - skipR :   number of elements to skip on the right
+        '''
+        xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
+        funct           =       lambda x, a, b: a * x ** b
+        popt, pcov      =       fit(funct, xfit, yfit)
+        return FitterParams(lambda x: popt[0] * (x ** popt[1]), popt, pcov)
+        
     #################### G E N R L #################### 
 
     def fit_any(self,
@@ -205,7 +240,7 @@ class Fitter:
         '''
         xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        self.fitter     =       FitterParams(funct, popt, pcov)
     
     @staticmethod
     def fitAny( x,
@@ -224,3 +259,4 @@ class Fitter:
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         popt, pcov      =       fit(funct, xfit, yfit)
         return FitterParams(lambda x: funct(x, *popt), popt, pcov)
+    

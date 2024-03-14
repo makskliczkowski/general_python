@@ -19,7 +19,7 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
         return data
     try:
         # check the file
-        if file.endswith('.h5'):
+        if file.endswith('.h5') or file.endswith('.hdf5') or file.endswith('.hdf'):
             with h5py.File(file, "r") as f:
                 # all root level object names (aka keys) 
                 # these can be group or dataset names 
@@ -40,7 +40,7 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
                 #ds_arr = f[a_group_key][()]  # returns as a numpy array
                 # iterate the keys
                 for i in a_group_keys:
-                    data[i] = np.array(f[i][()], dtype = object)     
+                    data[i] = np.array(f[i][()])     
         return data
     except Exception as e:
         logging.info(f"Can't open hdf5 file: {file}")

@@ -1,4 +1,7 @@
 from scipy.signal import savgol_filter
+from scipy.stats import gmean
+from scipy.stats import kurtosis
+
 from .__math__ import *
 
 ############################################### STATISTICAL AVERAGING ###############################################
@@ -68,10 +71,11 @@ def avgBin(myArray, N=2):
 
 def moveAverage(a, n : int) :
     """ 
-    Moving average with cumsum
+    Moving average with cumsum. This is applied along the first axis of the array.
+    
     """
     if isinstance(a, np.ndarray):
-        ret         =       np.cumsum(a, dtype=float)
+        ret         =       np.cumsum(a, axis = 0, dtype=float)
         ret[n:]     =       ret[n:] - ret[:-n]
         return      ret[n - 1:] / n
     elif isinstance(a, pd.DataFrame):

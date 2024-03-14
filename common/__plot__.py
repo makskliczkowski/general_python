@@ -343,13 +343,13 @@ class Plotter:
     @staticmethod
     def set_formater(ax, 
                      formater = "%.1e",
-                     axis     = 'both'):
+                     axis     = 'xy'):
         """
         Sets the formatter for the given axis on the plot.
         Args:
             ax (object): The axis object on which to set the formatter.
             formater (str, optional): The format string for the axis labels. Defaults to "%.1e".
-            axis (str, optional): The axis on which to set the formatter. Defaults to 'both'.
+            axis (str, optional): The axis on which to set the formatter. Defaults to 'xy'.
         Returns:
             None
         """
@@ -357,7 +357,24 @@ class Plotter:
             ax.yaxis.set_major_formatter(MathTextSciFormatter(formater))
         if 'x' in axis:
             ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
-              
+    
+    @staticmethod
+    def set_standard_formater(ax, axis = 'xy'):
+        """
+        Sets the formatter for the given axis on the plot.
+        Args:
+            ax (object): The axis object on which to set the formatter.
+            axis (str, optional): The axis on which to set the formatter. Defaults to 'xy'.
+        Returns:
+            None
+        """
+        if 'x' in axis:
+            ax.xaxis.set_minor_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+        if 'y' in axis:
+            ax.yaxis.set_minor_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+    
     #################### G R I D S ####################
     
     @staticmethod
@@ -453,8 +470,8 @@ class Plotter:
     @staticmethod
     def get_subplots(   nrows  =   1,
                         ncols  =   1,
-                        sizex  =   10,
-                        sizey  =   10,
+                        sizex  =   10.,
+                        sizey  =   10.,
                         **kwargs):
         if ncols == 1 and nrows == 1:
             fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
@@ -515,6 +532,27 @@ class PlotterSave:
         with open(directory + f"{fileName}.json", "r") as readfile:
             dict2load = json.loads(readfile.read())
         return dict2load
+    
+#################################################
+
+    @staticmethod
+    def json2dict_multiple(directory : str,
+                           keys      : list):
+        '''
+        Based on the specified keys, load the dictionaries from the json files
+        The keys are the names of the files as well!
+        '''
+        # create the dictionary
+        data2plot = {}
+        
+        # create empty dictionaries
+        for key in keys:
+            data2plot[key] = {}
+            
+        for f_op in data2plot.keys():
+            data2plot[f_op] = PlotterSave.json2dict(directory, f_op)
+        
+        return data2plot
     
 #################################################
 
