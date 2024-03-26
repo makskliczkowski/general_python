@@ -1,6 +1,7 @@
 from scipy.signal import savgol_filter
 from scipy.stats import gmean
 from scipy.stats import kurtosis
+from numpy.lib.stride_tricks import sliding_window_view
 
 from .__math__ import *
 
@@ -75,6 +76,8 @@ def moveAverage(a, n : int) :
     
     """
     if isinstance(a, np.ndarray):
+        # return np.convolve(a, np.ones(n), 'valid') / n
+        return sliding_window_view(a, n, axis = 0).mean(axis = -1)
         ret         =       np.cumsum(a, axis = 0, dtype=float)
         ret[n:]     =       ret[n:] - ret[:-n]
         return      ret[n - 1:] / n
@@ -122,3 +125,36 @@ def gauss(x : np.ndarray, mu, sig, *args):
         return 1/np.sqrt(2 * PI * sig**2) * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     
 ######################################################## FINDERS #####################################################
+
+class Histogram:
+    
+    @staticmethod
+    def iqr(data : np.ndarray) -> float:
+        '''
+        Interquartile range of the data
+        - data : data to calculate the IQR
+        '''
+        return float(np.percentile(data, 75)) - float(np.percentile(data, 25))
+
+    @staticmethod
+    def freedman_diaconis_rule(nobs : int, iqr : float, mx : float, mn = 0.0):
+        '''
+        Freedman-Diaconis rule for the number of bins. 
+        - nobs : number of observations
+        - iqr : interquartile range
+        - mx : maximum value
+        - mn : minimum value
+        '''
+        h = (2.0 * iqr / np.power(nobs, 1.0 / 3.0))
+        return int(np.ceil((mx - mn) / h))
+    
+    #################################################
+    
+    @staticmethod
+    def limit_logspace_val(value, base = 10):
+        if base == 10:
+            return np.ceil(np.log10(value))
+        elif base == 2:
+            return np.ceil(np.log2(value))
+        else:
+            return np.ceil(np.log(value))

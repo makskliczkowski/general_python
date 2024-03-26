@@ -2,6 +2,10 @@ from .__random__ import *
 from scipy.optimize import curve_fit as fit
 from scipy.interpolate import splrep, BSpline
 from scipy import interpolate
+
+from scipy.stats import poisson, norm, expon, gaussian_kde
+from scipy.special import gamma
+
 # fit the functions
 import pandas as pd
 
@@ -132,6 +136,7 @@ class Fitter:
         return FitterParams(lambda x: a * x + b, [a, b], [])
 
     #############
+    
     def fit_exp(self,
                 skipF   = 0,
                 skipL   = 0):
@@ -260,3 +265,131 @@ class Fitter:
         popt, pcov      =       fit(funct, xfit, yfit)
         return FitterParams(lambda x: funct(x, *popt), popt, pcov)
     
+    #################### H I S T O #################### 
+
+    @staticmethod
+    def cauchy(x, x0 = 0., gamma = 1.0, v = 1.0):
+        '''
+        Cauchy distribution
+        - x     :   arguments
+        - x0    :   x0 parameter
+        - gamma :   gamma parameter
+        '''
+        y = v / ((x - x0)**2 + gamma**2)
+        return y
+
+    @staticmethod
+    def pareto(x, v = 1.0, alpha = 1.0, xm = 1.0, mu = 0.0):
+        '''
+        Pareto distribution
+        - x     :   arguments
+        - alpha :   alpha parameter
+        - xm    :   xm parameter
+        '''
+        return v * np.power(1.0 + alpha * (np.abs(x - mu)), -1.0 / xm - 1.0)
+        return (alpha * xm ** alpha) / (np.abs(x) ** (alpha + 1))
+    
+    @staticmethod
+    def poisson(x, lambd = 1.0, v = 1.0):
+        '''
+        Poisson distribution
+        - k     :   arguments
+        - lamb  :   lambda parameter
+        '''
+        return v * np.exp(-lambd * (np.abs(x)))
+    
+    @staticmethod
+    def chi2(x, k = 1.0, v = 1.0, z = 1.0):
+        '''
+        Chi2 distribution
+        - x     :   arguments
+        - k     :   k parameter
+        '''
+        return v * np.exp(-np.abs(z * x) / 2) * (np.abs(x) ** (k / 2 - 1)) / (2 ** (k/2) * gamma(k/2))
+    
+    @staticmethod
+    def gaussian(x, mu = 0.0, sigma = 1.0):
+        '''
+        Gaussian distribution
+        - x     :   arguments
+        - mu    :   mean
+        - sigma :   standard deviation
+        '''
+        return norm.pdf(x, mu, sigma)
+    
+    @staticmethod
+    def laplace(x, lambd = 1.0, v = 1.0, mu = 0.0):
+        '''
+        Laplace distribution
+        - x     :   arguments
+        - mu    :   mean
+        - b     :   scale parameter
+        '''
+        return (0.5 + 0.5 * np.sign(x-mu) * (1.0 - np.exp(-np.abs(x - mu) / lambd))) / (v)
+    
+    @staticmethod
+    def exponential(x, lambd, sigma):
+        '''
+        Exponential distribution
+        - x     :   arguments
+        - lambd :   lambda parameter
+        '''
+        return sigma * np.exp(-lambd * np.abs(x))
+    
+    @staticmethod
+    def lorentzian(x, x0 = 0., g = 1.0, v = 1.0):
+        '''
+        Lorentzian distribution
+        - x     :   arguments
+        - x0    :   x0 parameter
+        - gamma :   gamma parameter
+        '''
+        return v * (g / (np.pi * ((x - x0)**2 + g**2)))
+    
+    @staticmethod
+    def fit_histogram(edges,
+                      counts, 
+                      typ = 'gaussian'):
+        
+        centers = (edges[:-1] + edges[1:]) / 2
+        funct   = Fitter.gaussian
+        if typ == 'gaussian':
+            funct = Fitter.gaussian
+        elif typ == 'poisson':
+            funct = Fitter.poisson
+        elif typ == 'laplace':
+            funct = Fitter.laplace
+        elif typ == 'exponential':
+            funct = Fitter.exponential
+        elif typ == 'pareto':
+            funct = Fitter.pareto
+        elif typ == 'cauchy':
+            funct = Fitter.cauchy
+        elif typ == 'chi2':
+            funct = Fitter.chi2
+        elif typ == 'lorentzian':
+            funct = Fitter.lorentzian
+        else:
+            raise ValueError('Type not recognized: ' + typ)
+            
+        popt, pcov = fit(funct, centers, counts)
+        return FitterParams(lambda x: funct(x, *popt), popt, pcov)
+    
+    @staticmethod
+    def get_histogram(typ = 'gaussian'):
+        funct = Fitter.gaussian
+        if typ == 'gaussian':
+            funct = Fitter.gaussian
+        elif typ == 'poisson':
+            funct = Fitter.poisson
+        elif typ == 'laplace':
+            funct = Fitter.laplace
+        elif typ == 'exponential':
+            funct = Fitter.exponential
+        elif typ == 'pareto':
+            funct = Fitter.pareto
+        elif typ == 'cauchy':
+            funct = Fitter.cauchy
+        else:
+            raise ValueError('Type not recognized: ' + typ)
+        return funct

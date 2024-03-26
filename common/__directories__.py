@@ -16,7 +16,7 @@ class Directories(str):
     def __new__(cls, *args):
         return str.__new__(cls, cls.makeDir(*args))
     
-    def __init__(self, *args) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         '''
         Initialize a directory handler.
         '''

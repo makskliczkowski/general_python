@@ -5,6 +5,11 @@ from scipy.special import polygamma
 from scipy.special import erf, erfinv
 from scipy.optimize import curve_fit
 from scipy.linalg import svd
+
+# gap ratio average values
+rgoe        = 0.5307
+pois        = 0.386294
+
 ####################################################### REDUCED DENSITY MATRIX #######################################################
 
 '''
@@ -112,27 +117,50 @@ def mean_entropy(df : pd.DataFrame, row : int):
     ent_np = df.to_numpy()
     return np.mean(ent_np[row])
 
-'''
-Calculate the gaussianity <|Oab|^2>/<|Oab|>^2 -> for normal == pi/2
-'''
-def gaussianity(arr : np.ndarray, axis = None):
-    if axis is not None:
-        return np.mean(np.square(arr), axis = axis) / np.square(np.mean(arr, axis = axis))
-    return np.mean(np.square(arr))/np.square(np.mean(arr))
 
-'''
-Calculate the modulus fidelity - should be 2/pi for gauss
-- states : np.array of eigenstates
-'''
-def modulus_fidelity(states : np.ndarray):
-    Ms = []
-    for i in range(0, states.shape[-1] - 1):
-        Ms.append(np.dot(states[:, i], states[:, i+1]))
-    return np.mean(Ms)
+
+class StatMeasures:
+
+    @staticmethod
+    def gaussianity(arr : np.ndarray, axis = None):
+        '''
+        Calculate the gaussianity <|Oab|^2>/<|Oab|>^2 -> for normal == pi/2
+        - arr : array to calculate the gaussianity
+        - axis : axis to calculate the gaussianity
+        '''
+        if axis is not None:
+            return np.mean(np.square(arr), axis = axis) / np.square(np.mean(arr, axis = axis))
+        return np.mean(np.square(arr))/np.square(np.mean(arr))
+    
+    ##############################################################
+    
+    @staticmethod
+    def binder_cumulant(arr : np.ndarray, axis = None):
+        '''
+        Calculate the binder cumulant <|Oab|^4>/(3 * <|Oab|^2>^2) -> for normal == 2/3
+        - arr : array to calculate the binder cumulant
+        '''
+        if axis is not None:
+            return np.mean(np.power(arr, 4), axis = axis) / (3 * np.square(np.mean(np.square(arr), axis = axis)))
+        return np.mean(np.power(arr, 4)) / (3 * np.square(np.mean(np.square(arr))))
+    
+    ##############################################################
+    
+    '''
+    Calculate the modulus fidelity - should be 2/pi for gauss
+    - states : np.array of eigenstates
+    '''
+    @staticmethod
+    def modulus_fidelity(states : np.ndarray):
+        Ms = []
+        for i in range(0, states.shape[-1] - 1):
+            Ms.append(np.dot(states[:, i], states[:, i+1]))
+        return np.mean(Ms)
 
 '''
 Calculate the information entropy for given states
 '''
+@staticmethod
 def info_entropy(states : np.ndarray, model_info : str):
     try:
         entropies = []

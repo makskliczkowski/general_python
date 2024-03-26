@@ -14,6 +14,7 @@ from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
 
+import numpy as np
 mpl.rcParams.update(mpl.rcParamsDefault)
 plt.rcParams['axes.facecolor']      =   'white'
 plt.rcParams['savefig.facecolor']   =   'w'
@@ -93,6 +94,34 @@ class Plotter:
     A Plotter class that handles the methods of plotting.
     """
     
+    ################### C O L O R S ###################
+
+    @staticmethod
+    def add_colorbar(axes, fig, cmap, title = '', norm = None, *args, **kwargs):
+        '''
+        Add colorbar to the plot. 
+        - axes      :   axis to add the colorbar to
+        - fig       :   figure to add the colorbar to
+        - cmap      :   colormap to use
+        - title     :   title of the colorbar
+        - norm      :   normalization of the colorbar
+        '''
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        
+        # add colorbar
+        cbar    = fig.colorbar(sm, ax = axes, *args, **kwargs)
+        cbar.ax.set_title(title)
+        return cbar
+    
+    @staticmethod
+    def get_colormap(values, cmap = 'PuBu', elsecolor = 'blue'):
+        norm        = plt.Normalize(np.min(values), np.max(values))
+        colors      = plt.get_cmap(cmap)
+        values      = np.sort(values)
+        getcolor    = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
+        return getcolor, colors, norm
+    
     #################### A N N O T ####################
     
     @staticmethod
@@ -102,6 +131,7 @@ class Plotter:
                         y       : float,
                         fontsize= None,
                         xycoords= 'axes fraction',
+                        cond    = True,
                         **kwargs):
         '''
         @staticmethod
@@ -114,7 +144,8 @@ class Plotter:
         - fontsize  :   fontsize
         - xycoords  :   how to interpret the coordinates (from MPL)
         '''
-        ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
+        if cond:
+            ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
 
     ##################### F I T S #####################
     
@@ -215,7 +246,8 @@ class Plotter:
                         labelPad    =   0.0,
                         lim         =   None,
                         fontsize    =   None,
-                        title       =   ''):
+                        title       =   '',
+                        labelCond   =   True):
         '''
         Sets the parameters of the axes
         - ax        : axis to use
@@ -231,7 +263,7 @@ class Plotter:
         # check x axis
         if 'x' in which:
             if label != "":
-                ax.set_xlabel(label, 
+                ax.set_xlabel(label if labelCond else "", 
                             fontsize = fontsize,
                             labelpad = labelPad if labelPad != 0 else None)
             if lim is not None:
@@ -243,7 +275,7 @@ class Plotter:
         # check y axis
         if 'y' in which:
             if label != "":
-                ax.set_ylabel(label, 
+                ax.set_ylabel(label if labelCond else "", 
                             fontsize = fontsize,
                             labelpad = labelPad if labelPad != 0 else None)
             if lim is not None:
@@ -313,9 +345,13 @@ class Plotter:
         ax.spines['bottom'].set_visible(bottom)
         ax.spines['left'].set_visible(left)
         if not xticks:
+            ax.tick_params(labelbottom  = False)    
             plt.setp(ax.get_xticklabels(), visible=False)
+            # ax.axes.get_xaxis().set_visible(False)
         if not yticks:
+            ax.tick_params(labelleft    = False)    
             plt.setp(ax.get_yticklabels(), visible=False)
+            # ax.axes.get_yaxis().set_visible(False)
 
     @staticmethod
     def unset_ticks(    ax,
@@ -327,10 +363,19 @@ class Plotter:
         '''
         Disables the ticks on the axis
         '''
-        if not xticks and erease:
-            ax.set_xticks([])
-        if not yticks and erease:
-            ax.set_yticks([])            
+        if not xticks:
+            ax.set_xticks([], minor=False)
+            ax.set_xticklabels([], minor=False)
+            ax.xaxis.set_tick_params(which='both', labelbottom = False)
+            if erease:
+                ax.axes.get_xaxis().set_visible(False)
+        if not yticks:
+            ax.set_yticks([], minor=False)
+            ax.set_yticklabels([], minor=False)
+            ax.yaxis.set_tick_params(which='both', labelleft = False)
+            if erease:
+                ax.axes.get_yaxis().set_visible(False)
+            
         Plotter.unset_spines(ax,    xticks = xticks, 
                                     yticks = yticks, 
                                     left = not ((not spines) and (not yticks)), 
