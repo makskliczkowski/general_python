@@ -117,7 +117,19 @@ def mean_entropy(df : pd.DataFrame, row : int):
     ent_np = df.to_numpy()
     return np.mean(ent_np[row])
 
+class HamiltonianProperties:
+    
+    @staticmethod
+    def hilbert_schmidt_norm(mat : np.ndarray):
+        """ Creates the Hilbert-Schmidt norm of the matrix.
+        Args:
+            mat (np.ndarray): matrix to calculate the norm of
 
+        Returns:
+            _type_: The Hilbert-Schmidt norm of the matrix.
+        """
+        # return np.trace(mat * mat) / mat.shape[0]
+        return np.trace(np.matmul(mat, np.conj(mat).T)) / mat.shape[0]
 
 class StatMeasures:
 

@@ -5,6 +5,24 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 from .__math__ import *
 
+
+def take_fraction(frac : float, data):
+    '''
+    Take a fraction of the data
+    '''
+    sizeData = len(data)
+    if frac < 1.0:
+        toTake = int(frac * sizeData)
+        if toTake <= 1 or toTake == sizeData:
+            return data
+        return data[sizeData // 2 - toTake // 2: sizeData // 2 + toTake // 2]
+    elif frac > 1.0:
+        toTake = int(frac)
+        if toTake >= sizeData:
+            return data
+        return data[sizeData // 2 - toTake // 2: sizeData // 2 + toTake // 2]
+    return data
+
 ############################################### STATISTICAL AVERAGING ###############################################
 
 def rebin(arr, av_num : int, d : int, rng = None):

@@ -229,9 +229,9 @@ class Plotter:
         ax.tick_params(axis='both', which='major', left=left, right=right, 
                        top=top, bottom=bottom, labelsize=labelsize)
         ax.tick_params(axis="both", which='major', left=left, right=right, 
-                       top=top, bottom=bottom, direction="in",length=6, **kwargs)
-        ax.tick_params(axis="both", which='minor', left=left, right=right, 
                        top=top, bottom=bottom, direction="in",length=3, **kwargs)
+        ax.tick_params(axis="both", which='minor', left=left, right=right, 
+                       top=top, bottom=bottom, direction="in",length=1.5, **kwargs)
 
         if xticks is not None:
             ax.set_xticks(xticks)

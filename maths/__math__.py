@@ -58,7 +58,7 @@ class FitterParams(object):
     Class that stores only the parameters of the fit function
     '''
     
-    def __init__(self, funct = None, popt = [], pcov = []) -> None:
+    def __init__(self, funct, popt, pcov) -> None:
         self.popt   = popt
         self.pcov   = pcov
         self.funct  = funct
@@ -72,7 +72,6 @@ class FitterParams(object):
     def get_fun(self):
         return self.funct
     
-
 class Fitter:
     '''
     Class that contains the fit functions and their general usage.
@@ -268,6 +267,17 @@ class Fitter:
     #################### H I S T O #################### 
 
     @staticmethod
+    def gen_cauchy(x, v = 1.0, gamma = 1.0, alpha = 1.0, beta = 1.0):
+        '''
+        Generalized Cauchy distribution
+        - v is the normalization factor
+        - α is the stability parameter, often referred to as the shape parameter,
+        - β is the scale parameter,
+        - γ is a scale parameter related to the width of the distribution.
+        '''
+        return v * gamma * (1 + (x * gamma / beta)**2) ** (-(alpha + 1) / 2)
+    
+    @staticmethod
     def cauchy(x, x0 = 0., gamma = 1.0, v = 1.0):
         '''
         Cauchy distribution
@@ -337,21 +347,55 @@ class Fitter:
         return sigma * np.exp(-lambd * np.abs(x))
     
     @staticmethod
-    def lorentzian(x, x0 = 0., g = 1.0, v = 1.0):
+    def lorentzian(x, v = 1.0, g = 1.0):
         '''
         Lorentzian distribution
         - x     :   arguments
         - x0    :   x0 parameter
         - gamma :   gamma parameter
         '''
-        return v * (g / (np.pi * ((x - x0)**2 + g**2)))
+        return v * g / ((x)**2 + g**2)
+    
+    @staticmethod
+    def two_lorentzian(x, v = 1.0, g1 = 1.0, g2 = 1.0, v2 = 1.0):
+        '''
+        Two Lorentzian distribution
+        - x     :   arguments
+        - x0    :   x0 parameter
+        - gamma :   gamma parameter
+        '''
+        if g1 < 0 or g2 < 0:
+            return 1.0E10
+        if v < 0 or v2 < 0:
+            return 1.0E10
+        
+        # return v * (g1 / ((x)**2 + g1**2) + g2 / ((x)**2 + g2**2))
+        return Fitter.lorentzian(x, v, g1) + Fitter.lorentzian(x, v2, g2)
+    
+    # parametrized
+    
+    @staticmethod
+    def lorentzian_system_size(param):
+        def lorentzian(x, g = 1.0, v = 1.0):
+            return v * (g / param[0]) / ( (x)**2 + (g / param[0])**2 )
+        return lorentzian
+    
+    #################### H I S T O ####################
     
     @staticmethod
     def fit_histogram(edges,
                       counts, 
-                      typ = 'gaussian'):
+                      typ       = 'gaussian',
+                      skipF     = 0,
+                      skipL     = 0,
+                      centers   = [],
+                      params    = []):
         
-        centers = (edges[:-1] + edges[1:]) / 2
+        if len(centers) == 0:
+            if len(edges) <= 1:
+                raise ValueError('Edges must have at least 2 elements')
+            centers = ((edges[:-1] + edges[1:]) / 2)
+            
         funct   = Fitter.gaussian
         if typ == 'gaussian':
             funct = Fitter.gaussian
@@ -365,14 +409,21 @@ class Fitter:
             funct = Fitter.pareto
         elif typ == 'cauchy':
             funct = Fitter.cauchy
+        elif typ == 'gen_cauchy':
+            funct = Fitter.gen_cauchy
         elif typ == 'chi2':
             funct = Fitter.chi2
-        elif typ == 'lorentzian':
+        elif typ == 'lorenzian':
             funct = Fitter.lorentzian
+        elif typ == 'two_lorenzian':
+            funct = Fitter.two_lorentzian
+        elif typ == 'lorenzian_system_size':
+            funct = Fitter.lorentzian_system_size(params)
         else:
             raise ValueError('Type not recognized: ' + typ)
-            
-        popt, pcov = fit(funct, centers, counts)
+        
+        centers, counts = Fitter.skip(centers, counts, skipF, skipL)
+        popt, pcov      = fit(funct, centers, counts)
         return FitterParams(lambda x: funct(x, *popt), popt, pcov)
     
     @staticmethod
