@@ -2,6 +2,36 @@ from datetime import datetime
 import logging
 import os
 
+############################################### PRINT THE OUTPUT WITH A GIVEN COLOR ###############################################
+
+class Colors:
+    black   = r"\033[30m"
+    red		= r"\033[31m"
+    green	= r"\033[32m"
+    yellow	= r"\033[33m"
+    blue	= r"\033[34m"
+    white   = r"\033[0m"
+    
+    def __init__(self, color : str):
+        self.color = color
+
+    def __str__(self) -> str:
+        if self.color == "black":
+            return Colors.black
+        elif self.color == "red":
+            return Colors.red
+        elif self.color == "green":
+            return Colors.green
+        elif self.color == "yellow":
+            return Colors.yellow
+        elif self.color == "blue":
+            return Colors.blue
+        else:
+            return Colors.white
+        
+    def __repr__(self) -> str:
+        return str(self)
+
 ############################################### PRINT THE OUTPUT WITH A GIVEN LEVEL ###############################################
 
 class Logger:
@@ -27,6 +57,15 @@ class Logger:
         self.logger      = logging.getLogger(__name__)  
         self.logfile     = logfile
         self.working     = False
+    
+    ###############################################
+    
+    @staticmethod
+    def colorize(txt, color : str):
+        
+        return str(Colors(color)) + str(txt) + Colors.white
+    
+    ###############################################
     
     def configure(self, directory : str):
         '''

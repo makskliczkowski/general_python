@@ -19,7 +19,7 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
         return data
     try:
         # check the file
-        if file.endswith('.h5'):
+        if file.endswith('.h5') or file.endswith('.hdf5') or file.endswith('.hdf'):
             with h5py.File(file, "r") as f:
                 # all root level object names (aka keys) 
                 # these can be group or dataset names 
@@ -43,12 +43,18 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
                     data[i] = np.array(f[i][()])     
         return data
     except Exception as e:
-        logging.error(e)
+        logging.info(f"Can't open hdf5 file: {file}")
+        logging.info(str(e))
         if "truncated" in str(e) or "doesn't exist" in str(e) and removeBad:
-            logging.error(f"Removing {file}")
+            logging.info(f"Removing {file}")
             os.remove(file)
+        elif "setting an array element with a sequence." in str(e):
+            logging.info("WTFFF\n\n\nn\nn\n\"}")
+            if removeBad:
+                logging.info(f"Removing {file}")
+                os.remove(file)
         else:
-            logging.error(f"Can't open hdf5 file: {file}")
+            logging.info(f"Can't open hdf5 file: {file}")
         return {}
 
 ####################################################### SAVE HDF5 FILE #######################################################

@@ -16,12 +16,25 @@ class Directories(str):
     def __new__(cls, *args):
         return str.__new__(cls, cls.makeDir(*args))
     
-    def __init__(self, *args) -> None:
+    def __init__(self, *args, **kwargs) -> None:
         '''
         Initialize a directory handler.
         '''
         super(Directories, self).__init__()
-        
+    
+    ############################################################################
+    
+    def format_str(self, *args, **kwargs) -> "Directories":
+        if not args and not kwargs:
+            return Directories("")
+        return Directories(self.format(*args, **kwargs))
+    
+    ############################################################################
+    
+    @staticmethod
+    def win(st : str) -> "Directories":
+        return Directories(*st.split('\\'))
+    
     ############################################################################
     
     @staticmethod
@@ -61,7 +74,8 @@ class Directories(str):
         if tmp[-1] == kPS:
             tmp = tmp[:-1]
         # remove while we don't get the path separator or to the end of the directory
-        while tmp[-1] != kPS and tmp[-1] != '.' and len(tmp) > 0:
+        # while tmp[-1] != kPS and tmp[-1] != '.' and len(tmp) > 0:
+        while tmp[-1] != kPS and len(tmp) > 0:
             tmp = tmp[:-1]
         # check if it's just a current directory 
         if tmp == '.':
@@ -177,14 +191,14 @@ class Directories(str):
     def listDir(directory      :   str, 
                 clearEmpty     =   False, 
                 conditions     =   [],
-                sortCondition  =   None):
+                sortCondition  =   None,
+                appendDir      =   False) -> list[str]:
         '''
         Lists a specific directory and gives the files that match a condition.
         - directory     : directory to be listed
         - clearEmpty    : shall clear empty files?
         - conditions    : lambda functions to be applied to filenames or files
         '''
-        print(directory)
         files       =   list(os.listdir(directory))
 
         # go through conditions
@@ -197,9 +211,13 @@ class Directories(str):
             
         if sortCondition is not None:
             files   =   sorted(files, key = sortCondition)
+        
+        if appendDir:
+            files   =   [directory + file for file in files]
+            
         return list(files)
     
-    def list_dir(self, clearEmpty = False, conditions = [], sortCondition = None):
-        return Directories.listDir(self, clearEmpty, conditions, sortCondition)
+    def list_dir(self, clearEmpty = False, conditions = [], sortCondition = None, appendDir = False) -> list[str]:
+        return Directories.listDir(self, clearEmpty, conditions, sortCondition, appendDir = appendDir)
     
     ############################################################################

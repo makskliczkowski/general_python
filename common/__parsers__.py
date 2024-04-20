@@ -1,4 +1,5 @@
 import pandas as pd
+import traceback
 
 ####################################################### DATAFRAME PARSE #######################################################
 
@@ -22,6 +23,45 @@ def parse_dataframe(df      : pd.DataFrame,
         tmp = tmp[tmp[key].isin(params[key])]
     return tmp
 
+######################################################## EXCEPTIONS! ########################################################
+
+import sys
+import os
+
+class ExceptionHandler:
+    
+    @staticmethod
+    def handle(e, msg : str, *args):
+        '''
+        Handles the exception. 
+        - e     : exception
+        - msg   : message to be printed
+        - skip  : list of exceptions to be skipped
+        '''
+        show_exception = True
+        
+        for s in args:
+            if isinstance(e, s):
+                show_exception = False
+                break
+        
+        if show_exception:
+            exc_type, exc_obj, exc_tb   = sys.exc_info()
+            print("----------------------------------------------------")
+            
+            # frame print
+            if exc_tb.tb_frame is not None:
+                fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                if exc_tb is not None:
+                    print(f"Error in file {fname}, line {exc_tb.tb_lineno}")
+                    
+            print(f"Error: {e}")
+            print(f"Msg: {msg}")
+            print(traceback.format_exc())
+            
+            print("----------------------------------------------------")
+            
+            
 ######################################################## STRING PARSER ########################################################
 
 class StringParser:   

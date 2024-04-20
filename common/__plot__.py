@@ -14,6 +14,7 @@ from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
 
+import numpy as np
 mpl.rcParams.update(mpl.rcParamsDefault)
 plt.rcParams['axes.facecolor']      =   'white'
 plt.rcParams['savefig.facecolor']   =   'w'
@@ -120,6 +121,33 @@ class Plotter:
         if alpha is not None:
             dictionary['alpha'] = alpha
         return dictionary
+    ################### C O L O R S ###################
+
+    @staticmethod
+    def add_colorbar(axes, fig, cmap, title = '', norm = None, *args, **kwargs):
+        '''
+        Add colorbar to the plot. 
+        - axes      :   axis to add the colorbar to
+        - fig       :   figure to add the colorbar to
+        - cmap      :   colormap to use
+        - title     :   title of the colorbar
+        - norm      :   normalization of the colorbar
+        '''
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        
+        # add colorbar
+        cbar    = fig.colorbar(sm, ax = axes, *args, **kwargs)
+        cbar.ax.set_title(title)
+        return cbar
+    
+    @staticmethod
+    def get_colormap(values, cmap = 'PuBu', elsecolor = 'blue'):
+        norm        = plt.Normalize(np.min(values), np.max(values))
+        colors      = plt.get_cmap(cmap)
+        values      = np.sort(values)
+        getcolor    = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
+        return getcolor, colors, norm
     
     #################### A N N O T ####################
     
@@ -130,6 +158,7 @@ class Plotter:
                         y       : float,
                         fontsize= None,
                         xycoords= 'axes fraction',
+                        cond    = True,
                         **kwargs):
         '''
         @staticmethod
@@ -142,7 +171,8 @@ class Plotter:
         - fontsize  :   fontsize
         - xycoords  :   how to interpret the coordinates (from MPL)
         '''
-        ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
+        if cond:
+            ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
 
     ##################### F I T S #####################
     
@@ -245,7 +275,8 @@ class Plotter:
                         labelPad    =   0.0,
                         lim         =   None,
                         fontsize    =   None,
-                        title       =   ''):
+                        title       =   '',
+                        labelCond   =   True):
         '''
         Sets the parameters of the axes
         - ax        : axis to use
@@ -261,7 +292,7 @@ class Plotter:
         # check x axis
         if 'x' in which:
             if label != "":
-                ax.set_xlabel(label, 
+                ax.set_xlabel(label if labelCond else "", 
                             fontsize = fontsize,
                             labelpad = labelPad if labelPad != 0 else None)
             if lim is not None:
@@ -273,7 +304,7 @@ class Plotter:
         # check y axis
         if 'y' in which:
             if label != "":
-                ax.set_ylabel(label, 
+                ax.set_ylabel(label if labelCond else "", 
                             fontsize = fontsize,
                             labelpad = labelPad if labelPad != 0 else None)
             if lim is not None:
@@ -343,9 +374,13 @@ class Plotter:
         ax.spines['bottom'].set_visible(bottom)
         ax.spines['left'].set_visible(left)
         if not xticks:
+            ax.tick_params(labelbottom  = False)    
             plt.setp(ax.get_xticklabels(), visible=False)
+            # ax.axes.get_xaxis().set_visible(False)
         if not yticks:
+            ax.tick_params(labelleft    = False)    
             plt.setp(ax.get_yticklabels(), visible=False)
+            # ax.axes.get_yaxis().set_visible(False)
 
     @staticmethod
     def unset_ticks(    ax,
@@ -357,10 +392,19 @@ class Plotter:
         '''
         Disables the ticks on the axis
         '''
-        if not xticks and erease:
-            ax.set_xticks([])
-        if not yticks and erease:
-            ax.set_yticks([])            
+        if not xticks:
+            ax.set_xticks([], minor=False)
+            ax.set_xticklabels([], minor=False)
+            ax.xaxis.set_tick_params(which='both', labelbottom = False)
+            if erease:
+                ax.axes.get_xaxis().set_visible(False)
+        if not yticks:
+            ax.set_yticks([], minor=False)
+            ax.set_yticklabels([], minor=False)
+            ax.yaxis.set_tick_params(which='both', labelleft = False)
+            if erease:
+                ax.axes.get_yaxis().set_visible(False)
+            
         Plotter.unset_spines(ax,    xticks = xticks, 
                                     yticks = yticks, 
                                     left = not ((not spines) and (not yticks)), 
@@ -373,13 +417,13 @@ class Plotter:
     @staticmethod
     def set_formater(ax, 
                      formater = "%.1e",
-                     axis     = 'both'):
+                     axis     = 'xy'):
         """
         Sets the formatter for the given axis on the plot.
         Args:
             ax (object): The axis object on which to set the formatter.
             formater (str, optional): The format string for the axis labels. Defaults to "%.1e".
-            axis (str, optional): The axis on which to set the formatter. Defaults to 'both'.
+            axis (str, optional): The axis on which to set the formatter. Defaults to 'xy'.
         Returns:
             None
         """
@@ -387,7 +431,24 @@ class Plotter:
             ax.yaxis.set_major_formatter(MathTextSciFormatter(formater))
         if 'x' in axis:
             ax.xaxis.set_major_formatter(MathTextSciFormatter(formater))
-              
+    
+    @staticmethod
+    def set_standard_formater(ax, axis = 'xy'):
+        """
+        Sets the formatter for the given axis on the plot.
+        Args:
+            ax (object): The axis object on which to set the formatter.
+            axis (str, optional): The axis on which to set the formatter. Defaults to 'xy'.
+        Returns:
+            None
+        """
+        if 'x' in axis:
+            ax.xaxis.set_minor_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+        if 'y' in axis:
+            ax.yaxis.set_minor_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+    
     #################### G R I D S ####################
     
     @staticmethod
@@ -483,8 +544,8 @@ class Plotter:
     @staticmethod
     def get_subplots(   nrows  =   1,
                         ncols  =   1,
-                        sizex  =   10,
-                        sizey  =   10,
+                        sizex  =   10.,
+                        sizey  =   10.,
                         **kwargs):
         if ncols == 1 and nrows == 1:
             fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
@@ -514,9 +575,58 @@ class Plotter:
 
 
 import numpy as np
-    
+import json
     
 class PlotterSave:
+    
+#################################################
+
+    @staticmethod
+    def dict2json(  directory    :   str,
+                    fileName     :   str,
+                    data):
+        '''
+        Save dictionary to json file
+        - directory : directory to save the file
+        - fileName  : name of the file
+        - data      : dictionary to save
+        '''
+        with open(directory + fileName + '.json', 'w') as fp:
+            json.dump(data, fp)
+
+#################################################
+
+    @staticmethod
+    def json2dict(  directory    :   str,
+                    fileName     :   str) -> dict:
+        '''
+        Load dictionary from json file
+        '''
+        dict2load = {}
+        with open(directory + f"{fileName}.json", "r") as readfile:
+            dict2load = json.loads(readfile.read())
+        return dict2load
+    
+#################################################
+
+    @staticmethod
+    def json2dict_multiple(directory : str,
+                           keys      : list):
+        '''
+        Based on the specified keys, load the dictionaries from the json files
+        The keys are the names of the files as well!
+        '''
+        # create the dictionary
+        data2plot = {}
+        
+        # create empty dictionaries
+        for key in keys:
+            data2plot[key] = {}
+            
+        for f_op in data2plot.keys():
+            data2plot[f_op] = PlotterSave.json2dict(directory, f_op)
+        
+        return data2plot
     
 #################################################
 

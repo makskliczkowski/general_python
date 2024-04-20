@@ -1,5 +1,6 @@
 ##################### G E N E R A L   I M P O R T S #####################
 import sys
+import typing
 # Adds higher directory to python modules path.
 sys.path.append("./common/")
 
