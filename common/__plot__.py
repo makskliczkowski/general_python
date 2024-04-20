@@ -93,6 +93,34 @@ class Plotter:
     A Plotter class that handles the methods of plotting.
     """
     
+    @staticmethod
+    def get_figsize(columnwidth, wf = 0.5, hf = (5.**0.5-1.0) / 2.0):
+      """
+      Parameters:
+        - wf [float]:  width fraction in columnwidth units
+        - hf [float]:  height fraction in columnwidth units.
+                       Set by default to golden ratio.
+        - columnwidth [float]: width of the column in latex. Get this from LaTeX 
+                               using \showthe\columnwidth
+      Returns:  [fig_width,fig_height]: that should be given to matplotlib
+      """
+      fig_width_pt  = columnwidth * wf 
+      inches_per_pt = 1.0 / 72.27                       # Convert pt to inch
+      fig_width     = fig_width_pt * inches_per_pt      # width in inches
+      fig_height    = fig_width * hf                # height in inches
+      return [fig_width, fig_height]
+    
+    @staticmethod 
+    def get_color(color,
+                  alpha = None,
+                  edgecolor = (0,0,0,1), 
+                  facecolor = (1,1,1,0)
+                  ):
+        dictionary = dict(facecolor = facecolor, edgecolor = edgecolor)
+        if alpha is not None:
+            dictionary['alpha'] = alpha
+        return dictionary
+    
     #################### A N N O T ####################
     
     @staticmethod
@@ -182,6 +210,8 @@ class Plotter:
                         bottom      =   True,
                         xticks      =   None,
                         yticks      =   None,
+                        maj_tick_l  =   6,
+                        min_tick_l  =   3,
                         **kwargs
                         ):
         '''
@@ -198,9 +228,9 @@ class Plotter:
         ax.tick_params(axis='both', which='major', left=left, right=right, 
                        top=top, bottom=bottom, labelsize=labelsize)
         ax.tick_params(axis="both", which='major', left=left, right=right, 
-                       top=top, bottom=bottom, direction="in",length=6, **kwargs)
+                       top=top, bottom=bottom, direction="in",length=maj_tick_l, **kwargs)
         ax.tick_params(axis="both", which='minor', left=left, right=right, 
-                       top=top, bottom=bottom, direction="in",length=3, **kwargs)
+                       top=top, bottom=bottom, direction="in",length=min_tick_l, **kwargs)
 
         if xticks is not None:
             ax.set_xticks(xticks)
