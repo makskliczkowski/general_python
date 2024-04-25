@@ -1,5 +1,6 @@
 import os
 import random
+import shutil
 from .__flog__ import *
 
 kPS = os.sep
@@ -221,3 +222,28 @@ class Directories(str):
         return Directories.listDir(self, clearEmpty, conditions, sortCondition, appendDir = appendDir)
     
     ############################################################################
+    
+    @staticmethod
+    def transferFiles(dirFrom,
+                      dirInto,
+                      filereg : list):
+        if not os.path.exists(dirFrom):
+            return
+        # create directory if not exist
+        Directories.createFolder(dirInto)
+        # list files and go through them
+        filesFrom = dirFrom.list_dir(conditions=filereg)
+        for f in filesFrom:
+            try:
+                if os.path.exists(dirFrom + f):
+                    print(f"Path exists: {dirFrom + f}")
+                    continue
+                
+                if os.path.exists(dirFrom + f):
+                    shutil.move(dirFrom + f, dirInto + f)
+                    print(f"Moving {f} to {dirInto}")
+            except Exception as e:
+                print("Exception occured for file: ", f)
+                print(e)
+                continue
+    
