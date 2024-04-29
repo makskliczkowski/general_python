@@ -74,6 +74,11 @@ class Directories(str):
         # check if the directory has path separator at the end already
         if tmp[-1] == kPS:
             tmp = tmp[:-1]
+        
+        # already being in the root directory
+        if tmp[-1] == '.':
+            return ".." + kPS
+            
         # remove while we don't get the path separator or to the end of the directory
         # while tmp[-1] != kPS and tmp[-1] != '.' and len(tmp) > 0:
         while tmp[-1] != kPS and len(tmp) > 0:

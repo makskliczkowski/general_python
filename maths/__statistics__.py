@@ -1,3 +1,4 @@
+import sys
 from scipy.signal import savgol_filter
 from scipy.stats import gmean
 from scipy.stats import kurtosis
@@ -58,11 +59,16 @@ def permute(*args, rng = None):
     '''
     Apply a random permutation to arrays - any number really
     '''
-    if rng is None:
-        rng = np.random.default_rng()
-    p = rng.random.Generator.permutation(len(args[0]))
-    t = tuple([i[p] for i in args])
-    return t
+    if sys.version_info[1] >= 10:
+        if rng is None:
+            rng = np.random.default_rng()
+        p = rng.random.Generator.permutation(len(args[0]))
+        t = tuple([i[p] for i in args])
+        return t
+    else:
+        p = np.random.permutation(len(args[0]))
+        t = tuple([i[p] for i in args])
+        return t
 
 ###################################################### AVERAGES #####################################################
 

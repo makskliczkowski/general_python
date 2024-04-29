@@ -5,6 +5,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 import tensorflow as tf
 
 TF_TYPE = tf.float64
+# TF_TYPE = tf.float32
 ############# TENSORFLOW ############
 
 if TF_TYPE == tf.float64:
