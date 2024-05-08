@@ -351,10 +351,10 @@ class Fitter:
         '''
         Lorentzian distribution
         - x     :   arguments
-        - x0    :   x0 parameter
-        - gamma :   gamma parameter
+        - v     :   multiplication constant
+        - g     :   gamma parameter
         '''
-        return v * g / ((x)**2 + g**2)
+        return np.abs(v) * np.abs(g) / ((x)**2 + np.abs(g)**2)
     
     @staticmethod
     def two_lorentzian(x, v = 1.0, g1 = 1.0, g2 = 1.0, v2 = 1.0):
@@ -389,7 +389,8 @@ class Fitter:
                       skipF     = 0,
                       skipL     = 0,
                       centers   = [],
-                      params    = []):
+                      params    = [],
+                      bounds    = None):
         
         if len(centers) == 0:
             if len(edges) <= 1:
