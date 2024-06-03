@@ -251,7 +251,8 @@ class Fitter:
                 y,  
                 funct,
                 skipF   = 0,
-                skipL   = 0):
+                skipL   = 0, 
+                bounds  = []):
         '''
         Fits function [any]
         - x     :   arguments to fit
@@ -261,8 +262,12 @@ class Fitter:
         - skipR :   number of elements to skip on the right
         '''
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
-        popt, pcov      =       fit(funct, xfit, yfit)
-        return FitterParams(lambda x: funct(x, *popt), popt, pcov)
+        if bounds == []:
+            popt, pcov  =       fit(funct, xfit, yfit)
+            return FitterParams(lambda x: funct(x, *popt), popt, pcov)
+        else:
+            popt, pcov      =       fit(funct, xfit, yfit, bounds = bounds)
+            return FitterParams(lambda x: funct(x, *popt), popt, pcov)
     
     #################### H I S T O #################### 
 
@@ -354,7 +359,7 @@ class Fitter:
         - v     :   multiplication constant
         - g     :   gamma parameter
         '''
-        return np.abs(v) * np.abs(g) / ((x)**2 + np.abs(g)**2)
+        return np.abs(v) * g / ((x)**2 + g**2)
     
     @staticmethod
     def two_lorentzian(x, v = 1.0, g1 = 1.0, g2 = 1.0, v2 = 1.0):
