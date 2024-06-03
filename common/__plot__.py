@@ -496,8 +496,8 @@ class Plotter:
 
     @staticmethod
     def get_inset(ax, 
-                  position = [0.0, 0.0, 1.0, 1.0]):
-        ax2 = plt.axes((0, 0, 1, 1))
+                  position = [0.0, 0.0, 1.0, 1.0], **kwargs):
+        ax2 = plt.axes((0, 0, 1, 1), **kwargs)
         ip  = InsetPosition(ax, position)
         ax2.set_axes_locator(ip)
         return ax2
