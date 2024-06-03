@@ -12,6 +12,8 @@ class MLParams:
     !TODO
     '''
     
+    saveDir = lambda directory: directory + os.pathsep + 'weights'
+    
     def __init__(self,  epo     : int   ,
                         batch   : int   , 
                         lr      : float ,

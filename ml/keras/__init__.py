@@ -3,6 +3,7 @@ import os
 os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 
 import tensorflow as tf
+# tf.config.gpu.set_per_process_memory_fraction(0.8)
 
 TF_TYPE = tf.float64
 # TF_TYPE = tf.float32
@@ -69,21 +70,33 @@ from ..__general__ import *
 
 ######################################################## INITIAL ########################################################
 
+
+
 def initializeTensorflow(gpuChoice : int):
     """
     Initialize the tensorflow to use the GPU of a given choice.
     """
     # set the graphics card
     try:
+        K.clear_session()
         # logger.TITLE("INITIALIZING TENSORFLOW", 50, '%', 1)
+        # from numba import cuda 
+        
         gpus            =   tf.config.list_physical_devices('GPU')
         if len(gpus) > 0:
             tf.config.set_visible_devices(gpus[gpuChoice], 'GPU')
+            # device = cuda.get_current_device()
+            # device.reset()
+            
             print("\t->Available devices=")
             for i, gpu in enumerate(gpus):
                 print("\t\t->" + str(gpu) + (" [CHOOSEN]" if gpuChoice == i else "")) 
+                tf.config.experimental.set_memory_growth(gpu, True)
+                # tf.config.experimental.set_virtual_device_configuration(
+                    # gpu,[tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5120)])
+                # tf.config.experimental.set_memory_growth(gpu, False)
             tf.config.experimental.set_virtual_device_configuration(gpus[gpuChoice],
-                        [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=5120)])
+                        [tf.config.experimental.VirtualDeviceConfiguration(memory_limit=8048)])
         else:
             print("\t\t->Using CPU")
         print("\t->TF version=" + str(tf.__version__))
@@ -113,19 +126,36 @@ class EvalCallback(callbacks.Callback):
         gc.collect()
         K.clear_session()
 
-'''
-Giving callbacks inline
-'''
-def giveCallbacks(savename, save = False, verbose = False, gc = False, patience = 40, monitor='val_loss'):
+
+def giveCallbacks(savename, save = False, verbose = False, gc = False, patience = 40, monitor='val_loss', scheduler = True):
+    """
+    Generate a list of callbacks for model training.
+
+    Parameters:
+    - savename (str): The base name for saving model checkpoints.
+    - save (bool): Whether to save the best model during training.
+    - verbose (int): Verbosity mode, 0 = silent, 1 = progress bar, 2 = one line per epoch.
+    - gc (bool): Whether to include a custom gradient clipping callback.
+    - patience (int): Number of epochs with no improvement after which training will be stopped.
+    - monitor (str): Quantity to be monitored.
+    - scheduler (bool): Whether to include a learning rate scheduler callback.
+
+    Returns:
+    - list: A list of callbacks to be used during model training.
+    """
     # making callbacks
-    early_stopping_cb   = callbacks.EarlyStopping(patience=patience, monitor=monitor)
-    callback            = [early_stopping_cb] if patience is not None else []
+    if patience is not None:
+        early_stopping_cb   = callbacks.EarlyStopping(patience = patience, monitor = monitor, restore_best_weights = True)
+        callback            = [early_stopping_cb] if patience is not None else []
     if gc:
         callback.append(EvalCallback())
     if save:
         # save best models as h5 files to load that later
-        callback.append(keras.callbacks.ModelCheckpoint(savename + ".h5", save_best_only=True))
-    
+        callback.append(keras.callbacks.ModelCheckpoint(savename + ".h5", save_best_only = True, monitor = monitor))
+    if scheduler:
+        reduce_lr = callbacks.ReduceLROnPlateau(monitor = monitor, factor = 0.98, patience = 100, min_lr = 8e-5, verbose = 0)
+        callback.append(reduce_lr)
+
     callback.append(TqdmCallback(verbose=verbose))
     return callback
 

@@ -114,7 +114,7 @@ def msa_pinv(Kinv):
 ############################ MSE AVERAGED ############################
 
 def mse_my(y_true, y_pred):
-    return tf.reduce_mean(tf.square(y_true-y_pred, dtype = tf.float64), dtype = tf.float64)
+    return tf.reduce_mean(tf.square(tf.cast(y_true, dtype = tf.float64) - tf.cast(y_pred, dtype = tf.float64)))
 
 '''
 Take the average before taking the mean squared error
@@ -231,6 +231,10 @@ def getLoss(loss_str : str, Kinv = None, rCond = 1.0):
         return mse_my
     elif loss_str == 'mse':
         return tf.keras.losses.mean_squared_error
+    elif loss_str == 'rmse':
+        return lambda x, y: tf.sqrt(tf.keras.losses.mean_squared_error(x, y))
+    elif loss_str == 'msle':
+        return tf.keras.losses.mean_squared_logarithmic_error
     elif loss_str == 'none':
         return None
     else:
