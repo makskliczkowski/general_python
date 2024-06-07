@@ -1,8 +1,10 @@
 import os  
 import matplotlib.pyplot as plt   
 from sklearn.model_selection import train_test_split
-from plot_keras_history import show_history, plot_history
-   
+try:
+    from plot_keras_history import show_history, plot_history
+except:
+    pass
 #########################################################################    
    
 class MLParams:

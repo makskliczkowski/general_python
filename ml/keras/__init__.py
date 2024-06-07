@@ -39,7 +39,11 @@ from tensorflow.keras.layers import TimeDistributed, Conv1D, SpatialDropout1D, C
 from tensorflow.keras.activations import relu, softmax, elu
 
 # import backend
-import tensorflow_probability as tfp
+try:
+    import tensorflow_probability as tfp
+except:
+    pass
+
 from tensorflow.keras import backend as K
 from tensorflow.keras.utils import plot_model
 

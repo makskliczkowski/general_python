@@ -276,7 +276,10 @@ class Plotter:
                         lim         =   None,
                         fontsize    =   None,
                         title       =   '',
-                        labelCond   =   True):
+                        labelCond   =   True,
+                        labelPos    =   None,
+                        tickPos     =   None,
+                        labelCords  =   None):
         '''
         Sets the parameters of the axes
         - ax        : axis to use
@@ -300,6 +303,17 @@ class Plotter:
             ax.set_xscale(scale)
             if scale == 'log':
                 ax.xaxis.set_minor_locator(plt.LogLocator(base=10, subs='all', numticks=100))
+            
+            if labelPos is not None and labelPos in ['bottom', 'top']:
+                ax.xaxis.set_label_position(labelPos)
+                
+            # ticks :)
+            if tickPos is not None and tickPos in ['bottom', 'top']:
+                if tickPos == 'top':
+                    ax.xaxis.tick_top()
+                    
+            if labelCords is not None:
+                ax.xaxis.set_label_coords(labelCords[0], labelCords[1])
 
         # check y axis
         if 'y' in which:
@@ -313,6 +327,19 @@ class Plotter:
             if scale == 'log':
                 ax.yaxis.set_minor_locator(plt.LogLocator(base=10, subs='all', numticks=100))
             
+            # label position
+            if labelPos is not None and labelPos in ['left', 'right']:
+                ax.yaxis.set_label_position(labelPos)
+                
+            # ticks :)
+            if tickPos is not None and tickPos in ['left', 'right']:
+                if tickPos == 'right':
+                    ax.yaxis.tick_right()
+            
+            # coordinates  
+            if labelCords is not None:
+                ax.yaxis.set_label_coords(labelCords[0], labelCords[1])
+                
         # check the title
         if len(title) != 0:
             ax.set_title(title)       

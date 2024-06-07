@@ -15,7 +15,7 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
     '''
     data = {}
     if not os.path.exists(file):
-        print(f"directory {file} does not exist")
+        logging.error(f"directory {file} does not exist")
         return data
     try:
         # check the file
@@ -39,9 +39,13 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
                 #ds_obj = f[a_group_key]      # returns as a h5py dataset object
                 #ds_arr = f[a_group_key][()]  # returns as a numpy array
                 # iterate the keys
+                # print(f.keys(), a_group_keys)
                 for i in a_group_keys:
-                    data[i] = np.array(f[i][()])     
+                    data[i] = np.array(f[i][()]) 
+        else:
+            logging.info(f"Can't open hdf5 file: {file}")
         return data
+        
     except Exception as e:
         logging.info(f"Can't open hdf5 file: {file}")
         logging.info(str(e))
