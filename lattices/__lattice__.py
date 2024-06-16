@@ -215,7 +215,8 @@ class Square(Lattice):
         self.calculate_coordinates()
         self.calculate_r_vectors()
         self.calculate_k_vectors()
-        self.calculate_dft_matrix()
+        if self.Ns < 100:
+            self.calculate_dft_matrix()
         self.calculate_norm_sym()
     
     '''
