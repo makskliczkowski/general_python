@@ -8,6 +8,21 @@ import os
 
 ####################################################### READ HDF5 FILE #######################################################
 
+def allbottomkeys(obj):
+    bottomkeys  =   []
+    def allkeys(obj):
+        keys = (obj.name,)
+        if isinstance(obj, h5py.Group):
+            for key, value in obj.items():
+                if isinstance(value, h5py.Group):
+                    keys = keys + allkeys(value)
+                else:
+                    keys = keys + (value.name,)
+                    bottomkeys.append(value.name)
+        return keys
+    allkeys(obj)
+    return bottomkeys
+
 def read_hdf5(file, keys = [], verbose = False, removeBad = False):
     '''
     Read the hdf5 saved file
@@ -26,7 +41,9 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
                 #keys = f.keys()
                 # get object names/keys; may or may NOT be a group
                 logging.info(f'keys:{list(f.keys())}', 1)
-                a_group_keys = list(f.keys()) if len(keys) == 0 else keys
+                a_group_keys = list(allbottomkeys(f)) if len(keys) == 0 else keys
+                
+                
                 logging.debug(f'my_keys:{a_group_keys}', 1)
                 # get the object type for a_group_key: usually group or dataset
                 #print(type(f[a_group_key])) 
@@ -42,13 +59,14 @@ def read_hdf5(file, keys = [], verbose = False, removeBad = False):
                 # print(f.keys(), a_group_keys)
                 for i in a_group_keys:
                     data[i] = np.array(f[i][()]) 
+                
         else:
             logging.info(f"Can't open hdf5 file: {file}")
         return data
         
     except Exception as e:
-        logging.info(f"Can't open hdf5 file: {file}")
-        logging.info(str(e))
+        print(f"Can't open hdf5 file: {file}")
+        print(str(e))
         if "truncated" in str(e) or "doesn't exist" in str(e) and removeBad:
             logging.info(f"Removing {file}")
             os.remove(file)
