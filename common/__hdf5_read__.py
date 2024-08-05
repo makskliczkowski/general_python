@@ -73,7 +73,7 @@ def read_hdf5(file_path,
                     logging.warning(f"Key {key} not found in file {file_path}")
                 except Exception as e:
                     logging.error(f"Error reading {key} from {file_path}: {str(e)}")
-
+        data["filename"] = file_path
         return data
         
     except Exception as e:
@@ -85,7 +85,57 @@ def read_hdf5(file_path,
 
 ####################################################### READ HDF5 FILE #######################################################
 
-def read_multiple_hdf5(directories  : list[Directories], 
+def read_hdf5_extract(hdf5files,
+                      key       : "str",
+                      ):
+    '''
+    Yield the data from the hdf5 files for the given key.
+    ''' 
+    for f in hdf5files:
+        yield f[key]
+        
+def read_hdf5_extract_concat(hdf5files,
+                            key      : str,
+                            repeatax : int  = 0,
+                            verbose  : bool = False,                            
+                            ):
+    '''
+    For a specific set of hdf5 files, try to create a large array of the same form for the given key.
+    One of the shapes must be the same for all the files.
+    - hdf5files : list of hdf5 files
+    - key       : key to read
+    - repeatax  : axis to repeat
+    - verbose   : if True, print the shape of the data
+    '''
+    shapeRepeat = None
+    data        = []
+    for ii, f in enumerate(hdf5files):
+        try:
+            d   = f[key]
+            if verbose:
+                logging.warning(f"Reading {key} with shape {d.shape}")
+            
+            if shapeRepeat is None:
+                shapeRepeat = d.shape[repeatax]
+            
+            # check the shape on the repeat axis 
+            if d.shape[repeatax] == shapeRepeat:
+                data.append(d)
+            else:
+                logging.error(f"Shape mismatch for {key} in {f['filename']}")
+        except Exception as e:
+            logging.error(f"Error reading {key} from {f['filename']}: {str(e)}")
+    
+    # concatenate the data
+    if len(data) > 0:
+        return np.concatenate(data, axis = 0)
+    else:
+        logging.error(f"No data found for {key}")
+        return np.array()
+        
+####################################################### READ HDF5 FILE #######################################################
+
+def read_multiple_hdf5(directories  : list, 
                        conditions   = [],
                        keys         = []
                        ):
@@ -96,7 +146,7 @@ def read_multiple_hdf5(directories  : list[Directories],
     - keys        : keys to be read
     @return       : generator - this is lazy evaluated loading!
     '''
-    files = Directories.listDirs(directories, conditions = conditions)
+    files = Directories.listDirs(directories, conditions = conditions, appendDir = True)
     for f in files:
         yield read_hdf5(f, keys)
 
@@ -136,3 +186,80 @@ def app_hdf5(directory, filename, data : np.ndarray, key : str):
     hf.create_dataset(key, data=data)
     # close
     hf.close()
+    
+########################################################### CUTTER ##########################################################
+
+def cut_matrix_bad_vals_zero(M, 
+                             axis           = 0, 
+                             tol            = 1e-9, 
+                             check_limit    = 10):
+    """
+    Cut off the rows or columns in matrix M where all elements are close to zero.
+
+    Parameters:
+    - M (numpy.ndarray) : The input matrix.
+    - axis (int)        : The axis along which to check for zero elements (0 for rows, 1 for columns).
+    - tol (float)       : The tolerance for considering elements as zero.
+
+    Returns:
+    - numpy.ndarray: The resulting matrix after removing zero rows or columns.
+    """
+    if axis == 0:
+        # Check rows
+        if check_limit is not None:
+            check_limit = min(check_limit, M.shape[1])
+            mask = ~np.all(np.isclose(M[:, :check_limit], 0.0, atol=tol), axis=1)
+        else:
+            mask = ~np.all(np.isclose(M, 0.0, atol=tol), axis=1)
+    elif axis == 1:
+        # Check columns
+        if check_limit is not None:
+            check_limit = min(check_limit, M.shape[0])
+            mask = ~np.all(np.isclose(M[:check_limit, :], 0.0, atol=tol), axis=0)
+        else:
+            mask = ~np.all(np.isclose(M, 0.0, atol=tol), axis=0)
+    else:
+        raise ValueError("Axis must be 0 (rows) or 1 (columns).")
+
+    # Return the matrix with the zero rows or columns removed
+    return M[mask] if axis == 0 else M[:, mask]
+
+########################################################### CUTTER ##########################################################
+
+def cut_matrix_bad_vals(M, 
+                        axis        = 0, 
+                        threshold   = 1e-4, 
+                        check_limit = None):
+    """
+    Cut off the rows or columns in matrix M where the first `check_limit` elements are all below a threshold.
+
+    Parameters:
+    - M (numpy.ndarray): The input matrix.
+    - axis (int): The axis along which to check for elements below the threshold (0 for rows, 1 for columns).
+    - threshold (float): The threshold value.
+    - check_limit (int, optional): The number of elements to check from each row or column.
+
+    Returns:
+    - numpy.ndarray: The resulting matrix after removing rows or columns where the first `check_limit` elements are below the threshold.
+    """
+    if axis == 0:
+        # Check rows
+        if check_limit is not None:
+            check_limit = min(check_limit, M.shape[1])
+            mask = ~np.all(M[:, :check_limit] < threshold, axis=1)
+        else:
+            mask = ~np.all(M < threshold, axis=1)
+    elif axis == 1:
+        # Check columns
+        if check_limit is not None:
+            check_limit = min(check_limit, M.shape[0])
+            mask = ~np.all(M[:check_limit, :] < threshold, axis=0)
+        else:
+            mask = ~np.all(M < threshold, axis=0)
+    else:
+        raise ValueError("Axis must be 0 (rows) or 1 (columns).")
+
+    # Return the matrix with the rows or columns removed
+    return M[mask] if axis == 0 else M[:, mask]
+
+########################################################### CUTTER ##########################################################

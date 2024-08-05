@@ -236,7 +236,7 @@ class Directories(str):
             files   =   sorted(files, key = sortCondition)
         
         if appendDir:
-            files   =   [directory + file for file in files]
+            files   =   [directory + kPS + file for file in files]
             
         return list(files)
     

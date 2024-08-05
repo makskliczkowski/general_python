@@ -121,6 +121,7 @@ class Plotter:
         if alpha is not None:
             dictionary['alpha'] = alpha
         return dictionary
+    
     ################### C O L O R S ###################
 
     @staticmethod
@@ -140,6 +141,56 @@ class Plotter:
         cbar    = fig.colorbar(sm, ax = axes, *args, **kwargs)
         cbar.ax.set_title(title)
         return cbar
+    
+    @staticmethod
+    def add_colorbar_pos(fig, 
+                         cmap,
+                         mapable,
+                         pos,
+                         norm = None,
+                         vmin = None, 
+                         vmax = None,
+                         orientation = 'vertical', 
+                         xlabel      = '',
+                         xlabelcords = (0.5, -0.05),
+                         ylabel      = '',
+                         ylabelcords = (-0.05, 0.5),
+                         ):
+        '''
+        Add colorbar to the plot.
+        - axes      :   axis to add the colorbar to
+        - fig       :   figure to add the colorbar to
+        - cmap      :   colormap to use
+        - mapable   :   mapable object
+        - pos       :   position of the colorbar
+        - norm      :   normalization of the colorbar
+        - vmin      :   minimum value
+        - vmax      :   maximum value
+        - orientation:  orientation of the colorbar
+        - xlabel    :   xlabel for the colorbar
+        - xlabelcords:  coordinates of the xlabel
+        - ylabel    :   ylabel for the colorbar
+        - ylabelcords:  coordinates of the ylabel
+        '''
+        if norm is None:
+            norm = mpl.colors.Normalize(vmin = vmin if vmin is not None else np.min(mapable), 
+                                        vmax = vmax if vmax is not None else np.max(mapable))
+        
+        sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+        
+        # create axes 
+        cax     = fig.add_axes(pos)
+        cbar    = fig.colorbar(sm, cax = cax, aspect = 1, orientation = orientation)
+        
+        # set the labels
+        if xlabel != '':
+            cbar.set_label(xlabel)
+            cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
+        
+        if ylabel != '':
+            cbar.set_label(ylabel)
+            cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
     
     @staticmethod
     def get_colormap(values, cmap = 'PuBu', elsecolor = 'blue'):
@@ -174,6 +225,44 @@ class Plotter:
         if cond:
             ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
 
+    @staticmethod
+    def set_arrow(  ax,
+                    start_T     : str,
+                    end_T       : str,
+                    xystart     : float,
+                    xystart_T   : float,
+                    xyend       : float,
+                    xyend_T     : float,
+                    arrowprops  = dict(arrowstyle="->"), 
+                    startcolor  = 'black',
+                    endcolor    = 'black',
+                    **kwargs):
+        '''
+        @staticmethod
+        
+        Make an annotation on the plot.
+        - ax        :   axis to annotate on
+        - start_T   :   start text
+        - end_T     :   end text
+        - xystart   :   x coordinate start
+        - xystart_T :   x coordinate start text
+        - xyend     :   x coordinate end
+        - xyend_T   :   x coordinate end text
+        - arrowprops:   properties of the arrow
+        - startcolor:   color of the arrow at the start
+        - endcolor  :   color of the arrow in the end
+        '''
+        ax[0].annotate(start_T, 
+                   xy           =   xystart, 
+                   xytext       =   xystart_T, 
+                   arrowprops   =   arrowprops, 
+                   color        =   startcolor)
+        
+        ax[0].annotate(end_T,
+                       xy       =   xyend, 
+                       xytext   =   xyend_T, 
+                       color    =   endcolor)
+
     ##################### F I T S #####################
     
     @staticmethod
@@ -190,7 +279,7 @@ class Plotter:
         - funct     :   function to use for the fitting
         - x         :   arguments to the function
         """
-        y   =   funct(x)
+        y = funct(x)
         ax.plot(x, y, **kwargs)
     
     #################### L I N E S ####################
@@ -393,21 +482,23 @@ class Plotter:
                         top         =   False,
                         bottom      =   False
                      ):
-        '''
-        Disables the spines on the axis
-        '''
+        """
+        Disables specified spines and optionally hides ticks on the axis.
+
+        Parameters:
+        - ax: Matplotlib axis object.
+        - top, right, bottom, left: Booleans to show/hide respective spines.
+        - xticks, yticks: Booleans to show/hide tick labels on the x and y axis.
+        """
         ax.spines['top'].set_visible(top)
         ax.spines['right'].set_visible(right)
         ax.spines['bottom'].set_visible(bottom)
         ax.spines['left'].set_visible(left)
+        
         if not xticks:
-            ax.tick_params(labelbottom  = False)    
-            plt.setp(ax.get_xticklabels(), visible=False)
-            # ax.axes.get_xaxis().set_visible(False)
+            ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
         if not yticks:
-            ax.tick_params(labelleft    = False)    
-            plt.setp(ax.get_yticklabels(), visible=False)
-            # ax.axes.get_yaxis().set_visible(False)
+            ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
 
     @staticmethod
     def unset_ticks(    ax,

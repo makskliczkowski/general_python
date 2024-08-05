@@ -96,28 +96,72 @@ def avgBin(myArray, N=2):
 
 def moveAverage(a, n : int) :
     """ 
-    Moving average with cumsum. This is applied along the first axis of the array.
+    Moving average with cumsum or sliding window. This is applied along the first axis of the array.
     
+    Args:
+        a: Input data, can be a numpy array, pandas DataFrame, or list.
+        n: Window size for the moving average.
+
+    Returns:
+        A numpy array, pandas DataFrame, or list with the moving averages.
     """
     if isinstance(a, np.ndarray):
-        # return np.convolve(a, np.ones(n), 'valid') / n
-        return sliding_window_view(a, n, axis = 0).mean(axis = -1)
-        ret         =       np.cumsum(a, axis = 0, dtype=float)
-        ret[n:]     =       ret[n:] - ret[:-n]
-        return      ret[n - 1:] / n
+        if n > a.shape[0]:
+            raise ValueError("Window size n must be less than or equal to the size of the input array.")
+        # Use sliding window for a moving average
+        return sliding_window_view(a, n, axis=0).mean(axis=-1)
+    
     elif isinstance(a, pd.DataFrame):
         df_tmp      =       []
         for idx, row in a.iterrows():
             df_tmp.append(moveAverage(np.array(row), n))
         return pd.DataFrame(np.array(df_tmp))
+    
+    elif isinstance(a, list):
+        a = np.array(a)  # Convert list to numpy array for consistency
+        if n > len(a):
+            raise ValueError("Window size n must be less than or equal to the size of the input list.")
+        # Use sliding window for a moving average
+        return list(sliding_window_view(a, n).mean(axis=-1))
+
     else:
-        beg     = int(n/2)
-        end     = len(a) - int(n/2)
-        for k in range(beg, end):
-            begin   = int(k-n/2)
-            av      = np.sum(a[begin:begin + n])
-            a[k]    = a[k] - (av/float(n))
-        return a[beg:-beg]
+        raise TypeError("Input must be a numpy array, pandas DataFrame, or list.")
+    
+def fluctAboveAverage(a, n : int):
+    """ 
+    Calculate fluctuations above the moving average.
+    
+    Args:
+        a: Input data, can be a numpy array, pandas DataFrame, or list.
+        n: Window size for the moving average.
+
+    Returns:
+        Fluctuations above the moving average.
+    """
+    
+    # Calculate moving average
+    moving_avg = moveAverage(a, n)
+    
+    if isinstance(a, np.ndarray):
+        # Calculate fluctuations above the moving average
+        fluctuations = a[n-1:] - moving_avg
+        return fluctuations
+
+    elif isinstance(a, pd.DataFrame):
+        # Calculate fluctuations for each row in the DataFrame
+        df_fluctuations = a.copy()
+        for idx, row in a.iterrows():
+            df_fluctuations.loc[idx] = row.to_numpy()[n-1:] - moveAverage(row.to_numpy(), n)
+        return df_fluctuations
+
+    elif isinstance(a, list):
+        # Convert list to numpy array and calculate fluctuations
+        a = np.array(a)
+        fluctuations = a[n-1:] - np.array(moving_avg)
+        return list(fluctuations)
+
+    else:
+        raise TypeError("Input must be a numpy array, pandas DataFrame, or list.")
 
 ################################################# CONSIDER FLUCTUATIONS 
 
