@@ -194,6 +194,23 @@ class Directories(str):
     ############################################################################
 
     @staticmethod
+    def listDirs(directories    : list,
+                 clearEmpty     = False,
+                 conditions     = [], 
+                 sortCondition  = None,
+                 appendDir      = True):
+        '''
+        Lists a specific directory and gives the files that match a condition.
+        - directories   : directories to be listed    
+        - clearEmpty    : shall clear empty files?
+        - conditions    : lambda functions to be applied to filenames or files
+        '''
+        files       = []
+        for directory in directories:
+            files   += Directories.listDir(directory, clearEmpty, conditions, sortCondition, appendDir)
+        return files
+    
+    @staticmethod
     def listDir(directory      :   str, 
                 clearEmpty     =   False, 
                 conditions     =   [],
@@ -232,12 +249,23 @@ class Directories(str):
     def transferFiles(dirFrom,
                       dirInto,
                       filereg : list):
+        '''
+        Copies files from one directory to another
+        - dirFrom : directory to copy from
+        - dirInto : directory to copy into
+        - filereg : regular expression to be applied to the files
+        '''
+        
         if not os.path.exists(dirFrom):
             return
+        
         # create directory if not exist
         Directories.createFolder(dirInto)
+        
         # list files and go through them
-        filesFrom = dirFrom.list_dir(conditions=filereg)
+        filesFrom = dirFrom.list_dir(conditions = filereg)
+        
+        # go through files and copy them
         for f in filesFrom:
             try:
                 if os.path.exists(dirFrom + f):
@@ -247,8 +275,12 @@ class Directories(str):
                 if os.path.exists(dirFrom + f):
                     shutil.move(dirFrom + f, dirInto + f)
                     print(f"Moving {f} to {dirInto}")
+                    
             except Exception as e:
                 print("Exception occured for file: ", f)
                 print(e)
                 continue
+    
+    ############################################################################
+    
     

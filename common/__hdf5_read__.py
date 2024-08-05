@@ -8,76 +8,97 @@ import os
 
 ####################################################### READ HDF5 FILE #######################################################
 
-def allbottomkeys(obj):
-    bottomkeys  =   []
-    def allkeys(obj):
-        keys = (obj.name,)
+def allbottomkeys(group):
+    """
+    Recursively collect all dataset keys in an HDF5 group.
+    """
+    dataset_keys = []
+
+    def collect_keys(obj):
         if isinstance(obj, h5py.Group):
             for key, value in obj.items():
-                if isinstance(value, h5py.Group):
-                    keys = keys + allkeys(value)
-                else:
-                    keys = keys + (value.name,)
-                    bottomkeys.append(value.name)
-        return keys
-    allkeys(obj)
-    return bottomkeys
+                collect_keys(value)
+        else:
+            dataset_keys.append(obj.name)
+    
+    # Start the recursive key collection
+    collect_keys(group)
+    
+    return dataset_keys
 
-def read_hdf5(file, keys = [], verbose = False, removeBad = False):
-    '''
+####################################################### READ HDF5 FILE #######################################################
+
+def read_hdf5(file_path, 
+              keys      = [], 
+              verbose   = False, 
+              removeBad = False):
+    """
     Read the hdf5 saved file
     - keys : if we input keys, they will be used for reading. Otherwise use the available ones.
-    '''
+    Parameters:
+    - file_path (str): Path to the HDF5 file.
+    - keys (list, optional): Specific keys to read. If None, read all dataset keys.
+    - verbose (bool, optional): If True, log detailed information.
+    - remove_bad (bool, optional): If True, remove the file if it's corrupted or unreadable.
+    
+    Returns:
+    - dict: A dictionary with keys as dataset paths and values as numpy arrays.
+    """
+    
     data = {}
-    if not os.path.exists(file):
-        logging.error(f"directory {file} does not exist")
+    
+    if not os.path.exists(file_path):
+        logging.error(f"File {file_path} does not exist")
         return data
     try:
         # check the file
-        if file.endswith('.h5') or file.endswith('.hdf5') or file.endswith('.hdf'):
-            with h5py.File(file, "r") as f:
-                # all root level object names (aka keys) 
-                # these can be group or dataset names 
-                #keys = f.keys()
-                # get object names/keys; may or may NOT be a group
-                logging.info(f'keys:{list(f.keys())}', 1)
-                a_group_keys = list(allbottomkeys(f)) if len(keys) == 0 else keys
+        if not file_path.endswith(('.h5', '.hdf5', '.hdf')):
+            logging.error(f"File {file_path} is not an HDF5 file")
+            return data
+        
+        with h5py.File(file_path, "r") as f:
+            # all root level object names (aka keys) 
                 
-                
-                logging.debug(f'my_keys:{a_group_keys}', 1)
-                # get the object type for a_group_key: usually group or dataset
-                #print(type(f[a_group_key])) 
+            # Determine keys to read
+            if keys is None:
+                keys = allbottomkeys(f)
+                if verbose:
+                    logging.info(f"Available keys: {keys}")
+                    
+            # Read datasets into the dictionary
+            for key in keys:
+                try:
+                    data[key] = f[key][()]
+                except KeyError:
+                    logging.warning(f"Key {key} not found in file {file_path}")
+                except Exception as e:
+                    logging.error(f"Error reading {key} from {file_path}: {str(e)}")
 
-                # If a_group_key is a dataset name, 
-                # this gets the dataset values and returns as a list
-                #data = list(f[a_group_key])
-                
-                # preferred methods to get dataset values:
-                #ds_obj = f[a_group_key]      # returns as a h5py dataset object
-                #ds_arr = f[a_group_key][()]  # returns as a numpy array
-                # iterate the keys
-                # print(f.keys(), a_group_keys)
-                for i in a_group_keys:
-                    data[i] = np.array(f[i][()]) 
-                
-        else:
-            logging.info(f"Can't open hdf5 file: {file}")
         return data
         
     except Exception as e:
-        print(f"Can't open hdf5 file: {file}")
-        print(str(e))
+        logging.error(f"Error opening file {file_path}: {str(e)}")
         if "truncated" in str(e) or "doesn't exist" in str(e) and removeBad:
-            logging.info(f"Removing {file}")
-            os.remove(file)
-        elif "setting an array element with a sequence." in str(e):
-            logging.info("WTFFF\n\n\nn\nn\n\"}")
-            if removeBad:
-                logging.info(f"Removing {file}")
-                os.remove(file)
-        else:
-            logging.info(f"Can't open hdf5 file: {file}")
+            logging.info(f"Removing corrupted file {file_path}")
+            os.remove(file_path)
         return {}
+
+####################################################### READ HDF5 FILE #######################################################
+
+def read_multiple_hdf5(directories  : list[Directories], 
+                       conditions   = [],
+                       keys         = []
+                       ):
+    '''
+    Parse multiple hdf5 files. 
+    - directories : list of directories to parse
+    - conditions  : conditions to be met
+    - keys        : keys to be read
+    @return       : generator - this is lazy evaluated loading!
+    '''
+    files = Directories.listDirs(directories, conditions = conditions)
+    for f in files:
+        yield read_hdf5(f, keys)
 
 ####################################################### SAVE HDF5 FILE #######################################################
     
