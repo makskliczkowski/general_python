@@ -471,6 +471,12 @@ class Plotter:
         if 'y' in which:
             ax.yaxis.set_label_coords(inX, inY, **kwargs)
     
+    #################### L A B E L ####################
+    
+    # @staticmethod
+    # def set_ax_ticks(ax, 
+    #                   )
+    
     #################### U N S E T ####################
 
     @staticmethod

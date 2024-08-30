@@ -116,6 +116,7 @@ def read_hdf5_extract_concat(hdf5files,
     '''
     shapeRepeat = None
     data        = []
+    
     for ii, f in enumerate(hdf5files):
         try:
             d   = f[key]
@@ -180,7 +181,8 @@ def read_hdf5_extract_concat(hdf5files,
 def read_multiple_hdf5(directories  : list, 
                        conditions   = [],
                        keys         = [],
-                       verbose      = False
+                       verbose      = False,
+                       sortme       = True
                        ):
     '''
     Parse multiple hdf5 files. 
@@ -189,7 +191,7 @@ def read_multiple_hdf5(directories  : list,
     - keys        : keys to be read
     @return       : generator - this is lazy evaluated loading!
     '''
-    files = Directories.listDirs(directories, conditions = conditions, appendDir = True)
+    files = Directories.listDirs(directories, conditions = conditions, appendDir = True, sortCondition = (lambda x: x) if sortme else None)
     for f in files:
         if verbose:
             logging.info(f"\t\tReading {f}")
