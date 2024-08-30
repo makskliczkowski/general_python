@@ -1,4 +1,8 @@
 import pandas as pd
+# filter warnings
+from warnings import simplefilter
+simplefilter(action = "ignore", category= pd.errors.PerformanceWarning)
+
 import traceback
 
 ####################################################### DATAFRAME PARSE #######################################################
@@ -61,8 +65,15 @@ class ExceptionHandler:
             
             print("----------------------------------------------------")
             
-            
+         
 ######################################################## STRING PARSER ########################################################
+
+PARSER_STRING_DIVIDER       = "_"
+PARSER_STRING_CORRELATION   = "-"
+PARSER_STRING_MULTIPLE      = ","
+PARSER_STRING_RANGES        = "."
+PARSER_STRING_SEPARATOR     = "/"
+PARSER_STRING_SEPARATOR_ALT = ":"
 
 class StringParser:   
     '''

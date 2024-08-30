@@ -127,6 +127,7 @@ class Directories(str):
     
     def create_folder(self, silent = False):
         Directories.createFolder(self, silent)
+        return self
         
     ############################################################################
 
@@ -206,6 +207,7 @@ class Directories(str):
         - conditions    : lambda functions to be applied to filenames or files
         '''
         files       = []
+        directories = [d for d in directories if os.path.exists(d)]
         for directory in directories:
             files   += Directories.listDir(directory, clearEmpty, conditions, sortCondition, appendDir)
         return files
