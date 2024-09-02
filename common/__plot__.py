@@ -19,6 +19,9 @@ mpl.rcParams.update(mpl.rcParamsDefault)
 plt.rcParams['axes.facecolor']      =   'white'
 plt.rcParams['savefig.facecolor']   =   'w'
 
+########################## labellines
+from labellines import labelLine, labelLines
+
 ########################## style
 SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
@@ -226,6 +229,27 @@ class Plotter:
             ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
 
     @staticmethod
+    def set_annotate_letter(
+        ax, 
+        iter        : int,
+        x           : float,
+        y           : float,
+        fontsize    = 12,
+        addit       = '',
+        condition   = True,
+        **kwargs        
+        ):
+        '''
+        Annotate plot with the letter.
+        - ax        : axis to annotate on
+        - iter      : iteration number
+        - x         : x coordinate
+        - y         : y coordinate
+        - fontsize  : fontsize 
+        '''
+        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, condition = condition, **kwargs)
+    
+    @staticmethod
     def set_arrow(  ax,
                     start_T     : str,
                     end_T       : str,
@@ -366,9 +390,14 @@ class Plotter:
                         fontsize    =   None,
                         title       =   '',
                         labelCond   =   True,
+                        # manual
                         labelPos    =   None,
                         tickPos     =   None,
-                        labelCords  =   None):
+                        labelCords  =   None,
+                        ticks       =   None,
+                        labels      =   None,
+                        maj_tick_l  =   2,
+                        min_tick_l  =   1):
         '''
         Sets the parameters of the axes
         - ax        : axis to use
@@ -383,29 +412,49 @@ class Plotter:
         
         # check x axis
         if 'x' in which:
+            # set the ticks
+            if True:
+                Plotter.set_ax_params(ax, 'x', scale = scale, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
+            
             if label != "":
                 ax.set_xlabel(label if labelCond else "", 
                             fontsize = fontsize,
                             labelpad = labelPad if labelPad != 0 else None)
+            # check limits
             if lim is not None:
                 ax.set_xlim(lim[0], lim[1])
+                
+            # set the scale
             ax.set_xscale(scale)
             if scale == 'log':
                 ax.xaxis.set_minor_locator(plt.LogLocator(base=10, subs='all', numticks=100))
             
-            if labelPos is not None and labelPos in ['bottom', 'top']:
-                ax.xaxis.set_label_position(labelPos)
-                
-            # ticks :)
-            if tickPos is not None and tickPos in ['bottom', 'top']:
-                if tickPos == 'top':
-                    ax.xaxis.tick_top()
+            # manual settings          
+            if True:
+                if labelPos is not None and labelPos in ['bottom', 'top']:
+                    ax.xaxis.set_label_position(labelPos)
                     
-            if labelCords is not None:
-                ax.xaxis.set_label_coords(labelCords[0], labelCords[1])
+                # ticks :)
+                if tickPos is not None and tickPos in ['bottom', 'top']:
+                    if tickPos == 'top':
+                        ax.xaxis.tick_top()
+                        
+                if labelCords is not None:
+                    ax.xaxis.set_label_coords(labelCords[0], labelCords[1])
 
+            if ticks is not None:
+                ax.set_xticks(ticks)
+                # try to set the labels
+                if labels is not None and len(labels) == len(ticks):
+                    ax.set_xticklabels(labels)
+            
         # check y axis
         if 'y' in which:
+            
+            # set the ticks
+            if True:
+                Plotter.set_ax_params(ax, 'y', scale = scale, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
+                
             if label != "":
                 ax.set_ylabel(label if labelCond else "", 
                             fontsize = fontsize,
@@ -416,19 +465,27 @@ class Plotter:
             if scale == 'log':
                 ax.yaxis.set_minor_locator(plt.LogLocator(base=10, subs='all', numticks=100))
             
-            # label position
-            if labelPos is not None and labelPos in ['left', 'right']:
-                ax.yaxis.set_label_position(labelPos)
+            if True:
+                # label position
+                if labelPos is not None and labelPos in ['left', 'right']:
+                    ax.yaxis.set_label_position(labelPos)
+                    
+                # ticks :)
+                if tickPos is not None and tickPos in ['left', 'right']:
+                    if tickPos == 'right':
+                        ax.yaxis.tick_right()
                 
-            # ticks :)
-            if tickPos is not None and tickPos in ['left', 'right']:
-                if tickPos == 'right':
-                    ax.yaxis.tick_right()
+                # coordinates  
+                if labelCords is not None:
+                    ax.yaxis.set_label_coords(labelCords[0], labelCords[1])
             
-            # coordinates  
-            if labelCords is not None:
-                ax.yaxis.set_label_coords(labelCords[0], labelCords[1])
-                
+            if ticks is not None:
+                ax.set_yticks(ticks)
+                # try to set the labels
+                if labels is not None and len(labels) == len(ticks):
+                    ax.set_yticklabels(labels)
+            
+            
         # check the title
         if len(title) != 0:
             ax.set_title(title)       
@@ -476,6 +533,29 @@ class Plotter:
     # @staticmethod
     # def set_ax_ticks(ax, 
     #                   )
+    
+    @staticmethod
+    def labellines(ax, 
+                    align       = False,
+                    xvals       = None,
+                    yoffsets    = [],
+                    zorder      = 2,
+                    **kwargs):
+        """
+        Add labels to lines with a given slope. Uses labelLines package. 
+        Args:
+            - ax: Matplotlib axis object.
+            - align: Align the label with the slope of the line.
+            - xvals: The x values to place the labels at.
+            - yoffsets: The y offsets for the labels.
+            - zorder: The zorder of the labels.
+        """
+        labelLines(ax.get_lines(), 
+                   align    =   align, 
+                   xvals    =   xvals, 
+                   yoffsets =   yoffsets, 
+                   zorder   =   zorder,
+                   **kwargs)
     
     #################### U N S E T ####################
 
@@ -535,6 +615,24 @@ class Plotter:
                                     right = not((not spines) and (not yticks)), 
                                     top = not ((not spines) and (not xticks)), 
                                     bottom = not ((not spines) and (not xticks)))
+    
+    @staticmethod
+    def unset_ticks_and_spines(ax, 
+                                xticks  = False,
+                                yticks  = False,
+                                erease  = False,
+                                spines  = True,
+                                left    = False,
+                                right   = False,
+                                top     = False,
+                                bottom  = False
+                               ):
+        '''
+        Unset ticks and spines
+        '''
+        Plotter.unset_spines(ax, xticks = False, yticks = False, left = left, right = right, top = top, bottom = bottom)
+        Plotter.unset_ticks(ax, xticks = xticks, yticks = yticks, erease = erease, spines = spines)
+        
         
     ################### F O R M A T ###################
         
@@ -606,16 +704,44 @@ class Plotter:
                                            **kwargs)
     
     @staticmethod
+    def get_grid_ax(nrows           : int,
+                    ncols           : int,
+                    wspace          = None,
+                    hspace          = None,
+                    width_ratios    = None,
+                    height_ratios   = None,
+                    ax_sub          = None,
+                    **kwargs):
+        '''
+        Obtain grid from GridSubplotSpec
+        '''
+        return Plotter.get_grid(nrows, ncols, wspace, hspace, width_ratios, height_ratios, ax_sub, **kwargs), []
+    
+    @staticmethod
     def get_grid_subplot(gs,
                          fig,    
                          i      :   int, 
                          sharex =   None, 
-                         sharey =   None):
+                         sharey =   None,
+                         **kwargs):
         '''
         Creates the subaxis for the GridSpec
         '''
-        return fig.add_subplot(gs[i], sharex = sharex, sharey = sharey)
+        return fig.add_subplot(gs[i], sharex = sharex, sharey = sharey, **kwargs)
 
+    @staticmethod
+    def app_grid_subplot(   axes   : list,
+                            gs, 
+                            fig, 
+                            i      : int,
+                            sharex = None,
+                            sharey = None,
+                            **kwargs):
+        '''
+        Appends the subplot to the axes
+        '''
+        axes.append(Plotter.get_grid_subplot(gs, fig, i, sharex = sharex, sharey = sharey, **kwargs))
+    
     #################### I N S E T ####################
 
     @staticmethod
@@ -662,7 +788,49 @@ class Plotter:
                   markerfirst   = markerfirst,
                   framealpha    = framealpha,
                   **kwargs)  
+    
+    @staticmethod
+    def set_legend_custom(  ax,
+                            conditions  : list,
+                            fontsize    = None,
+                            frameon     = False,
+                            loc         = 'best',
+                            alignment   = 'left',
+                            markerfirst = False,
+                            framealpha  = 1.0,
+                            reverse     = False,
+                            **kwargs):
+        '''
+        Set the legend with custom conditions for the labels
+        - ax        :   axis to use
+        - conditions:   list of conditions
+        - fontsize  :   fontsize
+        - frameon   :   frame on or off
+        - loc       :   location of the legend
+        - alignment :   alignment of the legend
+        - markerfirst:  marker first or not
+        - framealpha:   alpha of the frame
+        '''
+        lines, labels   = ax.get_legend_handles_labels()
+
+        # go through the conditions'
+        lbl_idx         = []
+        for idx in range(len(labels)):
+            for cond in conditions:
+                if cond(labels[idx]):
+                    lbl_idx.append(idx)
+                    break
         
+        # set the legend
+        ax.legend([lines[idx] for idx in lbl_idx], 
+                  [labels[idx] for idx in lbl_idx],
+                  fontsize      = fontsize, 
+                  frameon       = frameon, 
+                  loc           = loc,
+                  markerfirst   = markerfirst,
+                  framealpha    = framealpha,
+                  **kwargs)
+             
     ######### S U B A X S #########
 
     @staticmethod
@@ -687,11 +855,18 @@ class Plotter:
                  filename   :   str,
                  format     =   'pdf',
                  dpi        =   200,
+                 adjust     =   True,
                  **kwargs):
         '''
-        Save figure to a specific directory
+        Save figure to a specific directory. 
+        - directory : directory to save the file
+        - filename  : name of the file
+        - format    : format of the file
+        - dpi       : dpi of the file
+        - adjust    : adjust the figure
         '''
-        plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
+        if adjust:
+            plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
         plt.savefig(directory + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
         
 
