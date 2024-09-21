@@ -182,7 +182,8 @@ def read_multiple_hdf5(directories  : list,
                        conditions   = [],
                        keys         = [],
                        verbose      = False,
-                       sortme       = True
+                       sortme       = True,
+                       listme       = True
                        ):
     '''
     Parse multiple hdf5 files. 
@@ -196,7 +197,23 @@ def read_multiple_hdf5(directories  : list,
         if verbose:
             logging.info(f"\t\tReading {f}")
         yield read_hdf5(f, keys, verbose = verbose)
-
+        
+def read_multiple_hdf5l(directories  : list,
+                        conditions   = [],
+                        keys         = [],
+                        verbose      = False,
+                        sortme       = True,
+                        listme       = True
+                        ):
+    '''
+    Parse multiple hdf5 files. 
+    - directories : list of directories to parse
+    - conditions  : conditions to be met
+    - keys        : keys to be read
+    @return       : list - this is eager evaluated loading!
+    '''
+    return list(read_multiple_hdf5(directories, conditions, keys, verbose, sortme, listme))
+    
 ####################################################### READ HDF5 FILE #######################################################
 
 def read_hdf5_extract_and_concat(directories  : list, 
@@ -251,7 +268,11 @@ def save_hdf5(directory, filename, data, shape : tuple = (), keys : list = []):
             hf.create_dataset(lbl, data = data[lbl].reshape(shape) if shape != () else data[lbl])
     # close
     hf.close()
-    
+
+#############################################################################################################################
+#############################################################################################################################
+#############################################################################################################################
+
 ########################################################### CUTTER ##########################################################
 
 def cut_matrix_bad_vals_zero(M, 
@@ -450,3 +471,252 @@ def change_h5_bad_dirs(
 
 ######################################################### CHANGE H5 #########################################################
 
+# FOR THE FUTURE - encapsulate this in a class
+
+class HDF5Handler:
+    def __init__(self, file_path=None, verbose=False, remove_bad=False):
+        self.file_path = file_path
+        self.verbose = verbose
+        self.remove_bad = remove_bad
+        self.data = {}
+
+    def _allbottomkeys(self, group):
+        """
+        Recursively collect all dataset keys in an HDF5 group.
+        - group: The HDF5 group to start the search from.
+        """
+        dataset_keys = []
+
+        def collect_keys(obj):
+            if isinstance(obj, h5py.Group):
+                for key, value in obj.items():
+                    collect_keys(value)
+            else:
+                dataset_keys.append(obj.name)
+
+        # Start the recursive key collection
+        collect_keys(group)
+
+        return dataset_keys
+
+    ###################################################################
+    
+    def read_hdf5(self, keys=None):
+        """
+        Read the HDF5 file.
+        - keys: Specific keys to read. If None, read all dataset keys.
+        Returns:
+        - dict: A dictionary with keys as dataset paths and values as numpy arrays.
+        """
+        if not self.file_path or not os.path.exists(self.file_path):
+            logging.error(f"File {self.file_path} does not exist")
+            return {}
+
+        try:
+            # Check if the file is indeed an HDF5 file
+            if not self.file_path.endswith(('.h5', '.hdf5', '.hdf')):
+                logging.error(f"File {self.file_path} is not an HDF5 file")
+                return {}
+
+            with h5py.File(self.file_path, "r") as f:
+                # Determine keys to read
+                if not keys:
+                    keys = self._allbottomkeys(f)
+                    if self.verbose:
+                        logging.info(f"Available keys: {keys}")
+
+                # Read datasets into the dictionary
+                for key in keys:
+                    try:
+                        self.data[key] = f[key][()]
+                    except KeyError:
+                        if self.verbose:
+                            logging.warning(f"Key {key} not found in file {self.file_path}")
+                    except Exception as e:
+                        if self.verbose:
+                            logging.error(f"Error reading {key} from {self.file_path}: {str(e)}")
+
+                self.data["filename"] = self.file_path
+                return self.data
+
+        except Exception as e:
+            logging.error(f"Error opening file {self.file_path}: {str(e)}")
+            if "truncated" in str(e) or "doesn't exist" in str(e) and self.remove_bad:
+                logging.info(f"Removing corrupted file {self.file_path}")
+                os.remove(self.file_path)
+            return {}
+
+    ###################################################################
+    
+    def extract_key_data(self, hdf5files, key):
+        """
+        Yield the data from the HDF5 files for the given key. 
+        - hdf5files: List of HDF5 files
+        """
+        for f in hdf5files:
+            yield f[key]
+    
+    def extract_and_concat_data(self, hdf5files, 
+                                key, repeatax=0, isvector=False, cut_0_ax=None, cut_v_ax=None, padding=False, check_limit=None):
+        """
+        Concatenate data from multiple HDF5 files along the specified axis.
+        """
+        shape_repeat = None
+        data = []
+
+        for f in hdf5files:
+            try:
+                d = f[key]
+                if self.verbose:
+                    logging.warning(f"{f['filename']}: Reading {key} with shape {d.shape}")
+
+                if shape_repeat is None:
+                    shape_repeat = d.shape[repeatax]
+
+                # Handle shape mismatch
+                if d.shape[repeatax] != shape_repeat:
+                    if padding:
+                        padding_shape = list(d.shape)
+                        padding_shape[repeatax] = shape_repeat
+                        padded_d = np.zeros(tuple(padding_shape), dtype=d.dtype)
+                        slices = [slice(None)] * len(d.shape)
+                        slices[repeatax] = slice(0, min(d.shape[repeatax], shape_repeat))
+                        padded_d[tuple(slices)] = d[tuple(slices)]
+                        d = padded_d
+                    else:
+                        if self.verbose:
+                            logging.error(f"Shape mismatch for {key} in {f['filename']}, skipping this file.")
+                        continue
+
+                # Concatenate data
+                if d.shape[repeatax] == shape_repeat:
+                    if d.shape[0] == 1 and len(d.shape) == 2 and isvector:
+                        d = d[0]
+                    data.append(d)
+                else:
+                    if self.verbose:
+                        logging.error(f"Shape mismatch for {key} in {f['filename']}")
+
+            except Exception as e:
+                if self.verbose:
+                    logging.error(f"Error reading {key} from {f['filename']}: {str(e)}")
+                continue
+
+        # Concatenate collected data
+        if data:
+            data = np.concatenate(data, axis=0)
+        else:
+            if self.verbose:
+                logging.error(f"No data found for {key}")
+            return np.array([])
+
+        # Apply cutting functions if necessary
+        if cut_0_ax is not None:
+            data = self.cut_matrix_bad_vals_zero(data, axis=cut_0_ax, check_limit=check_limit)
+        if cut_v_ax is not None:
+            data = self.cut_matrix_bad_vals(data, axis=cut_v_ax, check_limit=check_limit)
+
+        return data
+
+    ###################################################################
+    
+    @staticmethod
+    def cut_matrix_bad_vals_zero(M, axis=0, tol=1e-9, check_limit=10):
+        """
+        Remove slices where elements are close to zero along the specified axis.
+        """
+        if M.ndim == 1:
+            check_limit = min(check_limit, M.shape[0])
+            mask = np.isclose(M[:check_limit], 0.0, atol=tol)
+            return M[~mask]
+
+        M_moved = np.moveaxis(M, axis, 0)
+        check_limit = min(check_limit, M_moved.shape[1])
+        mask = ~np.all(np.isclose(M_moved[:, :check_limit], 0.0, atol=tol), axis=1)
+        M_filtered = M_moved[mask]
+
+        return np.moveaxis(M_filtered, 0, axis)
+
+    @staticmethod
+    def cut_matrix_bad_vals(M, axis=0, threshold=-1e4, check_limit=None):
+        """
+        Remove rows or columns where elements are below a threshold along the specified axis.
+        """
+        if axis == 0:
+            check_limit = min(check_limit, M.shape[1])
+            mask = ~np.all(M[:, :check_limit] < threshold, axis=1) if check_limit else ~np.all(M < threshold, axis=1)
+        elif axis == 1:
+            check_limit = min(check_limit, M.shape[0])
+            mask = ~np.all(M[:check_limit, :] < threshold, axis=0) if check_limit else ~np.all(M < threshold, axis=0)
+        else:
+            raise ValueError("Axis must be 0 (rows) or 1 (columns).")
+
+        return M[mask] if axis == 0 else M[:, mask]
+
+    ###################################################################
+
+    def save_hdf5(self, directory, filename, data, shape=(), keys=[]):
+        """
+        Save data as an HDF5 file.
+        """
+        filename = filename if filename.endswith(".h5") or filename.endswith(".hdf5") else filename + ".h5"
+        hf = h5py.File(os.path.join(directory, filename), 'w')
+
+        labels = self._create_labels_hdf5(data, keys)
+
+        if isinstance(data, (np.ndarray, list)):
+            for i, lbl in enumerate(labels):
+                hf.create_dataset(lbl, data=data[i].reshape(shape) if shape else data[i])
+        elif isinstance(data, dict):
+            for lbl in labels:
+                hf.create_dataset(lbl, data=data[lbl].reshape(shape) if shape else data[lbl])
+        hf.close()
+
+    def _create_labels_hdf5(self, data, keys):
+        """
+        Create labels for HDF5 datasets.
+        """
+        if len(keys) == len(data):
+            return keys
+        elif keys:
+            return [keys[0] + "_" + str(i) for i in range(len(data))]
+        else:
+            return ['data_' + str(i) for i in range(len(data))]
+
+    ###################################################################
+    
+    def change_h5_bad(self, directory, filename, keys2new={}, c_zero_ax=None, c_val_ax=None, directoryS="", checkLim=10):
+        """
+        Modify HDF5 file keys and remove bad elements.
+        """
+        self.file_path = os.path.join(directory, filename)
+        h5data = self.read_hdf5()
+
+        if not h5data:
+            logging.error(f"Could not read {filename}")
+            return
+
+        truekeys = [x for x in list(h5data.keys()) if x != 'filename']
+
+        if c_zero_ax is not None:
+            for key in truekeys:
+                h5data[key] = self.cut_matrix_bad_vals_zero(h5data[key], axis=c_zero_ax, check_limit=checkLim)
+
+        if c_val_ax is not None:
+            for key in truekeys:
+                h5data[key] = self.cut_matrix_bad_vals(h5data[key], axis=c_val_ax, check_limit=checkLim)
+
+        if keys2new:
+            for key in truekeys:
+                if key in keys2new:
+                    h5data[keys2new[key]] = h5data.pop(key)
+
+        if 'filename' in h5data:
+            del h5data['filename']
+
+        if directoryS:
+            save_dir = directoryS
+        else:
+            save_dir = directory
+
+        self.save_hdf5(save_dir, filename, h5data, shape=())
