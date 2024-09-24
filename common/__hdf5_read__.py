@@ -33,7 +33,7 @@ def read_hdf5(file_path,
               verbose   = False, 
               removeBad = False):
     """
-    Read the hdf5 saved file
+    Read the hdf5 saved file 
     - keys : if we input keys, they will be used for reading. Otherwise use the available ones.
     Parameters:
     - file_path (str): Path to the HDF5 file.
