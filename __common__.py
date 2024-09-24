@@ -48,3 +48,17 @@ def listDups(seq, item):
             locs.append(loc)
             start_at = loc
     return locs
+
+########################################################################################################################
+
+def appDict(d, k, v):
+    '''
+    Append a value to a key in a dictionary
+    - d : dictionary
+    - k : key
+    - v : value
+    '''
+    if k in d:
+        d[k].append(v)
+    else:
+        d[k] = [v]

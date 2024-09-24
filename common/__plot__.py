@@ -414,7 +414,7 @@ class Plotter:
         if 'x' in which:
             # set the ticks
             if True:
-                Plotter.set_ax_params(ax, 'x', scale = scale, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
+                Plotter.set_tickparams(ax, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
             
             if label != "":
                 ax.set_xlabel(label if labelCond else "", 
@@ -453,7 +453,7 @@ class Plotter:
             
             # set the ticks
             if True:
-                Plotter.set_ax_params(ax, 'y', scale = scale, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
+                Plotter.set_tickparams(ax, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
                 
             if label != "":
                 ax.set_ylabel(label if labelCond else "", 
