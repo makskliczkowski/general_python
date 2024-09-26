@@ -193,6 +193,11 @@ def read_multiple_hdf5(directories  : list,
     @return       : generator - this is lazy evaluated loading!
     '''
     files = Directories.listDirs(directories, conditions = conditions, appendDir = True, sortCondition = (lambda x: x) if sortme else None)
+    
+    if len(files) == 0:
+        logging.error("No files found")
+        return None 
+    
     for f in files:
         if verbose:
             logging.info(f"\t\tReading {f}")
@@ -231,6 +236,9 @@ def read_hdf5_extract_and_concat(directories  : list,
     Do the same as read_hdf5_extract but skip reading multiple files.
     '''
     files = read_multiple_hdf5(directories, conditions, [key] if key is not None else [], verbose)
+    if files is None:
+        return np.array([])
+    
     return read_hdf5_extract_concat(files, key if isinstance(key, str) else '',
                                     repeatax, verbose, is_vector, cut_0_ax, cut_v_ax, padding, check_limit)
 

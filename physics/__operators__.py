@@ -60,7 +60,7 @@ class Operators:
             # contains L or l
             _div = Operators.resolveSite(site.split(Operators.OPERATOR_SEP_DIV)[1])
             if Operators.OPERATOR_SITEU in site or Operators.OPERATOR_SITE in site:
-                return _dimension / _div
+                return int(_dimension / _div)
             # contains PI
             elif Operators.OPERATOR_PI in site:
                 return np.pi / _div
@@ -68,13 +68,13 @@ class Operators:
         # check if the site is a difference
         elif Operators.OPERATOR_SEP_DIFF in site:
             _diff = Operators.resolveSite(site.split(Operators.OPERATOR_SEP_DIFF)[1])
-            return max(0.0, _dimension - _diff - (1 if Operators.OPERATOR_SITE_M_1 else 0))
+            return int(max(0.0, _dimension - _diff - (1 if Operators.OPERATOR_SITE_M_1 else 0)))
 
         # simply return the site as a number
-        _siteInt = float(site)
+        _siteInt = int(site)
         if _siteInt < 0 or _siteInt >= _dimension:
             raise Exception("The site: " + site + " is out of range. The dimension is: " + str(_dimension))
-        return float(site)
+        return int(site)
     
     ##########################
 
@@ -97,5 +97,5 @@ class Operators:
             if Operators.OPERATOR_SEP_DIFF in elem_part:
                 elem_part= elem_part.replace("m", '-')
                 
-        f_name_k     = "${}^{{{}}}_{{{}}}$".format(f_name_split[0], elem_part, operator)
+        f_name_k     = "${}^{{{}}}_{{{}}}$".format(f_name_split[0], elem_part, f_name)
         return f_name_k

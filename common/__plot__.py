@@ -61,6 +61,10 @@ colorsCyclePlastic                  =   itertools.cycle(list(["#E69F00", "#56B4E
 markersList                         =   ['o','s','v', '+', 'o', '*']
 markersCycle                        =   itertools.cycle(["4", "2", "3", "1", "+", "x", "."] + markersList)
 
+# standard colors
+colorMean                           =   'PuBu'
+colorTypical                        =   'BrBG'
+
 ########################## functions ##########################
 
 class MathTextSciFormatter(mticker.Formatter):
@@ -973,6 +977,7 @@ class PlotterSave:
     @staticmethod
     def matrixData(         directory    :   str,
                             fileName     :   str,
+#################################################   
                             x,
                             y,
                             typ          =   '.npy'):
@@ -993,6 +998,23 @@ class PlotterSave:
         else:
             np.savetxt(directory + fileName + typ, toSave)
 
+    @staticmethod
+    def appDataFrame(       df,
+                            colname : str,
+                            y
+                     ):
+        '''
+        Appends the data to the dataframe
+        '''
+        # save the values
+        if len(y) > len(df) and len(df) != 0:
+            # Trim y and omegas to match the length of df_f_fun
+            df[colname] = y[:len(df)]
+        elif len(y) < len(df):
+            # Resize y and omegas, appending zeros to match the length of df_f_fun
+            df[colname] = np.resize(y, len(df))
+        else:
+            df[colname] = y    
 ##########################################################################
 
 from sympy import Matrix, init_printing

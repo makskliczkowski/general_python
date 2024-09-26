@@ -62,3 +62,17 @@ def appDict(d, k, v):
         d[k].append(v)
     else:
         d[k] = [v]
+        
+########################################################################################################################
+
+def meanSlice(arr, idx, left, right):
+    '''
+    Find the mean of a slice of an array
+    - arr   : array
+    - idx   : index
+    - left  : left slice
+    - right : right slice
+    '''
+    idx_l = idx - left if idx - left >= 0 else 0
+    idx_r = idx + right if idx + right < len(arr) else len(arr)-1
+    return np.mean(arr[idx_l:idx_r])

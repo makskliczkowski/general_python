@@ -120,3 +120,39 @@ class EntropyPredictions:
         '''
         return ((n-1.0) * np.log(1.0-n) - n*np.log(n))*f*L - np.sqrt(n*(1.0-n)/2.0/np.pi) * np.abs(np.log((1.0-n)/n)) * (1.0 if f == 0.5 else 0.) * np.sqrt(L) + (f+np.log(1-f))/2. - 0.5 * (1. if f == 0.5 else 0) * (1. if n == 0.5 else 0.0)
 
+###############################
+
+class Fractal:
+    
+    @staticmethod
+    def fractal_dim_s_info(S_lp1, S_l, lp1, l):
+        '''
+        Calculate the fractal dimension out of the information entropy of the system.
+        - S_lp1 : Entropy of the system with L+1 sites.
+        - S_l   : Entropy of the system with L sites.
+        '''
+        return (S_lp1 - S_l) / (np.log(2**lp1) - np.log(2**l))
+    
+    @staticmethod
+    def fractal_dim_s_info_mean(dq_lp1, dq_l):
+        '''
+        Calculate the fractal dimension out of the information entropy of the system.
+        Average over system sizes to get the mean value.
+        - dq_lp1    : fractal of the system with L+1 sites.
+        - dq_l      : fractal of the system with L sites.
+        '''
+        return (dq_lp1 - dq_l) / 2.0
+
+    ################################
+    
+    @staticmethod
+    def fractal_dim_pr(pr_lp1, pr_l, q):
+        '''
+        Calculate the fractal dimension out of the information entropy of the system.
+        - pr_lp1: Entropy of the system with L+1 sites.
+        - pr_l: Entropy of the system with L sites.
+        '''
+        if q != 1.0:    
+            return (np.log2(pr_lp1) - np.log2(pr_l)) / (1 - q)
+        else:
+            return (np.log2(pr_lp1) - np.log2(pr_l))
