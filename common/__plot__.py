@@ -251,7 +251,7 @@ class Plotter:
         - y         : y coordinate
         - fontsize  : fontsize 
         '''
-        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, condition = condition, **kwargs)
+        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, cond = condition, **kwargs)
     
     @staticmethod
     def set_arrow(  ax,
