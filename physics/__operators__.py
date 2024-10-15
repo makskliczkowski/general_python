@@ -5,6 +5,73 @@ Allows one to parse physical operators created in the simulation.
 
 import numpy as np
 
+class Spectral:
+    '''
+    For the spectral statistics and its properties. Allows one to take a fraction of the data
+    and calculate the mean of the data.
+    
+    '''
+    
+    @staticmethod
+    def diagonal_cutoff(Nh, nu, minimal_frac = 0.1):
+        '''
+        The diagonal cutoff for the spectral statistics
+        - Ns: system size
+        - Nh: Hilbert space dimension
+        - nu: number of eigenvalues - if it's less than 1, then it's a fraction of the Hilbert space dimension
+        - minimal_frac: minimal fraction of the Hilbert space dimension
+        Returns:
+        - The diagonal cutoff for the spectral statistics
+        '''
+        return min(int(minimal_frac * Nh), nu if nu >= 1 else int(nu * Nh))
+    
+    @staticmethod
+    def take_fraction(nu : float, data, middle = None):
+        '''
+        Take a fraction of the data for the spectral statistics. 
+        - nu: number of eigenvalues - if it's less than 1, then it's a fraction of the Hilbert space dimension
+        - data: data to take the fraction from
+        - middle: middle of the data (if None, then it's the middle of the data)
+        Returns:
+        - The fraction of the data
+        '''
+        sizeData    = len(data)
+        middle      = sizeData // 2 if middle is None else middle
+        nu          = Spectral.diagonal_cutoff(sizeData, nu)
+        return data[max(middle - nu // 2, 0) : min(middle + nu // 2, sizeData)]
+    
+    @staticmethod
+    def take_fraction_arr(nu : float, data, middle = None):
+        '''
+        Take a fraction of the data for the spectral statistics.
+        - nu: number of eigenvalues - if it's less than 1, then it's a fraction of the Hilbert space dimension
+        - data: data to take the fraction from
+        - middle: middle of the data (if None, then it's the middle of the data)
+        Returns:
+        - The fraction of the data
+        '''
+        sizeRep     = data.shape[0]
+        sizeData    = data.shape[-1]
+        middle      = np.ones(sizeData) * sizeData // 2 if middle is None else middle
+        nu          = Spectral.diagonal_cutoff(sizeData, nu)
+        out         = np.array([data[i][max(middle[i] - nu // 2, 0) : min(middle[i] + nu // 2, sizeData)] for i in range(sizeRep)])
+        return out
+    
+    @staticmethod
+    def mean_fraction(nu : float, data, middle = None, axis = 0):
+        '''
+        Take a fraction of the data for the spectral statistics. Calculates the mean of the data.
+        - nu: number of eigenvalues - if it's less than 1, then it's a fraction of the Hilbert space dimension
+        - data: data to take the fraction from
+        - middle: middle of the data (if None, then it's the middle of the data)
+        - axis: axis to calculate the mean
+        Returns:
+        - The mean of the fraction of the data
+        '''
+        return np.mean(Spectral.take_fraction(nu, data, middle), axis = axis)
+        
+    ##########################
+    
 class Operators:
     '''
     Operator class that contains the method to parse Operator names
