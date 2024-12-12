@@ -450,3 +450,21 @@ class Fitter:
         else:
             raise ValueError('Type not recognized: ' + typ)
         return funct
+
+##############
+
+def next_power(x : float, base : int = 2):
+    '''
+    Get the next power of a number (base) that is greater than x\
+    - x     : number to get the next power
+    - base  : base of the power (default 2 for binary, can be 10 for decimal)
+    '''
+    return base ** math.ceil(math.log(x) / math.log(base))
+
+def prev_power(x : float, base : int = 2):
+    '''
+    Get the previous power of a number (base) that is smaller than x\
+    - x     : number to get the next power
+    - base  : base of the power (default 2 for binary, can be 10 for decimal)
+    '''
+    return base ** math.floor(math.log(x) / math.log(base))
