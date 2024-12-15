@@ -27,18 +27,28 @@ SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
 BIGGER_SIZE                         =   16
 ADDITIONAL_LINESTYLES = {
-     'loosely dotted'        : (0, (1, 5)),
-     'dotted'                : (0, (1, 1)),
-     'densely dotted'        : (0, (1, 1)),
-     'loosely dashed'        : (0, (2, 5)),
-     'dashed'                : (0, (5, 5)),
-     'densely dashed'        : (0, (5, 1)),
-     'loosely dashdotted'    : (0, (3, 10, 1, 10)),
-     'dashdotted'            : (0, (3, 5, 1, 5)),
-     'densely dashdotted'    : (0, (3, 1, 1, 1)),
-     'dashdotdotted'         : (0, (3, 5, 1, 5, 1, 5)),
-     'loosely dashdotdotted' : (0, (3, 10, 1, 10, 1, 10)),
-     'densely dashdotdotted' : (0, (3, 1, 1, 1, 1, 1))
+    'loosely dotted'        : (0, (1, 5)),
+    'dotted'                : (0, (1, 1)),
+    'densely dotted'        : (0, (1, 1)),
+    'loosely dashed'        : (0, (2, 5)),
+    'dashed'                : (0, (5, 5)),
+    'densely dashed'        : (0, (5, 1)),
+    'loosely dashdotted'    : (0, (3, 10, 1, 10)),
+    'dashdotted'            : (0, (3, 5, 1, 5)),
+    'densely dashdotted'    : (0, (3, 1, 1, 1)),
+    'dashdotdotted'         : (0, (3, 5, 1, 5, 1, 5)),
+    'loosely dashdotdotted' : (0, (3, 10, 1, 10, 1, 10)),
+    'densely dashdotdotted' : (0, (3, 1, 1, 1, 1, 1)),
+    'solid'                 : (0, ()),
+    'loosely long dashed'   : (0, (5, 10)),
+    'long dashed'           : (0, (5, 15)),
+    'densely long dashed'   : (0, (5, 1)),
+    'loosely spaced dots'   : (0, (1, 10)),
+    'spaced dots'           : (0, (1, 15)),
+    'densely spaced dots'   : (0, (1, 1)),
+    'loosely spaced dashes' : (0, (5, 10)),
+    'spaced dashes'         : (0, (5, 15)),
+    'densely spaced dashes' : (0, (5, 1))
 }
 
 try:
@@ -58,14 +68,121 @@ mpl.rcParams['font.family']         = 'STIXGeneral'
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
 colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
 colorsCyclePlastic                  =   itertools.cycle(list(["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"]))
-markersList                         =   ['o','s','v', '+', 'o', '*']
-markersCycle                        =   itertools.cycle(["4", "2", "3", "1", "+", "x", "."] + markersList)
+colorsCycleBright                   =   itertools.cycle(list(mcolors.CSS4_COLORS))
+colorsCycleDark                     =   itertools.cycle(list(mcolors.BASE_COLORS))
+colorsCyclePastel                   =   itertools.cycle(list(mcolors.XKCD_COLORS))
+@staticmethod
+def reset_color_cycles(which=None):
+    '''
+    Reset the color cycles to the default ones.
+    - which     :   which color cycle to reset
+    Returns:
+    - the cycle to take
+    '''
+    global colorsCycle, colorsCyclePlastic, colorsCycleBright, colorsCycleDark, colorsCyclePastel
+    cycle2take = None
+    if which is None or which == 'TABLEAU':
+        colorsCycle = itertools.cycle(list(mcolors.TABLEAU_COLORS))
+        cycle2take = colorsCycle
+    if which is None or which == 'Plastic':
+        colorsCyclePlastic = itertools.cycle(list(["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"]))
+        cycle2take = colorsCyclePlastic if cycle2take is None else cycle2take
+    if which is None or which == 'Bright':
+        colorsCycleBright = itertools.cycle(list(mcolors.CSS4_COLORS))
+        cycle2take = colorsCycleBright if cycle2take is None else cycle2take
+    if which is None or which == 'Dark':
+        colorsCycleDark = itertools.cycle(list(mcolors.BASE_COLORS))
+        cycle2take = colorsCycleDark if cycle2take is None else cycle2take
+    if which is None or which == 'Pastel':
+        colorsCyclePastel = itertools.cycle(list(mcolors.XKCD_COLORS))
+        cycle2take = colorsCyclePastel if cycle2take is None else cycle2take
+    return cycle2take
+    
+@staticmethod
+def get_color_cycle(which=None):
+    ''' 
+    Get the color cycle to use.
+    - which     :   which color cycle to use
+    Returns:
+    - the cycle to take
+    '''
+    global colorsCycle, colorsCyclePlastic, colorsCycleBright, colorsCycleDark, colorsCyclePastel
+    if which is None or which == 'TABLEAU':
+        return colorsCycle
+    if which is None or which == 'Plastic':
+        return colorsCyclePlastic
+    if which is None or which == 'Bright':
+        return colorsCycleBright
+    if which is None or which == 'Dark':
+        return colorsCycleDark
+    if which is None or which == 'Pastel':
+        return colorsCyclePastel        
 
-# standard colors
+markersList                         =   ['o','s','v', '+', 'o', '*'] + ['D', 'h', 'H', 'p', 'P', 'X', 'd', '|', '_']
+markersCycle                        =   itertools.cycle(["4", "2", "3", "1", "+", "x", "."] + markersList)
+linestylesList                      =   ['-', '--', '-.', ':']
+linestylesCycle                     =   itertools.cycle(['-', '--', '-.', ':'])
+linestylesCycleExtended             =   itertools.cycle(['-', '--', '-.', ':'] + list(ADDITIONAL_LINESTYLES.keys()))
+@staticmethod
+def reset_linestyles(which=None):
+    '''
+    Reset the line styles to the default ones.
+    - which     :   which line style to reset
+    Returns:
+    - the cycle to take
+    '''
+    global linestylesCycle, linestylesCycleExtended
+    cycle2take = None
+    if which is None or which == 'Normal':
+        linestylesCycle = itertools.cycle(['-', '--', '-.', ':'])
+        cycle2take = linestylesCycle
+    if which is None or which == 'Extended':
+        linestylesCycleExtended = itertools.cycle(['-', '--', '-.', ':'] + list(ADDITIONAL_LINESTYLES.keys()))
+        cycle2take = linestylesCycleExtended if cycle2take is None else cycle2take
+    return cycle2take
+
+@staticmethod
+def get_linestyle_cycle(which=None):
+    ''' 
+    Get the line style cycle to use.
+    - which     :   which line style cycle to use
+    Returns:
+    - the cycle to take
+    '''
+    global linestylesCycle, linestylesCycleExtended
+    if which is None or which == 'Normal':
+        return linestylesCycle
+    if which is None or which == 'Extended':
+        return linestylesCycleExtended
+    
+############################ latex ############################
 colorMean                           =   'PuBu'
 colorTypical                        =   'BrBG'
-
 ########################## functions ##########################
+
+class CustomFormatter(mticker.Formatter):
+    def __init__(self, fmt="{x:.2f}"):
+        """
+        Initialize the object with a format string.
+        
+        Args:
+        fmt (str): The format string to be used for formatting.
+        """
+        self.fmt = fmt
+        
+    def __call__(self, x, pos=None):
+        return self.fmt.format(x=x)
+
+class PercentFormatter(mticker.PercentFormatter):
+    def __init__(self, decimals=2, symbol='%'):
+        """
+        Initialize the object with a format string.
+        
+        Args:
+        decimals (int): The number of decimal places to use.
+        symbol (str): The symbol to use for percentage.
+        """
+        super().__init__(decimals=decimals, symbol=symbol)
 
 class MathTextSciFormatter(mticker.Formatter):
     def __init__(self, fmt="%1.2e"):
@@ -94,6 +211,59 @@ class MathTextSciFormatter(mticker.Formatter):
             s           =  r'%s%s' % (significand, exponent)
         return "${}$".format(s)
 
+def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
+    """
+    Sets the formatter for the given axis on the plot.
+    
+    fmt can take the value:
+        - "%1.2e": Scientific notation with 2 decimal places.
+        - "%1.2f": Fixed notation with 2 decimal places.
+        - "%1.0f": Fixed notation with 0 decimal places.
+        - "%1.0e": Scientific notation with 0 decimal places
+        - "%1.0%": Percentage notation with 0 decimal places.
+        - "%1.2%": Percentage notation with 2 decimal places.
+        - "%1.0g": General notation with 0 decimal places.
+        - "%1.2g": General notation with 2 decimal places.
+        Integers:
+        - "%d": Integer notation.
+        - "%i": Integer notation.
+        - "%u": Unsigned integer notation.
+        - "%o": Octal notation.
+        - "%x": Hexadecimal notation.
+        - "%X": Hexadecimal notation.
+        - "%c": Character notation.
+        - "%r": Repr notation.    
+    
+    Args:
+        ax (object): The axis object on which to set the formatter.
+        formatter_type (str): The type of formatter to use. Options are "sci", "custom", "percent".
+        fmt (str, optional): The format string for the axis labels. Defaults to "%1.2e". 
+        axis (str, optional): The axis on which to set the formatter. Defaults to 'xy'.
+    
+    Additional formatter options:
+        - "sci": Scientific notation formatter.
+        - "custom": Custom formatter using a provided format string.
+        - "percent": Percentage formatter.
+        
+    Returns:
+        None
+    """
+    if formatter_type == "sci":
+        formatter = MathTextSciFormatter(fmt)
+    elif formatter_type == "custom":
+        formatter = CustomFormatter(fmt)
+    elif formatter_type == "percent":
+        formatter = PercentFormatter()
+    else:
+        raise ValueError("Unsupported formatter type. Choose from 'sci', 'custom', 'percent'.")
+
+    if 'y' in axis:
+        ax.yaxis.set_major_formatter(formatter)
+    if 'x' in axis:
+        ax.xaxis.set_major_formatter(formatter)
+        
+############################ grids ############################
+
 ########################### plotter ###########################
 
 class Plotter:
@@ -101,30 +271,35 @@ class Plotter:
     A Plotter class that handles the methods of plotting.
     """
     
+    ###########################################################
     @staticmethod
-    def get_figsize(columnwidth, wf = 0.5, hf = (5.**0.5-1.0) / 2.0):
-      """
-      Parameters:
-        - wf [float]:  width fraction in columnwidth units
-        - hf [float]:  height fraction in columnwidth units.
-                       Set by default to golden ratio.
-        - columnwidth [float]: width of the column in latex. Get this from LaTeX 
-                               using \showthe\columnwidth
-      Returns:  [fig_width,fig_height]: that should be given to matplotlib
-      """
-      fig_width_pt  = columnwidth * wf 
-      inches_per_pt = 1.0 / 72.27                       # Convert pt to inch
-      fig_width     = fig_width_pt * inches_per_pt      # width in inches
-      fig_height    = fig_width * hf                # height in inches
-      return [fig_width, fig_height]
-    
+    def get_figsize(columnwidth, wf=0.5, hf=None, aspect_ratio=None):
+        """
+        Parameters:
+            - wf [float]:  width fraction in columnwidth units
+            - hf [float]:  height fraction in columnwidth units. If None, it will be calculated based on aspect_ratio.
+            - aspect_ratio [float]: Aspect ratio (height/width). If None, defaults to golden ratio.
+            - columnwidth [float]: width of the column in latex. Get this from LaTeX using \showthe\columnwidth
+        Returns:  [fig_width, fig_height]: that should be given to matplotlib
+        """
+        if aspect_ratio is None:
+            aspect_ratio = (5.**0.5 - 1.0) / 2.0  # golden ratio
+        if hf is None:
+            hf = aspect_ratio
+
+        fig_width_pt = columnwidth * wf
+        inches_per_pt = 1.0 / 72.27  # Convert pt to inch
+        fig_width = fig_width_pt * inches_per_pt  # width in inches
+        fig_height = fig_width * hf  # height in inches
+        return [fig_width, fig_height]
+    ###########################################################
     @staticmethod 
     def get_color(color,
                   alpha = None,
                   edgecolor = (0,0,0,1), 
                   facecolor = (1,1,1,0)
                   ):
-        dictionary = dict(facecolor = facecolor, edgecolor = edgecolor)
+        dictionary = dict(facecolor = facecolor, edgecolor = edgecolor, color=color)
         if alpha is not None:
             dictionary['alpha'] = alpha
         return dictionary
@@ -200,12 +375,62 @@ class Plotter:
             cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
     
     @staticmethod
-    def get_colormap(values, cmap = 'PuBu', elsecolor = 'blue'):
-        norm        = plt.Normalize(np.min(values), np.max(values))
-        colors      = plt.get_cmap(cmap)
-        values      = np.sort(values)
-        getcolor    = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
+    def get_colormap(values, cmap='PuBu', elsecolor='blue'):
+        """
+        Get a colormap for the given values.
+        
+        Parameters:
+        - values (array-like): The values to map to colors.
+        - cmap (str, optional): The colormap to use. Defaults to 'PuBu'.
+        - elsecolor (str, optional): The color to use if there is only one value. Defaults to 'blue'.
+        
+        Returns:
+        - getcolor (function): A function that maps a value to a color.
+        - colors (Colormap): The colormap object.
+        - norm (Normalize): The normalization object.
+        """
+        norm = plt.Normalize(np.min(values), np.max(values))
+        colors = plt.get_cmap(cmap)
+        values = np.sort(values)
+        getcolor = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
         return getcolor, colors, norm
+
+    @staticmethod
+    def apply_colormap(ax, data, cmap='PuBu', colorbar=True, **kwargs):
+        """
+        Apply a colormap to the given data and plot it on the provided axis.
+        
+        Parameters:
+        - ax (object): The axis object to plot on.
+        - data (array-like): The data to plot.
+        - cmap (str, optional): The colormap to use. Defaults to 'PuBu'.
+        - colorbar (bool, optional): Whether to add a colorbar. Defaults to True.
+        
+        Returns:
+        - img (AxesImage): The image object.
+        """
+        norm = plt.Normalize(np.min(data), np.max(data))
+        img = ax.imshow(data, cmap=cmap, norm=norm, **kwargs)
+        if colorbar:
+            plt.colorbar(img, ax=ax)
+        return img
+
+    @staticmethod
+    def discrete_colormap(N, base_cmap=None):
+        """
+        Create an N-bin discrete colormap from the specified input map.
+        
+        Parameters:
+        - N (int): Number of discrete colors.
+        - base_cmap (str or Colormap, optional): The base colormap to use. Defaults to None.
+        
+        Returns:
+        - cmap (Colormap): The discrete colormap.
+        """
+        base        = plt.cm.get_cmap(base_cmap)
+        color_list  = base(np.linspace(0, 1, N))
+        cmap_name   = base.name + str(N)
+        return plt.cm.colors.ListedColormap(color_list, name=cmap_name)
     
     #################### A N N O T ####################
     
@@ -998,40 +1223,82 @@ class PlotterSave:
         else:
             np.savetxt(directory + fileName + typ, toSave)
 
+    ##########################################################################
     @staticmethod
-    def appDataFrame(       df,
-                            colname : str,
-                            y
-                     ):
-        '''
-        Appends the data to the dataframe
-        '''
-        # save the values
-        if len(y) > len(df) and len(df) != 0:
-            # Trim y and omegas to match the length of df_f_fun
-            df[colname] = y[:len(df)]
-        elif len(y) < len(df):
-            # Resize y and omegas, appending zeros to match the length of df_f_fun
-            df[colname] = np.resize(y, len(df))
-        else:
-            df[colname] = y    
-##########################################################################
+    def appDataFrame(df, colname: str, y, fill_value=np.nan):
+        """
+        Appends the data to the dataframe.
+        
+        Parameters:
+        - df (pd.DataFrame): The dataframe to append data to.
+        - colname (str): The column name to append data under.
+        - y (array-like): The data to append.
+        - fill_value: The value to use for filling if resizing is needed.
+        """
+        # Ensure the length of y matches the length of the dataframe
+        original_len = len(y)
+        if original_len != len(df):
+            y = np.resize(y, len(df))
+            # Fill the rest of the array with fill_value
+            if original_len > len(df):
+                y[len(df):] = fill_value
+            y[len(df):] = fill_value
+        
+        df[colname] = y
+    ##########################################################################
+    @staticmethod
+    def appArrayNumpy(arr, y):
+        """
+        Appends the data to a numpy array.
+        
+        Parameters:
+        - arr (np.ndarray): The numpy array to append data to.
+        - y (np.ndarray): The data to append.
+        
+        Returns:
+        - np.ndarray: The updated numpy array with appended data.
+        """
+        return np.append(arr, y, axis=0)
+
+##############################################################################
 
 from sympy import Matrix, init_printing
 
 class MatrixPrinter:
-    
+    '''
+    Class for printing matrices and vectors
+    '''
     
     def __init__(self):
         init_printing()
     
-    '''
-    Class for printing matrices
-    '''
     @staticmethod
-    def print_matrix(matrix : np.ndarray):
+    def print_matrix(matrix: np.ndarray):
         '''
         Prints the matrix in a nice form
         '''
         display(Matrix(matrix))
+    
+    @staticmethod
+    def print_vector(vector: np.ndarray):
+        '''
+        Prints the vector in a nice form
+        '''
+        display(Matrix(vector))
+    
+    @staticmethod
+    def print_matrices(matrices: list):
+        '''
+        Prints a list of matrices in a nice form
+        '''
+        for matrix in matrices:
+            display(Matrix(matrix))
+    
+    @staticmethod
+    def print_vectors(vectors: list):
+        '''
+        Prints a list of vectors in a nice form
+        '''
+        for vector in vectors:
+            display(Matrix(vector))
         

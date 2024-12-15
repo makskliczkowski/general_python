@@ -125,7 +125,7 @@ class Operators:
         # check if the site can be divided - then divide it
         elif Operators.OPERATOR_SEP_DIV in site:
             # contains L or l
-            _div = Operators.resolveSite(site.split(Operators.OPERATOR_SEP_DIV)[1])
+            _div = Operators.resolveSite(site.split(Operators.OPERATOR_SEP_DIV)[1], _dimension)
             if Operators.OPERATOR_SITEU in site or Operators.OPERATOR_SITE in site:
                 return int(_dimension / _div)
             # contains PI
@@ -134,7 +134,7 @@ class Operators:
     
         # check if the site is a difference
         elif Operators.OPERATOR_SEP_DIFF in site:
-            _diff = Operators.resolveSite(site.split(Operators.OPERATOR_SEP_DIFF)[1])
+            _diff = Operators.resolveSite(site.split(Operators.OPERATOR_SEP_DIFF)[1], _dimension)
             return int(max(0.0, _dimension - _diff - (1 if Operators.OPERATOR_SITE_M_1 else 0)))
 
         # simply return the site as a number
