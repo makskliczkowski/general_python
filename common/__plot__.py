@@ -266,6 +266,8 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
 
 ########################### plotter ###########################
 
+import seaborn as sns
+
 class Plotter:
     """ 
     A Plotter class that handles the methods of plotting.
@@ -1098,6 +1100,69 @@ class Plotter:
             plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
         plt.savefig(directory + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
         
+    ###############################
+    
+    @staticmethod
+    def plot_heatmaps(dfs       : list,
+                      colormap  = 'viridis',
+                      cb_width  = 0.1,
+                      movefirst = True,
+                      index     = None,
+                      columns   = None,
+                      values    = None,
+                      sortidx   = True,  
+                      zlabel    = '',
+                      sizemult  = 3,
+                      xvals     = True,
+                      yvals     = True,
+                      vmin      = None,
+                      vmax      = None,
+                      **kwargs):
+        size        = len(dfs)
+        plotwidth   = 1.0 / len(dfs)
+        cbarwidth   = 0.1 * plotwidth
+        normalwidth = plotwidth - cbarwidth / size
+        extendwidth = plotwidth + cbarwidth
+        fig, ax     = Plotter.get_subplots(nrows = 1,
+                                           ncols = size, 
+                                           sizex = size * sizemult, 
+                                           sizey = sizemult,
+                                           dpi   = 150,
+                                           width_ratios = (size - 1) * [normalwidth] + [extendwidth],
+                                           **kwargs)
+        dfsorted    = [df.sort_values(by = [index, columns]) for df in dfs] if sortidx else dfs
+        dfpivoted   = [df.pivot_table(index = index, columns = columns, values = values) for df in dfsorted]
+        heatmap     = [df.sort_index(ascending = True) for i, df in enumerate(dfpivoted)]
+        if movefirst:
+            for i in range(size):
+                heatmap[i].index += heatmap[i].index[1] - heatmap[i].index[0]
+        plots       = []
+        for i, df in enumerate(heatmap):
+            plot = sns.heatmap(df, ax = ax[i], cbar = i == size - 1, 
+                               cbar_kws = {
+                                            # 'shrink': cb_width,
+                                            'label' : zlabel
+                                        }, 
+                               vmin = vmin, vmax = vmax,
+                               cmap = colormap)
+            plots.append(plot)
+        
+        # set axes
+        for i, axis in enumerate(plots):
+            # ax.set_xlabel('')
+            # ax.set_ylabel('')
+            Plotter.set_tickparams(axis)
+            axis.set_title(f'{i + 1}')
+            if xvals:
+                axis.set_xticks(range(len(heatmap[i].columns)))                                                         # Set positions for x ticks
+                axis.set_xticklabels([f"{col:.2f}" if k % 2 == 0 else '' for k, col in enumerate(heatmap[i].columns)])  # Set x labels
+            # y ticks
+            if yvals:
+                axis.set_yticks(range(len(heatmap[i].index)))                                                           # Set positions for y ticks
+                axis.set_yticklabels([f"{ind:.2f}" if k % 2 == 0 else '' for k, ind in enumerate(heatmap[i].index)])    # Set y labels
+        
+        return fig, ax, plots
+
 
 ##########################################################################
 

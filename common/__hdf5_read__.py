@@ -195,7 +195,7 @@ def read_multiple_hdf5(directories  : list,
     files = Directories.listDirs(directories, conditions = conditions, appendDir = True, sortCondition = (lambda x: x) if sortme else None)
     
     if len(files) == 0:
-        logging.error("No files found")
+        # logging.error("No files found")
         return None 
     
     for f in files:
@@ -244,10 +244,12 @@ def read_hdf5_extract_and_concat(directories  : list,
 
 ####################################################### SAVE HDF5 FILE #######################################################
     
-def create_labels_hdf5(data, keys):
-    if len(keys) == len(data):
+def create_labels_hdf5(data, keys, shape : tuple = ()):
+    if len(keys) == len(data) or shape != ():
         return keys
-    elif len(keys) != 0:
+    elif len(keys) == 1:
+        return keys
+    elif len(keys) > 1:
         return [keys[0] + "_" + str(i) for i in range(len(data))]
     else:
         return ['data_' + str(i) for i in range(len(data))]
@@ -265,17 +267,56 @@ def save_hdf5(directory, filename, data, shape : tuple = (), keys : list = []):
     hf          = h5py.File(directory + kPS + filename, 'w')
     
     # create the labels
-    labels      = create_labels_hdf5(data, keys)
+    labels      = []
+    if not isinstance(data, dict):
+        labels = create_labels_hdf5(data, keys, shape)
     
     # save the file
     if type(data) == np.ndarray or isinstance(data, list):
-        for i, lbl in enumerate(labels):
-            hf.create_dataset(lbl, data = data[i].reshape(shape) if shape != () else data[i])
+        if len(labels) == 1:
+            hf.create_dataset(labels[0], data = np.array(data).reshape(shape) if shape != () else data)
+        else:
+            for i, lbl in enumerate(labels):
+                hf.create_dataset(lbl, data = data[i].reshape(shape) if shape != () else data[i])
     elif isinstance(data, dict):
-        for lbl in labels:
-            hf.create_dataset(lbl, data = data[lbl].reshape(shape) if shape != () else data[lbl])
+        for key in data.keys():
+            hf.create_dataset(key, data = np.array(data[key]).reshape(shape) if shape != () else data[key])
     # close
     hf.close()
+    
+def append_hdf5(directory, filename, new_data, keys=[]):
+    """
+    Append new data to an existing HDF5 file.
+    - directory: Directory where the file is located.
+    - filename: Name of the HDF5 file.
+    - new_data: Data to be appended (can be a list of data or a dictionary).
+    - keys: Keys for the new data. If empty, keys will be generated.
+    """
+    file_path = os.path.join(directory, filename)
+    
+    if not os.path.exists(file_path):
+        logging.error(f"File {file_path} does not exist")
+        return
+    
+    with h5py.File(file_path, 'a') as hf:
+        labels = []
+        if not isinstance(new_data, dict):
+            labels = create_labels_hdf5(new_data, keys)
+        
+        if isinstance(new_data, (np.ndarray, list)):
+            for i, lbl in enumerate(labels):
+                if lbl in hf:
+                    hf[lbl].resize((hf[lbl].shape[0] + new_data[i].shape[0]), axis=0)
+                    hf[lbl][-new_data[i].shape[0]:] = new_data[i]
+                else:
+                    hf.create_dataset(lbl, data=new_data[i], maxshape=(None,) + new_data[i].shape[1:])
+        elif isinstance(new_data, dict):
+            for lbl in new_data.keys():
+                if lbl in hf:
+                    hf[lbl].resize((hf[lbl].shape[0] + new_data[lbl].shape[0]), axis=0)
+                    hf[lbl][-new_data[lbl].shape[0]:] = new_data[lbl]
+                else:
+                    hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=np.float64))
 
 #############################################################################################################################
 #############################################################################################################################

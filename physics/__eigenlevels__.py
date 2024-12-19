@@ -134,6 +134,27 @@ class HamiltonianProperties:
 class StatMeasures:
 
     @staticmethod
+    def moments(arr : np.ndarray, axis = None):
+        '''
+        Calculate the moments of the array
+        - arr : array to calculate the moments
+        - axis : axis to calculate the moments
+        '''
+        if axis is not None:
+            S   = np.mean(arr, axis = axis)
+            S2  = np.mean(arr**2, axis = axis)
+            V   = S2 - S**2
+            S4  = np.mean(arr**4, axis = axis)
+            B   = 1.0 - (S4 / (3.0 * S2**2))
+            return S, S2, V, S4, B
+        S   = np.mean(arr)
+        S2  = np.mean(arr**2)
+        V   = S2 - S**2
+        S4  = np.mean(arr**4)
+        B   = 1.0 - (S4 / (3.0 * S2**2))
+        return S, S2, V, S4, B
+
+    @staticmethod
     def gaussianity(arr : np.ndarray, axis = None):
         '''
         Calculate the gaussianity <|Oab|^2>/<|Oab|>^2 -> for normal == pi/2
