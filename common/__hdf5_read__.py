@@ -280,7 +280,7 @@ def save_hdf5(directory, filename, data, shape : tuple = (), keys : list = []):
                 hf.create_dataset(lbl, data = data[i].reshape(shape) if shape != () else data[i])
     elif isinstance(data, dict):
         for key in data.keys():
-            hf.create_dataset(key, data = np.array(data[key]).reshape(shape) if shape != () else data[key])
+            hf.create_dataset(key, data = np.array(data[key]).reshape(shape) if shape != () else np.array(data[key]))
     # close
     hf.close()
     
@@ -306,15 +306,17 @@ def append_hdf5(directory, filename, new_data, keys=[]):
         if isinstance(new_data, (np.ndarray, list)):
             for i, lbl in enumerate(labels):
                 if lbl in hf:
-                    hf[lbl].resize((hf[lbl].shape[0] + new_data[i].shape[0]), axis=0)
-                    hf[lbl][-new_data[i].shape[0]:] = new_data[i]
+                    pass 
+                    # hf[lbl].resize((hf[lbl].shape[0] + new_data[i].shape[0]), axis=0)
+                    # hf[lbl][-new_data[i].shape[0]:] = new_data[i]
                 else:
                     hf.create_dataset(lbl, data=new_data[i], maxshape=(None,) + new_data[i].shape[1:])
         elif isinstance(new_data, dict):
             for lbl in new_data.keys():
                 if lbl in hf:
-                    hf[lbl].resize((hf[lbl].shape[0] + new_data[lbl].shape[0]), axis=0)
-                    hf[lbl][-new_data[lbl].shape[0]:] = new_data[lbl]
+                    pass 
+                    # hf[lbl].resize((hf[lbl].shape[0] + new_data[lbl].shape[0]), axis=0)
+                    # hf[lbl][-new_data[lbl].shape[0]:] = new_data[lbl]
                 else:
                     hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=np.float64))
 

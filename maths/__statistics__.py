@@ -13,7 +13,7 @@ class Statistics:
     '''
     
     @staticmethod 
-    def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = np.mean):
+    def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = np.mean, verbose = False):
         '''
         Bin average of the data
         - data      : data to average
@@ -23,23 +23,22 @@ class Statistics:
         '''
         averages = []
         # go through the centers
+        if typical:
+            data = np.log(data)
+        
         for c in centers:
             # go through realizations
             averagesin  = []
             for ir, data_r in enumerate(data):
-                xin     = x[ir]
-                # Find values within |x_n - c| < delta    
-                bin_values = data_r[np.abs(xin - c) < delta]
+                xin         = x[ir]
+                bin_values  = data_r[np.abs(xin - c) < delta]           # Find values within |x_n - c| < delta    
 
                 if len(bin_values) < cutoffNum:
                     c_arg       = np.argmin(np.abs(xin - c))
                     bin_values  = data_r[max(c_arg - cutoffNum // 2, 0) : min(c_arg + cutoffNum // 2, len(data_r))]
-                # Compute the mean of the values in this bin
-                if len(bin_values) > 0:
-                    if typical:
-                        averagesin.append(func(np.log(bin_values)))
-                    else:
-                        averagesin.append(func(bin_values))
+                
+                if len(bin_values) > 0:                                 # Compute the mean of the values in this bin
+                    averagesin.append(func(bin_values))
             if typical:
                 averages.append(np.mean(np.exp(averagesin)))
             else:
