@@ -319,7 +319,7 @@ def append_hdf5(directory, filename, new_data, keys=[], override = True):
                 if lbl in hf:
                     if override:
                         del hf[lbl]
-                        hf.create_dataset(lbl, data=new_data[lbl])
+                        hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=np.float64))
                 else:
                     hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=np.float64))
 
