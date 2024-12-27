@@ -116,7 +116,7 @@ def read_hdf5_extract_concat(hdf5files,
     '''
     shapeRepeat = None
     data        = []
-    
+    sizes       = []
     for ii, f in enumerate(hdf5files):
         try:
             d   = f[key]
@@ -149,6 +149,7 @@ def read_hdf5_extract_concat(hdf5files,
                 if d.shape[0] == 1 and len(d.shape) == 2 and isvector:
                     d = d[0]
                 data.append(d)
+                sizes.append(d.shape)
             else:
                 if verbose:
                     logging.error(f"Shape mismatch for {key} in {f['filename']}")
@@ -241,7 +242,23 @@ def read_hdf5_extract_and_concat(directories  : list,
     
     return read_hdf5_extract_concat(files, key if isinstance(key, str) else '',
                                     repeatax, verbose, is_vector, cut_0_ax, cut_v_ax, padding, check_limit)
-
+    
+def read_hdf5_extract_and_concat_list(directories  : list,
+                                    conditions  = [],
+                                    key         = None,
+                                    verbose     = False,
+                                    is_vector   = False,
+                                    repeatax    : int  = 0,
+                                    cut_0_ax    = None,
+                                    cut_v_ax    = None,
+                                    padding     : bool = False,
+                                    check_limit = None      
+                                    ):
+    '''
+    Do the same as read_hdf5_extract but concat single file and return a list
+    '''
+    return [read_hdf5_extract_and_concat([d], conditions, key, verbose, is_vector, repeatax, cut_0_ax, cut_v_ax, padding, check_limit) for d in directories]
+    
 ####################################################### SAVE HDF5 FILE #######################################################
     
 def create_labels_hdf5(data, keys, shape : tuple = ()):
@@ -254,7 +271,7 @@ def create_labels_hdf5(data, keys, shape : tuple = ()):
     else:
         return ['data_' + str(i) for i in range(len(data))]
 
-def save_hdf5(directory, filename, data, shape : tuple = (), keys : list = []):
+def save_hdf5(directory, filename, data, shape: tuple = (), keys: list = []):
     '''
     Creates and saves an ndarray as hdf5 file.
     - filename  : name of the file to be saved
@@ -263,24 +280,26 @@ def save_hdf5(directory, filename, data, shape : tuple = (), keys : list = []):
     - keys      : if len(keys) == len(data) we sample that and save each iteration
     '''
     # create a file first
-    filename    = filename if (filename.endswith(".h5") or filename.endswith(".hdf5")) else filename + ".h5"
-    hf          = h5py.File(directory + kPS + filename, 'w')
-    
+    filename = filename if (filename.endswith(".h5") or filename.endswith(".hdf5")) else filename + ".h5"
+    hf = h5py.File(os.path.join(directory, filename), 'w')
+
     # create the labels
-    labels      = []
+    labels = []
     if not isinstance(data, dict):
         labels = create_labels_hdf5(data, keys, shape)
-    
+
     # save the file
-    if type(data) == np.ndarray or isinstance(data, list):
+    if isinstance(data, (np.ndarray, list)):
+        dtype = np.complex128 if np.iscomplexobj(data) else np.float64
         if len(labels) == 1:
-            hf.create_dataset(labels[0], data = np.array(data).reshape(shape) if shape != () else data)
+            hf.create_dataset(labels[0], data=np.array(data, dtype = dtype).reshape(shape) if shape != () else data)
         else:
             for i, lbl in enumerate(labels):
-                hf.create_dataset(lbl, data = data[i].reshape(shape) if shape != () else data[i])
+                hf.create_dataset(lbl, data=data[i].reshape(shape) if shape != () else np.array(data[i], dtype = dtype))
     elif isinstance(data, dict):
         for key in data.keys():
-            hf.create_dataset(key, data = np.array(data[key]).reshape(shape) if shape != () else np.array(data[key]))
+            dtype = np.complex128 if np.iscomplexobj(data[key]) else np.float64
+            hf.create_dataset(key, data=np.array(data[key], dtype=dtype).reshape(shape) if shape != () else np.array(data[key], dtype=dtype))
     # close
     hf.close()
     
@@ -293,11 +312,13 @@ def append_hdf5(directory, filename, new_data, keys=[], override = True):
     - keys: Keys for the new data. If empty, keys will be generated.
     """
     file_path = os.path.join(directory, filename)
+    if not (file_path.endswith(".h5") or file_path.endswith(".hdf5")):
+        file_path += ".h5"
     
-    if not os.path.exists(file_path):
-        logging.error(f"File {file_path} does not exist")
-        return
-    
+    if not os.path.exists(file_path if (file_path.endswith(".h5") or file_path.endswith(".hdf5")) else file_path + ".h5"):
+        logging.debug(f"File {file_path} does not exist")
+        return save_hdf5(directory, filename, new_data, shape = None, keys = keys)
+            
     with h5py.File(file_path, 'a') as hf:
         labels = []
         if not isinstance(new_data, dict):
@@ -316,16 +337,142 @@ def append_hdf5(directory, filename, new_data, keys=[], override = True):
                     hf.create_dataset(lbl, data=new_data[i], maxshape=(None,) + new_data[i].shape[1:])
         elif isinstance(new_data, dict):
             for lbl in new_data.keys():
+                dtype = np.complex128 if np.iscomplexobj(new_data[lbl]) else np.float64
                 if lbl in hf:
                     if override:
                         del hf[lbl]
-                        hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=np.float64))
+                        hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=dtype))
                 else:
-                    hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=np.float64))
+                    hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=dtype))
 
 #############################################################################################################################
 #############################################################################################################################
 #############################################################################################################################
+
+########################################################### CUTTER ##########################################################
+
+def concat_and_average(y_list, x_list, typical=False, use_interpolation=True):
+    """
+    Concatenates and averages y values across multiple histograms.
+
+    :param y_list: List of y matrices (each one corresponding to a realization).
+    :param x_list: List of x vectors (each one corresponding to a realization).
+    :param typical: If True, filter y values less than 1.0.
+    :param use_interpolation: If True, interpolate y values for non-matching bins.
+                              If False, aggregate only exact matches and append unique bins.
+    :returns: Combined y values and x bins after averaging.
+    """
+    if len(y_list) == 0 or len(x_list) == 0:
+        raise ValueError("Input lists cannot be empty.")
+    if len(y_list) != len(x_list):
+        raise ValueError("Input lists must have the same length.")
+    if len(x_list) == 1:
+        return y_list[0], x_list[0]
+
+    # Initialize combined arrays
+    y_combined = y_list[0]
+    x_combined = x_list[0]
+
+    if typical:
+        indices     = y_combined < 1.0
+        x_combined  = x_combined[indices]
+        y_combined  = y_combined[indices]
+
+    divider         = np.ones_like(y_combined)
+
+    for i in range(1, len(x_list)):
+        current_x   = x_list[i]
+        current_y   = y_list[i]
+
+        if typical:
+            indices     = current_y < 1.0
+            current_x   = current_x[indices]
+            current_y   = current_y[indices]
+
+        if use_interpolation:
+            # Create a new combined x grid
+            new_x_combined          = np.sort(np.unique(np.concatenate([x_combined, current_x])))
+
+            # Interpolate y values onto the new grid
+            y_interpolated_combined = np.interp(new_x_combined, x_combined, y_combined, left=0, right=0)
+            y_interpolated_current  = np.interp(new_x_combined, current_x, current_y, left=0, right=0)
+
+            # Update combined y values and divider
+            y_combined              = y_interpolated_combined + y_interpolated_current
+            divider                 = np.interp(new_x_combined, x_combined, divider, left=0, right=0) + 1
+
+            x_combined = new_x_combined
+        else:
+            # Find common bins and separate unique bins
+            common_bins         = np.intersect1d(x_combined, current_x, assume_unique = True)   # Common bins in combined and current
+            unique_x_combined   = np.setdiff1d(x_combined, common_bins, assume_unique = True)   # Unique bins in combined - previous x's
+            unique_x_current    = np.setdiff1d(current_x, common_bins, assume_unique = True)    # Unique bins in current - new x's
+
+            # Handle common bins: sum y values and update divider
+            if common_bins.size > 0:
+                common_indices_combined     = np.isin(x_combined, common_bins)                  # Indices of common bins in combined
+                common_indices_current      = np.isin(current_x, common_bins)                   # Indices of common bins in current
+                y_combined[common_indices_combined] += current_y[common_indices_current]        # Sum y values
+                divider[common_indices_combined]    += 1                                        # Update divider
+
+            # Append unique bins
+            if unique_x_current.size > 0:
+                x_combined                  = np.concatenate([x_combined, unique_x_current])
+                y_combined                  = np.concatenate([y_combined, current_y[np.isin(current_x, unique_x_current)]])
+                divider                     = np.concatenate([divider, np.ones_like(unique_x_current)])
+
+            # if unique_x_combined.size > 0:
+            #     x_combined                  = np.concatenate([x_combined, unique_x_combined])
+            #     y_combined                  = np.concatenate([y_combined, np.zeros_like(unique_x_combined)])
+            #     divider                     = np.concatenate([divider, np.ones_like(unique_x_combined)])
+
+            # Sort combined arrays
+            sort_indices                    = np.argsort(x_combined)
+            x_combined                      = x_combined[sort_indices]
+            y_combined                      = y_combined[sort_indices]
+            divider                         = divider[sort_indices]
+
+    # Final averaging - it shall divide each element by the number of realizations [each element in the divider]
+    y_combined /= divider
+
+    return y_combined, x_combined
+
+########################################################### CUTTER ##########################################################
+
+def concat_and_fill(y_list, x_list, lengths, missing_val=np.nan):
+    """
+    Concatenates y values across multiple histograms, combines x vectors into a single sorted array,
+    and fills missing values.
+
+    :param y_list: List of y arrays (each one corresponding to a realization).
+    :param x_list: List of x arrays (each one corresponding to a realization group).
+    :param lengths: List indicating how many y arrays correspond to each x array.
+    :param missing_val: Value to fill for missing data points after interpolation (default: np.nan).
+    :returns: A 2D NumPy array of y values interpolated to a common x grid and the combined x bins.
+    """
+
+    if len(y_list) == 0 or len(x_list) == 0:
+        raise ValueError("Input lists cannot be empty.")
+    if len(lengths) != len(x_list):
+        raise ValueError("Lengths list must match the size of x_list.")
+
+    # Combine all x vectors into a single sorted, unique array
+    x_combined  = np.sort(np.unique(np.concatenate(x_list)))
+
+    # Interpolate each realization onto the combined x grid
+    y_all       = []
+    y_index     = 0  # Tracks the position in y_list
+    for il, length in enumerate(lengths):
+        num_realizations    = length[0] if (isinstance(length, list) or isinstance(length, tuple)) else length
+        
+        for ii in range(num_realizations):
+            y               = y_list[il][ii]
+            y_index         += 1
+            # Interpolate current y onto x_combined grid
+            y_all.append(np.interp(x_combined, x_list[il], y, left = missing_val, right = missing_val))
+    
+    # Return as 2D array and combined x bins
+    return y_all, x_combined
 
 ########################################################### CUTTER ##########################################################
 
