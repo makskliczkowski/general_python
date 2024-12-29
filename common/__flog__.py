@@ -35,217 +35,229 @@ class Colors:
 ############################################### PRINT THE OUTPUT WITH A GIVEN LEVEL ###############################################
 
 class Logger:
+    """
+    Logger class for handling console and file logging with verbosity control.
+    """
     
-    '''
-    Levels for printing
-    '''
     LEVELS = {
-        0 : 'info',
-        1 : 'debug',
-        2 : 'warning',
-        3 : 'error'
+        0: 'info',
+        1: 'debug',
+        2: 'warning',
+        3: 'error'
     }
     
-    '''
-    Logger class for reporting
-    '''
-    def __init__(self, logfile : str, lvl = logging.DEBUG):
-        self.now         = datetime.now()
-        self.nowStr      = str(self.now.strftime("%d_%m_%Y_%H-%M_%S"))
-        self.lvl         = lvl
-        # set logger
-        self.logger      = logging.getLogger(__name__)  
-        self.logfile     = logfile
-        self.working     = False
-    
-    ###############################################
-    
+    def __init__(self, logfile: str, lvl=logging.DEBUG):
+        """
+        Initialize the logger instance.
+
+        Args:
+            logfile (str): Name of the log file.
+            lvl (int): Logging level (default: logging.DEBUG).
+        """
+        self.now = datetime.now()
+        self.nowStr = self.now.strftime("%d_%m_%Y_%H-%M_%S")
+        self.lvl = lvl
+        self.logger = logging.getLogger(__name__)
+        self.logfile = logfile
+        self.working = False
+
     @staticmethod
-    def colorize(txt, color : str):
-        
+    def colorize(txt: str, color: str):
+        """
+        Apply color to the given text (for console output).
+
+        Args:
+            txt (str): Text to colorize.
+            color (str): Color name.
+
+        Returns:
+            str: Colorized text.
+        """
         return str(Colors(color)) + str(txt) + Colors.white
-    
-    ###############################################
-    
-    def configure(self, directory : str):
-        '''
-        Creates the log file and handler.
-        - directory : directory to be used for log files
-        '''
-        
-        self.logfile     = directory + os.sep + f'{self.nowStr if len(self.logfile) == 0 else self.logfile}.log'
-        
+
+    def configure(self, directory: str):
+        """
+        Configure the logger to use a specific directory for log files.
+
+        Args:
+            directory (str): Path to the directory where log files will be stored.
+        """
+        self.logfile = directory + os.sep + f'{self.nowStr if len(self.logfile) == 0 else self.logfile}.log'
+        os.makedirs(directory, exist_ok=True)
         with open(self.logfile, 'w+') as f:
             f.write('Log started!')
             
-        self.fHandler    = logging.FileHandler(self.logfile)
-        # set level
+        self.fHandler = logging.FileHandler(self.logfile)
         self.fHandler.setLevel(self.lvl)
-        # set formater
-        self.fFormat     = logging.Formatter('%(asctime)s-%(levelname)s-%(message)s')
+        self.fFormat = logging.Formatter('%(asctime)s-%(levelname)s-%(message)s')
         self.fHandler.setFormatter(self.fFormat)
-        # set handler
         self.logger.addHandler(self.fHandler)
-        self.working     = True
+        self.working = True
         
-        logging.basicConfig(format      = '%(asctime)s-%(levelname)s-%(message)s',
-                            datefmt     = "%d_%m_%Y_%H-%M_%S",
-                            filename    = self.logfile,
-                            level       = self.lvl)
-    
-    ###############################################
-    
+        logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',
+                            datefmt="%d_%m_%Y_%H-%M_%S",
+                            filename=self.logfile,
+                            level=self.lvl)
+
     @staticmethod
-    def printTab(lvl = 0):
-        '''
-        Print standard message with a tabulator
-        - lvl : number of tabulators
-        '''
-        ret = ""
-        for _ in range(lvl):
-            ret += '\t'
-        if lvl > 0:
-            ret += '->'
-        return ret
-    
-    ###############################################
-    
+    def printTab(lvl=0):
+        """
+        Generate indentation for message formatting.
+
+        Args:
+            lvl (int): Number of tabulators.
+
+        Returns:
+            str: Indented string.
+        """
+        return '\t' * lvl + ('->' if lvl > 0 else '')
+
     @staticmethod
-    def print(msg, lvl = 0):
-        '''
-        Prints a message appending it with a current timestamp!
-        - msg   :   message to be printed
-        - lvl   :   tabulator level
-        '''
-        now         = datetime.now()
-        nowStr      = now.strftime("%d/%m/%Y %H:%M:%S")
-        return "[" + nowStr + "]" + Logger.printTab(lvl) + msg
-    
-    ###############################################
-    
-    def say(self,
-            *args,
-            end = True,
-            log = 0,
-            lvl = 0):
-        '''
-        Print multiple messages.
-        - end   :   shall add endline?
-        - log   :   log level (info, debug, warning, error); integer for each ascending
-        - lvl   :   tab level
-        '''
-        argss   =   [str(a) for a in args]
-        if not end:
-            out =   ' '.join(argss)
-            if log == 0:
-                self.info(out, lvl)
-            elif log == 1:
-                self.debug(out, lvl)
-            elif log == 2:
-                self.warning(out, lvl)
-            else:
-                self.error(out, lvl)
+    def print(msg: str, lvl=0):
+        """
+        Format a message with a timestamp.
+
+        Args:
+            msg (str): Message to format.
+            lvl (int): Indentation level.
+
+        Returns:
+            str: Formatted message.
+        """
+        now = datetime.now()
+        nowStr = now.strftime("%d/%m/%Y %H:%M:%S")
+        return f"[{nowStr}]{Logger.printTab(lvl)}{msg}"
+
+    def say(self, *args, end=True, log=0, lvl=0, verbose=True):
+        """
+        Print and log multiple messages if verbosity is enabled.
+
+        Args:
+            *args: Messages to log.
+            end (bool): Append newline (default: True).
+            log (int): Log level (0: info, 1: debug, 2: warning, 3: error).
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        messages = [str(arg) for arg in args]
+        # if end is True, append newline
+        if end:
+            for msg in messages:
+                self._log_message(log, msg, lvl)
+        # else join messages with a space
         else:
-            for out in argss:
-                if log == 0:
-                    self.info(out, lvl)
-                elif log == 1:
-                    self.debug(out, lvl)
-                elif log == 2:
-                    self.warning(out, lvl)
-                else:
-                    self.error(out, lvl)
- 
-    ###############################################
-    
-    def verbose(self, msg : str, lvl : int, verbose : bool):
-        if(verbose): 
+            self._log_message(log, ' '.join(messages), lvl)
+        
+
+    def _log_message(self, log_level, msg, lvl):
+        """
+        Internal helper to log messages based on log level.
+
+        Args:
+            log_level (int): Log level (0: info, 1: debug, etc.).
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+        """
+        if log_level == 0:
             self.info(msg, lvl)
+        elif log_level == 1:
+            self.debug(msg, lvl)
+        elif log_level == 2:
+            self.warning(msg, lvl)
+        elif log_level == 3:
+            self.error(msg, lvl)
 
-    ###############################################
-    
-    def info(self, msg : str, lvl = 0):
-        if logging.INFO >=self.lvl:
-            print(Logger.print(msg, lvl))
-        logging.info(Logger.print(msg, lvl))
+    def info(self, msg: str, lvl=0, verbose=True):
+        """
+        Log an informational message if verbosity is enabled.
 
-    ###############################################
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        print(Logger.print(msg, lvl))
+        self.logger.info(Logger.print(msg, lvl))
 
-    def debug(self, msg : str, lvl = 0):
-        if logging.DEBUG >= self.lvl:
-            print(Logger.print(msg, lvl))
-        logging.debug(Logger.print(msg, lvl))
+    def debug(self, msg: str, lvl=0, verbose=True):
+        """
+        Log a debug message if verbosity is enabled.
 
-    ###############################################
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        print(Logger.print(msg, lvl))
+        self.logger.debug(Logger.print(msg, lvl))
 
-    def warning(self, msg : str, lvl = 0):
-        '''
-        Create warning log
-        '''   
-        if logging.WARNING >= self.lvl:
-            print(Logger.print(msg, lvl))
-        logging.warning(Logger.print(msg, lvl))
+    def warning(self, msg: str, lvl=0, verbose=True):
+        """
+        Log a warning message if verbosity is enabled.
 
-    ###############################################
-    
-    def error(self, msg : str, lvl = 0):
-        '''
-        Create error log
-        '''   
-        if logging.ERROR >= self.lvl:
-            print(Logger.print(msg, lvl))
-        logging.error(Logger.print(msg, lvl))
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        print(Logger.print(msg, lvl))
+        self.logger.warning(Logger.print(msg, lvl))
 
-    ###############################################
-    
+    def error(self, msg: str, lvl=0, verbose=True):
+        """
+        Log an error message if verbosity is enabled.
+
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        print(Logger.print(msg, lvl))
+        self.logger.error(Logger.print(msg, lvl))
+
     @staticmethod
-    def breakline(n : int):
-        '''
-        Create n breaklines in the log
-        - n : number of break lines
-        '''
-        for _ in range(n):
-            Logger.print("\n")
-    
-    ###############################################
+    def breakline(n: int):
+        """
+        Print multiple break lines.
 
-    def title(self, 
-              tail          : str, 
-              desiredSize   : int, 
-              fill          : str, 
-              lvl           = 0):
-        '''
-        Create a title for the logger - printing in the middle
-        - tail          : message in the middle
-        - lvl           : level
-        - desiredSize   : length of the logger
-        - fill          : filler
-        '''
-        tailLength  = len(tail)
-        lvlLen      = 2 + lvl * 3 * 2 # arrow plus tab, *2 because it is moved to the middle
-        # check the length
+        Args:
+            n (int): Number of break lines.
+        """
+        for _ in range(n):
+            print()
+
+    def title(self, tail: str, desiredSize: int, fill: str, lvl=0, verbose=True):
+        """
+        Create a formatted title with filler characters if verbosity is enabled.
+
+        Args:
+            tail (str): Text in the middle of the title.
+            desiredSize (int): Total width of the title.
+            fill (str): Character used for filling.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        tailLength = len(tail)
+        lvlLen = 2 + lvl * 3 * 2
         if tailLength + lvlLen > desiredSize:
-            self.info(tail, lvl)
+            self.info(tail, lvl, verbose)
             return
         
-        # check the size of the fill
-        fillSize    = desiredSize // len(fill) - tailLength // 2 - lvlLen 
-        fillSize    = fillSize      + (0 if not tailLength == 0 else 2)
-        fillSize    = fillSize      - (1 if not tailLength % 2 == 0 else 0)
-        
-        out         = ""
-        for _ in range(fillSize):
-            out     = out + fill
-        
-        # append text
-        if (tailLength != 0):
-            out     = out + " " + tail + " "
-            
-        # append last
-        for _ in range(fillSize):
-            out     = out + fill
-        
-        self.info(out, lvl)
+        fillSize = (desiredSize - tailLength - 2) // (2 * len(fill))
+        out = (fill * fillSize) + f" {tail} " + (fill * fillSize)
+        self.info(out, lvl, verbose)
         
 ################################################ PRINT THE OUTPUT BASED ON CONDITION ###############################################
 
