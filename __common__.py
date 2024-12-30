@@ -66,13 +66,30 @@ def appDict(d, k, v):
 ########################################################################################################################
 
 def meanSlice(arr, idx, left, right):
-    '''
-    Find the mean of a slice of an array
-    - arr   : array
-    - idx   : index
-    - left  : left slice
-    - right : right slice
-    '''
-    idx_l = idx - left if idx - left >= 0 else 0
-    idx_r = idx + right if idx + right < len(arr) else len(arr)-1
+    """
+    Compute the mean of a slice of an array around a specified index.
+
+    Parameters:
+    - arr   : numpy.ndarray
+        The array from which to compute the mean.
+    - idx   : int
+        The central index for the slice.
+    - left  : int
+        The number of elements to include to the left of idx.
+    - right : int
+        The number of elements to include to the right of idx.
+
+    Returns:
+    - float
+        The mean of the slice.
+    """
+    # Ensure idx is within the bounds of the array
+    if idx < 0 or idx >= len(arr):
+        raise ValueError(f"Index 'idx' ({idx}) is out of bounds for array of length {len(arr)}.")
+
+    # Define left and right bounds with clamping
+    idx_l = max(0, idx - left)
+    idx_r = min(len(arr), idx + right + 1)  # +1 to include the element at idx + right
+
+    # Compute and return the mean of the slice
     return np.mean(arr[idx_l:idx_r])

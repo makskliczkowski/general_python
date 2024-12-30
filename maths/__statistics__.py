@@ -177,6 +177,33 @@ class Statistics:
         # Return the standard deviation as fluctuations
         return np.sqrt(variance)                                                  # Return the standard deviation as fluctuations         
     
+    ##########################################################
+    
+    @staticmethod
+    def get_cdf(x, y, gammaval = 0.5, BINVAL = 21):
+        """
+        Calculate the cumulative distribution function (CDF) and find the gamma value.
+
+        Parameters:
+        x (array-like): The independent variable values.
+        y (array-like): The dependent variable values, which may contain NaNs.
+        gammaval (float, optional): The target CDF value to find the corresponding gamma value. Default is 0.5.
+
+        Returns:
+        tuple: A tuple containing:
+            - x (array-like): The input independent variable values.
+            - y (array-like): The input dependent variable values with NaNs removed.
+            - cdf (array-like): The cumulative distribution function values.
+            - gammaf (float): The value of the independent variable corresponding to the target CDF value.
+        """
+        # Apply the moving average to smooth y
+        y_smoothed  = np.convolve(y, np.ones(BINVAL)/BINVAL, mode='same')
+        cdf         = np.cumsum(y_smoothed * np.diff(np.insert(x, 0, 0)))
+        cdf         /= cdf[-1]
+        y_smoothed  /= cdf[-1]
+        gammaf      = x[np.argmin(np.abs(cdf - gammaval))]
+        return x, y_smoothed, cdf, gammaf
+    
 ############################################### STATISTICAL AVERAGING ###############################################
 
 def avgBin(myArray, N=2):

@@ -318,7 +318,7 @@ class Plotter:
         - title     :   title of the colorbar
         - norm      :   normalization of the colorbar
         '''
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm = plt.cm.ScalarMappable(cmap = cmap, norm = norm)
         sm.set_array([])
         
         # add colorbar
