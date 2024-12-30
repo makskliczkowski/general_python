@@ -75,11 +75,18 @@ PARSER_STRING_RANGES        = "."
 PARSER_STRING_SEPARATOR     = "/"
 PARSER_STRING_SEPARATOR_ALT = "/"
 
+def cmpr( s1, s2, prec = 3):
+    '''
+    Compares two values up to a given precision as strings
+    - s1    : first value 
+    - s2    : second value
+    '''
+    return round(float(s1), prec) == round(float(s2), prec)
+
 class StringParser:   
     '''
     A class that handles parsing of a string to different types
     '''
-    
     
     #######################
     @staticmethod

@@ -9,11 +9,14 @@ import matplotlib.colors as mcolors
 ########################## grids
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 import matplotlib.ticker as mticker
-from matplotlib.patches import Polygon
+from matplotlib.patches import Polygon, Rectangle
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
-
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.legend import Legend
+from matplotlib.legend_handler import HandlerBase, HandlerPatch
+########################## other
 import numpy as np
 mpl.rcParams.update(mpl.rcParamsDefault)
 plt.rcParams['axes.facecolor']      =   'white'
@@ -294,6 +297,7 @@ class Plotter:
         fig_width = fig_width_pt * inches_per_pt  # width in inches
         fig_height = fig_width * hf  # height in inches
         return [fig_width, fig_height]
+    
     ###########################################################
     @staticmethod 
     def get_color(color,
@@ -326,6 +330,103 @@ class Plotter:
         cbar.ax.set_title(title)
         return cbar
     
+    @staticmethod
+    def add_colorbar_to_subplot(axes, 
+                                fig, 
+                                cmap, 
+                                title           =   '', 
+                                norm            =   None, 
+                                position        =   'right', 
+                                size            =   '5%', 
+                                pad             =   0.1, 
+                                within_plot     =   False, 
+                                locator_kwargs  =   None, 
+                                xlabel          =   None,
+                                xlabelcords     =   (0.5, -0.05),
+                                ylabel          =   None,
+                                ylabelcords     =   (-0.05, 0.5),
+                                xtickscords     =  None,
+                                ytickscords     =  None,
+                                *args, **kwargs):
+        '''
+        Add a colorbar within or next to a specific subplot axis (or multiple axes).
+        - axes           : axis or list of axes to add the colorbar to
+        - fig            : figure to add the colorbar to
+        - cmap           : colormap to use
+        - title          : title of the colorbar
+        - norm           : normalization of the colorbar
+        - position       : position of the colorbar ('right', 'left', 'top', 'bottom') or within the plot
+        - size           : size of the colorbar (e.g., '5%') for external positioning
+        - pad            : padding between the colorbar and the axes (for external positioning)
+        - within_plot    : if True, places the colorbar within the plot using an automatic locator
+        - locator_kwargs : dictionary of kwargs for locating the colorbar within the plot (applies if within_plot=True)
+        '''
+
+        # Create a ScalarMappable for the colorbar
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+        sm.set_array([])
+
+        if not isinstance(axes, (list, np.ndarray)):        # Handle single or multiple axes input
+            axes = [axes]
+
+        locator_kwargs = locator_kwargs or {}  # Ensure locator_kwargs is always a valid dictionary
+
+        colorbars = []                                      # Add a colorbar to each subplot axis
+        if within_plot:                                     # Add colorbar as a legend-like object within the plot
+            for ax in axes:
+                # Set up a proxy patch for the colorbar
+                proxy_patch = plt.Rectangle((0, 0), 1, 1, fc=cmap(0.5), edgecolor="none")
+                legend = Legend(ax, [proxy_patch], [''], loc='best', handler_map={proxy_patch: HandlerPatch()}, **locator_kwargs)
+                ax.add_artist(legend)
+        else:  # Add colorbar to the side of the plot
+            if len(axes) > 1:  # When more than one axis is present, combine them for a unified colorbar
+                divider = make_axes_locatable(axes[0])  # Use the first axis to create the divider
+                if position in ['right', 'left']:
+                    cax = divider.append_axes(position, size=size, pad=pad)
+                elif position in ['top', 'bottom']:
+                    cax = divider.append_axes(position, size=size, pad=pad, aspect=50)
+                else:
+                    raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
+
+                # Add colorbar that spans across the axes
+                cbar = fig.colorbar(sm, cax=cax, orientation='vertical' if position in ['right', 'left'] else 'horizontal', *args, **kwargs)
+                cbar.ax.set_title(title, pad=10 if position in ['top', 'bottom'] else 5)
+                colorbars.append(cbar)
+            else:  # When there is only one axis, add a colorbar to it
+                for ax in axes:
+                    divider = make_axes_locatable(ax)
+                    if position in ['right', 'left']:
+                        cax = divider.append_axes(position, size=size, pad=pad)
+                    elif position in ['top', 'bottom']:
+                        cax = divider.append_axes(position, size=size, pad=pad, aspect=50)
+                    else:
+                        raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
+
+                    # Add colorbar to the created axis
+                    cbar = fig.colorbar(sm, cax=cax, orientation='vertical' if position in ['right', 'left'] else 'horizontal', *args, **kwargs)
+                    cbar.ax.set_title(title, pad=10 if position in ['top', 'bottom'] else 5)
+                    colorbars.append(cbar)
+            
+        for cbar in colorbars:
+            # set the labels
+            if xlabel is not None:
+                cbar.set_label(xlabel)
+                cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
+                print(xlabelcords)
+                # adjust tick positions
+                if xtickscords is not None:
+                    cbar.ax.xaxis.set_ticks_position(xtickscords)
+                
+            
+            if ylabel is not None:
+                cbar.set_label(ylabel)
+                cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
+                # adjust tick positions
+                if ytickscords is not None:
+                    cbar.ax.yaxis.set_ticks_position(ytickscords)
+        return colorbars    
+    ############################################################
+
     @staticmethod
     def add_colorbar_pos(fig, 
                          cmap,
@@ -375,6 +476,8 @@ class Plotter:
         if ylabel != '':
             cbar.set_label(ylabel)
             cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
+    
+    ############################################################
     
     @staticmethod
     def get_colormap(values, cmap='PuBu', elsecolor='blue'):
@@ -437,35 +540,75 @@ class Plotter:
     #################### A N N O T ####################
     
     @staticmethod
-    def set_annotate(   ax,
-                        elem    : str,
-                        x       : float,
-                        y       : float,
-                        fontsize= None,
-                        xycoords= 'axes fraction',
-                        cond    = True,
-                        **kwargs):
+    def set_annotate(ax, elem: str, x: float = 0, y: float = 0, fontsize=None, xycoords='axes fraction', cond=True, **kwargs):
         '''
         @staticmethod
         
         Make an annotation on the plot.
-        - ax        :   axis to annotate on
-        - elem      :   annotation string
-        - x         :   x coordinate
-        - y         :   y coordinate
-        - fontsize  :   fontsize
-        - xycoords  :   how to interpret the coordinates (from MPL)
+        - ax        : axis to annotate on
+        - elem      : annotation string
+        - x         : x coordinate (ignored if xycoords='best')
+        - y         : y coordinate (ignored if xycoords='best')
+        - fontsize  : fontsize of the annotation
+        - xycoords  : how to interpret the coordinates (from MPL), or 'best' to find the best corner
+        - cond      : condition to make the annotation
         '''
-        if cond:
-            ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
+        if not cond:
+            return
+        # take the default fontsize
+        if fontsize is None:
+            fontsize = plt.rcParams['font.size']
+                
+        if xycoords == 'best':
+            # Define candidate corners with optional offset adjustment for fontsize
+            offset = fontsize / 200  # Adjust for better spacing
+            corners = {
+                "upper left": (0.05, 0.95 - offset),
+                "upper right": (0.95, 0.95 - offset),
+                "lower left": (0.05, 0.05 + offset),
+                "lower right": (0.95, 0.05 + offset)
+            }
+
+            # Simulate annotation placement and evaluate overlap with plot
+            text_extents    = {}
+            fig             = ax.figure
+            fig.canvas.draw() 
+            renderer        = fig.canvas.get_renderer()
+            for corner, (cx, cy) in corners.items():
+                text        = ax.annotate(elem, xy=(cx, cy), fontsize=fontsize, xycoords='axes fraction', alpha=0, **kwargs)
+                bbox        = text.get_window_extent(renderer=renderer).expanded(1.1, 1.1)
+                text_extents[corner] = bbox
+                text.remove()
+
+            # Get the data extent in display coordinates
+            data_bbox = ax.get_window_extent(renderer=renderer)
+
+            # Check overlap with data and select the best corner
+            best_corner = None
+            for corner, bbox in text_extents.items():
+                if not data_bbox.overlaps(bbox):  # Ensure no overlap with data
+                    best_corner = corner
+                    break
+
+            if best_corner is None:
+                best_corner = "upper left"
+                # add white box around the text
+                kwargs['bbox'] = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5', alpha=0.7)
+
+            x, y = corners[best_corner]
+            xycoords = 'axes fraction'
+        ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
+        
+    ############################################################
 
     @staticmethod
     def set_annotate_letter(
         ax, 
         iter        : int,
-        x           : float,
-        y           : float,
+        x           : float = 0,
+        y           : float = 0,
         fontsize    = 12,
+        xycoords    = 'axes fraction',
         addit       = '',
         condition   = True,
         **kwargs        
@@ -478,7 +621,7 @@ class Plotter:
         - y         : y coordinate
         - fontsize  : fontsize 
         '''
-        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, cond = condition, **kwargs)
+        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, cond = condition, xycoords = xycoords, **kwargs)
     
     @staticmethod
     def set_arrow(  ax,
@@ -818,34 +961,63 @@ class Plotter:
             ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
 
     @staticmethod
-    def unset_ticks(    ax,
-                        xticks      =   False,
-                        yticks      =   False,
-                        erease      =   False,
-                        spines      =   True
-                    ):
+    def unset_ticks(ax,
+                    xticks=False,
+                    yticks=False,
+                    remove_labels_only=True,
+                    erase=False,
+                    spines=True):
         '''
-        Disables the ticks on the axis
+        Disables or customizes the ticks on the axis.
+
+        Parameters:
+        - ax                : Axis to modify.
+        - xticks            : Disable x-ticks if False.
+        - yticks            : Disable y-ticks if False.
+        - remove_labels_only: Remove only the labels, keeping ticks visible.
+        - erase             : Completely hide the axis if True.
+        - spines            : Keep or remove spines based on tick visibility.
         '''
         if not xticks:
-            ax.set_xticks([], minor=False)
-            ax.set_xticklabels([], minor=False)
-            ax.xaxis.set_tick_params(which='both', labelbottom = False)
-            if erease:
+            if remove_labels_only:
+                ax.set_xticklabels([], minor=False)
+                ax.set_xticklabels([], minor=True)
+            else:
+                ax.set_xticks([], minor=False)
+                ax.set_xticks([], minor=True)
+                ax.set_xticklabels([], minor=False)
+                ax.set_xticklabels([], minor=True)
+                ax.xaxis.set_tick_params(which='both', labelbottom=False)
+
+            if erase:
                 ax.axes.get_xaxis().set_visible(False)
+
         if not yticks:
-            ax.set_yticks([], minor=False)
-            ax.set_yticklabels([], minor=False)
-            ax.yaxis.set_tick_params(which='both', labelleft = False)
-            if erease:
+            if remove_labels_only:
+                ax.set_yticklabels([], minor=False)
+                ax.set_yticklabels([], minor=True)
+            else:
+                ax.set_yticks([], minor=False)
+                ax.set_yticks([], minor=True)
+                ax.set_yticklabels([], minor=False)
+                ax.set_yticklabels([], minor=True)
+                ax.yaxis.set_tick_params(which='both', labelleft=False)
+
+            if erase:
                 ax.axes.get_yaxis().set_visible(False)
-            
-        Plotter.unset_spines(ax,    xticks = xticks, 
-                                    yticks = yticks, 
-                                    left = not ((not spines) and (not yticks)), 
-                                    right = not((not spines) and (not yticks)), 
-                                    top = not ((not spines) and (not xticks)), 
-                                    bottom = not ((not spines) and (not xticks)))
+
+        if not spines:
+            # Handle spines
+            Plotter.unset_spines(
+                ax,
+                xticks=xticks,
+                yticks=yticks,
+                left=not ((not spines) and (not yticks)),
+                right=not ((not spines) and (not yticks)),
+                top=not ((not spines) and (not xticks)),
+                bottom=not ((not spines) and (not xticks))
+            )
+
     
     @staticmethod
     def unset_ticks_and_spines(ax, 
@@ -994,31 +1166,91 @@ class Plotter:
     
     @staticmethod
     def set_legend(ax,
-                   fontsize     =   None,
-                   frameon      =   False,
-                   loc          =   'best',
-                   alignment    =   'left',
-                   markerfirst  =   False,
-                   framealpha   =   1.0,
-                   reverse      =   False,
-                   **kwargs
-                   ):
+                fontsize                    = None,
+                frameon         : bool      = False,
+                loc             : str       = 'best',
+                alignment       : str       = 'left',
+                markerfirst     : bool      = False,
+                framealpha      : float     = 1.0,
+                reverse         : bool      = False,
+                style                       = None,
+                labelspacing    : float     = 0.5,
+                handlelength    : float     = 1.5,
+                handletextpad   : float     = 0.4,
+                borderpad       : float     = 0.4,
+                columnspacing   : float     = 1.0,
+                ncol            : int       = 1,
+                **kwargs):
         '''
-        Sets the legend with preferred style
+        Sets the legend with a preferred style for publication-quality plots.
+
+        Parameters:
+        - ax              : Axis to which the legend will be added.
+        - fontsize        : Font size of the legend labels.
+        - frameon         : Whether to draw a frame around the legend.
+        - loc             : Location of the legend ('best', 'upper right', etc.).
+        - alignment       : Text alignment ('left', 'center', 'right').
+        - markerfirst     : Whether the marker or label appears first in the legend.
+        - framealpha      : Transparency of the legend frame (1.0 is opaque).
+        - reverse         : Reverse the order of legend items.
+        - style           : Predefined style for the legend ('minimal', 'boxed', etc.).
+        - labelspacing    : Vertical space between legend entries.
+        - handlelength    : Length of the legend markers.
+        - handletextpad   : Space between legend markers and text.
+        - borderpad       : Padding inside the legend box.
+        - columnspacing   : Spacing between legend columns.
+        - ncol            : Number of columns in the legend.
+        - kwargs          : Additional arguments passed to `ax.legend()`.
         '''
+        # Get legend handles and labels
         handles, labels = ax.get_legend_handles_labels()
         if reverse:
-            handles     = handles[::-1]
-            labels      = labels[::-1]
-            
-        ax.legend(handles,
-                  labels,
-                  fontsize      = fontsize, 
-                  frameon       = frameon, 
-                  loc           = loc,
-                  markerfirst   = markerfirst,
-                  framealpha    = framealpha,
-                  **kwargs)  
+            handles = handles[::-1]
+            labels = labels[::-1]
+
+        # Apply predefined styles
+        if style == 'minimal':
+            frameon = False
+            fontsize = fontsize or 10
+            loc = loc or 'best'
+        elif style == 'boxed':
+            frameon = True
+            framealpha = 0.9
+            loc = loc or 'upper right'
+        elif style == 'publication':
+            frameon = True
+            framealpha = 1.0
+            loc = loc or 'best'
+            fontsize = fontsize or 12
+            handlelength = 1.0
+            handletextpad = 0.5
+            labelspacing = 0.4
+            columnspacing = 1.2
+            ncol = 1
+
+        # Set legend
+        legend = ax.legend(
+            handles, 
+            labels,
+            fontsize=fontsize,
+            frameon=frameon,
+            loc=loc,
+            markerfirst=markerfirst,
+            framealpha=framealpha,
+            labelspacing=labelspacing,
+            handlelength=handlelength,
+            handletextpad=handletextpad,
+            borderpad=borderpad,
+            columnspacing=columnspacing,
+            ncol=ncol,
+            **kwargs
+        )
+
+        # Adjust alignment
+        if alignment != 'left':
+            for text in legend.get_texts():
+                text.set_horizontalalignment(alignment)
+
     
     @staticmethod
     def set_legend_custom(  ax,
