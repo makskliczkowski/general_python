@@ -310,7 +310,7 @@ class Plotter:
             dictionary['alpha'] = alpha
         return dictionary
     
-    ################### C O L O R S ###################
+    ####################### C O L O R S #######################
 
     @staticmethod
     def add_colorbar(axes, fig, cmap, title = '', norm = None, *args, **kwargs):
@@ -342,11 +342,18 @@ class Plotter:
                                 within_plot     =   False, 
                                 locator_kwargs  =   None, 
                                 xlabel          =   None,
-                                xlabelcords     =   (0.5, -0.05),
+                                xlabelcords     =   None,
+                                xlabelpos       =   'bottom',
                                 ylabel          =   None,
-                                ylabelcords     =   (-0.05, 0.5),
-                                xtickscords     =  None,
-                                ytickscords     =  None,
+                                ylabelcords     =   None,
+                                ylabelpos       =   'left',
+                                xtickscords     =   None,
+                                xtickpos        =   None,
+                                ytickscords     =   None,
+                                ytickpos        =   None,
+                                rotation        =   None,
+                                xticks          =   None,
+                                yticks          =   None,
                                 *args, **kwargs):
         '''
         Add a colorbar within or next to a specific subplot axis (or multiple axes).
@@ -384,7 +391,7 @@ class Plotter:
                 if position in ['right', 'left']:
                     cax = divider.append_axes(position, size=size, pad=pad)
                 elif position in ['top', 'bottom']:
-                    cax = divider.append_axes(position, size=size, pad=pad, aspect=50)
+                    cax = divider.append_axes(position, size=size, pad=pad)
                 else:
                     raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
 
@@ -398,35 +405,56 @@ class Plotter:
                     if position in ['right', 'left']:
                         cax = divider.append_axes(position, size=size, pad=pad)
                     elif position in ['top', 'bottom']:
-                        cax = divider.append_axes(position, size=size, pad=pad, aspect=50)
+                        cax = divider.append_axes(position, size=size, pad=pad)
                     else:
                         raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
 
                     # Add colorbar to the created axis
-                    cbar = fig.colorbar(sm, cax=cax, orientation='vertical' if position in ['right', 'left'] else 'horizontal', *args, **kwargs)
+                    cbar = fig.colorbar(sm, cax=cax, orientation='horizontal' if position in ['top', 'bottom'] else 'vertical', *args, **kwargs)
                     cbar.ax.set_title(title, pad=10 if position in ['top', 'bottom'] else 5)
                     colorbars.append(cbar)
-            
+        
         for cbar in colorbars:
             # set the labels
             if xlabel is not None:
-                cbar.set_label(xlabel)
-                cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
-                print(xlabelcords)
+                cbar.ax.set_xlabel(xlabel)
                 # adjust tick positions
-                if xtickscords is not None:
-                    cbar.ax.xaxis.set_ticks_position(xtickscords)
-                
+                if xlabelpos == 'top':
+                    cbar.ax.xaxis.set_label_coords(0.5, 1.1)
+                if xlabelcords is not None and isinstance(xlabelcords, tuple):
+                    cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
+                if rotation is not None:
+                    cbar.ax.xaxis.label.set_rotation(rotation)
+            if xtickpos is not None:
+                cbar.ax.xaxis.set_ticks_position(xtickpos)
+            if xtickscords is not None and isinstance(xtickscords, tuple):
+                cbar.ax.xaxis.set_ticks_position(xtickscords)
             
             if ylabel is not None:
-                cbar.set_label(ylabel)
-                cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
-                # adjust tick positions
-                if ytickscords is not None:
-                    cbar.ax.yaxis.set_ticks_position(ytickscords)
+                cbar.ax.set_ylabel(ylabel)
+                if ylabelpos == 'right':
+                    cbar.ax.yaxis.set_label_coords(1.1, 0.5)
+                else:
+                    cbar.ax.yaxis.set_label_coords(-0.1, 0.5)
+                if ylabelcords is not None and isinstance(ylabelcords, tuple):
+                    cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
+                if rotation is not None:
+                    cbar.ax.yaxis.label.set_rotation(rotation)
+                    
+            if ytickpos is not None:
+                cbar.ax.yaxis.set_ticks_position(ytickpos)
+            # adjust tick positions
+            if ytickscords is not None and isinstance(ytickscords, tuple):
+                cbar.ax.yaxis.set_ticks_position(ytickscords)
+            # unset ticks if specified
+            if xticks is not None and xticks == []:
+                # cbar.ax.set_xticks([])
+                cbar.ax.set_xticklabels([])
+            if yticks is not None and yticks == []:
+                # cbar.ax.set_yticks([])
+                cbar.ax.set_yticklabels([])
         return colorbars    
-    ############################################################
-
+    
     @staticmethod
     def add_colorbar_pos(fig, 
                          cmap,
@@ -470,14 +498,14 @@ class Plotter:
         
         # set the labels
         if xlabel != '':
-            cbar.set_label(xlabel)
+            cbar.ax.set_xlabel(xlabel)
             cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
         
         if ylabel != '':
-            cbar.set_label(ylabel)
+            cbar.ax.set_ylabel(ylabel)
             cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
     
-    ############################################################
+    ###########################################################
     
     @staticmethod
     def get_colormap(values, cmap='PuBu', elsecolor='blue'):
@@ -537,13 +565,11 @@ class Plotter:
         cmap_name   = base.name + str(N)
         return plt.cm.colors.ListedColormap(color_list, name=cmap_name)
     
-    #################### A N N O T ####################
+    ######################## A N N O T ########################
     
     @staticmethod
-    def set_annotate(ax, elem: str, x: float = 0, y: float = 0, fontsize=None, xycoords='axes fraction', cond=True, **kwargs):
+    def set_annotate(ax, elem: str, x: float = 0, y: float = 0, fontsize=None, xycoords='axes fraction', cond=True, zorder=50, **kwargs):
         '''
-        @staticmethod
-        
         Make an annotation on the plot.
         - ax        : axis to annotate on
         - elem      : annotation string
@@ -555,52 +581,79 @@ class Plotter:
         '''
         if not cond:
             return
-        # take the default fontsize
+
+        # Take the default fontsize if not specified
         if fontsize is None:
             fontsize = plt.rcParams['font.size']
-                
+
         if xycoords == 'best':
-            # Define candidate corners with optional offset adjustment for fontsize
-            offset = fontsize / 200  # Adjust for better spacing
+            offset_x = 0.05  # Horizontal offset to prevent overlap with axes
+            offset_y = 0.05  # Vertical offset to prevent overlap with axes
+
             corners = {
-                "upper left": (0.05, 0.95 - offset),
-                "upper right": (0.95, 0.95 - offset),
-                "lower left": (0.05, 0.05 + offset),
-                "lower right": (0.95, 0.05 + offset)
+                "upper left": (0.05 + offset_x, 0.95 - offset_y),
+                "upper right": (0.95 - offset_x, 0.95 - offset_y),
+                "lower left": (0.05 + offset_x, 0.05 + offset_y),
+                "lower right": (0.95 - offset_x, 0.05 + offset_y)
             }
 
-            # Simulate annotation placement and evaluate overlap with plot
-            text_extents    = {}
-            fig             = ax.figure
-            fig.canvas.draw() 
-            renderer        = fig.canvas.get_renderer()
+            fig = ax.figure
+            renderer = fig.canvas.get_renderer()
+
+            # Get the data bounding box
+            data_bbox = ax.transAxes.transform_bbox(ax.get_position())  # Use axis fraction for bounds
+
+            # Track text extents for all corners
+            text_extents = {}
+            adjusted_corners = {}
             for corner, (cx, cy) in corners.items():
-                text        = ax.annotate(elem, xy=(cx, cy), fontsize=fontsize, xycoords='axes fraction', alpha=0, **kwargs)
-                bbox        = text.get_window_extent(renderer=renderer).expanded(1.1, 1.1)
+                text = ax.annotate(
+                    elem, xy=(cx, cy), fontsize=fontsize,
+                    xycoords='axes fraction', alpha=0, zorder=zorder, **kwargs
+                )
+                bbox = text.get_window_extent(renderer=renderer)
                 text_extents[corner] = bbox
+
+                # Adjust corner coordinates to ensure text stays within the plot
+                x_adjust = min(max(0, cx - bbox.width / fig.get_size_inches()[0] + offset_x), 0.95)
+                y_adjust = min(max(0, cy - bbox.height / fig.get_size_inches()[1] + offset_y), 0.95)
+                adjusted_corners[corner] = (x_adjust + offset_x, y_adjust + offset_y)
                 text.remove()
 
-            # Get the data extent in display coordinates
-            data_bbox = ax.get_window_extent(renderer=renderer)
-
-            # Check overlap with data and select the best corner
+            # Find the best corner without overlap
             best_corner = None
             for corner, bbox in text_extents.items():
-                if not data_bbox.overlaps(bbox):  # Ensure no overlap with data
+                if not data_bbox.overlaps(bbox):  # Check for overlap
                     best_corner = corner
                     break
 
+            # If no corner avoids overlap, default to upper left and add a white background
             if best_corner is None:
                 best_corner = "upper left"
-                # add white box around the text
-                kwargs['bbox'] = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.5', alpha=0.7)
+            kwargs['bbox'] = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.3', alpha=0.85)
 
-            x, y = corners[best_corner]
-            xycoords = 'axes fraction'
-        ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, **kwargs)
-        
-    ############################################################
+            # Now we check for inset axes and avoid placement below them
+            insets = [inset for inset in ax.figure.get_axes() if inset != ax]
+            for inset_ax in insets:
+                if inset_ax != ax:
+                    inset_bbox = inset_ax.get_position()
 
+                    # Adjust placement based on inset location (avoid placement below the inset)
+                    if best_corner == "upper left" and inset_bbox.y0 > 0.5:
+                        best_corner = "upper right"  # Change position to upper right
+                    elif best_corner == "lower left" and inset_bbox.y1 < 0.5:
+                        best_corner = "lower right"  # Change position to lower right
+
+
+            # Annotate in the selected corner
+            cx, cy = adjusted_corners[best_corner]
+            ax.annotate(
+                elem, xy=(cx, cy), fontsize=fontsize,
+                xycoords='axes fraction', zorder=zorder, **kwargs)
+            return
+        kwargs['bbox'] = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.3', alpha=0.85)
+        ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, zorder=zorder, **kwargs)
+    
     @staticmethod
     def set_annotate_letter(
         ax, 
@@ -611,6 +664,7 @@ class Plotter:
         xycoords    = 'axes fraction',
         addit       = '',
         condition   = True,
+        zorder      = 50,
         **kwargs        
         ):
         '''
@@ -621,7 +675,7 @@ class Plotter:
         - y         : y coordinate
         - fontsize  : fontsize 
         '''
-        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, cond = condition, xycoords = xycoords, **kwargs)
+        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, **kwargs)
     
     @staticmethod
     def set_arrow(  ax,
@@ -685,26 +739,31 @@ class Plotter:
     @staticmethod
     def hline(  ax, 
                 val     : float,
-                ls      = '-',
+                ls      = '--',
                 lw      = 2.0,
                 color   = 'black',
                 label   = None,
+                zorder  = 10,
+                labelcond = True,
                 **kwargs):
         '''
         horizontal line plotting
         '''
         ax.axhline(val, ls = ls,  lw = lw, 
-                label = label if (label is not None and len(label) != 0) else None, 
+                label = label if (label is not None and len(label) != 0 and labelcond) else None, 
                 color = color, 
+                zorder = zorder,
                 **kwargs)
     
     @staticmethod
     def vline(  ax, 
-                val     : float,
-                ls      = '-',
-                lw      = 2.0,
-                color   = 'black',
-                label   = None,
+                val         : float,
+                ls          = '--',
+                lw          = 2.0,
+                color       = 'black',
+                label       = None,
+                zorder      = 10,
+                labelcond   = True,
                 **kwargs):
         '''
         vertical line plotting
@@ -712,9 +771,79 @@ class Plotter:
         ax.axvline(val, 
                 ls = ls,  
                 lw = lw, 
-                label = label if (label is not None and len(label) != 0) else None, 
+                label = label if (label is not None and len(label) != 0 and labelcond) else None, 
                 color = color,
+                zorder = zorder,
                 **kwargs)
+    
+    ################## S C A T T E R ##################
+    
+    @staticmethod
+    def scatter(ax, x, y,
+        s           =   10,
+        c           =   'blue',
+        marker      =   'o',
+        alpha       =   1.0,
+        label       =   None,
+        edgecolor   =   None,
+        zorder      =   5,
+        labelcond   =   True,
+        **kwargs,
+    ):
+        """
+        Creates a scatter plot on the provided axis, styled for Nature-like plots.
+
+        Parameters:
+            ax (matplotlib.axes.Axes): The axis on which to draw the scatter plot.
+            x (array-like): The x-coordinates of the points.
+            y (array-like): The y-coordinates of the points.
+            s (float or array-like, optional): The size of the points (default: 10).
+            c (color or array-like, optional): The color of the points (default: 'blue').
+            marker (str, optional): The shape of the points (default: 'o').
+            alpha (float, optional): The transparency of the points (0.0 to 1.0, default: 1.0).
+            label (str, optional): The label for the points (default: None).
+            edgecolor (str or array-like, optional): The edge color of the points (default: 'white').
+            zorder (int, optional): The drawing order of the points (default: 5).
+            **kwargs: Additional keyword arguments passed to `matplotlib.axes.Axes.scatter`.
+
+        Example:
+            scatter(ax, x_data, y_data, s=20, c='red', alpha=0.5, label='Sample Data')
+        """
+        if isinstance(x, (float, int)):
+            x = [x]
+        if isinstance(y, (float, int)):
+            y = [y]
+        
+        # override the color if it is provided in the kwargs
+        if 'color' in kwargs:
+            c = None
+        
+        if label is None or label == '':
+            labelcond = False    
+        
+        ax.scatter(x, y, s=s, c=c, marker=marker, alpha=alpha, label=label if labelcond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
+        
+    #################### P L O T S ####################
+    
+    @staticmethod
+    def plot(  ax, 
+                x, 
+                y, 
+                ls          = '-',
+                lw          = 2.0,
+                color       = 'black',
+                label       = None,
+                zorder      = 5,
+                labelcond   = True,
+                **kwargs):
+        '''
+        plot the data
+        '''
+        if 'linestyle' in kwargs:
+            ls = None
+        if label is None or label == '':
+            labelcond = False
+        ax.plot(x, y, ls = ls, lw = lw, color = color, label = label if labelcond else '', zorder = zorder, **kwargs)
     
     #################### T I C K S ####################
     
@@ -755,114 +884,241 @@ class Plotter:
             ax.set_yticks(yticks)
 
     @staticmethod
-    def set_ax_params(  ax, 
-                        which       :   str,
-                        scale       =   'linear',
-                        label       =   "",
-                        labelPad    =   0.0,
-                        lim         =   None,
-                        fontsize    =   None,
-                        title       =   '',
-                        labelCond   =   True,
-                        # manual
-                        labelPos    =   None,
-                        tickPos     =   None,
-                        labelCords  =   None,
-                        ticks       =   None,
-                        labels      =   None,
-                        maj_tick_l  =   2,
-                        min_tick_l  =   1):
-        '''
-        Sets the parameters of the axes
-        - ax        : axis to use
-        - which     : string, x, y, xy
-        - scale     : linear, log
-        - label     : label for the axis
-        - labelPad  : label padding
-        - lim       : limits for the axis
-        - fontsize  : font size
-        - title     : title for the axis
-        '''
-        
-        # check x axis
-        if 'x' in which:
-            # set the ticks
-            if True:
-                Plotter.set_tickparams(ax, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
-            
-            if label != "":
-                ax.set_xlabel(label if labelCond else "", 
-                            fontsize = fontsize,
-                            labelpad = labelPad if labelPad != 0 else None)
-            # check limits
-            if lim is not None:
-                ax.set_xlim(lim[0], lim[1])
-                
-            # set the scale
-            ax.set_xscale(scale)
-            if scale == 'log':
-                ax.xaxis.set_minor_locator(plt.LogLocator(base=10, subs='all', numticks=100))
-            
-            # manual settings          
-            if True:
-                if labelPos is not None and labelPos in ['bottom', 'top']:
-                    ax.xaxis.set_label_position(labelPos)
-                    
-                # ticks :)
-                if tickPos is not None and tickPos in ['bottom', 'top']:
-                    if tickPos == 'top':
-                        ax.xaxis.tick_top()
-                        
-                if labelCords is not None:
-                    ax.xaxis.set_label_coords(labelCords[0], labelCords[1])
+    def set_ax_params(
+            ax,
+            which           : str           = 'both',       # which axis to update
+            label           : dict | str    = "",           # general label
+            xlabel          : dict | str    = "",           # x label - works when which is 'x' or 'both'
+            ylabel          : str           = "",           # y label - works when which is 'y' or 'both'
+            title           : str           = "",           # title of the axis
+            scale           : str  | dict   = "linear",     # scale of the axis
+            xscale                          = None,         # scale of the x-axis
+            yscale                          = None,         # scale of the y-axis
+            lim             : dict | tuple | None = None,   # fallback for axis limits
+            xlim                            = None,         # specific limits for x-axis
+            ylim                            = None,         # specific limits for y-axis
+            fontsize        : int           = plt.rcParams['font.size'],
+            labelPad        : float         = 0.0,          # padding for axis labels
+            labelCond       : bool | dict   = True,
+            labelPos        : dict | str | None = None,     # label positions
+            xlabelPos       : str  | None   = None,         # position of the xlabel
+            ylabelPos       : str  | None   = None,         # position of the ylabel
+            tickPos         : dict | str | None = None,     # tick positions
+            labelCords      : dict | str | None = None,     # manual label coordinates
+            ticks           : dict | str | None = None,     # custom ticks
+            labels          : dict | str | None = None,     # custom tick labels
+            maj_tick_l      : float         = 2,
+            min_tick_l      : float         = 1,
+            tick_params     : dict | str | None = None,
+            title_fontsize  : int           = 14,
+        ):
+            """
+            Sets various axis parameters for publication-ready plots.
 
-            if ticks is not None:
-                ax.set_xticks(ticks)
-                # try to set the labels
-                if labels is not None and len(labels) == len(ticks):
-                    ax.set_xticklabels(labels)
-            
-        # check y axis
-        if 'y' in which:
-            
-            # set the ticks
+            Parameters:
+                ax (matplotlib.axes.Axes): The axis to modify.
+                which (str): Specifies which axes to update ('x', 'y', 'both').
+                label (str): Label for the axis (fallback for `xlabel` and `ylabel`).
+                xlabel, ylabel (str): Labels for x and y axes (overrides `label`).
+                title (str): Title for the axis.
+                scale (str): Scale of the axis ('linear', 'log').
+                lim (tuple): Fallback for axis limits.
+                xlim, ylim (tuple): Specific limits for x and y axes (overrides `lim`).
+                fontsize (int): Font size for axis labels.
+                labelPad (float): Padding for axis labels.
+                labelCond (bool): Whether to show the label.
+                labelPos (dict): Label positions (e.g., {"x": "top", "y": "right"}).
+                tickPos (dict): Tick positions (e.g., {"x": "bottom", "y": "left"}).
+                labelCords (dict): Manual label coordinates (e.g., {"x": (0.5, -0.1)}).
+                ticks (dict): Custom ticks (e.g., {"x": [1, 2, 3], "y": [0.1, 0.2]}).
+                labels (dict): Custom tick labels (e.g., {"x": ["A", "B", "C"]}).
+                maj_tick_l (float): Length of major ticks.
+                min_tick_l (float): Length of minor ticks.
+                tick_params (dict): Additional tick parameters.
+                title_fontsize (int): Font size for the title.
+            """
+            # Resolve limits
             if True:
-                Plotter.set_tickparams(ax, maj_tick_l = maj_tick_l, min_tick_l = min_tick_l)
-                
-            if label != "":
-                ax.set_ylabel(label if labelCond else "", 
-                            fontsize = fontsize,
-                            labelpad = labelPad if labelPad != 0 else None)
-            if lim is not None:
-                ax.set_ylim(lim[0], lim[1])             
-            ax.set_yscale(scale)
-            if scale == 'log':
-                ax.yaxis.set_minor_locator(plt.LogLocator(base=10, subs='all', numticks=100))
-            
-            if True:
-                # label position
-                if labelPos is not None and labelPos in ['left', 'right']:
-                    ax.yaxis.set_label_position(labelPos)
+                # limits
+                if isinstance(lim, (tuple, list)):
+                    lim = {"x": lim, "y": lim}
+                elif not isinstance(lim, dict):
+                    lim = {}
+                if xlim is not None and isinstance(xlim, (tuple, list)):
+                    lim['x'] = xlim
+                if ylim is not None and isinstance(ylim, (tuple, list)):
+                    lim['y'] = ylim
+
+                # label positions
+                if labelPos is None:
+                    labelPos = {'x':'left', 'y':'bottom'}
+                elif isinstance(labelPos, str):
+                    labelPos = {"x": labelPos, "y": labelPos}
+                elif not isinstance(labelPos, dict):
+                    labelPos = {}
+                if xlabelPos is not None:
+                    labelPos['x'] = xlabelPos
+                if ylabelPos is not None:
+                    labelPos['y'] = ylabelPos
+
+                # tick positions
+                if tickPos is None:
+                    tickPos = {'x':'bottom', 'y':'left'}
+                elif isinstance(tickPos, str):
+                    tickPos = {"x": tickPos, "y": tickPos}
+                elif not isinstance(tickPos, dict):
+                    tickPos = {}
+                if xlabelPos is not None:
+                    tickPos['x'] = xlabelPos
+                if ylabelPos is not None:
+                    tickPos['y'] = ylabelPos
+
+                # label coordinates
+                if labelCords is None:
+                    labelCords = {}
+                elif isinstance(labelCords, str):
+                    labelCords = {"x": labelCords, "y": labelCords}
+                elif not isinstance(labelCords, dict):
+                    labelCords = {}
+                if 'x' in labelCords and isinstance(labelCords['x'], (tuple, list)):
+                    labelCords['x'] = labelCords['x']
+                if 'y' in labelCords and isinstance(labelCords['y'], (tuple, list)):
+                    labelCords['y'] = labelCords['y']
+
+                # scale
+                if scale is None:
+                    scale = {"x": "linear", "y": "linear"}
+                elif isinstance(scale, str):
+                    scale = {"x": scale, "y": scale}
+                elif not isinstance(scale, dict):
+                    scale = {}
+                if xscale is not None and isinstance(xscale, str) and xscale != "":
+                    scale['x'] = xscale
+                if yscale is not None and isinstance(yscale, str) and yscale != "":
+                    scale['y'] = yscale
                     
-                # ticks :)
-                if tickPos is not None and tickPos in ['left', 'right']:
-                    if tickPos == 'right':
-                        ax.yaxis.tick_right()
                 
-                # coordinates  
-                if labelCords is not None:
-                    ax.yaxis.set_label_coords(labelCords[0], labelCords[1])
-            
-            if ticks is not None:
-                ax.set_yticks(ticks)
-                # try to set the labels
-                if labels is not None and len(labels) == len(ticks):
-                    ax.set_yticklabels(labels)
-            
-            
-        # check the title
-        if len(title) != 0:
-            ax.set_title(title)       
+                # ticks
+                if ticks is None:
+                    ticks = {}
+                elif isinstance(ticks, str):
+                    ticks = {"x": ticks, "y": ticks}
+                elif not isinstance(ticks, dict):
+                    ticks = {}
+                if 'x' in ticks and isinstance(ticks['x'], (tuple, list)):
+                    ticks['x'] = ticks['x']
+                if 'y' in ticks and isinstance(ticks['y'], (tuple, list)):
+                    ticks['y'] = ticks['y']
+
+                # labelcond 
+                if labelCond is None:
+                    labelCond = {"x": True, "y": True}
+                elif isinstance(labelCond, bool):
+                    labelCond = {"x": labelCond, "y": labelCond}
+                elif not isinstance(labelCond, dict):
+                    labelCond = {}
+                
+                # labels
+                if labels is None:
+                    labels = {}
+                elif isinstance(labels, str):
+                    labels = {"x": labels, "y": labels}
+                elif not isinstance(labels, dict):
+                    labels = {}
+                if 'x' in labels and isinstance(labels['x'], (tuple, list)):
+                    labels['x'] = labels['x']
+                if 'y' in labels and isinstance(labels['y'], (tuple, list)):
+                    labels['y'] = labels['y']
+
+                # label 
+                if label == "":
+                    label       = {"x": "", "y": ""}
+                elif label is None:
+                    label       = {"x": "", "y": ""}
+                    
+                if isinstance(label, str):
+                    label = {"x": label, "y": label}
+                elif not isinstance(label, dict):
+                    label = {}
+                
+                if xlabel is not None and isinstance(xlabel, str):
+                    if xlabel == "":
+                        labelCond["x"] = False
+                    label['x'] = xlabel
+                if ylabel is not None and isinstance(ylabel, str):
+                    if ylabel == "":
+                        labelCond["y"] = False
+                    label['y'] = ylabel
+
+            # Default tick parameters
+            default_tick_params = {
+                "length"    : maj_tick_l,
+                "width"     : 0.8,
+                "direction" : "in",
+                "labelsize" : fontsize - 2 if fontsize else 10,
+            }
+            if tick_params:
+                if isinstance(tick_params, dict):
+                    default_tick_params.update(tick_params)
+
+            # Update x-axis parameters
+            if "x" in which or "both" in which:
+                ax.set_xlabel(label['x'] if labelCond['x'] else "", fontsize=fontsize, labelpad=labelPad)
+                if lim and "x" in lim:
+                    ax.set_xlim(lim["x"])
+                    
+                # scale 
+                if True:
+                    if scale and "x" in scale and scale["x"] is not None:
+                        ax.set_xscale(scale["x"])
+                    if scale and "x" in scale and scale["x"] == "log":
+                        ax.xaxis.set_minor_locator(plt.LogLocator(base=10.0, subs='all', numticks=100))
+                # ax.xaxis.set_tick_params(**default_tick_params)
+                    
+                if labelPos and "x" in labelPos and labelPos["x"] in ['top', 'bottom']:
+                    ax.xaxis.set_label_position(labelPos["x"])
+                    # add small padding if top
+                    if labelPos["x"] == 'top':
+                        ax.xaxis.set_label_coords(0.5, 1.1)
+                if tickPos and "x" in tickPos:
+                    getattr(ax.xaxis, f"tick_{tickPos['x']}")()
+                if labelCords and "x" in labelCords:
+                    ax.xaxis.set_label_coords(*labelCords["x"])
+                if ticks and "x" in ticks:
+                    ax.set_xticks(ticks["x"])
+                    if labels and "x" in labels:
+                        ax.set_xticklabels(labels["x"])
+
+            # Update y-axis parameters
+            if "y" in which or "both" in which:
+                ax.set_ylabel(label['y'] if labelCond['y'] else "", fontsize=fontsize, labelpad=labelPad)
+                if lim and "y" in lim:
+                    ax.set_ylim(lim["y"])
+                    
+                # scale 
+                if scale and "y" in scale and scale["y"] is not None:
+                    ax.set_yscale(scale["y"])
+                if scale and "y" in scale and scale["y"] == "log":
+                    ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs='all', numticks=100))
+                # ax.yaxis.set_tick_params(**default_tick_params)
+                    
+                if labelPos and "y" in labelPos and labelPos["y"] in ['left', 'right']:
+                    ax.yaxis.set_label_position(labelPos["y"])
+                    # add small padding if right
+                    if labelPos["y"] == 'right':
+                        ax.yaxis.set_label_coords(1.1, 0.5)
+                if tickPos and "y" in tickPos:
+                    getattr(ax.yaxis, f"tick_{tickPos['y']}")()
+                if labelCords and "y" in labelCords:
+                    ax.yaxis.set_label_coords(*labelCords["y"])
+                if ticks and "y" in ticks:
+                    ax.set_yticks(ticks["y"])
+                    if labels and "y" in labels:
+                        ax.set_yticklabels(labels["y"])
+
+            # Set title
+            if title:
+                ax.set_title(title, fontsize=title_fontsize)    
     
     @staticmethod
     def set_ax_labels(  ax,
@@ -871,8 +1127,7 @@ class Plotter:
                         ylabel      =   "",
                         title       =   "",
                         xPad        =   0,
-                        yPad        =   0
-                      ):
+                        yPad        =   0):
         '''
         Sets the labels of the x and y axes
         '''
@@ -1149,10 +1404,24 @@ class Plotter:
 
     @staticmethod
     def get_inset(ax, 
-                  position = [0.0, 0.0, 1.0, 1.0], **kwargs):
-        ax2 = plt.axes((0, 0, 1, 1), **kwargs)
+                    position    = [0.0, 0.0, 1.0, 1.0], 
+                    add_box     = False, 
+                    box_alpha   = 0.5, 
+                    box_ext     = 0.02,
+                    facecolor   = 'white',
+                    zorder      = 1,
+                    **kwargs):
+        
+        ax2 = plt.axes((0, 0, 1, 1), **kwargs, zorder=zorder)
         ip  = InsetPosition(ax, position)
         ax2.set_axes_locator(ip)
+        
+        if add_box:
+            # Add a semi-transparent white box around the inset
+            rect = Rectangle((0, 0), 1 + box_ext, 1 + box_ext, transform=ax2.transAxes, 
+                            facecolor=facecolor, edgecolor='none', alpha=box_alpha, zorder=zorder)
+            ax2.add_patch(rect)
+        
         return ax2
     
     ##################### L O O K #####################

@@ -9,6 +9,33 @@ from scipy.stats import kurtosis, binned_statistic
 
 ##############################################################
 
+from scipy.interpolate import interp1d
+from scipy.interpolate import UnivariateSpline
+
+def find_peak_and_interpolate(alphas, values):
+    # Remove NaN values and filter the alphas and values
+    valid_alphas = alphas[~np.isnan(values)]
+    valid_values = values[~np.isnan(values)]
+    
+    # Interpolate to improve peak precision (using spline interpolation)
+    poly_coeffs = np.polyfit(valid_alphas, valid_values, deg=9)
+    spline_func = np.poly1d(poly_coeffs)
+    
+    # Find the approximate maximum value and its corresponding alpha
+    max_value = np.nanmax(valid_values)
+    max_index = np.argmax(valid_values)
+    max_alpha = valid_alphas[max_index]
+    
+    # Perform a fine-grained search around the peak to find a more precise maximum
+    fine_alphas = np.linspace(valid_alphas[max_index - 1], valid_alphas[max_index + 1], 100)
+    fine_values = spline_func(fine_alphas)
+    refined_max_alpha = fine_alphas[np.argmax(fine_values)]
+    refined_max_value = np.max(fine_values)
+
+    return refined_max_alpha, refined_max_value
+
+##############################################################
+
 class Statistics:
     '''
     Class for statistical operations - mean, median, etc. 
