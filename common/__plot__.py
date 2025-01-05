@@ -10,6 +10,7 @@ import matplotlib.colors as mcolors
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 import matplotlib.ticker as mticker
 from matplotlib.patches import Polygon, Rectangle
+from matplotlib.transforms import Bbox
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
@@ -354,6 +355,7 @@ class Plotter:
                                 rotation        =   None,
                                 xticks          =   None,
                                 yticks          =   None,
+                                single          =   False,
                                 *args, **kwargs):
         '''
         Add a colorbar within or next to a specific subplot axis (or multiple axes).
@@ -376,7 +378,7 @@ class Plotter:
         if not isinstance(axes, (list, np.ndarray)):        # Handle single or multiple axes input
             axes = [axes]
 
-        locator_kwargs = locator_kwargs or {}  # Ensure locator_kwargs is always a valid dictionary
+        locator_kwargs = locator_kwargs or {}               # Ensure locator_kwargs is always a valid dictionary
 
         colorbars = []                                      # Add a colorbar to each subplot axis
         if within_plot:                                     # Add colorbar as a legend-like object within the plot
@@ -385,21 +387,42 @@ class Plotter:
                 proxy_patch = plt.Rectangle((0, 0), 1, 1, fc=cmap(0.5), edgecolor="none")
                 legend = Legend(ax, [proxy_patch], [''], loc='best', handler_map={proxy_patch: HandlerPatch()}, **locator_kwargs)
                 ax.add_artist(legend)
-        else:  # Add colorbar to the side of the plot
-            if len(axes) > 1:  # When more than one axis is present, combine them for a unified colorbar
-                divider = make_axes_locatable(axes[0])  # Use the first axis to create the divider
+        else:                                               # Add colorbar to the side of the plot
+            if len(axes) > 1 or not single:                # When more than one axis is present, combine them for a unified colorbar
+                                                            # Ensure `size` is numerical, converting percentage strings if necessary
+                bbox = axes[0].get_position()               # Determine the bounding box for all the axes
+                for ax in axes[1:]:
+                    other_bbox = ax.get_position()
+                    bbox = Bbox.union([bbox, other_bbox])  # Combine the bounding boxes of all axes 
+
+                # Create a new axis for the colorbar based on the combined bounding box
+                fig_width, fig_height = fig.get_size_inches()
+                
+                if isinstance(size, str) and size.endswith('%'):
+                    size = float(size.strip('%')) / 100 * fig_height
+                
+                # Determine the position and orientation of the colorbar
                 if position in ['right', 'left']:
-                    cax = divider.append_axes(position, size=size, pad=pad)
+                    if position == 'right':
+                        cax_position = [bbox.x1 + pad / fig_width, bbox.y0, size / fig_width, bbox.height]
+                    else:  # 'left'
+                        cax_position = [bbox.x0 - size / fig_width - pad / fig_width, bbox.y0, size / fig_width, bbox.height]
+                    orientation = 'vertical'
                 elif position in ['top', 'bottom']:
-                    cax = divider.append_axes(position, size=size, pad=pad)
+                    if position == 'top':
+                        cax_position = [bbox.x0, bbox.y1 + pad / fig_height, bbox.width, size / fig_height]
+                    else:  # 'bottom'
+                        cax_position = [bbox.x0, bbox.y0 - size / fig_height - pad / fig_height, bbox.width, size / fig_height]
+                    orientation = 'horizontal'
                 else:
                     raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
 
                 # Add colorbar that spans across the axes
-                cbar = fig.colorbar(sm, cax=cax, orientation='vertical' if position in ['right', 'left'] else 'horizontal', *args, **kwargs)
+                cax     = fig.add_axes(cax_position)
+                cbar    = fig.colorbar(sm, cax=cax, orientation=orientation, *args, **kwargs)
                 cbar.ax.set_title(title, pad=10 if position in ['top', 'bottom'] else 5)
                 colorbars.append(cbar)
-            else:  # When there is only one axis, add a colorbar to it
+            else:                                           # When there is only one axis, add a colorbar to it
                 for ax in axes:
                     divider = make_axes_locatable(ax)
                     if position in ['right', 'left']:
@@ -788,6 +811,7 @@ class Plotter:
         edgecolor   =   None,
         zorder      =   5,
         labelcond   =   True,
+        linewidths  =   1.0,
         **kwargs,
     ):
         """
@@ -821,7 +845,9 @@ class Plotter:
         if label is None or label == '':
             labelcond = False    
         
-        ax.scatter(x, y, s=s, c=c, marker=marker, alpha=alpha, label=label if labelcond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
+        ax.scatter(x, y, linewidths = linewidths,
+                s=s, c=c, marker=marker, 
+                alpha=alpha, label=label if labelcond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
         
     #################### P L O T S ####################
     
@@ -1377,15 +1403,68 @@ class Plotter:
     
     @staticmethod
     def get_grid_subplot(gs,
-                         fig,    
-                         i      :   int, 
-                         sharex =   None, 
-                         sharey =   None,
-                         **kwargs):
+                        fig,
+                        i: int,
+                        sharex      = None,
+                        sharey      = None,
+                        padding     = None,
+                        spacing     = None,
+                        empty_space = None,
+                        **kwargs):
         '''
-        Creates the subaxis for the GridSpec
+        Creates the subaxis for the GridSpec with optional custom paddings.
+        
+        Parameters:
+            gs (GridSpec): The GridSpec object.
+            fig (Figure): The matplotlib figure object.
+            i (int): Index of the subplot in the GridSpec.
+            sharex (Axes, optional)     : Share the x-axis with another subplot.
+            sharey (Axes, optional)     : Share the y-axis with another subplot.
+            padding (dict, optional)    : Custom paddings for the subplot layout.
+                                        Keys can include 'left', 'right', 'top', 'bottom'.
+            **kwargs: Additional keyword arguments passed to `add_subplot`.
+        
+        Returns:
+            Axes: The created subplot.
         '''
-        return fig.add_subplot(gs[i], sharex = sharex, sharey = sharey, **kwargs)
+        ax = fig.add_subplot(gs[i], sharex=sharex, sharey=sharey, **kwargs)
+
+        # Apply custom paddings if provided
+        if padding is not None:
+            if not isinstance(padding, dict):
+                raise ValueError("Padding must be a dictionary with keys 'left', 'right', 'top', and 'bottom'.")
+            fig.subplots_adjust(**{k: v for k, v in padding.items() if k in ['left', 'right', 'top', 'bottom']})
+        # Apply custom spacings if provided
+        if spacing is not None:
+            if not isinstance(spacing, dict):
+                raise ValueError("Spacing must be a dictionary with keys 'wspace' and 'hspace'.")
+            fig.subplots_adjust(**{k: v for k, v in spacing.items() if k in ['wspace', 'hspace']})
+        
+        if empty_space is not None:
+            
+            valid_sides = {'left', 'right', 'top', 'bottom'}        # Validate and parse empty_space
+            empty_space = empty_space or {}                         # Ensure empty_space is a dictionary
+            
+            if not all(side in valid_sides for side in empty_space):
+                raise ValueError(f"Keys in empty_space must be one of {valid_sides}, got {list(empty_space.keys())}.")
+
+            # Get current subplot adjustment parameters
+            bbox = ax.get_position()
+
+            # Apply adjustments based on the dictionary
+            if 'left' in empty_space:
+                bbox.x0 = empty_space['left']
+            if 'right' in empty_space:
+                bbox.x1 = 1 - empty_space['right']
+            if 'bottom' in empty_space:
+                bbox.y0 = empty_space['bottom']
+            if 'top' in empty_space:
+                bbox.y1 = 1 - empty_space['top']
+
+            # Adjust the subplot layout for the given axis
+            ax.set_position(bbox)
+            
+        return ax
 
     @staticmethod
     def app_grid_subplot(   axes   : list,
