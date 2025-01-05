@@ -7,8 +7,10 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 
 ########################## grids
+from matplotlib.colors import Normalize, ListedColormap
 from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
 import matplotlib.ticker as mticker
+from matplotlib import ticker
 from matplotlib.patches import Polygon, Rectangle
 from matplotlib.transforms import Bbox
 from matplotlib.ticker import ScalarFormatter, NullFormatter
@@ -30,7 +32,7 @@ from labellines import labelLine, labelLines
 SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
 BIGGER_SIZE                         =   16
-ADDITIONAL_LINESTYLES = {
+ADDITIONAL_LINESTYLES               =   {
     'loosely dotted'        : (0, (1, 5)),
     'dotted'                : (0, (1, 1)),
     'densely dotted'        : (0, (1, 1)),
@@ -55,6 +57,7 @@ ADDITIONAL_LINESTYLES = {
     'densely spaced dashes' : (0, (5, 1))
 }
 
+# Set the font dictionaries (for plot title and axis titles)
 try:
     plt.style.use(['science', 'no-latex', 'colors5-light'])
 except Exception as e:
@@ -69,12 +72,15 @@ mpl.rcParams['font.family']         = 'STIXGeneral'
 #                                         'extrapackages': r'\usepackage{amsmath}'
 #                                     }
 
+#####################################
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
 colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
 colorsCyclePlastic                  =   itertools.cycle(list(["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"]))
 colorsCycleBright                   =   itertools.cycle(list(mcolors.CSS4_COLORS))
 colorsCycleDark                     =   itertools.cycle(list(mcolors.BASE_COLORS))
 colorsCyclePastel                   =   itertools.cycle(list(mcolors.XKCD_COLORS))
+#####################################
+
 @staticmethod
 def reset_color_cycles(which=None):
     '''
@@ -85,21 +91,28 @@ def reset_color_cycles(which=None):
     '''
     global colorsCycle, colorsCyclePlastic, colorsCycleBright, colorsCycleDark, colorsCyclePastel
     cycle2take = None
-    if which is None or which == 'TABLEAU':
-        colorsCycle = itertools.cycle(list(mcolors.TABLEAU_COLORS))
-        cycle2take = colorsCycle
-    if which is None or which == 'Plastic':
-        colorsCyclePlastic = itertools.cycle(list(["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"]))
-        cycle2take = colorsCyclePlastic if cycle2take is None else cycle2take
-    if which is None or which == 'Bright':
-        colorsCycleBright = itertools.cycle(list(mcolors.CSS4_COLORS))
-        cycle2take = colorsCycleBright if cycle2take is None else cycle2take
-    if which is None or which == 'Dark':
-        colorsCycleDark = itertools.cycle(list(mcolors.BASE_COLORS))
-        cycle2take = colorsCycleDark if cycle2take is None else cycle2take
-    if which is None or which == 'Pastel':
-        colorsCyclePastel = itertools.cycle(list(mcolors.XKCD_COLORS))
-        cycle2take = colorsCyclePastel if cycle2take is None else cycle2take
+    cycle2take = _reset_cycle(which, 'TABLEAU', colorsCycle, list(mcolors.TABLEAU_COLORS), cycle2take)
+    cycle2take = _reset_cycle(which, 'Plastic', colorsCyclePlastic, ["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"], cycle2take)
+    cycle2take = _reset_cycle(which, 'Bright', colorsCycleBright, list(mcolors.CSS4_COLORS), cycle2take)
+    cycle2take = _reset_cycle(which, 'Dark', colorsCycleDark, list(mcolors.BASE_COLORS), cycle2take)
+    cycle2take = _reset_cycle(which, 'Pastel', colorsCyclePastel, list(mcolors.XKCD_COLORS), cycle2take)
+    return cycle2take
+
+@staticmethod
+def _reset_cycle(which, cycle_name, cycle_var, colors, cycle2take):
+    '''
+    Reset the color cycle to the default ones.
+    - which     :   which color cycle to reset
+    - cycle_name:   name of the cycle to reset
+    - cycle_var :   cycle variable to reset
+    - colors    :   colors to reset to
+    - cycle2take:   cycle to take
+    Returns:
+    - the cycle to take
+    '''
+    if which is None or which == cycle_name:
+        cycle_var = itertools.cycle(colors)
+        cycle2take = cycle_var if cycle2take is None else cycle2take
     return cycle2take
     
 @staticmethod
@@ -122,6 +135,7 @@ def get_color_cycle(which=None):
     if which is None or which == 'Pastel':
         return colorsCyclePastel        
 
+#####################################
 markersList                         =   ['o','s','v', '+', 'o', '*'] + ['D', 'h', 'H', 'p', 'P', 'X', 'd', '|', '_']
 markersCycle                        =   itertools.cycle(["4", "2", "3", "1", "+", "x", "."] + markersList)
 linestylesList                      =   ['-', '--', '-.', ':']
@@ -158,10 +172,17 @@ def get_linestyle_cycle(which=None):
         return linestylesCycle
     if which is None or which == 'Extended':
         return linestylesCycleExtended
-    
+
+#####################################
+
 ############################ latex ############################
 colorMean                           =   'PuBu'
 colorTypical                        =   'BrBG'
+colorExtreme                        =   'RdYlBu'
+colorDiverging                      =   'coolwarm'
+colorSequential                     =   'viridis'
+colorCategorical                    =   'tab20'
+colorQualitative                    =   'tab20'
 ########################## functions ##########################
 
 class CustomFormatter(mticker.Formatter):
@@ -265,7 +286,7 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
         ax.yaxis.set_major_formatter(formatter)
     if 'x' in axis:
         ax.xaxis.set_major_formatter(formatter)
-        
+
 ############################ grids ############################
 
 ########################### plotter ###########################
@@ -384,7 +405,7 @@ class Plotter:
         if within_plot:                                     # Add colorbar as a legend-like object within the plot
             for ax in axes:
                 # Set up a proxy patch for the colorbar
-                proxy_patch = plt.Rectangle((0, 0), 1, 1, fc=cmap(0.5), edgecolor="none")
+                proxy_patch = Rectangle((0, 0), 1, 1, fc=cmap(0.5), edgecolor="none")
                 legend = Legend(ax, [proxy_patch], [''], loc='best', handler_map={proxy_patch: HandlerPatch()}, **locator_kwargs)
                 ax.add_artist(legend)
         else:                                               # Add colorbar to the side of the plot
@@ -480,18 +501,18 @@ class Plotter:
     
     @staticmethod
     def add_colorbar_pos(fig, 
-                         cmap,
-                         mapable,
-                         pos,
-                         norm = None,
-                         vmin = None, 
-                         vmax = None,
-                         orientation = 'vertical', 
-                         xlabel      = '',
-                         xlabelcords = (0.5, -0.05),
-                         ylabel      = '',
-                         ylabelcords = (-0.05, 0.5),
-                         ):
+                        cmap,
+                        mapable,
+                        pos,
+                        norm = None,
+                        vmin = None, 
+                        vmax = None,
+                        orientation = 'vertical', 
+                        xlabel      = '',
+                        xlabelcords = (0.5, -0.05),
+                        ylabel      = '',
+                        ylabelcords = (-0.05, 0.5),
+                        ):
         '''
         Add colorbar to the plot.
         - axes      :   axis to add the colorbar to
@@ -545,7 +566,7 @@ class Plotter:
         - colors (Colormap): The colormap object.
         - norm (Normalize): The normalization object.
         """
-        norm = plt.Normalize(np.min(values), np.max(values))
+        norm = Normalize(np.min(values), np.max(values))
         colors = plt.get_cmap(cmap)
         values = np.sort(values)
         getcolor = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
@@ -565,7 +586,7 @@ class Plotter:
         Returns:
         - img (AxesImage): The image object.
         """
-        norm = plt.Normalize(np.min(data), np.max(data))
+        norm = Normalize(np.min(data), np.max(data))
         img = ax.imshow(data, cmap=cmap, norm=norm, **kwargs)
         if colorbar:
             plt.colorbar(img, ax=ax)
@@ -586,7 +607,7 @@ class Plotter:
         base        = plt.cm.get_cmap(base_cmap)
         color_list  = base(np.linspace(0, 1, N))
         cmap_name   = base.name + str(N)
-        return plt.cm.colors.ListedColormap(color_list, name=cmap_name)
+        return ListedColormap(color_list, name=cmap_name)
     
     ######################## A N N O T ########################
     
@@ -1299,7 +1320,6 @@ class Plotter:
                 bottom=not ((not spines) and (not xticks))
             )
 
-    
     @staticmethod
     def unset_ticks_and_spines(ax, 
                                 xticks  = False,
@@ -1316,8 +1336,7 @@ class Plotter:
         '''
         Plotter.unset_spines(ax, xticks = False, yticks = False, left = left, right = right, top = top, bottom = bottom)
         Plotter.unset_ticks(ax, xticks = xticks, yticks = yticks, erease = erease, spines = spines)
-        
-        
+    
     ################### F O R M A T ###################
         
     @staticmethod
@@ -1349,11 +1368,11 @@ class Plotter:
             None
         """
         if 'x' in axis:
-            ax.xaxis.set_minor_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
-            ax.xaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.xaxis.set_minor_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
         if 'y' in axis:
-            ax.yaxis.set_minor_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
-            ax.yaxis.set_major_formatter(mpl.ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.yaxis.set_minor_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
     
     #################### G R I D S ####################
     
@@ -1743,7 +1762,6 @@ class Plotter:
         
         return fig, ax, plots
 
-
 ##########################################################################
 
 
@@ -1783,8 +1801,8 @@ class PlotterSave:
 #################################################
 
     @staticmethod
-    def json2dict_multiple(directory : str,
-                           keys      : list):
+    def json2dict_multiple(directory    : str,
+                        keys            : list):
         '''
         Based on the specified keys, load the dictionaries from the json files
         The keys are the names of the files as well!
@@ -1843,11 +1861,10 @@ class PlotterSave:
             np.savetxt(directory + fileName + typ, toSave)
             
         
-#################################################   
+    #################################################   
     @staticmethod
     def matrixData(         directory    :   str,
-                            fileName     :   str,
-#################################################   
+                            fileName     :   str,   
                             x,
                             y,
                             typ          =   '.npy'):
@@ -1870,7 +1887,7 @@ class PlotterSave:
 
     ##########################################################################
     @staticmethod
-    def appDataFrame(df, colname: str, y, fill_value=np.nan):
+    def app_df(df, colname: str, y, fill_value=np.nan):
         """
         Appends the data to the dataframe.
         
@@ -1890,9 +1907,10 @@ class PlotterSave:
             y[len(df):] = fill_value
         
         df[colname] = y
+    
     ##########################################################################
     @staticmethod
-    def appArrayNumpy(arr, y):
+    def app_array(arr, y):
         """
         Appends the data to a numpy array.
         
@@ -1908,6 +1926,7 @@ class PlotterSave:
 ##############################################################################
 
 from sympy import Matrix, init_printing
+from IPython.display import display
 
 class MatrixPrinter:
     '''
@@ -1946,4 +1965,5 @@ class MatrixPrinter:
         '''
         for vector in vectors:
             display(Matrix(vector))
-        
+
+##############################################################################

@@ -12,27 +12,6 @@ from scipy.stats import kurtosis, binned_statistic
 from scipy.interpolate import interp1d
 from scipy.interpolate import UnivariateSpline
 
-def find_peak_and_interpolate(alphas, values):
-    # Remove NaN values and filter the alphas and values
-    valid_alphas = alphas[~np.isnan(values)]
-    valid_values = values[~np.isnan(values)]
-    
-    # Interpolate to improve peak precision (using spline interpolation)
-    poly_coeffs = np.polyfit(valid_alphas, valid_values, deg=9)
-    spline_func = np.poly1d(poly_coeffs)
-    
-    # Find the approximate maximum value and its corresponding alpha
-    max_value = np.nanmax(valid_values)
-    max_index = np.argmax(valid_values)
-    max_alpha = valid_alphas[max_index]
-    
-    # Perform a fine-grained search around the peak to find a more precise maximum
-    fine_alphas = np.linspace(valid_alphas[max_index - 1], valid_alphas[max_index + 1], 100)
-    fine_values = spline_func(fine_alphas)
-    refined_max_alpha = fine_alphas[np.argmax(fine_values)]
-    refined_max_value = np.max(fine_values)
-
-    return refined_max_alpha, refined_max_value
 
 ##############################################################
 
@@ -231,6 +210,41 @@ class Statistics:
         gammaf      = x[np.argmin(np.abs(cdf - gammaval))]
         return x, y_smoothed, cdf, gammaf
     
+    @staticmethod    
+    def find_peak_and_interpolate(alphas, values):
+        """
+        Find the peak value in the given data and interpolate to improve peak precision.
+        This function removes NaN values from the input arrays, performs spline interpolation
+        to improve the precision of the peak detection, and then finds the maximum value and
+        its corresponding alpha. A fine-grained search around the peak is performed to find
+        a more precise maximum.
+        Parameters:
+        - alphas (array-like): The array of alpha values.
+        - values (array-like): The array of corresponding values.
+        Returns:
+        - tuple: A tuple containing the refined alpha value at the peak and the refined peak value.
+        """
+        # Remove NaN values and filter the alphas and values
+        valid_alphas = alphas[~np.isnan(values)]
+        valid_values = values[~np.isnan(values)]
+        
+        # Interpolate to improve peak precision (using spline interpolation)
+        poly_coeffs = np.polyfit(valid_alphas, valid_values, deg=9)
+        spline_func = np.poly1d(poly_coeffs)
+        
+        # Find the approximate maximum value and its corresponding alpha
+        max_value = np.nanmax(valid_values)
+        max_index = np.argmax(valid_values)
+        max_alpha = valid_alphas[max_index]
+        
+        # Perform a fine-grained search around the peak to find a more precise maximum
+        fine_alphas = np.linspace(valid_alphas[max_index - 1], valid_alphas[max_index + 1], 100)
+        fine_values = spline_func(fine_alphas)
+        refined_max_alpha = fine_alphas[np.argmax(fine_values)]
+        refined_max_value = np.max(fine_values)
+
+        return refined_max_alpha, refined_max_value
+
 ############################################### STATISTICAL AVERAGING ###############################################
 
 def avgBin(myArray, N=2):
@@ -381,9 +395,24 @@ class Histogram:
     
     @staticmethod
     def limit_logspace_val(value, base = 10):
+        """
+        Calculate the ceiling of the logarithm of a given value with a specified base.
+
+        Parameters:
+        - value (float): The value for which to calculate the logarithm.
+        - base (int, optional): The base of the logarithm. Default is 10. 
+                            Supported bases are 10 and 2. For any other base, the natural logarithm is used.
+
+        Returns:
+        float: The ceiling of the logarithm of the given value with the specified base.
+        """
         if base == 10:
             return np.ceil(np.log10(value))
         elif base == 2:
             return np.ceil(np.log2(value))
-        else:
+        elif base == 'e':
             return np.ceil(np.log(value))
+        elif isinstance(base, int):
+            return np.ceil(np.log(value) / np.log(base))
+        else:
+            raise ValueError("Unsupported base for logarithm. Supported bases are 10, 2, and 'e' or integers.")
