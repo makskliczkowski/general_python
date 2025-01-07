@@ -22,11 +22,11 @@ class Statistics:
     
     ##########################################################
     @staticmethod 
-    def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = np.mean, verbose = False):
+    def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = lambda x: np.mean(x, axis = 0), verbose = False):
         '''
         Bin average of the data
-        - data      : data to average
-        - x         : values to bin
+        - data      : data to average - first axis is realizations!
+        - x         : values to bin - first axis is realizations!
         - centers   : centers of the bins
         - delta     : width of the bin
         - typical   : if True, apply log transformation to data
@@ -42,18 +42,23 @@ class Statistics:
             averagesin  = []
             for ir, data_r in enumerate(data):
                 xin         = x[ir]
-                bin_values  = data_r[np.abs(xin - c) < delta]
+                mask        = np.abs(xin - c) < delta
+                bin_values  = data_r[mask]
 
                 if len(bin_values) < cutoffNum:
                     c_arg       = np.argmin(np.abs(xin - c))
-                    bin_values  = data_r[max(c_arg - cutoffNum // 2, 0) : min(c_arg + cutoffNum // 2, len(data_r))]
+                    start_idx   = max(c_arg - cutoffNum // 2, 0)
+                    end_idx     = min(c_arg + cutoffNum // 2, len(data_r))
+                    bin_values  = data_r[start_idx : end_idx]
                 
                 if len(bin_values) > 0:
-                    averagesin.append(func(bin_values))
-            if typical:
-                averages.append(np.mean(np.exp(averagesin)))
-            else:
-                averages.append(np.mean(averagesin))
+                    averagesin.append(np.mean(func(bin_values)))
+                    
+            if len(averagesin) > 0:
+                if typical:
+                    averages.append(np.mean(np.exp(averagesin)))
+                else:
+                    averages.append(np.mean(averagesin))
         return np.nan_to_num(averages, nan = 0.0)
 
     ##########################################################
