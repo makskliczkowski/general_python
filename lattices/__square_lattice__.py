@@ -15,7 +15,6 @@ class SquareLattice(Lattice):
     """
     
     # Lattice constants
-Hexa
     def __init__(self, dim, Lx, Ly, Lz, _BC, *args, **kwargs):
         '''
         Initializer of the square lattice

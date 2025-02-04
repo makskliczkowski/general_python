@@ -1,8 +1,8 @@
-from .__lattice__ import Lattice
+from .__lattice__ import Lattice, LAT_BC
 from .__square_lattice__ import SquareLattice
 import numpy as np
 
-class Hexagonal(Lattice):
+class HexagonalLattice(Lattice):
     """ 
     General Hexagonal Lattice type up to three dimensions!
     """

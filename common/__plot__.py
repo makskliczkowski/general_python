@@ -15,7 +15,7 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.transforms import Bbox
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
+# from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.legend import Legend
 from matplotlib.legend_handler import HandlerBase, HandlerPatch

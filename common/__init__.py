@@ -3,6 +3,14 @@ from .__directories__ import Directories
 from .__plot__ import Plotter, PlotterSave, MatrixPrinter
 from .__datat__ import DataHandler
 from .__hdf5_read__ import HDF5Handler
+
+# import modules
+from . import __binary__        as BinaryMod
+from . import __directories__   as DirectoriesMod
+from . import __plot__          as PlotMod
+from . import __datat__         as DataMod
+from . import __hdf5_read__     as HDF5Mod
+
 # Description of the modules
 """
 common package:
