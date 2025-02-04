@@ -372,6 +372,61 @@ def rev(n : Backend, size : int, bitsize = 64):
 
 # --------------------------------------------------------------------------------------------------
 
+# Bit manipulation functions
+
+# --------------------------------------------------------------------------------------------------
+
+def rotate_left(n : Backend, size : int):
+    """
+    Rotate the bits of an integer to the left.
+
+    Args:
+        n (int): The integer to rotate.
+        size (int): The number of bits in the integer.
+
+    Returns:
+        int: The integer with the bits rotated to the left.
+    """
+    if isinstance(n, int):
+        max_power = lookup_binary_power[size - 1]
+        return ((n - max_power) * 2 + 1) if (n >= max_power) else (n * 2)
+    
+    # arrays are assumed to be NumPy or JAX arrays
+    module = np
+    if jnp is not None and isinstance(n, jnp.ndarray):
+        module = jnp
+    # rotate the bits
+    return module.roll(n, -1)
+
+# --------------------------------------------------------------------------------------------------
+
+def rotate_right(n : Backend, size : int):
+    """
+    Rotate the bits of an integer to the right.
+
+    Args:
+        n (int): The integer to rotate.
+        size (int): The number of bits in the integer.
+
+    Returns:
+        int: The integer with the bits rotated to the right.
+    """
+    if isinstance(n, int):
+        max_power = lookup_binary_power[size - 1]
+        return (n >> 1) | ((n & 1) << (size - 1))
+    
+    # arrays are assumed to be NumPy or JAX arrays
+    module = np
+    if jnp is not None and isinstance(n, jnp.ndarray):
+        module = jnp
+    # rotate the bits
+    return module.roll(n, 1)
+
+# --------------------------------------------------------------------------------------------------
+
+# Other functions
+
+# --------------------------------------------------------------------------------------------------
 
 def int2binstr(n : int, bits : int):
     """
@@ -385,7 +440,7 @@ def int2binstr(n : int, bits : int):
         str: The binary representation of the integer, padded with leading zeros to fit the specified number of bits.
     """
     return f"{n:0{bits}b}"
-    
+
 ####################################################################################################
 
 def popcount(n : int):
@@ -402,80 +457,220 @@ def popcount(n : int):
 
 ####################################################################################################
 
-def test_binary_functions(size = 6):
+# Test the binary functions
+
+####################################################################################################
+
+import time
+
+def test_binary_functions(
+    size        =   6,
+    mask        =   0b1011,
+    mask_size   =   None,
+    positions   =   None,
+    bit_position=   2,
+    spin        =   True,
+    spin_value  =   Backend_Repr):
     """
-    Test the binary functions.
+    Runs a series of tests on the binary manipulation functions.
+    
+    Parameters:
+        size         : (int) Number of bits for the binary representations (default: 6).
+        mask         : (int) A mask value used for bit extraction (default: 0b1011).
+        mask_size    : (int) Number of bits to represent the mask. If None, defaults to size.
+        positions    : (list) Bit positions to prepare a mask from (default: [0, 1, 3]).
+        bit_position : (int) Bit position to test for flip and check operations (default: 2).
+        spin         : (bool) Whether to use spin representation (±spin_value) for conversion (default: True).
+        spin_value   : (float) The value representing spin-up in spin representation (default: 1.0).
+    
+    Each test is timed, and the function prints a detailed report of the input, output,
+    and execution time.
     """
-    n       = np.random.randint(0, 2**size) # Generate a random integer.
+    if mask_size is None:
+        mask_size = size
+    if positions is None:
+        positions = [0, 1, 3]
 
-    # Print the binary representation of n
-    print(f"Binary representation of {n}: {int2binstr(n, size)}")
+    # Header for the test run
+    print("=" * 50)
+    print("TESTING BINARY FUNCTIONS".center(50))
+    print("=" * 50)
 
-    # Prepare a mask
-    mask     = 0b1011
-    masksize = size
+    total_start = time.time()
 
-    # Extract bits using the mask
-    extract_mask = extract(n, mask)
-    print("1)")
-    print(f"\tExtracting bits from {int2binstr(n, size)} using mask {int2binstr(mask, masksize)}\n", 
-        f"\t\t{int2binstr(extract_mask, masksize)} : {extract_mask}")
+    # Generate a random integer within the specified bit-width.
+    n = np.random.randint(0, 2**size)
+    print(f"Random integer n = {n} (binary: {int2binstr(n, size)})")
+    print("-" * 50)
 
-    # Extract leftmost and rightmost bits
+    # Test 1: Extract bits using a mask
+    t0 = time.time()
+    extracted = extract(n, mask)
+    t1 = time.time()
+    print("Test 1: Extract bits using mask")
+    print(f"  Input n    : {int2binstr(n, size)}")
+    print(f"  Mask       : {int2binstr(mask, mask_size)}")
+    print(f"  Extracted  : {int2binstr(extracted, mask_size)} ({extracted})")
+    print(f"  Time       : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 2: Extract leftmost and rightmost bits
+    t0 = time.time()
     leftmost = extract_ord_left(n, size, 4)
     rightmost = extract_ord_right(n, 4)
-    print("2)")
-    print(f"\tExtracting leftmost bits from {int2binstr(n, size)} using size 4\n" f"\t\t{int2binstr(leftmost, 4)}")
-    print(f"\tExtracting rightmost bits from {int2binstr(n, size)} using size 4\n", f"\t\t{int2binstr(rightmost, 4)}")
+    t1 = time.time()
+    print("Test 2: Extract leftmost and rightmost 4 bits")
+    print(f"  Input n         : {int2binstr(n, size)}")
+    print(f"  Leftmost 4 bits : {int2binstr(leftmost, 4)}")
+    print(f"  Rightmost 4 bits: {int2binstr(rightmost, 4)}")
+    print(f"  Time            : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Prepare a mask from positions
-    positions = [0, 1, 3]
+    # Test 3: Prepare a mask from given positions
+    t0 = time.time()
     mask_prepared = prepare_mask(positions, size=4)
-    print("3)")
-    print(f"\tPreparing a mask from positions {positions}\n", f"\t\t{int2binstr(mask_prepared, 4)}")
-    
-    # Prepare reversed mask
+    t1 = time.time()
+    print("Test 3: Prepare mask from positions")
+    print(f"  Positions          : {positions}")
+    print(f"  Prepared Mask (4b) : {int2binstr(mask_prepared, 4)}")
+    print(f"  Time               : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 4: Prepare an inverted (reversed) mask from positions
+    t0 = time.time()
     mask_prepared_inv = prepare_mask(positions, inv=True, size=4)
-    print("4)")
-    print(f"\tPreparing a reversed mask from positions {positions}\n", f"\t\t{int2binstr(mask_prepared_inv, 4)}")
+    t1 = time.time()
+    print("Test 4: Prepare inverted mask from positions")
+    print(f"  Positions             : {positions}")
+    print(f"  Inverted Mask (4 bits): {int2binstr(mask_prepared_inv, 4)}")
+    print(f"  Time                  : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Check if n is a power of two
-    print("5)")
-    print(f"\tChecking if {int2binstr(n, size)} is a power of two\n", f"\t\t{is_pow_of_two(n)}")
+    # Test 5: Check if n is a power of two
+    t0 = time.time()
+    pow_check = is_pow_of_two(n)
+    t1 = time.time()
+    print("Test 5: Check if n is a power of two")
+    print(f"  Input n : {int2binstr(n, size)}")
+    print(f"  Result  : {pow_check}")
+    print(f"  Time    : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Reverse the bits of n
+    # Test 6: Reverse the bits of n
+    t0 = time.time()
     reversed_bits = rev(n, size)
-    print("6)")
-    print(f"\tReversing the bits of {int2binstr(n, size)}\n", f"\t\t{int2binstr(reversed_bits, size)}")
+    t1 = time.time()
+    print("Test 6: Reverse the bits")
+    print(f"  Input n  : {int2binstr(n, size)}")
+    print(f"  Reversed : {int2binstr(reversed_bits, size)}")
+    print(f"  Time     : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Check the 3rd bit
-    bit_position = 2
-    print("7)")
-    print(f"\tChecking the {bit_position + 1}rd bit in {int2binstr(n, size)}\n", f"\t\t{check(n, bit_position)}")
+    # Test 7: Check a specific bit (bit_position)
+    t0 = time.time()
+    bit_check = check(n, bit_position)
+    t1 = time.time()
+    print("Test 7: Check specific bit")
+    print(f"  Input n          : {int2binstr(n, size)}")
+    print(f"  Bit position (0-indexed from right): {bit_position}")
+    print(f"  Bit value        : {bit_check}")
+    print(f"  Time             : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Convert n to a base representation
-    base_representation = int2base(n, size)
-    print("8)")
-    print(f"\tConverting {int2binstr(n, size)} to a base representation\n", f"\t\t{base_representation} : {type(base_representation)}")
+    # Test 8: Convert integer to base representation
+    t0 = time.time()
+    base_representation = int2base(n, size, spin=spin, spin_value=spin_value)
+    t1 = time.time()
+    print("Test 8: Convert integer to base representation")
+    print(f"  Input n           : {int2binstr(n, size)}")
+    print(f"  Base representation: {base_representation} (type: {type(base_representation)})")
+    print(f"  Time              : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Convert the base representation back to an integer
-    integer_representation = base2int(base_representation)
-    print("9)")
-    print("\tConverting the base representation back to an integer\n", f"\t\t{integer_representation}")
+    # Test 9: Convert the base representation back to an integer
+    t0 = time.time()
+    integer_representation = base2int(base_representation, spin=spin, spin_value=spin_value)
+    t1 = time.time()
+    print("Test 9: Convert base representation back to integer")
+    print(f"  Base representation : {base_representation}")
+    print(f"  Recovered integer : {integer_representation}")
+    print(f"  Time              : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Flip all bits in n
+    # Test 10: Flip all bits of n
+    t0 = time.time()
     flipped_all = flip_all(n, size)
-    print("10)")
-    print(f"\tFlipping all bits in {int2binstr(n, size)}\n", f"\t\t{int2binstr(flipped_all, size)}")
+    t1 = time.time()
+    print("Test 10: Flip all bits")
+    print(f"  Input n : {int2binstr(n, size)}")
+    print(f"  Flipped : {int2binstr(flipped_all, size)}")
+    print(f"  Time    : {t1 - t0:.6f} seconds")
+    print("-" * 50)
 
-    # Flip the 3rd bit in n 
-    flipped = flip(n, bit_position)
-    print("11)")
-    print(f"\tFlipping the {bit_position + 1}rd bit in {int2binstr(n, size)} (from the right)\n", f"\t\t{int2binstr(flipped, size)}")
+    # Test 11: Flip a specific bit in n (integer)
+    t0 = time.time()
+    flipped_bit_int = flip(n, bit_position)
+    t1 = time.time()
+    print("Test 11: Flip a specific bit in integer")
+    print(f"  Input n           : {int2binstr(n, size)}")
+    print(f"  Flipped bit at pos: {bit_position} -> {int2binstr(flipped_bit_int, size)}")
+    print(f"  Time              : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 12: Flip a specific bit in the base representation
+    t0 = time.time()
+    flipped_bit_base = flip(base_representation, bit_position)
+    t1 = time.time()
+    print("Test 12: Flip a specific bit in base representation")
+    print(f"  Input base rep    : {base_representation}")
+    print(f"  Flipped bit at pos: {bit_position} -> {flipped_bit_base}")
+    print(f"  Time              : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 13: Rotate left (integer)
+    t0 = time.time()
+    rotated_left_int = rotate_left(n, size)
+    t1 = time.time()
+    print("Test 13: Rotate left (integer)")
+    print(f"  Input n       : {int2binstr(n, size)}")
+    print(f"  Rotated left  : {int2binstr(rotated_left_int, size)}")
+    print(f"  Time          : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 14: Rotate left (base representation)
+    t0 = time.time()
+    rotated_left_base = rotate_left(base_representation, size)
+    t1 = time.time()
+    print("Test 14: Rotate left (base representation)")
+    print(f"  Input base rep: {base_representation}")
+    print(f"  Rotated left  : {rotated_left_base}")
+    print(f"  Time          : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 15: Rotate right (integer)
+    t0 = time.time()
+    rotated_right_int = rotate_right(n, size)
+    t1 = time.time()
+    print("Test 15: Rotate right (integer)")
+    print(f"  Input n        : {int2binstr(n, size)}")
+    print(f"  Rotated right  : {int2binstr(rotated_right_int, size)}")
+    print(f"  Time           : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    # Test 16: Rotate right (base representation)
+    t0 = time.time()
+    rotated_right_base = rotate_right(base_representation, size)
+    t1 = time.time()
+    print("Test 16: Rotate right (base representation)")
+    print(f"  Input base rep : {base_representation}")
+    print(f"  Rotated right  : {rotated_right_base}")
+    print(f"  Time           : {t1 - t0:.6f} seconds")
+    print("-" * 50)
+
+    total_time = time.time() - total_start
+    print("=" * 50)
+    print(f"Total testing time: {total_time:.6f} seconds")
+    print("=" * 50)
     
-    # Flip the 3rd bit in n when it's a base representation
-    flipped = flip(base_representation, bit_position)
-    print("12)")
-    print(f"\tFlipping the {bit_position + 1}rd bit in {base_representation}\n", f"\t\t{flipped}")
     
 ####################################################################################################
