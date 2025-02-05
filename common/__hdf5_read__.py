@@ -346,10 +346,6 @@ def append_hdf5(directory, filename, new_data, keys=[], override = True):
                 else:
                     hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=dtype))
 
-#############################################################################################################################
-#############################################################################################################################
-#############################################################################################################################
-
 ########################################################### CUTTER ##########################################################
 
 def concat_and_average(y_list, x_list, typical=False, use_interpolation=True):
@@ -930,6 +926,7 @@ class HDF5Handler:
     
     ######################################################### CHANGE H5 #########################################################
 
+    @staticmethod
     def change_h5_bad(directory : Directories,
                     filename  : str,
                     keys2new  = {},
@@ -991,7 +988,8 @@ class HDF5Handler:
         else:
             printV("Saving the file in a different directory: " + directoryS, verbose, 1)
             save_hdf5(directoryS, filename, h5data, (), keys = list(h5data.keys()))
-        
+    
+    @staticmethod
     def change_h5_bad_dirs(
             directories : list,
             conditions  = [],
@@ -1039,3 +1037,4 @@ class HDF5Handler:
                     print("Exception:", e)
             # ExceptionHandler().handle(e, "Uknown error", FileExistsError, FileNotFoundError)
 
+    ######################################################### CHANGE H5 #########################################################

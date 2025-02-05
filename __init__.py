@@ -4,6 +4,7 @@ This module contains the following submodules:
 
 from . import common
 from . import lattices
+from . import maths
 
 # list of submodules
 __all__ = ["common", "lattices"]
@@ -21,9 +22,19 @@ def get_module_description(module_name):
     """
     descriptions = {
         "common"    : "Provides common functionalities used in any Python project.",
-        "lattices"  : "Provides functionalities for creating and managing lattices."
+        "lattices"  : "Provides functionalities for creating and managing lattices.",
+        "maths"     : "Provides mathematical utilities and functions."
     }
     return descriptions.get(module_name, "Module not found.")
 
+# list of available modules
+def list_available_modules():
+    """
+    List all available modules in the general_python package.
+    
+    Returns:
+    - list: A list of available module names.
+    """
+    return ["common", "lattices", "maths"]
+
 # ----------------------------------------------------------------------------------------------
-# __init__.py
