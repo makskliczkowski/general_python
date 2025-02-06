@@ -15,7 +15,7 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.transforms import Bbox
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
+# from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.legend import Legend
 from matplotlib.legend_handler import HandlerBase, HandlerPatch
@@ -512,10 +512,11 @@ class Plotter:
                         xlabelcords = (0.5, -0.05),
                         ylabel      = '',
                         ylabelcords = (-0.05, 0.5),
+                        xticks      = None,
+                        yticks      = None,
                         ):
         '''
         Add colorbar to the plot.
-        - axes      :   axis to add the colorbar to
         - fig       :   figure to add the colorbar to
         - cmap      :   colormap to use
         - mapable   :   mapable object
@@ -528,6 +529,8 @@ class Plotter:
         - xlabelcords:  coordinates of the xlabel
         - ylabel    :   ylabel for the colorbar
         - ylabelcords:  coordinates of the ylabel
+        - xticks    :   ticks for the x-axis
+        - yticks    :   ticks for the y-axis
         '''
         if norm is None:
             norm = mpl.colors.Normalize(vmin = vmin if vmin is not None else np.min(mapable), 
@@ -548,6 +551,12 @@ class Plotter:
         if ylabel != '':
             cbar.ax.set_ylabel(ylabel)
             cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
+        
+        # set the ticks
+        if xticks is not None:
+            cbar.ax.set_xticks(xticks)
+        if yticks is not None:
+            cbar.ax.set_yticks(yticks)
     
     ###########################################################
     
@@ -612,7 +621,7 @@ class Plotter:
     ######################## A N N O T ########################
     
     @staticmethod
-    def set_annotate(ax, elem: str, x: float = 0, y: float = 0, fontsize=None, xycoords='axes fraction', cond=True, zorder=50, **kwargs):
+    def set_annotate(ax, elem: str, x: float = 0, y: float = 0, fontsize=None, xycoords='axes fraction', cond=True, zorder=50, boxaround=True, **kwargs):
         '''
         Make an annotation on the plot.
         - ax        : axis to annotate on
@@ -695,7 +704,9 @@ class Plotter:
                 elem, xy=(cx, cy), fontsize=fontsize,
                 xycoords='axes fraction', zorder=zorder, **kwargs)
             return
-        kwargs['bbox'] = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.3', alpha=0.85)
+        
+        if boxaround:
+            kwargs['bbox'] = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.3', alpha=0.85)
         ax.annotate(elem, xy=(x, y), fontsize=fontsize, xycoords=xycoords, zorder=zorder, **kwargs)
     
     @staticmethod
@@ -709,6 +720,7 @@ class Plotter:
         addit       = '',
         condition   = True,
         zorder      = 50,
+        boxaround   = True,
         **kwargs        
         ):
         '''
@@ -719,7 +731,8 @@ class Plotter:
         - y         : y coordinate
         - fontsize  : fontsize 
         '''
-        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, **kwargs)
+        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, 
+                            fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, boxaround = boxaround, **kwargs)
     
     @staticmethod
     def set_arrow(  ax,
@@ -748,13 +761,13 @@ class Plotter:
         - startcolor:   color of the arrow at the start
         - endcolor  :   color of the arrow in the end
         '''
-        ax[0].annotate(start_T, 
+        ax.annotate(start_T,
                    xy           =   xystart, 
                    xytext       =   xystart_T, 
                    arrowprops   =   arrowprops, 
                    color        =   startcolor)
         
-        ax[0].annotate(end_T,
+        ax.annotate(end_T,
                        xy       =   xyend, 
                        xytext   =   xyend_T, 
                        color    =   endcolor)
