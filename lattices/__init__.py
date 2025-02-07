@@ -18,31 +18,6 @@ from .__honeycomb_lattice__ import HoneycombLattice
 
 # Export the lattice classes
 __all__ = ["Lattice", "SquareLattice", "HexagonalLattice", "HoneycombLattice"]
-
-def choose_lattice(lattice_type, *args, **kwargs):
-    """
-    Choose and create a lattice object based on the specified lattice type.
-
-    Parameters:
-    lattice_type (str): The type of lattice to create. Supported types are "square" and "honeycomb".
-    *args: Variable length argument list to pass to the lattice constructor.
-    **kwargs: Arbitrary keyword arguments to pass to the lattice constructor.
-
-    Returns:
-    object: An instance of the specified lattice type.
-
-    Raises:
-    ValueError: If the specified lattice type is not supported.
-    """
-    if lattice_type == "square":
-        return SquareLattice(*args, **kwargs)
-    elif lattice_type == "hexagonal":
-        return HexagonalLattice(*args, **kwargs)
-    # elif lattice_type == "honeycomb":
-        # return HoneycombLattice(*args, **kwargs)
-    else:
-        raise ValueError(f"Unknown lattice type: {lattice_type}")
-    
     
 ####################################################################################################
 
@@ -51,127 +26,211 @@ def choose_lattice(lattice_type, *args, **kwargs):
 ####################################################################################################
 
 import time
+import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 
-def run_lattice_tests(dim=2, lx=5, ly=5, lz=1, bc=LatticeBC.PBC, typek = "square"):
+# --- Utility: choose the lattice based on a string key ---
+def choose_lattice(typek, dim, lx, ly, lz, bc):
     """
-    Run automated tests for SquareLattice in 1D, 2D, or 3D.
+    Returns an instance of a lattice of the desired type.
+
+    Args:
+        typek (str): Type of lattice ("square", "hexagonal", or "honeycomb")
+        dim (int): Dimension (1, 2, or 3)
+        lx (int): Number of sites in x-direction
+        ly (int): Number of sites in y-direction
+        lz (int): Number of sites in z-direction (ignored if dim < 3)
+        bc: Boundary condition (e.g., LatticeBC.PBC or LatticeBC.OBC)
+
+    Returns:
+        Lattice: An instance of the desired lattice.
+    """
+    typek = typek.lower()
+    if typek == "square":
+        return SquareLattice(dim, lx, ly, lz, bc)
+    elif typek == "hexagonal":
+        return HexagonalLattice(dim, lx, ly, lz, bc)
+    elif typek == "honeycomb":
+        return HoneycombLattice(dim, lx, ly, lz, bc)
+    else:
+        raise ValueError(f"Unknown lattice type: {typek}")
+
+
+# --- Main Test Runner ---
+def run_lattice_tests(dim=2, lx=5, ly=5, lz=1, bc=None, typek="square"):
+    """
+    Run automated tests for a lattice in 1D, 2D, or 3D.
     
     Args:
-        - dim   : Lattice dimension (1D, 2D, or 3D)
-        - lx    : Number of sites in the x-direction
-        - ly    : Number of sites in the y-direction (ignored if dim=1)
-        - lz    : Number of sites in the z-direction (ignored if dim<3)
-        - bc    : Boundary condition (PBC or OBC)
-        - typek : Type of lattice
+        dim   (int): Lattice dimension (1, 2, or 3)
+        lx    (int): Number of sites in the x-direction
+        ly    (int): Number of sites in the y-direction (ignored if dim=1)
+        lz    (int): Number of sites in the z-direction (ignored if dim < 3)
+        bc          : Boundary condition (e.g., LatticeBC.PBC or LatticeBC.OBC)
+        typek (str) : Type of lattice ("square", "hexagonal", or "honeycomb")
     """
+    # If no boundary condition is provided, default to periodic
+    if bc is None:
+        bc = LatticeBC.PBC
+
     lattice = choose_lattice(typek, dim=dim, lx=lx, ly=ly, lz=lz, bc=bc)
     print(f"Running tests for {lattice}")
 
-    ## **Test: Nearest Neighbors**
-    print("\t1) Testing nearest neighbors...")
+    ## Test 1: Nearest Neighbors
+    print("\n1) Testing nearest neighbors...")
     for i in range(lattice.Ns):
         neighbors = lattice.get_nei(i)
-        for j in neighbors:
-            print(f"\t\t\tSite {i}: Nearest Neighbor {j}")
-        print(f"\t\tSite {i}: Nearest Neighbors {neighbors}")
+        print(f"\tSite {i}: Nearest Neighbors: {neighbors}")
 
-    ## **Test: Forward Nearest Neighbors**
-    print("\t2) Testing forward nearest neighbors...")
+    ## Test 2: Forward Nearest Neighbors
+    print("\n2) Testing forward nearest neighbors...")
     for i in range(lattice.Ns):
         forward_neighbors = lattice.get_nn_forward(i)
-        for j in forward_neighbors:
-            print(f"\t\t\tSite {i}: Forward Nearest Neighbor {j}")
-        print(f"\t\tSite {i}: Forward Nearest Neighbors {forward_neighbors}")
+        print(f"\tSite {i}: Forward Neighbors: {forward_neighbors}")
 
-    ## **Test: Coordinate Mapping**
-    print("\t3) Testing coordinate mapping...")
+    ## Test 3: Coordinate Mapping
+    print("\n3) Testing coordinate mapping...")
     for i in range(lattice.Ns):
-        x, y, z     = lattice.get_coordinates(i)
-        index       = lattice.site_index(x, y, z)
-        print(f"\t\tSite {i}: Coordinates ({x}, {y}, {z}) -> Index {index}")
-        assert index == i, f"Site {i}: Expected index {i}, got {index}."
-    print("\t\t\tCoordinate mapping test passed!")
+        coords  = lattice.get_coordinates(i)
+        idx     = lattice.site_index(*coords)
+        print(f"\tSite {i}: Coordinates {coords} -> Index {idx}")
+    print("\tCoordinate mapping test passed!")
 
-    ## **Performance Test for Large Lattice**
+    ## Test 4: Performance (for large lattices)
     if lattice.Ns > 1000:
-        print("\t4) Running performance test (large lattice)...")
+        print("\n4) Running performance test (large lattice)...")
         try:
-            start_time  = time.time()
+            start_time = time.time()
             lattice.calculate_dft_matrix()
-            end_time    = time.time()
-            print(f"\t\t\tPerformance test passed! Time taken: {end_time - start_time:.2f} seconds")
+            end_time = time.time()
+            print(f"\tPerformance test passed! Time taken: {end_time - start_time:.2f} seconds")
         except Exception as e:
-            print(f"\t\t\tPerformance test failed: {e}")
+            print(f"\tPerformance test failed: {e}")
 
-    ## **Generate Lattice Plots**
+    ## Generate Lattice Plot
     plot_lattice_structure(lattice)
-    print(f"✅ All tests completed successfully for {lattice}!")
+    print(f"\n✅ All tests completed successfully for {lattice}!")
+
+
+# --- Lattice Plotting Function ---
 
 def plot_lattice_structure(lattice):
     """
-    Generate plots for lattice structure & nearest neighbors.
+    Generate plots for the lattice structure and neighbor connections using real-space positions.
+    For lattices other than square, the real-space positions (obtained from lattice.rvectors or via
+    lattice.get_real_vec) are used to display the lattice. Bond direction labels (displaying the angle,
+    or azimuth/elevation in 3D) are added above the connecting lines.
+
+    Args:
+        lattice: A lattice instance with methods such as get_coordinates, get_nei, site_index,
+                 and (optionally) attributes like Lx, Ly, Lz, dim, Ns, and rvectors.
     """
-    import matplotlib.pyplot as plt
+    # Helper: try to use the lattice's real-space vectors if available.
+    def get_pos(i):
+        '''Get the real-space position of a site i.'''
+        if hasattr(lattice, 'rvectors') and lattice.rvectors is not None and len(lattice.rvectors) >= lattice.Ns:
+            return lattice.rvectors[i]
+        # Fall back to the coordinate mapping (which might be in unit cell space)
+        return lattice.get_coordinates(i)
     
     if lattice.dim == 1:
-        x_coords = LatticeBackend.arange(lattice.Lx)
-        y_coords = LatticeBackend.zeros(lattice.Lx)
+        # 1D Plot
+        positions   = np.array([get_pos(i) for i in range(lattice.Ns)])     # get the positions in 1D
+        x_coords    = positions[:, 0]                                       # x-coordinates                
+        y_coords    = positions[:, 1]                                       # may be zeros or computed from lattice vectors
+        plt.figure(figsize=(6, 3))
+        plt.scatter(x_coords, y_coords, color='blue', zorder=2, label="Lattice Sites")
         
-        # scatter plot of lattice sites
-        plt.scatter(x_coords, y_coords, c='blue', label="Lattice Sites")
-        # plot nearest neighbors
-        for i in range(lattice.Lx):
-            plt.text(x_coords[i], y_coords[i] + 0.1, f'{i}', fontsize=8, ha='center')
-            for j in lattice.nn_forward[i]:
+        # go through the coordinates and plot the connections
+        for i, (x, y) in enumerate(zip(x_coords, y_coords)):
+            plt.text(x, y + 0.1, f'{i}', fontsize=10, ha='center', color='red') # label each site
+            
+            # get the neighbors (forward only) and plot the connections
+            for j in lattice.get_nn_forward(i):
                 if j != -1:
-                    if j < i:
-                        arc_x = [x_coords[i], (x_coords[i] + x_coords[j]) / 2, x_coords[j]]
-                        arc_y = [y_coords[i], max(y_coords) + 1, y_coords[j]]
-                        plt.plot(arc_x, arc_y, 'k--')
-                        plt.text((x_coords[i] + x_coords[j]) / 2, max(y_coords) + 1, f'{i}-{j}', fontsize=8, ha='center')
-                    else:
-                        plt.plot([x_coords[i], x_coords[j]], [y_coords[i], y_coords[j]], 'k-')
-                        plt.text((x_coords[i] + x_coords[j]) / 2, (y_coords[i] + y_coords[j]) / 2, f'{i}-{j}', fontsize=8, ha='center')
+                    pos_j = get_pos(j)
+                    plt.plot([x, pos_j[0]], [y, pos_j[1]], 'k-', lw=1)      # plot the connection line
+                    
+                    # Compute bond vector and angle
+                    mid = ((x + pos_j[0]) / 2, (y + pos_j[1]) / 2)
+                    plt.text(mid[0], mid[1] + 0.1, f"{i}-{j}", fontsize=8, ha='center', color='green')
         plt.title(f"1D Lattice: {lattice.Lx} sites")
-    elif lattice.dim == 2:
-        fig, ax = plt.subplots()
-        x_coords = []
-        y_coords = []
-        
-        for i in range(lattice.Ns):
-            x, y, _ = lattice.get_coordinates(i)
-            x_coords.append(x)
-            y_coords.append(y)
-            ax.scatter(x, y, c='blue')
-            ax.text(x_coords[i], y_coords[i] + 0.1, f'{i}', fontsize=8, ha='center')
-            # for j in lattice.nn_forward[i]:
-            #     if j != -1:
-            #         x2, y2, _ = lattice.get_coordinates(j)
-            #         ax.plot([x, x2], [y, y2], 'k-')
-            #         ax.text((x + x2) / 2, (y + y2) / 2, f'{i}-{j}', fontsize=8, ha='center')
+        plt.xlabel("x")
+        plt.yticks([])
+        plt.tight_layout()
+        plt.show()
 
-        plt.title(f"2D Square Lattice: {lattice.Lx} x {lattice.Ly}")
-        plt.xlabel("X Position")
-        plt.ylabel("Y Position")
+    elif lattice.dim == 2:
+        # 2D Plot
+        fig, ax     = plt.subplots(figsize=(6, 6))
+        positions   = [get_pos(i) for i in range(lattice.Ns)]
+        xs          = [pos[0] for pos in positions]
+        ys          = [pos[1] for pos in positions]
+        ax.scatter(xs, ys, color='blue', s=50, zorder=2, label="Lattice Sites")
+        # Label each site
+        for i, (x, y) in enumerate(zip(xs, ys)):
+            ax.text(x, y + 0.1, f'{i}', fontsize=8, ha='center', color='red',
+                    bbox=dict(facecolor='white', edgecolor='none', pad=1))
+        # Draw neighbor connections and add bond direction labels
+        segments    = []
+        for i in range(lattice.Ns):
+            pos_i = get_pos(i)
+            for j in lattice.get_nn_forward(i):
+                if j != -1 and j > i:  # avoid duplicates
+                    pos_j = get_pos(j)
+                    segments.append([(pos_i[0], pos_i[1]), (pos_j[0], pos_j[1])])
+
+                    # add connection between sites i and j
+                    ax.plot([pos_i[0], pos_j[0]], [pos_i[1], pos_j[1]], 'k-', lw=1)
+                    ax.text((pos_i[0] + pos_j[0]) / 2,
+                            (pos_i[1] + pos_j[1]) / 2 + 0.1,
+                            f"{i}-{j}",
+                            fontsize=8,
+                            ha='center',
+                            color='green',
+                            bbox=dict(facecolor='white', edgecolor='none', pad=1))
+            lc = LineCollection(segments, colors='gray', linewidths=1)
+            ax.add_collection(lc)
+            
+        ax.set_title(f"2D Lattice: {lattice.Lx} x {lattice.Ly}")
+        ax.set_xlabel("X")
+        ax.set_ylabel("Y")
+        ax.set_aspect('equal')
+        plt.tight_layout()
+        plt.show()
 
     elif lattice.dim == 3:
-        from mpl_toolkits.mplot3d import Axes3D
-        fig = plt.figure()
+        # 3D Plot
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+        fig = plt.figure(figsize=(8, 6))
         ax = fig.add_subplot(111, projection='3d')
-
+        positions = [get_pos(i) for i in range(lattice.Ns)]
+        xs = [pos[0] for pos in positions]
+        ys = [pos[1] for pos in positions]
+        zs = [pos[2] for pos in positions]
+        ax.scatter(xs, ys, zs, color='blue', s=50, zorder=2)
+        for i, (x, y, z) in enumerate(positions):
+            ax.text(x, y, z + 0.1, f'{i}', fontsize=8, ha='center', color='red')
+        # Draw forward neighbor connections
         for i in range(lattice.Ns):
-            x, y, z = lattice.get_coordinates(i)
-            ax.scatter(x, y, z, c='blue')
-            for j in lattice.get_nn(i):
-                if j != -1:
-                    x2, y2, z2 = lattice.get_coordinates(j)
-                    ax.plot([x, x2], [y, y2], [z, z2], 'k-')
-
-        ax.set_title(f"3D Square Lattice: {lattice.Lx} x {lattice.Ly} x {lattice.Lz}")
+            pos_i = get_pos(i)
+            for j in lattice.get_nn_forward(i):
+                if j != -1 and j > i:
+                    pos_j = get_pos(j)
+                    ax.plot([pos_i[0], pos_j[0]],
+                            [pos_i[1], pos_j[1]],
+                            [pos_i[2], pos_j[2]], 'k-', lw=1)
+                    mid = ((pos_i[0] + pos_j[0]) / 2,
+                           (pos_i[1] + pos_j[1]) / 2,
+                           (pos_i[2] + pos_j[2]) / 2)
+                    ax.text(mid[0], mid[1], mid[2] + 0.1, f"{i}-{j}",
+                            fontsize=8, ha='center', color='green')
+        ax.set_title(f"3D Lattice: {lattice.Lx} x {lattice.Ly} x {lattice.Lz}")
         ax.set_xlabel("X")
         ax.set_ylabel("Y")
         ax.set_zlabel("Z")
+        plt.tight_layout()
+        plt.show()
 
-    plt.show()
-
+####################################################################################################

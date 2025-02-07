@@ -1,25 +1,34 @@
 import numpy as np
 from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
 
+import numpy as np
+from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+
+import sys, os 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from maths import MathMod
+
+################################### LATTICE IMPLEMENTATION #######################################
+
 class HoneycombLattice(Lattice):
     """
     Implementation of the Honeycomb Lattice.
     
     The honeycomb lattice is a 2D lattice with a hexagonal structure. The lattice consists of
-    two sublattices, A and B, arranged in a hexagonal pattern. The nearest neighbors and
-    next-nearest neighbors are calculated based on a hexagonal unit cell.
-
-    Reference:
-    - Phys. Rev. Research 3, 013160 (2021)
-    - Fig. 2 of https://journals.aps.org/prresearch/pdf/10.1103/PhysRevResearch.3.013160
+    two sublattices (A and B) arranged in a hexagonal pattern. Nearest and next-nearest neighbors
+    are computed based on a hexagonal unit cell.
+    
+    References:
+        - Phys. Rev. Research 3, 013160 (2021)
+        - Fig. 2, https://journals.aps.org/prresearch/pdf/10.1103/PhysRevResearch.3.013160
     
     Attributes:
-        - Lx, Ly, Lz: Number of lattice sites in x, y, and z directions
-        - bc: Boundary condition (PBC, OBC, etc.)
-        - a, c: Lattice parameters
-        - vectors: Lattice basis vectors
-        - kvectors: Reciprocal lattice vectors
-        - rvectors: Real-space vectors
+        Lx, Ly, Lz: Number of lattice sites in x, y, and z directions.
+        bc        : Boundary condition (e.g. PBC or OBC).
+        a, c      : Lattice parameters.
+        vectors   : Primitive lattice vectors.
+        kvectors  : Reciprocal lattice vectors.
+        rvectors  : Real-space vectors.
     """
 
     def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):
@@ -27,50 +36,53 @@ class HoneycombLattice(Lattice):
         Initialize a honeycomb lattice.
         
         Args:
-            - dim: Lattice dimension (1D, 2D, 3D)
-            - lx, ly, lz: Lattice sizes in x, y, z
-            - bc: Boundary conditions (PBC, OBC, etc.)
+            dim (int)           : Lattice dimension (1, 2, or 3)
+            lx, ly, lz (int)    : Lattice sizes in x, y, z directions.
+            bc                  : Boundary condition (e.g. LatticeBC.PBC or LatticeBC.OBC)
         """
         super().__init__(dim, lx, ly, lz, bc, *args, **kwargs)
 
         self._type = LatticeType.HONEYCOMB  # Lattice type
 
-        # Define primitive lattice vectors
-        self.vectors = LatticeBackend.array([
-            [1, 0, 0],  # a1
-            [0.5, np.sqrt(3) / 2, 0],  # a2
-            [0, 0, 1]  # a3 (for 3D)
-        ])
-
-        # Initialize coordinate storage
-        self.kvectors = LatticeBackend.zeros((self.Ns, 3))
-        self.rvectors = LatticeBackend.zeros((self.Ns, 3))
-
         # Adjust lattice properties based on dimension
-        match dim:
-            case 1:
-                self.Ly = 1
-                self.Lz = 1
-            case 2:
-                self.Lz = 1
+        if dim == 1:
+            self._ly = 1
+            self._lz = 1
+        elif dim == 2:
+            self._lz = 1
+        else:
+            self._ly = ly
+            self._lz = lz
 
-        # Two atoms per elementary cell
-        self.Ns = 2 * self.Lx * self.Ly * self.Lz
+        # For the honeycomb lattice there are two sites per unit cell.
+        self._ns = 2 * self.Lx * self.Ly * self.Lz
 
-        # Compute lattice properties
+        # Initialize the primitive vectors
+        self._a1 = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a2 = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a3 = np.array([0, 0, self.c])
+
+        # Compute lattice properties.
         self.calculate_coordinates()
         self.calculate_r_vectors()
         self.calculate_k_vectors()
 
-        if self.Ns < 100:
+        if self._ns < 100:
             self.calculate_dft_matrix()
 
+        # Calculate neighbors using internal methods.
         self.calculate_nn()
         self.calculate_nnn()
         self.calculate_norm_sym()
+        
+        # Initialize the k vectors
+        self._k1 = np.array([2 * np.pi / self.a, 0, 0])
+        self._k2 = np.array([-np.pi / self.a, np.sqrt(3) * np.pi / self.a, 0])
+        self._k3 = np.array([-np.pi / self.a, -np.sqrt(3) * np.pi / self.a, 0])
+        
 
     def __str__(self):
-        return f"HONEY,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
 
     def __repr__(self):
         return self.__str__()
@@ -80,20 +92,62 @@ class HoneycombLattice(Lattice):
     def get_real_vec(self, x: int, y: int, z: int):
         """
         Returns the real-space vector for a given (x, y, z) coordinate.
+        (Here we use a simple linear combination of the primitive vectors.)
         """
-        return x * self.vectors[0] + y * self.vectors[1] + z * self.vectors[2]
+        return x * self._a1[0] + y * self._a2[1] + z * self._a3[2]
 
     def get_norm(self, x: int, y: int, z: int):
         """
-        Returns the Euclidean norm of a real-space vector.
+        Returns the Euclidean norm of the real-space vector.
         """
         return np.sqrt(x**2 + y**2 + z**2)
+
+    def get_nn_direction(self, site, direction):
+        """
+        Returns the nearest neighbor in the specified direction.
+        
+        For the honeycomb lattice, we choose a mapping:
+            LatticeDirection.X -> neighbor at index 0 of _nn[site]
+            LatticeDirection.Y -> neighbor at index 1 of _nn[site]
+            LatticeDirection.Z -> neighbor at index 2 of _nn[site]
+        """
+        mapping = {LatticeDirection.X: 0, LatticeDirection.Y: 1, LatticeDirection.Z: 2}
+        idx     = mapping.get(direction, -1)
+        return self._nn[site][idx] if idx >= 0 and idx < len(self._nn[site]) else -1
+
+    def get_nn_forward(self, site : int, num : int = -1):
+        """
+        Returns the forward nearest neighbor for the given site.
+        
+        (For honeycomb, this could be defined as the first neighbor in a chosen ordering.)
+        """
+        if hasattr(self, '_nn_forward') and self._nn_forward:
+            if num < 0:
+                return self._nn_forward[site]
+            return self._nn_forward[site][num] if num < len(self._nn_forward[site]) else -1
+        return -1
+
+    def get_nnn_forward(self, site : int, num : int = -1):
+        """
+        Returns the forward next-nearest neighbor for the given site.
+        """
+        if hasattr(self, '_nnn_forward') and self._nnn_forward:
+            if num < 0:
+                return self._nnn_forward[site]
+            return self._nnn_forward[site][num] if num < len(self._nnn_forward[site]) else -1
+        return -1
 
     ################################### COORDINATE SYSTEM #######################################
 
     def calculate_coordinates(self):
         """
-        Calculates the real-space coordinates for each lattice site.
+        Calculates the coordinates for each lattice site.
+        
+        Here we use the common honeycomb convention:
+            For site index i, we use:
+              x = (i // 2) mod Lx,
+              y = ((i // 2) // Lx) mod Ly, then mapped to (2*y + (i mod 2))
+              z = ((i // 2) // (Lx * Ly)) mod Lz.
         """
         self.coordinates = []
         for i in range(self.Ns):
@@ -121,60 +175,179 @@ class HoneycombLattice(Lattice):
         """
         Calculates the real-space vectors for each site.
         """
-        self.rvectors = np.array([
-            self.get_real_vec(x, y, z)
-            for x in range(self.Lx) for y in range(self.Ly) for z in range(self.Lz)
-        ])
-
-    ################################### NEIGHBORHOOD #######################################
-
-    def calculate_nn(self):
-        """
-        Calculates the nearest neighbors of the honeycomb lattice.
-        """
-        self._nn = [[] for _ in range(self.Ns)]
-
+        
+        self.rvectors = np.zeros((self.Ns, 3))
         for i in range(self.Ns):
-            x, y, z = self.get_coordinates(i)
+            # y will give us the move to the right as well 
+            x, y, z = self.coordinates[i]
+            self.rvectors[i] = (x + y // 2) * (self._a1 - self._a2) + y * (self._a1 + self._a2) + z * self._a3
+        
+        # self.rvectors = np.array([
+        #     self.get_real_vec(x, y, z)
+        #     for x in range(self.Lx) for y in range(self.Ly) for z in range(self.Lz)
+        # ])
 
-            # Z-bond (always valid)
-            z_bond = (i + 1) if (i % 2 == 0) else (i - 1)
+    ################################### NEIGHBORHOOD CALCULATORS #######################################
 
-            # X and Y bonds (depends on even/odd)
-            if y % 2 == 0:
-                x_bond = self.site_index((x - 1) % self.Lx, y, z)
-                y_bond = self.site_index(x, (y + 1) % self.Ly, z)
-            else:
-                x_bond = self.site_index(x, y, z)
-                y_bond = self.site_index((x + 1) % self.Lx, (y - 1) % self.Ly, z)
-
-            self._nn[i] = [z_bond, x_bond, y_bond]
-
-    def calculate_nnn(self):
+    def calculate_nn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
         """
-        Calculates the next-nearest neighbors for the honeycomb lattice.
+        Calculates the nearest neighbors (NN) using boundary conditions.
+        
+        The implementation uses a helper function to apply periodic or open boundary conditions.
+        For 2D, for example, we use a different treatment on even and odd indices.
         """
+        self._nn            = [[] for _ in range(self.Ns)]
+        self._nn_forward    = [[] for _ in range(self.Ns)]
+        def _bcfun(_i, _L, _pbc):
+            if _pbc:
+                return MathMod.mod_euc(_i, _L)
+            return _i if 0 <= _i < _L else -1
+        
+        if self.dim == 1:
+            # 1D: Each site has two neighbors.
+            for i in range(self.Ns):
+                self._nn[i] = [
+                    _bcfun(i + 1, self.Lx, pbcx),
+                    _bcfun(i - 1, self.Lx, pbcx)
+                ]
+                self._nn_forward[i] = [_bcfun(i + 1, self.Lx, pbcx)]
+            # (Optionally, you might also set forward neighbors here.)
+        
+        elif self.dim == 2:
+            # 2D: Map honeycomb sites onto an underlying square lattice.
+
+            for i in range(self.Ns):
+                n       = i // 2  # n: site index on the square lattice.
+                r       = i % 2   # r: sublattice index (0 for first node, 1 for second).
+                X       = n % self.Lx
+                Y       = n // self.Lx
+                _even   = (r == 0)
+                # x bond: for even sites, use Y - 1; for odd, use Y + 1.
+                Yprime  = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
+                Xprime  = X
+                bond0   = -1 if Yprime == -1 else (Yprime * self.Lx + Xprime) * 2 + (1 if _even else 0)
+                # y bond: for even sites, use X - 1; for odd, use X + 1.
+                Xprime  = _bcfun(X + 1, self.Lx, pbcx)
+                Yprime  = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
+                bond1   = -1 if Xprime == -1 else (Yprime * self.Lx + Xprime) * 2 + (1 if _even else 0)
+                # z bond: always within the same square cell.
+                bond2   = i + 1 if _even else i - 1
+                self._nn[i]         = [bond0, bond1, bond2]
+                if not _even:
+                    self._nn_forward[i] = [bond0, bond1, -1]
+                else:
+                    self._nn_forward[i] = [-1, -1, bond2]
+        
+        elif self.dim == 3:
+            # 3D: Similar to 2D but with additional bonds in the z direction.
+            for i in range(self.Ns):
+                n       = i // 2
+                r       = i % 2
+                X       = n % self.Lx
+                Y       = n // self.Lx
+                Z       = n // (self.Lx * self.Ly)
+                _even   = (r == 0)
+                
+                # z bond (in the xy plane): for even, Y - 1; odd, Y + 1.
+                Yprime  = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
+                bond0   = (Yprime * self.Lx + X) * 2 + (1 if _even else 0)
+                # y bond: for even, X - 1; odd, X + 1.
+                Xprime  = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
+                bond1   = (Yprime * self.Lx + Xprime) * 2 + (1 if _even else 0)
+                # x bond: within the same cell.
+                bond2   = i + 1 if _even else i - 1
+                # z top bond:
+                Zprime_top = _bcfun(Z + 1, self.Lz, pbcz)
+                bond3   = _bcfun(Zprime_top * self.Lx * self.Ly + Y * self.Lx + X, self.Ns, True)
+                # z bottom bond:
+                Zprime_bot = _bcfun(Z - 1, self.Lz, pbcz)
+                bond4   = _bcfun(Zprime_bot * self.Lx * self.Ly + Y * self.Lx + X, self.Ns, True)
+                self._nn[i] = [bond0, bond1, bond2, bond3, bond4]
+                self._nn_forward[i] = [bond0, bond1, bond2, bond3, bond4]
+        else:
+            raise ValueError("Only dimensions 1, 2, and 3 are supported for nearest neighbor calculation.")
+        
+    def calculate_nnn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
+        """
+        Calculates the next-nearest neighbors (NNN) of the honeycomb lattice.
+        
+        NNN are defined as the second-nearest (diagonal) neighbors within the same sublattice.
+        """
+        def _bcfun(_i, _L, _pbc):
+            if _pbc:
+                return MathMod.mod_euc(_i, _L)
+            return _i if 0 <= _i < _L else -1
+
         self._nnn = [[] for _ in range(self.Ns)]
+        match self.dim:
+            case 1:
+                for i in range(self.Ns):
+                    self._nnn[i] = [
+                        _bcfun(i + 2, self.Lx, self.bc == LatticeBC.PBC),
+                        _bcfun(i - 2, self.Lx, self.bc == LatticeBC.PBC)
+                    ]
+            case 2:
+                for i in range(self.Ns):
+                    x, y, z = self.get_coordinates(i)
+                    even = (i % 2 == 0)
+                    y1 = _bcfun(y - 2 if even else y + 2, self.Ly, self.bc == LatticeBC.PBC)
+                    y2 = _bcfun(y, self.Ly, self.bc == LatticeBC.PBC)
+                    x1 = _bcfun(x - 1, self.Lx, self.bc == LatticeBC.PBC)
+                    x2 = _bcfun(x + 1, self.Lx, self.bc == LatticeBC.PBC)
+                    self._nnn[i] = [
+                        (y1 * self.Lx + x) * 2 + (0 if even else 1),
+                        (y2 * self.Lx + x1) * 2 + (0 if even else 1),
+                        (y2 * self.Lx + x2) * 2 + (0 if even else 1)
+                    ]
+            case 3:
+                for i in range(self.Ns):
+                    x, y, z = self.get_coordinates(i)
+                    even = (i % 2 == 0)
+                    y1 = _bcfun(y - 2 if even else y + 2, self.Ly, self.bc == LatticeBC.PBC)
+                    y2 = _bcfun(y, self.Ly, self.bc == LatticeBC.PBC)
+                    x1 = _bcfun(x - 1, self.Lx, self.bc == LatticeBC.PBC)
+                    x2 = _bcfun(x + 1, self.Lx, self.bc == LatticeBC.PBC)
+                    z1 = _bcfun(z + 1, self.Lz, self.bc == LatticeBC.PBC)
+                    z2 = _bcfun(z - 1, self.Lz, self.bc == LatticeBC.PBC)
+                    self._nnn[i] = [
+                        (y1 * self.Lx + x) * 2 + (0 if even else 1),
+                        (y2 * self.Lx + x1) * 2 + (0 if even else 1),
+                        (y2 * self.Lx + x2) * 2 + (0 if even else 1),
+                        z1 * self.Lx * self.Ly + y * self.Lx + x,
+                        z2 * self.Lx * self.Ly + y * self.Lx + x
+                    ]
 
-        for i in range(self.Ns):
-            x, y, z = self.get_coordinates(i)
+    def calculate_norm_sym(self):
+        """
+        Calculates a symmetry normalization for each site.
+        
+        Here we simply use the Euclidean norm of the coordinate as a symmetry measure.
+        In a more advanced implementation, this might account for sublattice or other symmetries.
+        """
+        self.norm_sym = {i: self.get_norm(*coord) for i, coord in enumerate(self.coordinates)}
 
-            # Second-nearest neighbors (diagonals)
-            nnn_x = self.site_index((x + 1) % self.Lx, y, z)
-            nnn_y = self.site_index(x, (y + 2) % self.Ly, z)
-
-            self._nnn[i] = [nnn_x, nnn_y]
+    ################################### SYMMETRY & INDEXING #######################################
 
     def site_index(self, x, y, z):
         """
-        Convert (x, y, z) coordinates to a site index.
+        Convert (x, y, z) coordinates to a unique site index.
         """
         return z * (self.Lx * self.Ly) + y * self.Lx + x
 
-    ################################### SYMMETRIES #######################################
+    def getSymPos(self, x, y, z):
+        """
+        Returns the symmetry-transformed position.
+        """
+        return (x + self.Lx - 1, y + 2 * self.Ly - 1, z + self.Lz - 1)
+
+    def getSymPosInv(self, x, y, z):
+        """
+        Returns the inverse symmetry-transformed position.
+        """
+        return (x - (self.Lx - 1), y - (2 * self.Ly - 1), z - (self.Lz - 1))
 
     def symmetry_checker(self, x, y, z):
         """
-        Placeholder for symmetry calculations.
+        Placeholder for symmetry checking.
         """
         return True
