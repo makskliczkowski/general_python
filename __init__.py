@@ -5,9 +5,10 @@ This module contains the following submodules:
 from . import common
 from . import lattices
 from . import maths
+from . import algebra
 
 # list of submodules
-__all__ = ["common", "lattices"]
+__all__ = ["common", "lattices", "maths", "algebra"]
 
 # description of the modules to be displayed
 def get_module_description(module_name):
@@ -23,7 +24,8 @@ def get_module_description(module_name):
     descriptions = {
         "common"    : "Provides common functionalities used in any Python project.",
         "lattices"  : "Provides functionalities for creating and managing lattices.",
-        "maths"     : "Provides mathematical utilities and functions."
+        "maths"     : "Provides mathematical utilities and functions.",
+        "algebra"    : "Provides functionalities for algebraic operations." 
     }
     return descriptions.get(module_name, "Module not found.")
 
@@ -35,6 +37,6 @@ def list_available_modules():
     Returns:
     - list: A list of available module names.
     """
-    return ["common", "lattices", "maths"]
+    return ["common", "lattices", "maths", "algebra"]
 
 # ----------------------------------------------------------------------------------------------

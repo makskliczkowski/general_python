@@ -180,6 +180,7 @@ class HoneycombLattice(Lattice):
         for i in range(self.Ns):
             # y will give us the move to the right as well 
             x, y, z = self.coordinates[i]
+            
             self.rvectors[i] = (x + y // 2) * (self._a1 - self._a2) + y * (self._a1 + self._a2) + z * self._a3
         
         # self.rvectors = np.array([
@@ -198,13 +199,15 @@ class HoneycombLattice(Lattice):
         """
         self._nn            = [[] for _ in range(self.Ns)]
         self._nn_forward    = [[] for _ in range(self.Ns)]
-        def _bcfun(_i, _L, _pbc):
-            if _pbc:
-                return MathMod.mod_euc(_i, _L)
-            return _i if 0 <= _i < _L else -1
         
+        # Helper function to apply periodic boundary conditions.
+        def _bcfun(_i, _l, _pbc):
+            if _pbc:
+                return MathMod.mod_euc(_i, _l)
+            return _i if 0 <= _i < _l else -1
+        
+        # 1D: Each site has two neighbors.
         if self.dim == 1:
-            # 1D: Each site has two neighbors.
             for i in range(self.Ns):
                 self._nn[i] = [
                     _bcfun(i + 1, self.Lx, pbcx),
@@ -213,31 +216,37 @@ class HoneycombLattice(Lattice):
                 self._nn_forward[i] = [_bcfun(i + 1, self.Lx, pbcx)]
             # (Optionally, you might also set forward neighbors here.)
         
+        # 2D: Map honeycomb sites onto an underlying square lattice.
         elif self.dim == 2:
-            # 2D: Map honeycomb sites onto an underlying square lattice.
-
             for i in range(self.Ns):
-                n       = i // 2  # n: site index on the square lattice.
-                r       = i % 2   # r: sublattice index (0 for first node, 1 for second).
-                X       = n % self.Lx
-                Y       = n // self.Lx
-                _even   = (r == 0)
-                # x bond: for even sites, use Y - 1; for odd, use Y + 1.
-                Yprime  = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
-                Xprime  = X
-                bond0   = -1 if Yprime == -1 else (Yprime * self.Lx + Xprime) * 2 + (1 if _even else 0)
-                # y bond: for even sites, use X - 1; for odd, use X + 1.
-                Xprime  = _bcfun(X + 1, self.Lx, pbcx)
-                Yprime  = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
-                bond1   = -1 if Xprime == -1 else (Yprime * self.Lx + Xprime) * 2 + (1 if _even else 0)
-                # z bond: always within the same square cell.
-                bond2   = i + 1 if _even else i - 1
-                self._nn[i]         = [bond0, bond1, bond2]
-                if not _even:
-                    self._nn_forward[i] = [bond0, bond1, -1]
+                n       = i // 2        # n: site index on the square lattice.
+                r       = i % 2         # r: sublattice index (0 for first node, 1 for second) - idx in the elementary cell.
+                X       = n % self.Lx   # X: x coordinate on the square lattice.
+                Y       = n // self.Lx  # Y: y coordinate on the square lattice.
+                _even   = (r == 0)      # _even: whether the site is on the even sublattice.
+                
+                # z bond: for even sites
+                YP      = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
+                XP      = X
+                if YP == -1:
+                    self._nn[i].append(-1)
                 else:
-                    self._nn_forward[i] = [-1, -1, bond2]
-        
+                    self._nn[i].append((YP * self.Lx + XP) * 2 + int(_even))
+                self._nn_forward.append((-1 if _even else self._nn[i][0]))
+                
+                # y bond: for even sites, use X - 1; for odd, use X + 1.
+                XP      = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
+                YP      = Y
+                if XP == -1:
+                    self._nn[i].append(-1)
+                else:
+                    self._nn[i].append((YP * self.Lx + XP) * 2 + int(_even))
+                self._nn_forward.append(-1 if _even else self._nn[i][1])
+                
+                # x bond: always within the same square cell.
+                self._nn[i].append(i + 1 if _even else i - 1)
+                self._nn_forward[i].append(-1 if not _even else self._nn[i][2])
+
         elif self.dim == 3:
             # 3D: Similar to 2D but with additional bonds in the z direction.
             for i in range(self.Ns):

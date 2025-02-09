@@ -1,33 +1,44 @@
 from datetime import datetime
 import logging
 import os
+import functools
+
+try:
+    from colorama import init
+    init(autoreset=True)
+    __HAS_COLORAMA = True
+except ImportError:
+    __HAS_COLORAMA = False
+    pass
 
 ############################################### PRINT THE OUTPUT WITH A GIVEN COLOR ###############################################
 
 class Colors:
-    black   = r"\033[30m"
-    red		= r"\033[31m"
-    green	= r"\033[32m"
-    yellow	= r"\033[33m"
-    blue	= r"\033[34m"
-    white   = r"\033[0m"
+    """
+    Class for defining ANSI colors for console output.
+    """
+    # Use normal string literals so escape sequences are interpreted
+    black   = "\033[30m"
+    red     = "\033[31m"
+    green   = "\033[32m"
+    yellow  = "\033[33m"
+    blue    = "\033[34m"
+    white   = "\033[0m"  # Reset / default color
     
     def __init__(self, color : str):
         self.color = color
 
+
     def __str__(self) -> str:
-        if self.color == "black":
-            return Colors.black
-        elif self.color == "red":
-            return Colors.red
-        elif self.color == "green":
-            return Colors.green
-        elif self.color == "yellow":
-            return Colors.yellow
-        elif self.color == "blue":
-            return Colors.blue
-        else:
-            return Colors.white
+        mapping = {
+            "black" : Colors.black,
+            "red"   : Colors.red,
+            "green" : Colors.green,
+            "yellow": Colors.yellow,
+            "blue"  : Colors.blue,
+            "white" : Colors.white
+        }
+        return mapping.get(self.color, Colors.white)
         
     def __repr__(self) -> str:
         return str(self)
@@ -51,16 +62,20 @@ class Logger:
         Initialize the logger instance.
 
         Args:
-            logfile (str): Name of the log file.
+            logfile (str): Name of the log file (without extension if empty, a timestamp will be used).
             lvl (int): Logging level (default: logging.DEBUG).
+            
         """
-        self.now = datetime.now()
-        self.nowStr = self.now.strftime("%d_%m_%Y_%H-%M_%S")
-        self.lvl = lvl
-        self.logger = logging.getLogger(__name__)
-        self.logfile = logfile
-        self.working = False
-
+        self.now            = datetime.now()
+        self.nowStr         = self.now.strftime("%d_%m_%Y_%H-%M_%S")
+        self.lvl            = lvl
+        self.logger         = logging.getLogger(__name__)
+        self.logfile        = logfile
+        self.working        = False
+        self.handler_added  = False  # Prevent adding multiple handlers
+        
+    # --------------------------------------------------------------
+    
     @staticmethod
     def colorize(txt: str, color: str):
         """
@@ -75,6 +90,8 @@ class Logger:
         """
         return str(Colors(color)) + str(txt) + Colors.white
 
+    # --------------------------------------------------------------
+    
     def configure(self, directory: str):
         """
         Configure the logger to use a specific directory for log files.
@@ -82,23 +99,37 @@ class Logger:
         Args:
             directory (str): Path to the directory where log files will be stored.
         """
-        self.logfile = directory + os.sep + f'{self.nowStr if len(self.logfile) == 0 else self.logfile}.log'
-        os.makedirs(directory, exist_ok=True)
-        with open(self.logfile, 'w+') as f:
-            f.write('Log started!')
-            
-        self.fHandler = logging.FileHandler(self.logfile)
-        self.fHandler.setLevel(self.lvl)
-        self.fFormat = logging.Formatter('%(asctime)s-%(levelname)s-%(message)s')
-        self.fHandler.setFormatter(self.fFormat)
-        self.logger.addHandler(self.fHandler)
-        self.working = True
         
-        logging.basicConfig(format='%(asctime)s-%(levelname)s-%(message)s',
-                            datefmt="%d_%m_%Y_%H-%M_%S",
-                            filename=self.logfile,
-                            level=self.lvl)
+        # If logfile name is empty, use the timestamp
+        base_name       = self.nowStr if len(self.logfile) == 0 else self.logfile
+        self.logfile    = os.path.join(directory, f'{base_name}.log')
+        
+        # Create the directory if it does not exist
+        os.makedirs(directory, exist_ok=True)
+        
+        # Write initial log file header
+        with open(self.logfile, 'w+') as f:
+            f.write('Log started!\n')
+            
+        # Create a file handler only once
+        if not self.handler_added:
+            self.fHandler   = logging.FileHandler(self.logfile)
+            self.fHandler.setLevel(self.lvl)
+            self.fFormat    = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
+                                                datefmt="%d_%m_%Y_%H-%M_%S")
+            self.fHandler.setFormatter(self.fFormat)
+            self.logger.addHandler(self.fHandler)
+            self.handler_added = True
+        
+        # Also set up basic configuration (this might be redundant if multiple loggers are used)
+        logging.basicConfig(format  =   '%(asctime)s - %(levelname)s - %(message)s',
+                            datefmt =   "%d_%m_%Y_%H-%M_%S",
+                            filename=   self.logfile,
+                            level   =   self.lvl)
+        self.working = True
 
+    # --------------------------------------------------------------
+    
     @staticmethod
     def printTab(lvl=0):
         """
@@ -112,6 +143,8 @@ class Logger:
         """
         return '\t' * lvl + ('->' if lvl > 0 else '')
 
+    # --------------------------------------------------------------
+    
     @staticmethod
     def print(msg: str, lvl=0):
         """
@@ -128,6 +161,8 @@ class Logger:
         nowStr = now.strftime("%d/%m/%Y %H:%M:%S")
         return f"[{nowStr}]{Logger.printTab(lvl)}{msg}"
 
+    # --------------------------------------------------------------
+    
     def say(self, *args, end=True, log=0, lvl=0, verbose=True):
         """
         Print and log multiple messages if verbosity is enabled.
@@ -149,8 +184,9 @@ class Logger:
         # else join messages with a space
         else:
             self._log_message(log, ' '.join(messages), lvl)
-        
-
+    
+    # --------------------------------------------------------------
+    
     def _log_message(self, log_level, msg, lvl):
         """
         Internal helper to log messages based on log level.
@@ -169,6 +205,8 @@ class Logger:
         elif log_level == 3:
             self.error(msg, lvl)
 
+    # --------------------------------------------------------------
+    
     def info(self, msg: str, lvl=0, verbose=True):
         """
         Log an informational message if verbosity is enabled.
@@ -183,6 +221,8 @@ class Logger:
         print(Logger.print(msg, lvl))
         self.logger.info(Logger.print(msg, lvl))
 
+    # --------------------------------------------------------------
+    
     def debug(self, msg: str, lvl=0, verbose=True):
         """
         Log a debug message if verbosity is enabled.
@@ -196,6 +236,8 @@ class Logger:
             return
         print(Logger.print(msg, lvl))
         self.logger.debug(Logger.print(msg, lvl))
+
+    # --------------------------------------------------------------
 
     def warning(self, msg: str, lvl=0, verbose=True):
         """
@@ -211,6 +253,8 @@ class Logger:
         print(Logger.print(msg, lvl))
         self.logger.warning(Logger.print(msg, lvl))
 
+    # --------------------------------------------------------------
+
     def error(self, msg: str, lvl=0, verbose=True):
         """
         Log an error message if verbosity is enabled.
@@ -224,7 +268,9 @@ class Logger:
             return
         print(Logger.print(msg, lvl))
         self.logger.error(Logger.print(msg, lvl))
-
+        
+    # --------------------------------------------------------------
+    
     @staticmethod
     def breakline(n: int):
         """
@@ -235,6 +281,8 @@ class Logger:
         """
         for _ in range(n):
             print()
+
+    # --------------------------------------------------------------
 
     def title(self, tail: str, desiredSize: int, fill: str, lvl=0, verbose=True):
         """
@@ -258,52 +306,73 @@ class Logger:
         fillSize = (desiredSize - tailLength - 2) // (2 * len(fill))
         out = (fill * fillSize) + f" {tail} " + (fill * fillSize)
         self.info(out, lvl, verbose)
+
+    # --------------------------------------------------------------
+    
+    def timing(self, func):
+        """
+        Decorator to measure and log the execution time of functions.
+        Parameters:
+            func : function to be timed
+        """
         
+        @functools.wraps(func)  # Decorator to preserve the original function's metadata
+        
+        def wrapper(*args, **kwargs):
+            self.debug(f"Starting '{func.__name__}'...")
+            
+            # Measure the execution time
+            start_time  = datetime.now()
+            result      = func(*args, **kwargs)
+            end_time    = datetime.now()
+            # end of measuring
+            
+            # Calculate the duration in seconds
+            duration    = (end_time - start_time).total_seconds()
+            self.debug(f"Finished '{func.__name__}' in {duration:.4f} seconds.")
+            return result
+        return wrapper
+
+    # --------------------------------------------------------------
+    
 ################################################ PRINT THE OUTPUT BASED ON CONDITION ###############################################
 
-def printV(what         : str, 
-           v            = True, 
-           tabulators   = 0):
+def printV(what: str, v=True, tabulators=0):
     '''
-    Prints silently if necessary
-    - what         : message to be printed
-    - v            : verbosity
-    - tabulators   : number of tabulators
+    Prints the message only if verbosity is enabled.
     '''
     if v:
-        for _ in range(tabulators):
-            print("\t")
-        print("->" + what)
+        print("\t" * tabulators + "->" + what)
 
 ######################################################## PRINT THE DICTIONARY ######################################################
 
-def printDictionary(dict):
+def printDictionary(d: dict) -> str:
     '''
-    Prints dictionary with a key and value
-    dict - dictionary to be printed
+    Returns a formatted string representation of a dictionary.
     '''
-    string      = ""
-    for key in dict:
-        value   = dict[key]
-        string  += f'{key},{value},'
-    return string[:-1]
+    return ', '.join(f'{key}: {value}' for key, value in d.items())
 
 ###################################################### PRINT ELEMENTS WITH ADJUST ##################################################
 
 def printJust(file, 
-              sep           =   "\t",
-              elements      =   [],
-              width         =   8, 
-              endline       =   True, 
-              scientific    =   False):
+            sep           =   "\t",
+            elements      =   [],
+            width         =   8, 
+            endline       =   True, 
+            scientific    =   False):
     """
     [summary] 
     Function that can print a list of elements creating indents
     The separator also can be used to clean the indents.
-    - width     :   is governing the width of each column. 
-    - endline   :   if true, puts an endline after last element of the list
-    - scientific:   allows for scientific printing
+    
+    Arguments:
+    - width     :   governing the width of each column. 
+    - endline   :   if true, puts an endline after the last element of the list.
+    - scientific:   allows for scientific printing.
     """
+    if not elements:
+        return
+    
     for item in elements:
         if not scientific:  
             file.write((str(item) + sep).ljust(width))
@@ -311,3 +380,5 @@ def printJust(file,
             file.write(("{:e}".format(item) + sep).ljust(width))
     if endline:
         file.write("\n")
+        
+#####################################################################################################################################

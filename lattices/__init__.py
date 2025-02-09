@@ -129,7 +129,7 @@ def plot_lattice_structure(lattice):
     # Helper: try to use the lattice's real-space vectors if available.
     def get_pos(i):
         '''Get the real-space position of a site i.'''
-        if hasattr(lattice, 'rvectors') and lattice.rvectors is not None and len(lattice.rvectors) >= lattice.Ns:
+        if lattice.rvectors is not None and len(lattice.rvectors) >= lattice.Ns:
             return lattice.rvectors[i]
         # Fall back to the coordinate mapping (which might be in unit cell space)
         return lattice.get_coordinates(i)
