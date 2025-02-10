@@ -3,38 +3,13 @@ This module provides linear algebra functions and utilities.
 '''
 
 # Import the required modules
-
-import numpy as np
-import scipy
 from abc import ABC, abstractmethod
 from typing import Union
+import numpy as np
+import numpy.random as nrn
+import scipy as sp
 
-# Optionally, if JAX is available, you can set Backend accordingly.
-try:
-    import jax.numpy as jnp
-    import jax.scipy as jsp
-    from jax import jit
-    _JAX_AVAILABLE = True
-except ImportError:
-    _JAX_AVAILABLE = False
-# Use JAX's numpy if available, else fall back to standard NumPy.
-Backend = jnp if _JAX_AVAILABLE else np
-
-def maybe_jit(func):
-    """
-    Decorator that applies the JAX JIT compilation if JAX is available.
-    
-    Parameters
-    ----------
-    func : function
-        The function to be compiled with JIT.
-    
-    Returns
-    -------
-    function
-        The JIT-compiled function (if JAX is available).
-    """
-    return jit(func) if _JAX_AVAILABLE else func
+from . import _JAX_AVAILABLE, get_backend as __backend, maybe_jit, _KEY
 
 from enum import Enum, auto, unique                 # for enumerations
 
@@ -67,7 +42,7 @@ class PreconditionersTypeNoSym(Enum):
 
 # ---------------------------------------------------------------------
 
-# PRECONDITIONERS 
+# PRECONDITIONERS
 
 # ---------------------------------------------------------------------
 
@@ -82,7 +57,16 @@ class Preconditioner(ABC):
         sigma (float)                   : Regularization parameter.
         type (int)                      : An integer flag for the preconditioner type.
     """
-    def __init__(self, is_positive_semidefinite = False, backend = Backend):
+    def __init__(self, is_positive_semidefinite = False, backend = 'default'):
+        """
+        Initialize the preconditioner.
+        
+        Parameters:
+            is_positive_semidefinite (bool) : True if the matrix is positive semidefinite.
+            backend (optional)              : The computational backend to be used by the preconditioner.
+        """
+        self._backend_str               = backend
+        self._backend, self._backends   = __backend(self._backend_str, scipy=True)
         self._is_positive_semidefinite  = is_positive_semidefinite
         
         if self._is_positive_semidefinite:
@@ -93,7 +77,6 @@ class Preconditioner(ABC):
         self._is_gram                   = False # Gram matrix flag
         self._sigma                     = 0.0
         self._type                      = None  # Each concrete class sets its type
-        self._backend                   = backend
         # Tolerances
         self._tol_big                   = 1e10  # tolerance for big values
         self._tol_small                 = 1e-10 # tolerance for small values
@@ -159,18 +142,18 @@ class Preconditioner(ABC):
     # -----------------------------------------------------------------
     
     @abstractmethod
-    def _set_gram(self, Sp, S, sigma : float = 0.0):
+    def _set_gram(self, sp : 'array-like', s : "array-like", sigma : float = 0.0, backend = 'default'):
         """
         Set the preconditioner using two matrices (e.g. Sp and S).
         
         Args:
-            Sp, S (np.ndarray): Matrices whose product is used.
+            sp, s (np.ndarray): Matrices whose product is used.
             sigma (float): Regularization parameter.
         """
         pass
-    
+
     @abstractmethod
-    def _set_standard(self, A, sigma : float = 0.0):
+    def _set_standard(self, A, sigma : float = 0.0, backend = 'default'):
         """
         Set the preconditioner using standard form.
         """
@@ -178,7 +161,7 @@ class Preconditioner(ABC):
     
     # -----------------------------------------------------------------
     
-    def set(self, A, sigma : float = 0.0, Ap = None):
+    def set(self, A, sigma : float = 0.0, Ap = None, backend = 'default'):
         """
         Set the preconditioner from a matrix A.
         
@@ -186,16 +169,19 @@ class Preconditioner(ABC):
             A (np.ndarray)  : The matrix to decompose.
             sigma (float)   : Regularization parameter.
         """
+        if self._backend_str != backend:
+            self._backend, self._backends = __backend(backend, scipy=True)
+            
         if self.is_gram:
             if Ap is not None:
-                self._set_gram(A, Ap, sigma)
+                self._set_gram(A, Ap, sigma, backend = backend)
             else:
-                self._set_gram(A, self.backend.conjugate(A).T, sigma)
+                self._set_gram(A, self.backend.conjugate(A).T, sigma, backend = backend)
         else:
-            self._set_standard(A, sigma=sigma)
+            self._set_standard(A, sigma=sigma, backend = backend)
 
     @abstractmethod
-    def apply(self, r, sigma : float = 0.0) -> np.ndarray:
+    def apply(self, r, sigma : float = 0.0, backend = 'default') -> np.ndarray:
         """
         Apply the preconditioner to a vector.
         
@@ -206,6 +192,8 @@ class Preconditioner(ABC):
         Returns:
             np.ndarray: The preconditioned vector.
         """
+        if self._backend_str != backend:
+            self._backend, self._backends = __backend(backend, scipy=True)
         pass
 
     def __call__(self, r: np.ndarray, sigma: float = 0.0) -> np.ndarray:
@@ -219,17 +207,17 @@ class IdentityPreconditioner(Preconditioner):
     """
     Identity preconditioner.
     """
-    def __init__(self, is_positive_semidefinite = False, backend = Backend):
+    def __init__(self, is_positive_semidefinite = False, backend = 'default'):
         super().__init__(is_positive_semidefinite = is_positive_semidefinite, backend = backend)
         self._type  = PreconditionersTypeSym.IDENTITY
 
-    def _set_gram(self, Sp, S, sigma : float = 0.0):
+    def _set_gram(self, Sp, S, sigma : float = 0.0, backend = 'default'):
         pass
 
-    def _set_standard(self, A, sigma : float = 0.0):
+    def _set_standard(self, A, sigma : float = 0.0, backend = 'default'):
         pass
 
-    def apply(self, r, sigma : float = 0.0) -> np.ndarray:
+    def apply(self, r, sigma : float = 0.0, backend = 'default'):
         return r
     
     def __repr__(self):
@@ -247,7 +235,7 @@ class JacobiPreconditioner(Preconditioner):
     Jacobi preconditioner. It is a simple diagonal preconditioner that 
     uses the inverse of the diagonal entries of the matrix.
     """
-    def __init__(self, backend = Backend):
+    def __init__(self, backend = 'default'):
         super().__init__(is_positive_semidefinite = True, backend = backend)
         self._type      = PreconditionersTypeSym.JACOBI
         self._diaginv   = None
@@ -263,17 +251,19 @@ class JacobiPreconditioner(Preconditioner):
 
     # -----------------------------------------------------------------
     
-    def _set_gram(self, Sp, S, sigma : float = 0.0):
-        super()._set_gram(Sp, S, sigma)
+    @maybe_jit
+    def _set_gram(self, Sp, S, sigma : float = 0.0, backend = 'default'):
+        super()._set_gram(Sp, S, sigma, backend)
         self.sigma      = sigma
         self.diaginv    = 1.0 / self._backend.clip(self._backend.linalg.norm(S, axis=0) + sigma, self.tol_small, self.tol_big)
 
-    def _set_standard(self, A, sigma : float = 0.0):
-        super()._set_standard(A, sigma)
+    @maybe_jit
+    def _set_standard(self, A, sigma : float = 0.0, backend = 'default'):
+        super()._set_standard(A, sigma, backend)
         self.sigma      = sigma
         self.diaginv    = 1.0 / self._backend.clip(self._backend.diag(A) + sigma, self.tol_small, self.tol_big)
         
-    def apply(self, r, sigma : float = 0.0):
+    def apply(self, r, sigma : float = 0.0, backend = 'default'):
         return self.diaginv % r
     
     def __repr__(self):
@@ -290,7 +280,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
     """
     Incomplete Cholesky preconditioner.
     """
-    def __init__(self, backend = Backend):
+    def __init__(self, backend = 'default'):
         super().__init__(is_positive_semidefinite = True, backend = backend)
         self._type      = PreconditionersTypeSym.INCOMPLETE_CHOLESKY
         self._l         = None
@@ -301,21 +291,30 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         return self._l
 
     # -----------------------------------------------------------------
-    
-    def _set_gram(self, Sp, S, sigma : float = 0.0):
-        super()._set_gram(Sp, S, sigma)
-        return self._set_standard(Sp @ S, sigma)
 
-    def _set_standard(self, A, sigma : float = 0.0):
-        super()._set_standard(A, sigma)
+    @maybe_jit
+    def _set_gram(self, sp, s, sigma : float = 0.0, backend = 'default'):
+        ''' Set the preconditioner using two matrices (e.g. Sp and S). '''
+        super()._set_gram(sp, s, sigma, backend)
+        return self._set_standard(sp @ s, sigma, backend)
+
+    @maybe_jit
+    def _set_standard(self, A, sigma : float = 0.0, backend = 'default'):
+        super()._set_standard(A, sigma, backend)
         self.sigma = sigma
         try:
             self._l = self._backend.linalg.cholesky(A + sigma * self._backend.eye(A.shape[0]), lower = True)
         except Exception as e:
             print("Cholesky decomposition failed:", e)
             self._l = None
-        
-    def apply(self, r, sigma : float = 0.0):
+
+    @maybe_jit
+    def _apply(self, r, backend = 'default'):
+        ''' Apply the preconditioner to a vector. '''
+        y = self._backend.linalg.solve_triangular(self._l, r, lower=True, check_finite=False)
+        return self._backend.linalg.solve_triangular(self._l.T, y, lower=False, check_finite=False)
+
+    def apply(self, r, sigma : float = 0.0, backend = 'default'):
         """
         Apply the preconditioner to a given vector.
         This method applies a Cholesky-based preconditioner to the input vector r.
@@ -337,23 +336,11 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         if self._l is None:
             return r
         
-        if _JAX_AVAILABLE:
-            try:
-                # Forward solve L * y = r
-                y = jsp.linalg.solve_triangular(self._l, r, lower = True)
-                
-                # Backward solve L^T * z = y'
-                return jsp.linalg.solve_triangular(self._l.T, y, lower = False)
-            except Exception as e:
-                print("Cholesky solve failed (JAX):", e)
-                return r
-        else:
-            try:
-                y = scipy.linalg.solve_triangular(self._l, r, lower=True, check_finite = False)
-                return scipy.linalg.solve_triangular(self._l.T, y, lower=False, check_finite = False)
-            except Exception as e:
-                print("Cholesky solve failed:", e)
-                return r
+        try:
+            return self._apply(r, backend)
+        except Exception as e:
+            print("Cholesky solve failed:", e)
+            return r
             
     def __repr__(self):
         return f"Incomplete Cholesky Preconditioner (s={self._sigma:.2e})"
@@ -366,7 +353,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
 # =====================================================================
 
 def choose_precond(precond_type  : Union[PreconditionersTypeSym, PreconditionersTypeNoSym],
-                    backend      = Backend):
+                    backend      = 'default') -> Preconditioner:
     """
     Select and return the appropriate preconditioner instance based on the provided preconditioner type.
     Parameters:
@@ -374,7 +361,7 @@ def choose_precond(precond_type  : Union[PreconditionersTypeSym, Preconditioners
             The type of preconditioner requested. For symmetric problems, use PreconditionersTypeSym;
             for non-symmetric problems, use PreconditionersTypeNoSym.
         backend (optional):
-            The computational backend to be used by the preconditioner. Defaults to 'Backend'.
+            The computational backend to be used by the preconditioner. Defaults to 'default'.
     Returns:
         An instance of the selected preconditioner:
             - For PreconditionersTypeNoSym.IDENTITY:

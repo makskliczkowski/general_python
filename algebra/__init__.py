@@ -69,7 +69,7 @@ class AlgebraTests:
         
         if not isinstance(backend, str):
             raise ValueError("Backend must be a string.")
-        if backend.lower() not in ["default", "np", "jnp"]:
+        if backend.lower() not in ["default", "np", "jnp", "jax", "numpy"]:
             raise ValueError("Invalid backend specifier: {backend} - must be 'default', 'np', or 'jnp'.")
         
         self.backend    = backend

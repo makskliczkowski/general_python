@@ -20,6 +20,8 @@ except ImportError:
     _JAX_AVAILABLE  = False
     _KEY            = None
 
+# ---------------------------------------------------------------------
+
 # Global default backend: use jax.numpy if available, else numpy.
 DEFAULT_BACKEND = jnp if _JAX_AVAILABLE else np
 
@@ -89,22 +91,38 @@ def get_backend(backend, random=False, seed=None, scipy=False):
 
 def maybe_jit(func):
     """
-    Decorator that applies JAX JIT compilation if available.
-    Marks 'backend' as static so that passing a module or string does not trigger tracing.
+    Decorator that applies JAX JIT compilation only when the backend is JAX.
+    If the function is called with backend set to 'np' (or the NumPy module), then
+    the original (non-jitted) function is used.
     
-    Parameters
-    ----------
-    func : function
-        The function to be compiled with JIT.
-
-    Returns
-    -------
-    function
-        The JIT-compiled function (if JAX is available).
+    The decorator assumes that the decorated function has a keyword argument
+    called 'backend' (which is also marked as static during JIT compilation).
     """
-    if _JAX_AVAILABLE:
-        return jit(func, static_argnames=("backend",))
-    else:
+    if not _JAX_AVAILABLE:
+        # If JAX isn’t available, simply return the original function.
         return func
+
+    # JIT compile the function with the backend as a static argument.
+    jitted_func = jit(func, static_argnames=("backend",))
+    
+    # Create a wrapper whenever the function is taken as input.
+    def wrapper(*args, **kwargs):
+        # Look for the backend keyword argument.
+        backend = kwargs.get("backend", None)
+        if backend is None:
+            return jitted_func(*args, **kwargs) # If no backend is provided, we assume the default is JAX.
+        
+        if isinstance(backend, str):            # If the backend is provided as a string, check its value.
+            if backend.lower() in ("np", "numpy"):
+                return func(*args, **kwargs)
+            else:
+                return jitted_func(*args, **kwargs)
+        
+        if backend is np:                       # If the backend is given as a module, check if it is numpy.
+            return func(*args, **kwargs)
+        else:
+            return jitted_func(*args, **kwargs)
+    
+    return wrapper
 
 # ---------------------------------------------------------------------
