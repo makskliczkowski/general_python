@@ -5,23 +5,27 @@ This module provides linear algebra functions and utilities.
 # Import the required modules
 
 import numpy as np
+import numpy.random as nrn
+import scipy as sp
 
 try:
     import jax.numpy as jnp
     import jax.scipy as jsp
+    import jax.random as jrn
     from jax import jit
-    _JAX_AVAILABLE = True
+    _JAX_AVAILABLE  = True
+    _KEY            = jrn.PRNGKey(0)
 except ImportError:
     print("JAX not available. Falling back to NumPy and SciPy.")
-    import scipy as sp
-    _JAX_AVAILABLE = False
+    _JAX_AVAILABLE  = False
+    _KEY            = None
 
 # Global default backend: use jax.numpy if available, else numpy.
 DEFAULT_BACKEND = jnp if _JAX_AVAILABLE else np
 
 # ---------------------------------------------------------------------
 
-def get_backend(backend):
+def get_backend(backend, random=False, seed=None, scipy=False):
     """
     Given a backend specifier, return the corresponding module.
     
@@ -41,21 +45,45 @@ def get_backend(backend):
         The backend module.
     """
     if isinstance(backend, str):
-        if backend.lower() == "np":
-            return np
-        elif backend.lower() == "jnp":
+        if backend.lower() == "np" or backend.lower() == "numpy":
+            if not random and not scipy:
+                return np
+            if not random and scipy:
+                return np, sp
+            if seed is not None:
+                nrn.seed(seed)
+            if scipy:
+                return np, nrn, sp
+            return np, nrn
+        elif backend.lower() == "jnp" or backend.lower() == "jax":
             if _JAX_AVAILABLE:
-                return jnp
+                if not random and not scipy:
+                    return jnp
+                if not random and scipy:
+                    return jnp, jsp
+                if seed is not None:
+                    _KEY = jrn.PRNGKey(seed)
+                if scipy:
+                    return jnp, jrn, jsp
+                return jnp, jrn
             else:
-                raise ValueError("JAX is not available.")
+                raise ValueError("JAX not available. Please choose a different backend.")
         elif backend.lower() == "default":
-            return DEFAULT_BACKEND
+            if not random and not scipy:
+                return DEFAULT_BACKEND
+            elif not random and scipy:
+                return DEFAULT_BACKEND, sp if _JAX_AVAILABLE else jsp
+            if seed is not None:
+                _KEY = nrn.seed(seed) if _JAX_AVAILABLE else None
+            if scipy:
+                return DEFAULT_BACKEND, (nrn, sp) if not _JAX_AVAILABLE else (DEFAULT_BACKEND, jsp)
+            return DEFAULT_BACKEND, jrn if _JAX_AVAILABLE else nrn
         else:
             raise ValueError(f"Unsupported backend string: {backend}")
     elif backend is None:
-        return DEFAULT_BACKEND
+        return get_backend("default", random=random, seed=seed, scipy=scipy)
     else:
-        return backend
+        return get_backend("default", random=random, seed=seed, scipy=scipy)
 
 # ---------------------------------------------------------------------
 
@@ -78,5 +106,5 @@ def maybe_jit(func):
         return jit(func, static_argnames=("backend",))
     else:
         return func
-    
+
 # ---------------------------------------------------------------------

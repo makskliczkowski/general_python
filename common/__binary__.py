@@ -23,16 +23,18 @@ You can choose the backend (np or jnp) by passing the corresponding module.
 
 import numpy as np
 from typing import Union, List
-# Try to import JAX’s numpy if available.
-try:
-    import jax.numpy as jnp
-except ImportError:
-    jnp = None
 
-# define a type alias for the backend
-Backend         = Union[None, np.ndarray, jnp.ndarray]              # The backend type alias.
-Backend_Out     = jnp if jnp else np                                # The backend output type alias.
-Backend_Repr    = 0.5                                               # The backend representation - for instance 0.5 for spins.                                  
+# from algebra module
+import os, sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'algebra'))
+import algebra
+from algebra import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit 
+
+import time
+from .__flog__ import Logger
+
+
+Backend_Repr = 0.5
 
 ####################################################################################################
 
@@ -195,16 +197,16 @@ def is_pow_of_two(n : int):
 
 # --------------------------------------------------------------------------------------------------
 
-def check(n : Backend, k : int):
+def check(n, k : int):
     """
     Check the i-th bit in an integer.
 
     Args:
         n (int): The integer to check.
-        i (int): The index of the bit to check.
+        k (int): The index of the bit to check.
 
     Returns:
-        bool: True if the i-th bit is set, False otherwise.
+        bool: True if the k-th bit is set, False otherwise.
     """
     if isinstance(n, (int, np.integer)):
         return bool(n & (1 << k))
@@ -217,7 +219,7 @@ def check(n : Backend, k : int):
 
 def int2base(n          : int,
             size        : int,
-            backend             = Backend_Out,
+            backend             = 'default',
             spin        : bool  = True,
             spin_value  : float = Backend_Repr):
     '''
@@ -232,7 +234,8 @@ def int2base(n          : int,
     Returns:
         np.ndarray or jnp.ndarray: The binary representation of the integer.    
     '''
-    bits = []
+    backend = get_backend(backend)
+    bits    = []
     
     # Loop over the bits in the integer.
     for k in range(size):
@@ -254,7 +257,7 @@ def int2base(n          : int,
 
 # --------------------------------------------------------------------------------------------------
 
-def base2int(vec, spin: bool = True, spin_value: float = Backend_Repr) -> int:
+def base2int(vec : 'array-like', spin: bool = True, spin_value: float = Backend_Repr) -> int:
     '''
     Convert a base representation back to an integer.
     
@@ -285,19 +288,42 @@ def base2int(vec, spin: bool = True, spin_value: float = Backend_Repr) -> int:
 
 # --------------------------------------------------------------------------------------------------
 
-def flip_all(n : Backend, size : int, spin : bool = True, spin_value : float = Backend_Repr):
+@maybe_jit
+def _flip_all_array_nspin(n : 'array-like', backend = 'default'):
+    """
+    Flip all bits in a representation of a state.
+    - This is a helper function for flip_all.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    return -n
+
+@maybe_jit
+def _flip_all_array_spin(n : 'array-like', spin_value : float = Backend_Repr, backend = 'default'):
+    """
+    Flip all bits in a representation of a state.
+    - This is a helper function for flip_all.
+    """
+    backend = get_backend(backend)
+    return backend.where(n == spin_value, 0, spin_value)
+
+def flip_all(n : 'array-like', size : int, spin : bool = True, 
+            spin_value : float = Backend_Repr, backend = 'default'):
     """
     Flip all bits in a representation of a state.
 
     Args:
         n (int)     : The value to flip.
         size (int)  : The number of bits - the size of the state.
+        spin (bool) : A flag to indicate whether to use spin values.
+        spin_value (float): The spin value to use.
+        backend (np) : The backend to use (np or jnp or default).    
     Note:
         The function is implemented for both integers and NumPy arrays (np or jnp).
         The function is implemented for both binary and spin representations. 
     Returns:
         A flipped state.
     """
+    
     if isinstance(n, (int, np.integer)):
         return lookup_binary_power[size] - 1 - n
     elif isinstance(n, list):
@@ -305,19 +331,33 @@ def flip_all(n : Backend, size : int, spin : bool = True, spin_value : float = B
             return [-x for x in n]
         else:
             return [0 if x == spin_value else spin_value for x in n]
-    # arrays are assumed to be NumPy or JAX arrays
     if spin:
-        return n * (-1)
-
-    # does not work for spin values
-    module = np
-    if jnp is not None and isinstance(n, jnp.ndarray):
-        module = jnp
-    return module.where(n == spin_value, 0, spin_value)
+        return _flip_all_array_spin(n, spin_value, backend)
+    return _flip_all_array_nspin(n)
 
 # --------------------------------------------------------------------------------------------------
 
-def flip(n, k, spin : bool = True, spin_value : float = Backend_Repr):
+@maybe_jit
+def _flip_array_spin(n : 'array-like', k : int, backend = 'default'):
+    """
+    Flip a single bit in a representation of a state.
+    - This is a helper function for flip.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    n = n.at[k].set(-n[k])
+    return n
+
+@maybe_jit
+def _flip_array_nspin(n : 'array-like', k : int, backend = 'default'):
+    """
+    Flip a single bit in a representation of a state.
+    - This is a helper function for flip.
+    """
+    update  =   (n[k] + 1) % 2
+    n       =   n.at[k].set(update)
+    return n
+
+def flip(n, k, spin : bool = True, spin_value : float = Backend_Repr, backend = 'default'):
     '''
     Flip a single bit in a representation of a state.
     '''
@@ -330,20 +370,30 @@ def flip(n, k, spin : bool = True, spin_value : float = Backend_Repr):
         else:
             n[k] = 0 if n[k] == spin_value else spin_value
         return n
-
-    # arrays are assumed to be NumPy or JAX arrays
+    if isinstance(n, np.ndarray):
+        if spin:
+            n[k] = -n[k]
+        else:
+            n[k] = 0 if n[k] == spin_value else spin_value
+        return n
+    
     if spin:
-        n = n.at[k].set(-n[k])
-    else:
-        module = np
-        if jnp is not None and isinstance(n, jnp.ndarray):
-            module = jnp
-        n = module.where(n == spin_value, 0, spin_value)
-    return n
+        return _flip_array_spin(n, k, backend)
+    return _flip_array_nspin(n, k, backend)
 
 # --------------------------------------------------------------------------------------------------
 
-def rev(n : Backend, size : int, bitsize = 64):
+@maybe_jit
+def _rev_arr(n : 'array-like', backend = 'default'):
+    """
+    Reverse the bits of a 64-bit integer.
+    - This is a helper function for rev.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    backend = get_backend(backend)
+    return backend.flip(n)
+
+def rev(n : 'array-like', size : int, bitsize = 64, backend = 'default'):
     """
     Reverse the bits of a 64-bit integer.
 
@@ -363,12 +413,7 @@ def rev(n : Backend, size : int, bitsize = 64):
             start_chunk += 8
         return nout >> (bitsize - size)
     
-    # arrays are assumed to be NumPy or JAX arrays
-    module = np
-    if jnp is not None and isinstance(n, jnp.ndarray):
-        module = jnp
-    # reverse the bits
-    return module.flip(n)
+    return _rev_arr(n, backend)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -376,7 +421,16 @@ def rev(n : Backend, size : int, bitsize = 64):
 
 # --------------------------------------------------------------------------------------------------
 
-def rotate_left(n : Backend, size : int):
+def _rotate_left_array(n : 'array-like', backend = 'default'):
+    """
+    Rotate the bits of an integer to the left.
+    - This is a helper function for rotate_left.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    backend = get_backend(backend)
+    return backend.roll(n, -1)
+
+def rotate_left(n : 'array-like', size : int, backend = 'default'):
     """
     Rotate the bits of an integer to the left.
 
@@ -390,17 +444,20 @@ def rotate_left(n : Backend, size : int):
     if isinstance(n, int):
         max_power = lookup_binary_power[size - 1]
         return ((n - max_power) * 2 + 1) if (n >= max_power) else (n * 2)
-    
-    # arrays are assumed to be NumPy or JAX arrays
-    module = np
-    if jnp is not None and isinstance(n, jnp.ndarray):
-        module = jnp
-    # rotate the bits
-    return module.roll(n, -1)
+    return _rotate_left_array(n, backend)
 
 # --------------------------------------------------------------------------------------------------
 
-def rotate_right(n : Backend, size : int):
+def _rotate_right_array(n : 'array-like', backend = 'default'):
+    """
+    Rotate the bits of an integer to the right.
+    - This is a helper function for rotate_right.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    backend = get_backend(backend)
+    return backend.roll(n, 1)
+
+def rotate_right(n : 'array-like', size : int, backend = 'default'):
     """
     Rotate the bits of an integer to the right.
 
@@ -412,15 +469,8 @@ def rotate_right(n : Backend, size : int):
         int: The integer with the bits rotated to the right.
     """
     if isinstance(n, int):
-        max_power = lookup_binary_power[size - 1]
         return (n >> 1) | ((n & 1) << (size - 1))
-    
-    # arrays are assumed to be NumPy or JAX arrays
-    module = np
-    if jnp is not None and isinstance(n, jnp.ndarray):
-        module = jnp
-    # rotate the bits
-    return module.roll(n, 1)
+    return _rotate_right_array(n, backend)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -458,219 +508,333 @@ def popcount(n : int):
 ####################################################################################################
 
 # Test the binary functions
-
-####################################################################################################
-
-import time
-
-def test_binary_functions(
-    size        =   6,
-    mask        =   0b1011,
-    mask_size   =   None,
-    positions   =   None,
-    bit_position=   2,
-    spin        =   True,
-    spin_value  =   Backend_Repr):
+    
+class BinaryFunctionTests:
     """
-    Runs a series of tests on the binary manipulation functions.
-    
-    Parameters:
-        size         : (int) Number of bits for the binary representations (default: 6).
-        mask         : (int) A mask value used for bit extraction (default: 0b1011).
-        mask_size    : (int) Number of bits to represent the mask. If None, defaults to size.
-        positions    : (list) Bit positions to prepare a mask from (default: [0, 1, 3]).
-        bit_position : (int) Bit position to test for flip and check operations (default: 2).
-        spin         : (bool) Whether to use spin representation (±spin_value) for conversion (default: True).
-        spin_value   : (float) The value representing spin-up in spin representation (default: 1.0).
-    
-    Each test is timed, and the function prints a detailed report of the input, output,
-    and execution time.
+    A class that implements tests for various binary manipulation functions.
+    Each test is implemented as a separate method.
     """
-    if mask_size is None:
-        mask_size = size
-    if positions is None:
-        positions = [0, 1, 3]
 
-    # Header for the test run
-    print("=" * 50)
-    print("TESTING BINARY FUNCTIONS".center(50))
-    print("=" * 50)
+    def __init__(self, logfile="binary_tests.log", log_dir="logs"):
+        """
+        Initializes the BinaryFunctionTests instance.
+        
+        Parameters:
+            logfile (str): Name of the log file.
+            log_dir (str): Directory where the log file will be stored.
+        """
+        self.test_count = 0
+        self.logger = Logger(logfile=logfile)
+        self.logger.configure(directory=log_dir)
 
-    total_start = time.time()
+    def _log(self, message, test_number, color="white"):
+        """
+        Logs a message with a test number and an optional color.
+        
+        Parameters:
+            message (str): The message to log.
+            test_number (int): The test identifier.
+            color (str): The color for the log output.
+        """
+        self.logger.say(
+            self.logger.colorize(f"[TEST {test_number}] {message}", color),
+            log=0,
+            lvl=1
+        )
 
-    # Generate a random integer within the specified bit-width.
-    n = np.random.randint(0, 2**size)
-    print(f"Random integer n = {n} (binary: {int2binstr(n, size)})")
-    print("-" * 50)
+    # -------------------------------
+    # Individual test methods follow:
+    # -------------------------------
 
-    # Test 1: Extract bits using a mask
-    t0 = time.time()
-    extracted = extract(n, mask)
-    t1 = time.time()
-    print("Test 1: Extract bits using mask")
-    print(f"  Input n    : {int2binstr(n, size)}")
-    print(f"  Mask       : {int2binstr(mask, mask_size)}")
-    print(f"  Extracted  : {int2binstr(extracted, mask_size)} ({extracted})")
-    print(f"  Time       : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_extract(self, n, size, mask, mask_size, backend):
+        """Test 1: Extract bits using a mask."""
+        test_number         = self.test_count
+        self._log(f"Test {test_number}: Extract bits using mask", test_number, color="blue")
+        t0                  = time.time()
+        extracted           = extract(n, mask)
+        t1                  = time.time()
+        self._log(f"Input n    : {int2binstr(n, size)}", test_number)
+        self._log(f"Mask       : {int2binstr(mask, mask_size)}", test_number)
+        self._log(f"Extracted  : {int2binstr(extracted, mask_size)} ({extracted})", test_number)
+        self._log(f"Time       : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
 
-    # Test 2: Extract leftmost and rightmost bits
-    t0 = time.time()
-    leftmost = extract_ord_left(n, size, 4)
-    rightmost = extract_ord_right(n, 4)
-    t1 = time.time()
-    print("Test 2: Extract leftmost and rightmost 4 bits")
-    print(f"  Input n         : {int2binstr(n, size)}")
-    print(f"  Leftmost 4 bits : {int2binstr(leftmost, 4)}")
-    print(f"  Rightmost 4 bits: {int2binstr(rightmost, 4)}")
-    print(f"  Time            : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_extract_left_right(self, n, size, backend):
+        """Test 2: Extract leftmost and rightmost 4 bits."""
+        test_number         = self.test_count
+        self._log(f"Test {test_number}: Extract leftmost and rightmost 4 bits", test_number, color="blue")
+        t0                  = time.time()
+        leftmost            = extract_ord_left(n, size, 4)
+        rightmost           = extract_ord_right(n, 4)
+        t1                  = time.time()
+        self._log(f"Input n         : {int2binstr(n, size)}", test_number)
+        self._log(f"Leftmost 4 bits : {int2binstr(leftmost, 4)}", test_number)
+        self._log(f"Rightmost 4 bits: {int2binstr(rightmost, 4)}", test_number)
+        self._log(f"Time            : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 3: Prepare a mask from given positions
-    t0 = time.time()
-    mask_prepared = prepare_mask(positions, size=4)
-    t1 = time.time()
-    print("Test 3: Prepare mask from positions")
-    print(f"  Positions          : {positions}")
-    print(f"  Prepared Mask (4b) : {int2binstr(mask_prepared, 4)}")
-    print(f"  Time               : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_prepare_mask(self, positions, size, backend):
+        """Test 3: Prepare a mask from given positions."""
+        test_number     = self.test_count
+        self._log(f"Test {test_number}: Prepare mask from positions", test_number, color="blue")
+        t0              = time.time()
+        mask_prepared   = prepare_mask(positions, size=size)
+        t1              = time.time()
+        self._log(f"Positions          : {positions}", test_number)
+        self._log(f"Prepared Mask ({size} bits) : {int2binstr(mask_prepared, size)}", test_number)
+        self._log(f"Time               : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 4: Prepare an inverted (reversed) mask from positions
-    t0 = time.time()
-    mask_prepared_inv = prepare_mask(positions, inv=True, size=4)
-    t1 = time.time()
-    print("Test 4: Prepare inverted mask from positions")
-    print(f"  Positions             : {positions}")
-    print(f"  Inverted Mask (4 bits): {int2binstr(mask_prepared_inv, 4)}")
-    print(f"  Time                  : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_prepare_mask_inverted(self, positions, size, backend):
+        """Test 4: Prepare an inverted mask from positions."""
+        test_number     = self.test_count
+        self._log(f"Test {test_number}: Prepare inverted mask from positions", test_number, color="blue")
+        t0              = time.time()
+        mask_prepared_inv = prepare_mask(positions, inv=True, size=size)
+        t1 = time.time()
+        self._log(f"Positions             : {positions}", test_number)
+        self._log(f"Inverted Mask ({size} bits): {int2binstr(mask_prepared_inv, size)}", test_number)
+        self._log(f"Time                  : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 5: Check if n is a power of two
-    t0 = time.time()
-    pow_check = is_pow_of_two(n)
-    t1 = time.time()
-    print("Test 5: Check if n is a power of two")
-    print(f"  Input n : {int2binstr(n, size)}")
-    print(f"  Result  : {pow_check}")
-    print(f"  Time    : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_is_power_of_two(self, n, size, backend):
+        """Test 5: Check if n is a power of two."""
+        test_number         = self.test_count
+        self._log(f"Test {test_number}: Check if n is a power of two", test_number, color="blue")
+        t0                  = time.time()
+        pow_check           = is_pow_of_two(n)
+        t1                  = time.time()
+        self._log(f"Input n : {int2binstr(n, size)}", test_number)
+        self._log(f"Result  : {pow_check}", test_number)
+        self._log(f"Time    : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 6: Reverse the bits of n
-    t0 = time.time()
-    reversed_bits = rev(n, size)
-    t1 = time.time()
-    print("Test 6: Reverse the bits")
-    print(f"  Input n  : {int2binstr(n, size)}")
-    print(f"  Reversed : {int2binstr(reversed_bits, size)}")
-    print(f"  Time     : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_reverse_bits(self, n, size, backend):
+        """Test 6: Reverse the bits of n."""
+        test_number = self.test_count
+        self._log("Test {}: Reverse the bits".format(test_number), test_number, color="blue")
+        t0 = time.time()
+        reversed_bits = rev(n, size, backend=backend)
+        t1 = time.time()
+        self._log(f"Input n  : {int2binstr(n, size)}", test_number)
+        self._log(f"Reversed : {int2binstr(reversed_bits, size)}", test_number)
+        self._log(f"Time     : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 7: Check a specific bit (bit_position)
-    t0 = time.time()
-    bit_check = check(n, bit_position)
-    t1 = time.time()
-    print("Test 7: Check specific bit")
-    print(f"  Input n          : {int2binstr(n, size)}")
-    print(f"  Bit position (0-indexed from right): {bit_position}")
-    print(f"  Bit value        : {bit_check}")
-    print(f"  Time             : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_check_specific_bit(self, n, size, bit_position, backend):
+        """Test 7: Check a specific bit (bit_position)."""
+        test_number = self.test_count
+        self._log("Test {}: Check specific bit".format(test_number), test_number, color="blue")
+        t0 = time.time()
+        bit_check = check(n, bit_position)
+        t1 = time.time()
+        self._log(f"Input n          : {int2binstr(n, size)}", test_number)
+        self._log(f"Bit position (0-indexed from right): {bit_position}", test_number)
+        self._log(f"Bit value        : {bit_check}", test_number)
+        self._log(f"Time             : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 8: Convert integer to base representation
-    t0 = time.time()
-    base_representation = int2base(n, size, spin=spin, spin_value=spin_value)
-    t1 = time.time()
-    print("Test 8: Convert integer to base representation")
-    print(f"  Input n           : {int2binstr(n, size)}")
-    print(f"  Base representation: {base_representation} (type: {type(base_representation)})")
-    print(f"  Time              : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_int_to_base(self, n, size, spin, spin_value, backend):
+        """Test 8: Convert integer to base representation."""
+        test_number         = self.test_count
+        typek               = type(n)
+        self._log(f"Test {test_number}: Convert integer to base representation: {typek}", test_number, color="blue")
+        t0                  = time.time()
+        base_representation = int2base(n, size, backend=backend, spin=spin, spin_value=spin_value)
+        t1                  = time.time()
+        self._log(f"Input n           : {int2binstr(n, size)}", test_number)
+        self._log(f"Base representation: {base_representation} (type: {type(base_representation)})", test_number)
+        self._log(f"Time              : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
+        return base_representation
 
-    # Test 9: Convert the base representation back to an integer
-    t0 = time.time()
-    integer_representation = base2int(base_representation, spin=spin, spin_value=spin_value)
-    t1 = time.time()
-    print("Test 9: Convert base representation back to integer")
-    print(f"  Base representation : {base_representation}")
-    print(f"  Recovered integer : {integer_representation}")
-    print(f"  Time              : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_base_to_int(self, base_representation, spin, spin_value, backend):
+        """Test 9: Convert base representation back to integer."""
+        test_number         = self.test_count
+        typek               = type(base_representation)
+        self._log(f"Test {test_number}: Convert base representation back to integer: {typek}", test_number, color="blue")
+        t0                  = time.time()
+        integer_representation = base2int(base_representation, spin=spin, spin_value=spin_value)
+        t1                  = time.time()
+        self._log(f"Base representation : {base_representation} (type: {typek})", test_number)
+        self._log(f"Recovered integer   : {integer_representation} (type: {type(integer_representation)})", test_number)
+        self._log(f"Time                : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
 
-    # Test 10: Flip all bits of n
-    t0 = time.time()
-    flipped_all = flip_all(n, size)
-    t1 = time.time()
-    print("Test 10: Flip all bits")
-    print(f"  Input n : {int2binstr(n, size)}")
-    print(f"  Flipped : {int2binstr(flipped_all, size)}")
-    print(f"  Time    : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_flip_all_bits(self, n, size, spin, spin_value, backend):
+        """Test 10: Flip all bits of n."""
+        test_number         = self.test_count
+        typek               = type(n)
+        self._log(f"Test {test_number}: Flip all bits: {typek}", test_number, color="blue")
+        t0                  = time.time()
+        flipped_all         = flip_all(n, size, spin=spin, spin_value=spin_value, backend=backend)
+        t1                  = time.time()
+        self._log(f"Input n : {int2binstr(n, size)}", test_number)
+        self._log(f"Flipped : {int2binstr(flipped_all, size)}", test_number)
+        self._log(f"Time    : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
 
-    # Test 11: Flip a specific bit in n (integer)
-    t0 = time.time()
-    flipped_bit_int = flip(n, bit_position)
-    t1 = time.time()
-    print("Test 11: Flip a specific bit in integer")
-    print(f"  Input n           : {int2binstr(n, size)}")
-    print(f"  Flipped bit at pos: {bit_position} -> {int2binstr(flipped_bit_int, size)}")
-    print(f"  Time              : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_flip_specific_bit_int(self, n, size, bit_position, backend):
+        """Test 11: Flip a specific bit in n (integer)."""
+        test_number         = self.test_count
+        typek               = type(n)
+        self._log(f"Test {test_number}: Flip a specific bit in integer: {typek}", test_number, color="blue")
+        t0                  = time.time()
+        flipped_bit_int     = flip(n, bit_position, backend=backend)
+        t1                  = time.time()
+        self._log(f"Input n           : {int2binstr(n, size)}", test_number)
+        self._log(f"Flipped bit at pos: {bit_position} -> {int2binstr(flipped_bit_int, size)}", test_number)
+        self._log(f"Time              : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
 
-    # Test 12: Flip a specific bit in the base representation
-    t0 = time.time()
-    flipped_bit_base = flip(base_representation, bit_position)
-    t1 = time.time()
-    print("Test 12: Flip a specific bit in base representation")
-    print(f"  Input base rep    : {base_representation}")
-    print(f"  Flipped bit at pos: {bit_position} -> {flipped_bit_base}")
-    print(f"  Time              : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_flip_specific_bit_base(self, base_representation, bit_position, spin, spin_value, backend):
+        """Test 12: Flip a specific bit in the base representation."""
+        test_number         = self.test_count
+        typek               = type(base_representation)
+        self._log(f"Test {test_number}: Flip a specific bit in base representation: {typek}", test_number, color="blue")
+        t0                  = time.time()
+        flipped_bit_base    = flip(base_representation, bit_position, spin=spin, spin_value=spin_value, backend=backend)
+        t1                  = time.time()
+        self._log(f"Input base rep    : {base_representation} : {typek}", test_number)
+        self._log(f"Flipped bit at pos: {bit_position} -> {flipped_bit_base} : {type(flipped_bit_base)}", test_number)
+        self._log(f"Time              : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
+        return flipped_bit_base
 
-    # Test 13: Rotate left (integer)
-    t0 = time.time()
-    rotated_left_int = rotate_left(n, size)
-    t1 = time.time()
-    print("Test 13: Rotate left (integer)")
-    print(f"  Input n       : {int2binstr(n, size)}")
-    print(f"  Rotated left  : {int2binstr(rotated_left_int, size)}")
-    print(f"  Time          : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_rotate_left_int(self, n, size, backend):
+        """Test 13: Rotate left (integer)."""
+        test_number         = self.test_count
+        self._log(f"Test {test_number}: Rotate left (integer)", test_number, color="blue")
+        t0                  = time.time()
+        rotated_left_int    = rotate_left(n, size, backend=backend)
+        t1                  = time.time()
+        self._log(f"Input n       : {int2binstr(n, size)}", test_number)
+        self._log(f"Rotated left  : {int2binstr(rotated_left_int, size)}", test_number)
+        self._log(f"Time          : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
 
-    # Test 14: Rotate left (base representation)
-    t0 = time.time()
-    rotated_left_base = rotate_left(base_representation, size)
-    t1 = time.time()
-    print("Test 14: Rotate left (base representation)")
-    print(f"  Input base rep: {base_representation}")
-    print(f"  Rotated left  : {rotated_left_base}")
-    print(f"  Time          : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_rotate_left_base(self, base_representation, size, backend):
+        """Test 14: Rotate left (base representation)."""
+        test_number         = self.test_count
+        self._log(f"Test {test_number}: Rotate left (base representation): {type(base_representation)}", test_number, color="blue")
+        t0                  = time.time()
+        rotated_left_base   = rotate_left(base_representation, size, backend=backend)
+        t1                  = time.time()
+        
+        self._log(f"Input base rep: {base_representation} : {type(base_representation)}", test_number)
+        self._log(f"Rotated left  : {rotated_left_base} : {type(rotated_left_base)}", test_number)
+        self._log(f"Time          : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count     += 1
+        return rotated_left_base
 
-    # Test 15: Rotate right (integer)
-    t0 = time.time()
-    rotated_right_int = rotate_right(n, size)
-    t1 = time.time()
-    print("Test 15: Rotate right (integer)")
-    print(f"  Input n        : {int2binstr(n, size)}")
-    print(f"  Rotated right  : {int2binstr(rotated_right_int, size)}")
-    print(f"  Time           : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_rotate_right_int(self, n, size, backend):
+        """Test 15: Rotate right (integer)."""
+        test_number         = self.test_count
+        self._log(f"Test {test_number}: Rotate right (integer)", test_number, color="blue")
+        t0                  = time.time()
+        rotated_right_int   = rotate_right(n, size, backend=backend)
+        t1                  = time.time()
+        self._log(f"Input n        : {int2binstr(n, size)}", test_number)
+        self._log(f"Rotated right  : {int2binstr(rotated_right_int, size)}", test_number)
+        self._log(f"Time           : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
 
-    # Test 16: Rotate right (base representation)
-    t0 = time.time()
-    rotated_right_base = rotate_right(base_representation, size)
-    t1 = time.time()
-    print("Test 16: Rotate right (base representation)")
-    print(f"  Input base rep : {base_representation}")
-    print(f"  Rotated right  : {rotated_right_base}")
-    print(f"  Time           : {t1 - t0:.6f} seconds")
-    print("-" * 50)
+    def test_rotate_right_base(self, base_representation, size, backend):
+        """Test 16: Rotate right (base representation)."""
+        test_number         = self.test_count
+        typek               = type(base_representation)
+        self._log(f"Test {test_number}: Rotate right (base representation): {typek}", test_number, color="blue")
+        t0 = time.time()
+        rotated_right_base = rotate_right(base_representation, size, backend=backend)
+        t1 = time.time()
+        self._log(f"Input base rep : {base_representation} : {typek}", test_number)
+        self._log(f"Rotated right  : {rotated_right_base} : {type(rotated_right_base)}", test_number)
+        self._log(f"Time           : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
+        return rotated_right_base
 
-    total_time = time.time() - total_start
-    print("=" * 50)
-    print(f"Total testing time: {total_time:.6f} seconds")
-    print("=" * 50)
-    
-    
-####################################################################################################
+    # -------------------------------
+    # Master test runner:
+    # -------------------------------
+    def run_tests(self,
+                  size          = 6,
+                  mask          = 0b1011,
+                  mask_size     = None,
+                  positions     = None,
+                  bit_position  = 2,
+                  spin          = True,
+                  spin_value    = 1.0,
+                  backend       = 'default'):
+        """
+        Runs a series of tests on the binary manipulation functions by calling individual test methods.
+        
+        Parameters:
+            size         (int): Number of bits for the binary representations (default: 6).
+            mask         (int): A mask value used for bit extraction (default: 0b1011).
+            mask_size    (int): Number of bits to represent the mask. If None, defaults to size.
+            positions    (list): Bit positions to prepare a mask from (default: [0, 1, 3]).
+            bit_position (int): Bit position to test for flip and check operations (default: 2).
+            spin         (bool): Whether to use spin representation (±spin_value) for conversion.
+            spin_value   (float): The value representing spin-up in spin representation.
+        """
+        if mask_size is None:
+            mask_size = size
+        if positions is None:
+            positions = [0, 1, 3]
+        # Reset test counter
+        self.test_count = 1
+
+        separator = "=" * 50
+        self._log(separator, 0)
+        self._log("TESTING BINARY FUNCTIONS".center(50), 0)
+        self._log(separator, 0)
+        total_start = time.time()
+
+        # Generate a random integer for testing.
+        n = np.random.randint(0, 2 ** size)
+        self._log(f"Random integer n = {n} (binary: {int2binstr(n, size)})", 0)
+        self._log("-" * 50, 0)  # Added missing separator log
+        self._log("-" * 50, 0)
+
+        # Run each individual test by passing all required arguments including backend.
+        self.test_extract(n, size, mask, mask_size, backend)
+        self.test_extract_left_right(n, size, backend)
+        self.test_prepare_mask(positions, size, backend)
+        self.test_prepare_mask_inverted(positions, size, backend)
+        self.test_is_power_of_two(n, size, backend)
+        self.test_reverse_bits(n, size, backend)
+        self.test_check_specific_bit(n, size, bit_position, backend)
+        base_representation = self.test_int_to_base(n, size, spin, spin_value, backend)
+        self.test_base_to_int(base_representation, spin, spin_value, backend)
+        self.test_flip_all_bits(n, size, spin, spin_value, backend)
+        self.test_flip_specific_bit_int(n, size, bit_position, backend)
+        base_representation = self.test_flip_specific_bit_base(base_representation, bit_position, spin, spin_value, backend)
+        self.test_rotate_left_int(n, size, backend)
+        base_representation = self.test_rotate_left_base(base_representation, size, backend)
+        self.test_rotate_right_int(n, size, backend)
+        base_representation = self.test_rotate_right_base(base_representation, size, backend)
+
+        total_time = time.time() - total_start
+        self._log(separator, 0)
+        self._log(f"Total testing time: {total_time:.6f} seconds", 0, color="green")
+        self._log(separator, 0)
+        self.test_count = 0
+        self._log("Testing completed.", 0, color = "green")
+
+# --------------------------------------------------------------------------------------------------

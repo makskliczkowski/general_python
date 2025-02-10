@@ -18,7 +18,7 @@ sys.path.append(__parent_dir)
 ######################################
 
 # Import the default backend
-from .__utils__ import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit 
+from .__utils__ import _JAX_AVAILABLE, _KEY, DEFAULT_BACKEND, get_backend, maybe_jit 
 
 # Import general methods for the linear algebra
 from . import linalg as LinalgMod 
@@ -75,7 +75,7 @@ class AlgebraTests:
         self.backend    = backend
         self.test_count = 0
         self.logger     = Logger(logfile="algebra_tests.log")
-        self.logger.configure(directory="/Users/makskliczkowski/Codes/QuantumEigenSolver/logs")
+        self.logger.configure(directory="./logs")
 
     def _log(self, message, test_number, color="white"):
         # Add test_number to log record

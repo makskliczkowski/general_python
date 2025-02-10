@@ -1,5 +1,11 @@
 from datetime import datetime
+
 import logging
+# set the logging level to WARNING
+logging.getLogger("jax").setLevel(logging.WARNING)
+logging.getLogger("flax").setLevel(logging.WARNING)
+logging.getLogger("tensorflow").setLevel(logging.WARNING)
+
 import os
 import functools
 
