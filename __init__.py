@@ -2,10 +2,21 @@
 This module contains the following submodules:
 """
 
+# Import the required modules common to all submodules
 from . import common
+from .common.plot import MatrixPrinter, Plotter, PlotterSave
+from .common.flog import Logger
+
+# Lattice operations
 from . import lattices
+
+# Mathematical operations
 from . import maths
+
+# Algebraic operations
 from . import algebra
+# module level imports
+from .algebra import _JAX_AVAILABLE, _KEY, DEFAULT_BACKEND, get_backend, maybe_jit
 
 # list of submodules
 __all__ = ["common", "lattices", "maths", "algebra"]
@@ -25,7 +36,7 @@ def get_module_description(module_name):
         "common"    : "Provides common functionalities used in any Python project.",
         "lattices"  : "Provides functionalities for creating and managing lattices.",
         "maths"     : "Provides mathematical utilities and functions.",
-        "algebra"    : "Provides functionalities for algebraic operations." 
+        "algebra"   : "Provides functionalities for algebraic operations." 
     }
     return descriptions.get(module_name, "Module not found.")
 

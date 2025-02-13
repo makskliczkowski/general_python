@@ -1,10 +1,14 @@
 from typing import Optional, Callable
 import numpy as np
-import os, sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-from .. import solver
-from solver import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, _KEY, Solver, Preconditioner, SolverError, SolverErrorMsg
+import sys
+import os
+_current_dir = os.path.dirname(__file__)
+_parent_dir = os.path.abspath(os.path.join(_current_dir, ".."))
+if _parent_dir not in sys.path:
+    sys.path.append(_parent_dir)
+    
+from . import SolverType
+from .. import Solver, SolverError, SolverErrorMsg, _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, Preconditioner
 
 # -----------------------------------------------------------------------------
 # Direct Solver Class
@@ -15,6 +19,12 @@ class DirectSolver(Solver):
     Direct solver class for linear systems of type Ax = b.
     '''
 
+    def __init__(self, backend='default', size = 1, dtype=None, eps = 1e-10, maxiter = 1000, reg = None, precond = None, restart = False, maxrestarts = 1):
+        super().__init__(backend, size, dtype, eps, maxiter, reg, precond, restart, maxrestarts)
+        self._symmetric         = False
+        self._positive_definite = False
+        self._solver_type       = SolverType.DIRECT
+        
     # -------------------------------------------------------------------------
     
     def solve(self, b, x0: Optional[np.ndarray] = None, precond: Optional[Preconditioner] = None):
@@ -60,6 +70,12 @@ class DirectScipy(Solver):
     scipy.linalg.solve function.
     '''
     
+    def __init__(self, backend='default', size = 1, dtype=None, eps = 1e-10, maxiter = 1000, reg = None, precond = None, restart = False, maxrestarts = 1):
+        super().__init__(backend, size, dtype, eps, maxiter, reg, precond, restart, maxrestarts)
+        self._symmetric         = False
+        self._positive_definite = False
+        self._solver_type       = SolverType.DIRECT
+        
     # -------------------------------------------------------------------------
     
     def solve(self, b, x0: Optional[np.ndarray] = None, precond: Optional[Preconditioner] = None):
@@ -102,6 +118,12 @@ class DirectBackend(Solver):
     """
     Direct solver class for linear systems of type Ax = b.
     """
+    
+    def __init__(self, backend='default', size = 1, dtype=None, eps = 1e-10, maxiter = 1000, reg = None, precond = None, restart = False, maxrestarts = 1):
+        super().__init__(backend, size, dtype, eps, maxiter, reg, precond, restart, maxrestarts)
+        self._symmetric         = False
+        self._positive_definite = False
+        self._solver_type       = SolverType.DIRECT
 
     # -------------------------------------------------------------------------
     

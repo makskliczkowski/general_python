@@ -1,7 +1,7 @@
 import os
 import random
 import shutil
-from .__flog__ import *
+from .flog import *
 
 kPS = os.sep
 

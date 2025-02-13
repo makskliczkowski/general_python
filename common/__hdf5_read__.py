@@ -1,7 +1,7 @@
 import sys
 # Adds higher directory to python modules path.
 
-from .__directories__ import *
+from .directories import *
 import numpy as np
 import h5py
 import os

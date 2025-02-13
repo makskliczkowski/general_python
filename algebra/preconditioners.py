@@ -97,15 +97,20 @@ class Preconditioner(ABC):
         '''True if the preconditioner is based on a Gram matrix.'''
         return self._is_gram
     
-    @property
-    def sigma(self):
-        """Regularization parameter."""
-        return self._sigma
-    
+    @is_gram.setter
+    def is_gram(self, value):
+        '''Set the is_gram flag.'''
+        self._is_gram = value
+        
     @property
     def type(self):
         """Preconditioner type."""
         return self._type
+
+    @property
+    def sigma(self):
+        """Regularization parameter."""
+        return self._sigma
     
     @sigma.setter
     def sigma(self, value):
@@ -161,24 +166,24 @@ class Preconditioner(ABC):
     
     # -----------------------------------------------------------------
     
-    def set(self, A, sigma : float = 0.0, Ap = None, backend = 'default'):
+    def set(self, a, sigma : float = 0.0, ap = None, backend = 'default'):
         """
         Set the preconditioner from a matrix A.
         
         Args:
-            A (np.ndarray)  : The matrix to decompose.
+            a (np.ndarray)  : The matrix to decompose.
             sigma (float)   : Regularization parameter.
         """
         if self._backend_str != backend:
             self._backend, self._backends = __backend(backend, scipy=True)
             
         if self.is_gram:
-            if Ap is not None:
-                self._set_gram(A, Ap, sigma, backend = backend)
+            if ap is not None:
+                self._set_gram(a, ap, sigma, backend = backend)
             else:
-                self._set_gram(A, self.backend.conjugate(A).T, sigma, backend = backend)
+                self._set_gram(a, self.backend.conjugate(a).T, sigma, backend = backend)
         else:
-            self._set_standard(A, sigma=sigma, backend = backend)
+            self._set_standard(a, sigma=sigma, backend = backend)
 
     @abstractmethod
     def apply(self, r, sigma : float = 0.0, backend = 'default') -> np.ndarray:

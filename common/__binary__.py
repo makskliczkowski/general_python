@@ -21,20 +21,21 @@ integers as well as with NumPy or JAX arrays.
 You can choose the backend (np or jnp) by passing the corresponding module.
 """
 
-import numpy as np
-from typing import Union, List
-
-# from algebra module
-import os, sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'algebra'))
-import algebra
-from algebra import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit 
-
+import sys
+import os
 import time
-from .__flog__ import Logger
+from typing import List
 
+import numpy as np
+from .flog import Logger
 
-Backend_Repr = 0.5
+####################################################################################################
+__current_dir       = os.path.dirname(__file__)
+__parent_dir        = os.path.abspath(os.path.join(__current_dir, ".."))
+sys.path.append(__parent_dir)
+
+from .. import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit
+_BACKENDREPR        = 0.5
 
 ####################################################################################################
 
@@ -221,7 +222,7 @@ def int2base(n          : int,
             size        : int,
             backend             = 'default',
             spin        : bool  = True,
-            spin_value  : float = Backend_Repr):
+            spin_value  : float = _BACKENDREPR):
     '''
     Convert an integer to a base representation (spin: ±value or binary 0/1).
 
@@ -257,7 +258,7 @@ def int2base(n          : int,
 
 # --------------------------------------------------------------------------------------------------
 
-def base2int(vec : 'array-like', spin: bool = True, spin_value: float = Backend_Repr) -> int:
+def base2int(vec : 'array-like', spin: bool = True, spin_value: float = _BACKENDREPR) -> int:
     '''
     Convert a base representation back to an integer.
     
@@ -298,7 +299,7 @@ def _flip_all_array_nspin(n : 'array-like', backend = 'default'):
     return -n
 
 @maybe_jit
-def _flip_all_array_spin(n : 'array-like', spin_value : float = Backend_Repr, backend = 'default'):
+def _flip_all_array_spin(n : 'array-like', spin_value : float = _BACKENDREPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
     - This is a helper function for flip_all.
@@ -307,7 +308,7 @@ def _flip_all_array_spin(n : 'array-like', spin_value : float = Backend_Repr, ba
     return backend.where(n == spin_value, 0, spin_value)
 
 def flip_all(n : 'array-like', size : int, spin : bool = True, 
-            spin_value : float = Backend_Repr, backend = 'default'):
+            spin_value : float = _BACKENDREPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
 
@@ -357,7 +358,7 @@ def _flip_array_nspin(n : 'array-like', k : int, backend = 'default'):
     n       =   n.at[k].set(update)
     return n
 
-def flip(n, k, spin : bool = True, spin_value : float = Backend_Repr, backend = 'default'):
+def flip(n, k, spin : bool = True, spin_value : float = _BACKENDREPR, backend = 'default'):
     '''
     Flip a single bit in a representation of a state.
     '''

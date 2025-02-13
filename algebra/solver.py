@@ -24,6 +24,7 @@ SOL_ERR_MSG_MAT_SP_NOT_SET  = "Matrix S^T not set."
 SOL_ERR_MSG_CONV_FAILED     = "Convergence failed after maximum number of iterations."
 SOL_ERR_MSG_DIM_MISMATCH    = "Dimension mismatch in the linear system."
 SOL_ERR_MSG_PSEUDOINV       = "Pseudo-inverse solver failed to converge."
+SOL_ERR_MSG_MAT_SINGULAR    = "Matrix is singular."
 
 class SolverErrorMsg(Enum):
     '''
@@ -36,6 +37,7 @@ class SolverErrorMsg(Enum):
     CONV_FAILED     = 105
     DIM_MISMATCH    = 106
     PSEUDOINV       = 107
+    MAT_SINGULAR    = 108
     
     def __str__(self):
         match (self):
@@ -53,7 +55,9 @@ class SolverErrorMsg(Enum):
                 return SOL_ERR_MSG_DIM_MISMATCH
             case SolverErrorMsg.PSEUDOINV:
                 return SOL_ERR_MSG_PSEUDOINV
-            
+            case SolverErrorMsg.MAT_SINGULAR:
+                return SOL_ERR_MSG_MAT_SINGULAR
+
     def __repr__(self):
         return self.__str__()
     
@@ -75,20 +79,6 @@ class SolverError(Exception):
     
     def __repr__(self):
         return self.__str__()
-    
-# -----------------------------------------------------------------------------
-
-@unique
-class SolverType(Enum):
-    """
-    Enumeration class for the different types of solvers.
-    """
-    DIRECT          = auto()
-    BACKEND_SOLVER  = auto()
-    SCIPY_DIRECT    = auto()
-    SCIPY_CJ        = auto()
-    SCIPY_MINRES    = auto()
-    
 
 # -----------------------------------------------------------------------------
 # General Solver Class
@@ -134,7 +124,7 @@ class Solver(ABC):
         '''
         
         # setup backend first
-        self._solver_type               = SolverType.DIRECT
+        self._solver_type               = 0
         self._backend_str               = backend
         self._backend, self._backend_sp = __backend(backend, scipy=True)
         self._dtype                     = dtype if dtype is not None else self._backend_sp.float32
@@ -144,7 +134,7 @@ class Solver(ABC):
         self._gram                      = False
         self._converged                 = False
         
-        # size of the matrix       
+        # size of the matrix
         self._n                         = size
         self._iter                      = 0
         self._maxiter                   = maxiter
@@ -414,6 +404,26 @@ class Solver(ABC):
         Sets the solution of the linear system.
         '''
         self._solution = x
+        
+    def set_preconditioner(self, precond: Preconditioner) -> None:
+        '''
+        Sets the preconditioner.
+        '''
+        self._preconditioner = precond
+    
+    def set_preconditioner_sigma(self, sigma: float) -> None:
+        '''
+        Sets the regularization parameter for the preconditioner.
+        '''
+        if self._preconditioner is not None:
+            self._preconditioner.sigma(sigma)
+        
+    def set_matrix(self, a: np.ndarray) -> None:
+        '''
+        Sets the matrix A used for the linear system.
+        '''
+        self._a = a
+        self._n = a.shape[1]
     
     def next_restart(self) -> None:
         '''

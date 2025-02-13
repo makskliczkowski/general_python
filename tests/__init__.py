@@ -1,10 +1,11 @@
 # Path: Python/QES/general_python/tests/__init__.py
-import os, sys
-sys.path.append(os.path.dirname(os.path.realpath(__file__)))
-# append top level directory to path
-sys.path.append("..")
+import sys
+import os
+__current_dir     = os.path.dirname(__file__)
+__parent_dir      = os.path.abspath(os.path.join(__current_dir, ".."))
+sys.path.append(__parent_dir)
 
 # import all test modules
-from .. import algebra
-from .. import common
-from .. import lattices
+import algebra
+import common
+import lattices

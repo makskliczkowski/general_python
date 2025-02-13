@@ -1,10 +1,14 @@
 from typing import Optional, Callable
 import numpy as np
-import os, sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import sys
+import os
+_current_dir = os.path.dirname(__file__)
+_parent_dir = os.path.abspath(os.path.join(_current_dir, ".."))
+if _parent_dir not in sys.path:
+    sys.path.append(_parent_dir)
 
-from .. import solver
-from solver import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, _KEY, Solver, Preconditioner, SolverError, SolverErrorMsg
+from . import SolverType
+from .. import Solver, SolverError, SolverErrorMsg, _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, Preconditioner
 
 # -----------------------------------------------------------------------------
 # Pseudo-inverse Solver Class - uses the Moore-Penrose pseudo-inverse to solve
@@ -24,13 +28,13 @@ class PseudoInverseSolver(Solver):
         Solve the linear system Ax = b using the pseudo-inverse.
         '''
         try:
-            apinv   =   self._backend.linalg.pinv(a, rtol=self._reg)
-            self.solution(apinv @ b)
-            self.converged(True)
-            return self.solution
+            apinv           =   self._backend.linalg.pinv(a, rtol=self._reg)
+            self._solution  = apinv @ b
+            self._converged = True
+            return self._solution
         except Exception as e:
-            self.converged(False)
-            raise SolverError(SolverErrorMsg.MATRIX_INVERSION_FAILED_SINGULAR) from e
+            self._converged = False
+            raise SolverError(SolverErrorMsg.MAT_SINGULAR) from e
     
     def solve(self, b, x0: Optional[np.ndarray] = None, precond: Optional[Preconditioner] = None):
         '''

@@ -1,15 +1,14 @@
-# Importing modules from the common package
-# from .__directories__           import Directories
-# from .__plot__                  import Plotter, PlotterSave, MatrixPrinter
-# from .__datat__                 import DataHandler
-# from .__hdf5_read__             import HDF5Handler
+# //general_python/common/__init__.py
+# """
+# This module contains the following submodules:
+# """
 
 # import modules
-from . import __binary__        as BinaryMod
-from . import __directories__   as DirectoriesMod
-from . import __plot__          as PlotMod
-from . import __datat__         as DataMod
-from . import __hdf5_read__     as HDF5Mod
+from . import __binary__        as BinaryModule
+from . import directories   as DirectoriesModule
+from . import plot          as PlotModule
+from . import __datat__         as DataModule
+from . import __hdf5_read__     as HDF5Module
 
 def get_module_description(module_name):
     """
