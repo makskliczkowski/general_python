@@ -9,8 +9,7 @@ import numpy as np
 import numpy.random as nrn
 import scipy as sp
 
-from . import _JAX_AVAILABLE, get_backend as __backend, maybe_jit, _KEY
-
+from .utils import _JAX_AVAILABLE, get_backend as __backend, maybe_jit, _KEY
 from enum import Enum, auto, unique                 # for enumerations
 
 # ---------------------------------------------------------------------

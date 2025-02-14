@@ -1,5 +1,5 @@
 # Adds higher directory to python modules path.
-from common.__hdf5_read__ import *
+from Python.QES.general_python.common.hdf5_lib import *
 from scipy.special import digamma, polygamma, binom, psi
 import numpy as np
 

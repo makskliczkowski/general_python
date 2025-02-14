@@ -3,27 +3,91 @@ This module provides linear algebra functions and utilities.
 '''
 
 # Import the required modules
-
 import numpy as np
 import numpy.random as nrn
 import scipy as sp
 
+# ---------------------------------------------------------------------
+
+def __log_message(msg, lvl = 0):
+    """
+    Logs a message using the global logger.
+    This function ensures the logger is only imported when needed.
+    """
+    while lvl > 0:
+        print("\t", end="")
+        lvl -= 1
+    print(msg)
+
+# ---------------------------------------------------------------------
+
+# Try importing JAX
 try:
     import jax.numpy as jnp
     import jax.scipy as jsp
     import jax.random as jrn
     from jax import jit
+
     _JAX_AVAILABLE  = True
     _KEY            = jrn.PRNGKey(0)
+
+    DEFAULT_BACKEND         = jnp
+    DEFAULT_BACKEND_NAME    = "jax"
+    DEFAULT_BACKEND_RANDOM  = jrn
+    DEFAULT_BACKEND_SCIPY   = jsp
+    DEFAULT_BACKEND_KEY     = _KEY
+
 except ImportError:
-    print("JAX not available. Falling back to NumPy and SciPy.")
     _JAX_AVAILABLE  = False
     _KEY            = None
+
+    DEFAULT_BACKEND         = np
+    DEFAULT_BACKEND_NAME    = "numpy"
+    DEFAULT_BACKEND_RANDOM  = nrn
+    DEFAULT_BACKEND_SCIPY   = sp
+    DEFAULT_BACKEND_KEY     = None
+
+# Short aliases for convenience
+d_bcknd     = DEFAULT_BACKEND
+d_bcknd_rnd = DEFAULT_BACKEND_RANDOM
+d_bcknd_sp  = DEFAULT_BACKEND_SCIPY
+d_bcknd_key = DEFAULT_BACKEND_KEY
+
+# Print versions and backend selection (only once)
+def print_backend_info():
+    """
+    Print the versions of the backend libraries and the selected backend.
+    """
+    backend_versions = {
+        "NumPy" : np.__version__,
+        "SciPy" : sp.__version__,
+        "JAX"   : jnp.__array_api_version__ if _JAX_AVAILABLE else "Not Available",
+    }
+    __log_message("=== Backend Initialization ===", 0)
+    for lib, version in backend_versions.items():
+        __log_message(f"{lib} version: {version}", 1)
+
+    __log_message(f"Using backend: {DEFAULT_BACKEND_NAME}", 1)
+    __log_message(f"JAX Available: {_JAX_AVAILABLE}", 1)
+    __log_message(f"Default random key: {DEFAULT_BACKEND_KEY}", 1)
+    
+# Call once during initialization
+print_backend_info()
 
 # ---------------------------------------------------------------------
 
 # Global default backend: use jax.numpy if available, else numpy.
-DEFAULT_BACKEND = jnp if _JAX_AVAILABLE else np
+DEFAULT_BACKEND         = jnp if _JAX_AVAILABLE else np     # Default backend module.
+DEFAULT_BACKEND_NAME    = "jax" if _JAX_AVAILABLE else "np" # Name of the default backend.
+DEFAULT_BACKEND_RANDOM  = jrn if _JAX_AVAILABLE else nrn    # Random module for the default backend.
+DEFAULT_BACKEND_SCIPY   = jsp if _JAX_AVAILABLE else sp     # SciPy module for the default backend.
+DEFAULT_BACKEND_KEY     = _KEY                              # PRNG key for the default backend.
+
+# short names for the default backend
+d_bcknd                 = DEFAULT_BACKEND
+d_bcknd_rnd             = DEFAULT_BACKEND_RANDOM
+d_bcknd_sp              = DEFAULT_BACKEND_SCIPY
+d_bcknd_key             = DEFAULT_BACKEND_KEY
 
 # ---------------------------------------------------------------------
 

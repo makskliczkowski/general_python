@@ -21,20 +21,12 @@ integers as well as with NumPy or JAX arrays.
 You can choose the backend (np or jnp) by passing the corresponding module.
 """
 
-import sys
-import os
 import time
 from typing import List
 
 import numpy as np
-from .flog import Logger
 
-####################################################################################################
-__current_dir       = os.path.dirname(__file__)
-__parent_dir        = os.path.abspath(os.path.join(__current_dir, ".."))
-sys.path.append(__parent_dir)
-
-from .. import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit
 _BACKENDREPR        = 0.5
 
 ####################################################################################################
@@ -509,6 +501,8 @@ def popcount(n : int):
 ####################################################################################################
 
 # Test the binary functions
+from general_python.common.flog import get_global_logger
+
     
 class BinaryFunctionTests:
     """
@@ -525,8 +519,7 @@ class BinaryFunctionTests:
             log_dir (str): Directory where the log file will be stored.
         """
         self.test_count = 0
-        self.logger = Logger(logfile=logfile)
-        self.logger.configure(directory=log_dir)
+        self.logger     = get_global_logger()
 
     def _log(self, message, test_number, color="white"):
         """

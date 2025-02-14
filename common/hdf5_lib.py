@@ -669,7 +669,7 @@ def change_h5_bad_dirs(
 
 ######################################################### CHANGE H5 #########################################################
 
-from .__datat__ import DataHandler
+from .datah import DataHandler
 
 class HDF5Handler:
     """

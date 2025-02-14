@@ -4,29 +4,16 @@ Contains the general lattice class and its children for different lattice types.
 @Email: maksymilian.kliczkowski@pwr.edu.pl
 @Date: 2025-02-01
 """
-# import HDF5 handling
-import os
-import sys
-sys.path.append('..')
 
 # Import the necessary modules
-from common import HDF5Mod
-from common import DirectoriesMod
+from general_python.common import hdf5_lib as HDF5Mod
+from general_python.common import directories as DirectoriesMod
+# from general_python.algebra import utils as alg_utils
 
 # Import the necessary modules
 from abc import ABC, abstractmethod
 
 import numpy as np
-Backend = np
-# try out with JAX library
-try:
-    import jax.numpy as jnp
-    Backend = jnp
-    print("JAX library has been imported.")
-except ImportError:
-    print("JAX library has not been imported. Using NumPy as a backend.")
-
-# Import the necessary modules
 from enum import Enum, auto, unique                 # for enumerations
 from typing import Union, Callable, Tuple, List     # type hints for the functions and methods
 
@@ -62,6 +49,8 @@ class LatticeType(Enum):
     HONEYCOMB   = auto()    # Honeycomb lattice
 
 ############################################## GENERAL LATTICE ##############################################
+
+Backend         = np
 
 class Lattice(ABC):
     '''
@@ -958,7 +947,7 @@ class Lattice(ABC):
     
 #############################################################################################################
 
-def save_bonds(lattice : Lattice, directory : Union[DirectoriesMod, str], filename : str):
+def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
     '''
     Saves the bonds of the lattice to a file
     Args:

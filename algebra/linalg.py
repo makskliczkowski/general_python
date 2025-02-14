@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from .__utils__ import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
+from .utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
 
 # -----------------------------------------------------------------
 

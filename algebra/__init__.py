@@ -1,61 +1,62 @@
 """
-A module for algebraic operations and utilities. This module provides various linear algebra functions,
+A module for algebraic operations and utilities.
+This module provides various linear algebra functions,
 preconditioners, and solvers.
+It supports both dense and sparse matrix computations and leverages different 
+backends like NumPy and JAX to offer flexibility in performance and execution environments.
+
+Key functionalities provided include:
+    - Change-of-basis transformations for vectors and matrices.
+    - Outer and Kronecker product computations.
+    - Creation and handling of ket-bra operations.
+    - Integration with preconditioners for iterative solvers.
+    - Testing facilities for algebraic operations and linear solvers.
 
 @Author: Maksymilian Kliczkowski
 @Email: maksymilian.kliczkowski@pwr.edu.pl
 @Date: 2025-02-01
+@Version: 1.0
 """
 
-######################################
-
-# Import the default backend
-from .__utils__ import _JAX_AVAILABLE, _KEY, DEFAULT_BACKEND, get_backend, maybe_jit
-
-# Import general methods for the linear algebra
-from . import linalg as LinalgModule
-from . import preconditioners as PreconditionersModule
-from . import solver as SolverModule
-
-
-####################################################################################################
-# Other imports
-####################################################################################################
-
-from .common.__flog__ import Logger
-from .common.__plot__ import MatrixPrinter
-
-####################################################################################################
-
-# Export the algebra functions and classes
-__all__ = [
-    "AlgebraTests", "run_algebra_tests"
-]
-
-####################################################################################################
-
-# Test the algebra module
-
-####################################################################################################
-
+import sys
+import importlib
 import time
+
+# -----------------------------------------------------------------------------------------------
+
+from general_python.algebra import linalg
+from general_python.algebra import preconditioners
+from general_python.algebra import solver
+from general_python.algebra.solvers import SolverType, generate_test_mat_vec, choose_solver
+from general_python.algebra.preconditioners import choose_precond, Preconditioner
+
+from general_python.common.plot import MatrixPrinter
+from general_python.common.flog import get_global_logger as get_logger
+
+from general_python.algebra.utils import _JAX_AVAILABLE, _KEY, DEFAULT_BACKEND, get_backend, maybe_jit
+
+# ##################################################################################################
+# Test the algebra module
+####################################################################################################
+
+from . import linalg as LinalgModule
 
 class AlgebraTests:
     '''
     This is a class that implements the test for algebra module in Python.
     '''
-
-    def __init__(self, backend = "default"):
+    
+    def __init__(self, backend="default"):
+        ''' Load the algebra module and set the backend. '''
         
         if not isinstance(backend, str):
             raise ValueError("Backend must be a string.")
         if backend.lower() not in ["default", "np", "jnp", "jax", "numpy"]:
-            raise ValueError("Invalid backend specifier: {backend} - must be 'default', 'np', or 'jnp'.")
+            raise ValueError(f"Invalid backend specifier: {backend} - must be 'default', 'np', or 'jnp'.")
         
         self.backend    = backend
         self.test_count = 0
-        self.logger     = Logger(logfile="algebra_tests.log")
-        self.logger.configure(directory="./logs")
+        self.logger     = get_logger()
 
     def _log(self, message, test_number, color="white"):
         # Add test_number to log record
@@ -307,9 +308,6 @@ def run_algebra_tests(backend='default', verbose=False):
 
 ####################################################################################################
 
-from .preconditioners import choose_precond
-from .solvers import generate_test_mat_vec, choose_solver
-
 class SolversTests:
     """
     This class implements tests for our algebra module.
@@ -334,7 +332,7 @@ class SolversTests:
         else:
             print(f"[TEST {test_number}] {message}")
 
-    #! =======================================================================================
+    #! =============================================================================================
 
     def solver_test(self, make_random = True,
                     symmetric   = True,
@@ -370,7 +368,7 @@ class SolversTests:
             # Create a preconditioner if requested.
             precond = None
             if precond_type is not None:
-                precond = PreconditionersModule.choose_precond(precond_type, backend=self.backend)
+                precond = choose_precond(precond_type, backend=self.backend)
                 precond.set(a=a, sigma=reg, backend=self.backend)
             
             try:
@@ -379,6 +377,8 @@ class SolversTests:
                 self._log(f"Solver exception: {e}", self.test_count, color="red")
                 return
 
-    #! =======================================================================================
+    #! =============================================================================================
     
 # --------------------------------------------------------------------------------------------------
+
+__all__ = ['AlgebraTests', 'run_algebra_tests', 'SolversTests']

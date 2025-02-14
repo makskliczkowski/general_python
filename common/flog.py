@@ -1,13 +1,13 @@
 from datetime import datetime
 
+import os
+import functools
 import logging
+
 # set the logging level to WARNING
 logging.getLogger("jax").setLevel(logging.WARNING)
 logging.getLogger("flax").setLevel(logging.WARNING)
 logging.getLogger("tensorflow").setLevel(logging.WARNING)
-
-import os
-import functools
 
 try:
     from colorama import init
@@ -15,7 +15,6 @@ try:
     __HAS_COLORAMA = True
 except ImportError:
     __HAS_COLORAMA = False
-    pass
 
 ############################################### PRINT THE OUTPUT WITH A GIVEN COLOR ###############################################
 
@@ -50,7 +49,6 @@ class Colors:
         return str(self)
 
 ############################################### PRINT THE OUTPUT WITH A GIVEN LEVEL ###############################################
-
 class Logger:
     """
     Logger class for handling console and file logging with verbosity control.
@@ -386,5 +384,52 @@ def printJust(file,
             file.write(("{:e}".format(item) + sep).ljust(width))
     if endline:
         file.write("\n")
-        
-#####################################################################################################################################
+
+######################################################
+
+# Global logger instance (starts as None)
+_G_LOGGER = None
+
+def get_global_logger():
+    """
+    Lazily initializes and returns the global logger instance.
+    
+    Returns:
+    - Logger instance.
+    """
+    global _G_LOGGER
+    if _G_LOGGER is None:
+        _G_LOGGER = Logger("/logs/global")
+        _G_LOGGER.title("Global logger initialized.", 30, '#', 0)
+    return _G_LOGGER
+
+######################################################
+
+# Example usage
+# logger = get_global_logger()
+# logger.info("This is an informational message.")
+# logger.debug("This is a debug message.")
+# logger.warning("This is a warning message.")
+# logger.error("This is an error message.")
+# logger.say("This is a message.", log=0, lvl=0, verbose=True)
+# logger.say("This is a message.", log=1, lvl=0, verbose=True)
+# logger.say("This is a message.", log=2, lvl=0, verbose=True)
+# logger.say("This is a message.", log=3, lvl=0, verbose=True)
+
+def get_example_usage():
+    """
+    Returns example usage of the global logger.
+
+    Returns:
+    - str: A string containing example usage of the logger.
+    """
+    return 'logger = get_global_logger()' + \
+    '\nlogger.info("This is an informational message.")' + \
+    '\nlogger.debug("This is a debug message.")' + \
+    '\nlogger.warning("This is a warning message.")' + \
+    '\nlogger.error("This is an error message.")' + \
+    '\nlogger.say("This is a message.", log=0, lvl=0, verbose=True)' + \
+    '\nlogger.say("This is a message.", log=1, lvl=0, verbose=True)' + \
+    '\nlogger.say("This is a message.", log=2, lvl=0, verbose=True)...'
+    
+######################################################

@@ -6,12 +6,32 @@ from typing import Union
 # -----------------------------------------------------------------------------
 
 from typing import Optional, Callable
-from .__utils__ import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, _KEY
+from .utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, _KEY
 from .preconditioners import Preconditioner
 
 # -----------------------------------------------------------------------------
 
 from enum import Enum, auto, unique                 # for enumerations
+
+# -----------------------------------------------------------------------------
+
+@unique
+class SolverType(Enum):
+    """
+    Enumeration class for the different types of solvers.
+    """
+    DIRECT          = auto() # Direct solver x = A^-1 b
+    BACKEND_SOLVER  = auto() # Use the default backend solver
+    SCIPY_DIRECT    = auto() # Direct solver - using scipy (or jax equivalent)
+    SCIPY_CJ        = auto() # Conjugate gradient - using scipy (or jax equivalent)
+    CJ              = auto() # Conjugate gradient
+    SCIPY_MINRES    = auto() # Minimum residual - using scipy (or jax equivalent)
+    MINRES          = auto() # Minimum residual
+    MINRES_QLP      = auto() # Minimum residual - using QLP
+
+# -----------------------------------------------------------------------------
+
+_SOL_TYPE_ERROR = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
 
 # -----------------------------------------------------------------------------
 # Errors

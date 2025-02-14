@@ -1,15 +1,9 @@
 from typing import Optional, Callable
 import numpy as np
-import sys
-import os
-_current_dir = os.path.dirname(__file__)
-_parent_dir = os.path.abspath(os.path.join(_current_dir, ".."))
-if _parent_dir not in sys.path:
-    sys.path.append(_parent_dir)
-    
-from . import SolverType
-from .. import Solver, SolverError, SolverErrorMsg, _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, Preconditioner
 
+from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
+from general_python.algebra.preconditioners import Preconditioner
 # -----------------------------------------------------------------------------
 # Direct Solver Class
 # -----------------------------------------------------------------------------

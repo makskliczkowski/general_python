@@ -1,27 +1,21 @@
+# general_python/__init__.py is
+
 """
 This module contains the following submodules:
+- common    : Provides common functionalities used in any Python project.
+- lattices  : Provides functionalities for creating and managing lattices.
+- maths     : Provides mathematical utilities and functions.
+- algebra   : Provides functionalities for algebraic operations.
+- _G_LOGGER : Global logger for the package.
 """
 
-# Import the required modules common to all submodules
-from . import common
-from .common.plot import MatrixPrinter, Plotter, PlotterSave
-from .common.flog import Logger
+import sys
+import importlib
 
-# Lattice operations
-from . import lattices
+# List of available modules (not imported by default)
+__all__     = ["common", "lattices", "maths", "algebra"]
 
-# Mathematical operations
-from . import maths
-
-# Algebraic operations
-from . import algebra
-# module level imports
-from .algebra import _JAX_AVAILABLE, _KEY, DEFAULT_BACKEND, get_backend, maybe_jit
-
-# list of submodules
-__all__ = ["common", "lattices", "maths", "algebra"]
-
-# description of the modules to be displayed
+# Description of modules
 def get_module_description(module_name):
     """
     Get the description of a specific module in the general_python package.
@@ -36,18 +30,22 @@ def get_module_description(module_name):
         "common"    : "Provides common functionalities used in any Python project.",
         "lattices"  : "Provides functionalities for creating and managing lattices.",
         "maths"     : "Provides mathematical utilities and functions.",
-        "algebra"   : "Provides functionalities for algebraic operations." 
+        "algebra"   : "Provides functionalities for algebraic operations."
     }
     return descriptions.get(module_name, "Module not found.")
 
-# list of available modules
+# List available modules
 def list_available_modules():
-    """
-    List all available modules in the general_python package.
-    
-    Returns:
-    - list: A list of available module names.
-    """
-    return ["common", "lattices", "maths", "algebra"]
+    """List all available modules in the general_python package."""
+    return __all__
 
-# ----------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------
+
+# Assign lazy modules
+
+from . import algebra
+from . import common
+from . import lattices
+from . import maths
+
+# ---------------------------------------------------------------------

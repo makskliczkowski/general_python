@@ -1,40 +1,16 @@
 # solvers/__init__.py
 from typing import Union, Optional, Callable
 from enum import Enum, auto, unique
-import sys
-import os
 
 # Import solvers from submodules.
 from .__cg__ import CgSolver, CgSolverScipy
 from .__direct__ import DirectSolver, DirectScipy, DirectBackend
 from .__pseudo__ import PseudoInverseSolver
 
-_current_dir = os.path.dirname(__file__)
-_parent_dir = os.path.abspath(os.path.join(_current_dir, ".."))
-if _parent_dir not in sys.path:
-    sys.path.append(_parent_dir)
-    
-from .. import get_backend as __backend
-
 # -----------------------------------------------------------------------------
 
-@unique
-class SolverType(Enum):
-    """
-    Enumeration class for the different types of solvers.
-    """
-    DIRECT          = auto() # Direct solver x = A^-1 b
-    BACKEND_SOLVER  = auto() # Use the default backend solver
-    SCIPY_DIRECT    = auto() # Direct solver - using scipy (or jax equivalent)
-    SCIPY_CJ        = auto() # Conjugate gradient - using scipy (or jax equivalent)
-    CJ              = auto() # Conjugate gradient
-    SCIPY_MINRES    = auto() # Minimum residual - using scipy (or jax equivalent)
-    MINRES          = auto() # Minimum residual
-    MINRES_QLP      = auto() # Minimum residual - using QLP
-
-# -----------------------------------------------------------------------------
-
-_SOL_TYPE_ERROR = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
+from general_python.algebra.utils import get_backend as __backend
+from general_python.algebra.solver import SolverType, _SOL_TYPE_ERROR
 
 # -----------------------------------------------------------------------------
 # Helper function: choose_solver
@@ -151,5 +127,12 @@ def generate_test_mat_vec(make_random: bool, symmetric: bool, size: int = 4, dty
         if symmetric:
             A = (A + A.T.conj()) / 2.0
         return A, b
+
+# -----------------------------------------------------------------------------
+
+_all_ = [
+    'CgSolver', 'CgSolverScipy', 'DirectSolver', 'DirectScipy', 'DirectBackend', 'PseudoInverseSolver',
+    'choose_solver', 'generate_test_mat_vec'
+]
 
 # -----------------------------------------------------------------------------
