@@ -70,9 +70,9 @@ def generate_test_mat_vec(make_random: bool, symmetric: bool, size: int = 4, dty
         A tuple (A, b) where A is a 4x4 matrix and b is a 4x1 vector.
     """
     # Create a complex matrix and vector of fixed size.
-    backend_str     = backend
-    backend, rdg    = __backend(backend, random = True)
-    dtype           = dtype if dtype is not None else backend.float32
+    backend_str         = backend
+    backend, (rdg, _)   = __backend(backend, random = True)
+    dtype               = dtype if dtype is not None else backend.float32
     
     if not make_random and size == 4:
         A = backend.zeros((size, size), dtype=dtype)

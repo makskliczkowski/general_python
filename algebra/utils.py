@@ -132,7 +132,7 @@ def get_backend(backend, random=False, seed=None, scipy=False):
     # Handle NumPy backend.
     if b_str in ("np", "numpy"):
         main_module     = np
-        rnd_module      = np.random if random else None
+        rnd_module      = np.random.default_rng(seed) if random else None
         scipy_module    = sp if scipy else None
         if seed is not None:
             np.random.seed(seed)

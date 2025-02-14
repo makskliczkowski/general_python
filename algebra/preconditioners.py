@@ -180,7 +180,7 @@ class Preconditioner(ABC):
             if ap is not None:
                 self._set_gram(a, ap, sigma, backend = backend)
             else:
-                self._set_gram(a, self.backend.conjugate(a).T, sigma, backend = backend)
+                self._set_gram(a, self._backend.conjugate(a).T, sigma, backend = backend)
         else:
             self._set_standard(a, sigma=sigma, backend = backend)
 
