@@ -79,11 +79,11 @@ print_backend_info()
 # Global default backend: use jax.numpy if available, else numpy.
 DEFAULT_BACKEND         = jnp if _JAX_AVAILABLE else np     # Default backend module.
 DEFAULT_BACKEND_NAME    = "jax" if _JAX_AVAILABLE else "np" # Name of the default backend.
-DEFAULT_BACKEND_RANDOM  = jrn if _JAX_AVAILABLE else nrn    # Random module for the default backend.
+DEFAULT_BACKEND_RANDOM  = jrn if _JAX_AVAILABLE else (nrn.default_rng(None) if np.__version__ >= "1.17" else nrn)
 DEFAULT_BACKEND_SCIPY   = jsp if _JAX_AVAILABLE else sp     # SciPy module for the default backend.
 DEFAULT_BACKEND_KEY     = _KEY                              # PRNG key for the default backend.
 
-# short names for the default backend
+# Short names for the default backend.
 d_bcknd                 = DEFAULT_BACKEND
 d_bcknd_rnd             = DEFAULT_BACKEND_RANDOM
 d_bcknd_sp              = DEFAULT_BACKEND_SCIPY
@@ -132,10 +132,13 @@ def get_backend(backend, random=False, seed=None, scipy=False):
     # Handle NumPy backend.
     if b_str in ("np", "numpy"):
         main_module     = np
-        rnd_module      = np.random.default_rng(seed) if random else None
-        scipy_module    = sp if scipy else None
-        if seed is not None:
-            np.random.seed(seed)
+        if np.__version__ < "1.17":
+            rnd_module  = np.random
+            if seed is not None:
+                rnd_module.seed(seed)
+        else:
+            rnd_module  = np.random.default_rng(seed) if random else None
+        scipy_module    = sp if scipy else None                             # SciPy is always available.
         ret             = [main_module]
         if random:
             ret.append((rnd_module, None))
@@ -150,9 +153,8 @@ def get_backend(backend, random=False, seed=None, scipy=False):
         main_module     =   jnp
         rnd_module      =   jrn if random else None
         scipy_module    =   jsp if scipy else None
-        key             =   jrn.PRNGKey(seed) if (random and seed is not None) else None
-        # For JAX, if random is requested, return a tuple (rnd_module, key)
-        ret = [main_module]
+        key             =   jrn.PRNGKey(seed) if random else None
+        ret             =   [main_module]
         if random:
             ret.append((rnd_module, key))
         if scipy:
@@ -160,6 +162,33 @@ def get_backend(backend, random=False, seed=None, scipy=False):
         return tuple(ret) if len(ret) > 1 else main_module
     else:
         raise ValueError(f"Unsupported backend string: {backend}")
+
+
+# ---------------------------------------------------------------------
+
+def get_global_backend(random=False, seed=None, scipy=False):
+    """
+    Return the global default backend modules.
+    
+    Parameters
+    ----------
+    random : bool, optional
+        If True, include the random module. For JAX, also return a PRNG key (if seed is provided).
+    seed : int, optional
+        If provided, sets the seed for the random module.
+    scipy : bool, optional
+        If True, also return the associated SciPy module.
+        
+    Returns
+    -------
+    module or tuple
+        If neither random nor scipy is requested, returns the main backend module.
+        Otherwise, returns a tuple containing:
+            (main_module, random_module, scipy_module)
+        For the JAX backend, the "random_module" entry is itself a tuple: (jax.random, key) else (numpy.random, None).
+        where key is a PRNGKey (or None if seed is not provided).
+    """
+    return get_backend(DEFAULT_BACKEND_NAME, random=random, seed=seed, scipy=scipy)
 
 # ---------------------------------------------------------------------
 
