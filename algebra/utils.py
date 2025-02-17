@@ -91,7 +91,7 @@ d_bcknd_key             = DEFAULT_BACKEND_KEY
 
 # ---------------------------------------------------------------------
 
-def get_backend(backend, random=False, seed=None, scipy=False):
+def get_backend(backend, random=False, seed=None, scipy=False) -> tuple:
     """
     Return backend modules based on the provided specifier.
     
