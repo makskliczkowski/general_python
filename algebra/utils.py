@@ -125,6 +125,39 @@ def get_backend(backend, random=False, seed=None, scipy=False) -> tuple:
     else:
         b_str = "default"
 
+    if backend == np:
+        if DEFAULT_BACKEND == np:
+            return get_global_backend(random=random, seed=seed, scipy=scipy)
+        main_module = np
+        if np.__version__ < "1.17":
+            rnd_module  = np.random
+            if seed is not None:
+                rnd_module.seed(seed)
+        else:
+            rnd_module  = np.random.default_rng(seed) if random else None
+        scipy_module    = sp if scipy else None
+        ret             = [main_module]
+        if random:
+            ret.append((rnd_module, None))
+        if scipy:
+            ret.append(scipy_module)
+        return tuple(ret) if len(ret) > 1 else main_module
+    elif backend == jnp:
+        if DEFAULT_BACKEND == jnp:
+            return get_global_backend(random=random, seed=seed, scipy=scipy)
+        if not _JAX_AVAILABLE:
+            raise ValueError("JAX not available. Please choose a different backend.")
+        main_module     = jnp
+        rnd_module      = jrn if random else None
+        scipy_module    = jsp if scipy else None
+        key             = jrn.PRNGKey(seed) if random else None
+        ret             = [main_module]
+        if random:
+            ret.append((rnd_module, key))
+        if scipy:
+            ret.append(scipy_module)
+        return tuple(ret) if len(ret) > 1 else main_module
+
     # Use default backend if "default" is specified.
     if b_str == "default":
         b_str = "jax" if _JAX_AVAILABLE else "np"
@@ -162,7 +195,6 @@ def get_backend(backend, random=False, seed=None, scipy=False) -> tuple:
         return tuple(ret) if len(ret) > 1 else main_module
     else:
         raise ValueError(f"Unsupported backend string: {backend}")
-
 
 # ---------------------------------------------------------------------
 

@@ -2,9 +2,7 @@ from abc import ABC, abstractmethod
 from .utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
 
 # -----------------------------------------------------------------
-
-# MATRIX OPERATIONS
-
+#! MATRIX OPERATIONS
 # -----------------------------------------------------------------
 
 @maybe_jit
@@ -172,3 +170,21 @@ def inner(vec1: 'array-like', vec2: 'array-like', backend="default"):
     return backend.dot(vec1, vec2)
 
 # -----------------------------------------------------------------
+#! Matrix creation
+# -----------------------------------------------------------------
+
+def identity(n : int, backend = "default", dtype = None):
+    """
+    Creates an identity matrix of size n x n.
+    Parameters:
+        n (int): 
+            The size of the identity matrix.
+        backend (module or object, optional): An object providing array operations such as
+            asarray, eye, and array transposition. This parameter should behave similarly to
+            NumPy's API. The default value "default" should be replaced with an actual backend.
+        dtype (data-type, optional): The data type of the matrix elements.
+    Returns:
+        array-like: The identity matrix of size n x n.
+    """
+    backend = __backend(backend)
+    return backend.eye(n, dtype=dtype)
