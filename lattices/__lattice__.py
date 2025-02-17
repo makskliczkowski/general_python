@@ -73,13 +73,18 @@ class Lattice(ABC):
     This means that no matter of the lattice types, the sites are counted from the left
     to the right and from the bottom to the top. The nearest neighbors are calculated like a 
     snake (reversed in reality, bigger numbers are on the top)
-    - 1D: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
-    - 2D: 0 -> 1 -> 2
+    - 1D:   
+            0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
+    
+    - 2D:   
+            0 -> 1 -> 2
             |    |    |
             3 -> 4 -> 5
             |    |    |
             6 -> 7 -> 8
-    - 3D: 0 -> 1 -> 2 ---- 9  -> 10 -> 11
+            
+    - 3D:   
+            0 -> 1 -> 2 ---- 9  -> 10 -> 11
             |    |    |      |     |     |
             3 -> 4 -> 5 ---- 12 -> 13 -> 14
             |    |    |      |     |     |
@@ -87,6 +92,7 @@ class Lattice(ABC):
             
     Example: 
         1) Square lattice with 3x3 sites and PBC:
+        
             0 -> 1 -> 2
             |    |    |
             3 -> 4 -> 5
@@ -94,7 +100,7 @@ class Lattice(ABC):
             6 -> 7 -> 8
     '''
     
-    _BAD_LATTICE_SITE = -1
+    _BAD_LATTICE_SITE = None
     @property
     def bad_lattice_site(self):
         ''' Bad lattice site '''
@@ -250,6 +256,11 @@ class Lattice(ABC):
     
     @property
     def ns(self):
+        ''' Number of sites '''
+        return self._ns
+    
+    @property
+    def sites(self):
         ''' Number of sites '''
         return self._ns
     

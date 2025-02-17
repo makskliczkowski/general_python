@@ -22,17 +22,121 @@ You can choose the backend (np or jnp) by passing the corresponding module.
 """
 
 import time
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 
 from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit
-_BACKENDREPR        = 0.5
+_BACKEND_REPR       = 0.5
+_BACKEND_DEF_SPIN   = True
 
 ####################################################################################################
+#! Global functions
+####################################################################################################
 
-# Integer based functions
+def set_global_defaults(repr_value : float, spin : bool):
+    """
+    Set the global defaults for the binary module.
 
+    Args:
+        repr_value (float): The spin value to use.
+        spin (bool): A flag to indicate whether to use spin values.
+    """
+    global _BACKEND_REPR, _BACKEND_DEF_SPIN
+    _BACKEND_REPR       = repr_value
+    _BACKEND_DEF_SPIN   = spin
+
+####################################################################################################
+#! Searching functions
+####################################################################################################
+
+__BAD_BINARY_SEARCH_STATE = None
+
+@maybe_jit
+def _binary_search_backend(arr, l_point, r_point, elem, backend: str = 'default') -> int:
+    '''
+    Perform a binary search for 'elem' in the sorted container 'arr'
+    between indices l_point and r_point (inclusive).
+    
+    If tol is provided (i.e. not None), equality is determined approximately
+    within the given tolerance (useful for floating point numbers).
+    
+    Works with Python lists, NumPy arrays, or JAX arrays (via the appropriate backend).
+    
+    Returns:
+        The index of 'elem' if found; otherwise, returns -1.
+    '''
+    # Try to use the backend's searchsorted if possible.
+    backend_mod = get_backend(backend)
+    
+    # If the left or right points are not the first or last indices, respectively,
+    subarr      = arr[l_point: r_point+1]
+        
+    # searchsorted returns the insertion index.
+    idx         = int(backend_mod.searchsorted(subarr, elem))
+    idx         = idx + l_point
+    return int(idx)
+
+def _binary_search_list_notol(arr, l_point, r_point, elem) -> int:
+    '''
+    Perform a binary search for 'elem' in the sorted list 'arr' (exact equality).
+    '''
+    if l_point < 0 or r_point >= len(arr):
+        return __BAD_BINARY_SEARCH_STATE
+    if l_point > r_point:
+        return __BAD_BINARY_SEARCH_STATE
+    middle = l_point + (r_point - l_point) // 2
+    if arr[middle] == elem:
+        return middle
+    if arr[middle] < elem:
+        return _binary_search_list(arr, middle + 1, r_point, elem)
+    return _binary_search_list(arr, l_point, middle - 1, elem)
+
+def _binary_search_list(arr, l_point, r_point, elem, tol: Optional[float] = None) -> int:
+    '''
+    Perform a binary search for 'elem' in the sorted list 'arr'.
+    If tol is provided, approximate equality is used.
+    '''
+    if l_point < 0 or r_point >= len(arr):
+        return __BAD_BINARY_SEARCH_STATE
+    if l_point > r_point:
+        return __BAD_BINARY_SEARCH_STATE
+    middle = l_point + (r_point - l_point) // 2
+    if tol is not None:
+        if abs(arr[middle] - elem) <= tol:
+            return middle
+        elif arr[middle] < elem:
+            return _binary_search_list(arr, middle + 1, r_point, elem, tol)
+        return _binary_search_list(arr, l_point, middle - 1, elem, tol)
+    return _binary_search_list_notol(arr, l_point, r_point, elem)
+
+def binary_search(arr, l_point, r_point, elem, tol: Optional[float] = None, backend: str = 'default') -> int:
+    """
+    Perform a binary search for 'elem' in the sorted container 'arr'
+    between indices l_point and r_point (inclusive).
+    
+    If tol is provided, approximate equality is used (useful for floats).
+    
+    Works for Python lists as well as for NumPy/JAX arrays.
+    
+    Returns:
+        The index of 'elem' if found; otherwise, returns -1.
+    """
+    if hasattr(arr, "shape"):
+        idx = _binary_search_backend(arr, l_point, r_point, elem, backend)
+        if idx < len(arr) and idx >= 0:
+            if tol is not None and abs(arr[idx] - elem) <= tol:
+                return idx
+            if arr[idx] == elem:
+                return idx
+        return __BAD_BINARY_SEARCH_STATE
+    else:
+        if tol is not None:
+            return _binary_search_list(arr, l_point, r_point, elem, tol)
+        return _binary_search_list_notol(arr, l_point, r_point, elem)
+
+####################################################################################################
+#! Integer based functions
 ####################################################################################################
 
 def reverse_byte(b : int):
@@ -66,9 +170,7 @@ def binary_power(n : int):
     return 1 << n
 
 # --------------------------------------------------------------------------------------------------
-
-# Mask based functions - for extracting bits from a number
-
+#! Mask based functions - for extracting bits from a number
 # --------------------------------------------------------------------------------------------------
 
 def extract_ord_left(n: int, size: int, size_l: int) -> int:
@@ -103,6 +205,8 @@ def extract_ord_right(n: int, size_r: int) -> int:
 lookup_reversal     = [reverse_byte(i) for i in range(256)]
 lookup_binary_power = [binary_power(i) for i in range(63)]
 
+# --------------------------------------------------------------------------------------------------
+# Extract bits using a mask
 # --------------------------------------------------------------------------------------------------
 
 def extract(n : int, mask : int):
@@ -140,6 +244,8 @@ def extract(n : int, mask : int):
     return res
 
 # --------------------------------------------------------------------------------------------------
+# Prepare a mask from a list of positions
+# --------------------------------------------------------------------------------------------------
 
 def prepare_mask(positions : List[int], inv : bool = False, size : int = 0):
     """
@@ -167,9 +273,7 @@ def prepare_mask(positions : List[int], inv : bool = False, size : int = 0):
     return mask
 
 # --------------------------------------------------------------------------------------------------
-
 # Check the power of two
-
 # --------------------------------------------------------------------------------------------------
 
 def is_pow_of_two(n : int):
@@ -185,9 +289,7 @@ def is_pow_of_two(n : int):
     return n and not (n & (n - 1))
 
 # --------------------------------------------------------------------------------------------------
-
 # Vector based functions - for extracting bits from a vector
-
 # --------------------------------------------------------------------------------------------------
 
 def check(n, k : int):
@@ -214,7 +316,7 @@ def int2base(n          : int,
             size        : int,
             backend             = 'default',
             spin        : bool  = True,
-            spin_value  : float = _BACKENDREPR):
+            spin_value  : float = _BACKEND_REPR):
     '''
     Convert an integer to a base representation (spin: ±value or binary 0/1).
 
@@ -250,7 +352,7 @@ def int2base(n          : int,
 
 # --------------------------------------------------------------------------------------------------
 
-def base2int(vec : 'array-like', spin: bool = True, spin_value: float = _BACKENDREPR) -> int:
+def base2int(vec : 'array-like', spin: bool = _BACKEND_DEF_SPIN, spin_value: float = _BACKEND_REPR) -> int:
     '''
     Convert a base representation back to an integer.
     
@@ -280,6 +382,8 @@ def base2int(vec : 'array-like', spin: bool = True, spin_value: float = _BACKEND
     return val
 
 # --------------------------------------------------------------------------------------------------
+# Flip bits in an integer or a vector
+# --------------------------------------------------------------------------------------------------
 
 @maybe_jit
 def _flip_all_array_nspin(n : 'array-like', backend = 'default'):
@@ -291,7 +395,7 @@ def _flip_all_array_nspin(n : 'array-like', backend = 'default'):
     return -n
 
 @maybe_jit
-def _flip_all_array_spin(n : 'array-like', spin_value : float = _BACKENDREPR, backend = 'default'):
+def _flip_all_array_spin(n : 'array-like', spin_value : float = _BACKEND_REPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
     - This is a helper function for flip_all.
@@ -299,8 +403,8 @@ def _flip_all_array_spin(n : 'array-like', spin_value : float = _BACKENDREPR, ba
     backend = get_backend(backend)
     return backend.where(n == spin_value, 0, spin_value)
 
-def flip_all(n : 'array-like', size : int, spin : bool = True, 
-            spin_value : float = _BACKENDREPR, backend = 'default'):
+def flip_all(n : 'array-like', size : int, spin : bool = _BACKEND_DEF_SPIN,
+            spin_value : float = _BACKEND_REPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
 
@@ -350,30 +454,46 @@ def _flip_array_nspin(n : 'array-like', k : int, backend = 'default'):
     n       =   n.at[k].set(update)
     return n
 
-def flip(n, k, spin : bool = True, spin_value : float = _BACKENDREPR, backend = 'default'):
+def _flip_array_numpy(n : 'array-like', 
+                    k : int, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR):
+    """
+    Flip a single bit in a representation of a state.
+    - This is a helper function for flip.
+    """
+    if spin:
+        n[k] = -n[k]
+    else:
+        n[k] = 0 if n[k] == spin_value else spin_value
+    return n
+
+def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR, backend = 'default'):
     '''
     Flip a single bit in a representation of a state.
+    Parameters:
+        n (int or array-like):
+            The state to flip.
+        k (int):
+            The index of the bit to flip.
+        spin (bool): 
+            A flag to indicate whether to use spin values.
+        spin_value (float):
+            The spin value to use.
+        backend (str): 
+            The backend to use (np or jnp or default).
+    Returns:
+        Flipped state (same type as n).    
     '''
     
     if isinstance(n, (int, np.integer)):
         return n - lookup_binary_power[k] if check(n, k) else n + lookup_binary_power[k]
-    elif isinstance(n, list):
-        if spin:
-            n[k] = -n[k]
-        else:
-            n[k] = 0 if n[k] == spin_value else spin_value
-        return n
-    if isinstance(n, np.ndarray):
-        if spin:
-            n[k] = -n[k]
-        else:
-            n[k] = 0 if n[k] == spin_value else spin_value
-        return n
-    
+    elif isinstance(n, list) or isinstance(n, np.ndarray):
+        return _flip_array_numpy(n, k, spin, spin_value)
     if spin:
         return _flip_array_spin(n, k, backend)
     return _flip_array_nspin(n, k, backend)
 
+# --------------------------------------------------------------------------------------------------
+# Reverse the bits in a representation of a binary string
 # --------------------------------------------------------------------------------------------------
 
 @maybe_jit
@@ -409,27 +529,34 @@ def rev(n : 'array-like', size : int, bitsize = 64, backend = 'default'):
     return _rev_arr(n, backend)
 
 # --------------------------------------------------------------------------------------------------
-
 # Bit manipulation functions
-
 # --------------------------------------------------------------------------------------------------
 
-def _rotate_left_array(n : 'array-like', backend = 'default'):
+@maybe_jit
+def _rotate_left_array(n : 'array-like', axis=None, backend='default'):
     """
     Rotate the bits of an integer to the left.
     - This is a helper function for rotate_left.
+    Args:
+        n (array-like)  : The integer to rotate.
+        axis (int)      : The axis along which to rotate the bits.
+        backend (str)   : The backend to use (np or jnp or default).
+    Returns:
+        array-like      : The array with the bits rotated to the left.
     """
     # arrays are assumed to be NumPy or JAX arrays
     backend = get_backend(backend)
-    return backend.roll(n, -1)
+    return backend.roll(n, -1, axis)
 
-def rotate_left(n : 'array-like', size : int, backend = 'default'):
+def rotate_left(n : 'array-like', size : int, backend = 'default', axis : Optional[int] = None):
     """
     Rotate the bits of an integer to the left.
 
     Args:
-        n (int): The integer to rotate.
-        size (int): The number of bits in the integer.
+        n (int)         : The integer to rotate.
+        size (int)      : The number of bits in the integer.
+        backend (str)   : The backend to use (np or jnp or default).
+        axis (int)      : The axis along which to rotate the bits.
 
     Returns:
         int: The integer with the bits rotated to the left.
@@ -437,33 +564,150 @@ def rotate_left(n : 'array-like', size : int, backend = 'default'):
     if isinstance(n, int):
         max_power = lookup_binary_power[size - 1]
         return ((n - max_power) * 2 + 1) if (n >= max_power) else (n * 2)
-    return _rotate_left_array(n, backend)
+    return _rotate_left_array(n, axis, backend)
 
 # --------------------------------------------------------------------------------------------------
 
-def _rotate_right_array(n : 'array-like', backend = 'default'):
+@maybe_jit
+def _rotate_left_by(n: int, shift: int = 1, axis = Optional[int], backend='default'):
+    """
+    Rotate the bits of n to the left by 'shift' positions.
+    """
+    backend = get_backend(backend)
+    return backend.roll(n, shift, axis)
+    
+
+def rotate_left_by(n: 'array-like', size: int, 
+                shift: int = 1, backend='default', axis: Optional[int] = None):
+    """
+    Rotate the bits of n to the left by 'shift' positions.
+    
+    For an integer state, it treats n as having a binary representation of length 'size' 
+    and performs a cyclic left shift:
+    
+        result = ((n << shift) | (n >> (size - shift))) & ((1 << size) - 1)
+    
+    For array-like states (NumPy or JAX arrays), it calls the backend's roll function along 
+    the specified axis with a negative shift.
+    
+    Parameters:
+        n (int or array-like): 
+            The state to rotate.
+        size (int): 
+            The number of bits in the integer representation.
+        shift (int, optional): 
+            The number of positions to shift. Default is 1.
+        backend (str, optional): 
+            The backend to use (e.g., 'default', 'numpy', or 'jax').
+        axis (int, optional): 
+            The axis along which to rotate for array-like states.
+        
+    Returns:
+        Rotated state (same type as n).
+    """
+    if isinstance(n, int):
+        mask    =   (1 << size) - 1
+        return ((n << shift) | (n >> (size - shift))) & mask
+    else:
+        return _rotate_left_by(n, shift, axis, backend)
+
+# --------------------------------------------------------------------------------------------------
+
+def _rotate_left_ax_int(n          : int,
+                        x           : int,
+                        row_mask    : Optional[int] = None,
+                        y           : Optional[int] = None,
+                        z           : Optional[int] = None,
+                        shift       : int = 1, 
+                        axis        : Optional[int] = None):
+    """
+    Rotate the bits of n along a specified axis for integer input.
+    """
+    if axis == 0:
+        return rotate_left_by(n, x, shift, 'int')
+    if axis == 1:
+        if y is None:
+            raise ValueError("The y parameter must be provided for axis 1.")
+        
+        row_mask = (1 << x) - 1 # mask of the row length
+        new_stat = 0
+        for i in range(y):
+            row         = (n >> (i * x)) & row_mask
+            row         = rotate_left_by(row, x, shift, 'int')
+            new_stat    |= row << (i * x)
+        return new_stat
+
+    if y is None or z is None:
+        raise ValueError("The y and z parameters must be provided for axis 2.")
+    
+    s        = x * y
+    new_stat = 0
+    for j in range(z):
+        for i in range(y):
+            row         = (n >> (j * s + i * x)) & row_mask
+            row         = rotate_left_by(row, x, shift, 'int')
+            new_stat    |= row << (j * s + i * x)
+    return new_stat
+
+def rotate_left_ax(n    : 'array-like',
+                x       : int,
+                row_mask: Optional[int] = None,
+                y       : Optional[int] = None,
+                z       : Optional[int] = None,
+                shift : int = 1, axis : Optional[int] = None, backend = 'default'):
+    """
+    Rotate the bits of an integer along a specified axis.
+    
+    Args:
+        n (array-like): The integer or array-like structure to rotate.
+        x (int): The number of bits to rotate.
+        row_mask (Optional[int]): The mask for the row length.
+        y (Optional[int]): The second dimension for rotation.
+        z (Optional[int]): The third dimension for rotation.
+        shift (int, optional): The number of positions to shift. Default is 1.
+        axis (Optional[int]): The axis along which to rotate. Default is None.
+        backend (str, optional): The backend to use (e.g., 'default', 'numpy', or 'jax').
+    
+    Returns:
+        Rotated state (same type as n).
+    """
+    if isinstance(n, int):
+        _rotate_left_ax_int(n, x, row_mask, y, z, shift, axis)
+    return _rotate_left_by(n, shift, axis, backend)
+
+# --------------------------------------------------------------------------------------------------
+
+@maybe_jit
+def _rotate_right_array(n : 'array-like', axis = None, backend = 'default'):
     """
     Rotate the bits of an integer to the right.
     - This is a helper function for rotate_right.
+    Args:
+        n (array-like)  : The integer to rotate.
+        axis (int)      : The axis along which to rotate the bits.
+        backend (str)   : The backend to use (np or jnp or default).
+    Returns:
+        array-like      : The array with the bits rotated    
     """
     # arrays are assumed to be NumPy or JAX arrays
     backend = get_backend(backend)
-    return backend.roll(n, 1)
+    return backend.roll(n, 1, axis)
 
-def rotate_right(n : 'array-like', size : int, backend = 'default'):
+def rotate_right(n : 'array-like', size : int, backend = 'default', axis : Optional[int] = None):
     """
     Rotate the bits of an integer to the right.
 
     Args:
-        n (int): The integer to rotate.
-        size (int): The number of bits in the integer.
-
+        n (int)         : The integer to rotate.
+        size (int)      : The number of bits in the integer.
+        backend (str)   : The backend to use (np or jnp or default).
+        axis (int)      : The axis along which to rotate the bits (only for arrays - Optional).
     Returns:
         int: The integer with the bits rotated to the right.
     """
     if isinstance(n, int):
         return (n >> 1) | ((n & 1) << (size - 1))
-    return _rotate_right_array(n, backend)
+    return _rotate_right_array(n, axis, backend)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -486,7 +730,28 @@ def int2binstr(n : int, bits : int):
 
 ####################################################################################################
 
-def popcount(n : int):
+@maybe_jit
+def _popcount_spin(n : 'array-like', backend = 'default'):
+    """
+    Calculate the number of 1-bits in the binary representation of an integer.
+    - This is a helper function for popcount.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    backend = get_backend(backend)
+    return backend.sum(n > 0)
+                    
+
+@maybe_jit
+def _popcount_nspin(n : 'array-like', backend = 'default'):
+    """
+    Calculate the number of 1-bits in the binary representation of an integer.
+    - This is a helper function for popcount.
+    """
+    # arrays are assumed to be NumPy or JAX arrays
+    backend = get_backend(backend)
+    return backend.sum(n)
+
+def popcount(n : int, spin : bool = _BACKEND_DEF_SPIN, backend : str = 'default'):
     """
     Calculate the number of 1-bits in the binary representation of an integer.
 
@@ -496,51 +761,26 @@ def popcount(n : int):
     Returns:
         int: The number of 1-bits in the binary representation of the input integer.
     """
-    return n.bit_count()
+    if isinstance(n, int):
+        return n.bit_count('1')
+    return int(_popcount_spin(n, backend) if spin else _popcount_nspin(n, backend))
+    
 
 ####################################################################################################
 
-# Test the binary functions
-from general_python.common.flog import get_global_logger
+from general_python.common.tests import GeneralAlgebraicTests
 
-    
-class BinaryFunctionTests:
+class BinaryFunctionTests(GeneralAlgebraicTests):
     """
     A class that implements tests for various binary manipulation functions.
     Each test is implemented as a separate method.
     """
-
-    def __init__(self, logfile="binary_tests.log", log_dir="logs"):
-        """
-        Initializes the BinaryFunctionTests instance.
-        
-        Parameters:
-            logfile (str): Name of the log file.
-            log_dir (str): Directory where the log file will be stored.
-        """
-        self.test_count = 0
-        self.logger     = get_global_logger()
-
-    def _log(self, message, test_number, color="white"):
-        """
-        Logs a message with a test number and an optional color.
-        
-        Parameters:
-            message (str): The message to log.
-            test_number (int): The test identifier.
-            color (str): The color for the log output.
-        """
-        self.logger.say(
-            self.logger.colorize(f"[TEST {test_number}] {message}", color),
-            log=0,
-            lvl=1
-        )
-
+    
     # -------------------------------
     # Individual test methods follow:
     # -------------------------------
 
-    def test_extract(self, n, size, mask, mask_size, backend):
+    def test_extract(self, n, size, mask, mask_size):
         """Test 1: Extract bits using a mask."""
         test_number         = self.test_count
         self._log(f"Test {test_number}: Extract bits using mask", test_number, color="blue")
@@ -553,8 +793,8 @@ class BinaryFunctionTests:
         self._log(f"Time       : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count     += 1
-
-    def test_extract_left_right(self, n, size, backend):
+    # -------------------------------
+    def test_extract_left_right(self, n, size):
         """Test 2: Extract leftmost and rightmost 4 bits."""
         test_number         = self.test_count
         self._log(f"Test {test_number}: Extract leftmost and rightmost 4 bits", test_number, color="blue")
@@ -568,8 +808,8 @@ class BinaryFunctionTests:
         self._log(f"Time            : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count += 1
-
-    def test_prepare_mask(self, positions, size, backend):
+    # -------------------------------
+    def test_prepare_mask(self, positions, size):
         """Test 3: Prepare a mask from given positions."""
         test_number     = self.test_count
         self._log(f"Test {test_number}: Prepare mask from positions", test_number, color="blue")
@@ -581,8 +821,8 @@ class BinaryFunctionTests:
         self._log(f"Time               : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count += 1
-
-    def test_prepare_mask_inverted(self, positions, size, backend):
+    # -------------------------------
+    def test_prepare_mask_inverted(self, positions, size):
         """Test 4: Prepare an inverted mask from positions."""
         test_number     = self.test_count
         self._log(f"Test {test_number}: Prepare inverted mask from positions", test_number, color="blue")
@@ -594,8 +834,8 @@ class BinaryFunctionTests:
         self._log(f"Time                  : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count += 1
-
-    def test_is_power_of_two(self, n, size, backend):
+    # -------------------------------
+    def test_is_power_of_two(self, n, size):
         """Test 5: Check if n is a power of two."""
         test_number         = self.test_count
         self._log(f"Test {test_number}: Check if n is a power of two", test_number, color="blue")
@@ -607,21 +847,21 @@ class BinaryFunctionTests:
         self._log(f"Time    : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count += 1
-
-    def test_reverse_bits(self, n, size, backend):
+    # -------------------------------
+    def test_reverse_bits(self, n, size):
         """Test 6: Reverse the bits of n."""
         test_number = self.test_count
         self._log("Test {}: Reverse the bits".format(test_number), test_number, color="blue")
         t0 = time.time()
-        reversed_bits = rev(n, size, backend=backend)
+        reversed_bits = rev(n, size, backend=self.backend)
         t1 = time.time()
         self._log(f"Input n  : {int2binstr(n, size)}", test_number)
         self._log(f"Reversed : {int2binstr(reversed_bits, size)}", test_number)
         self._log(f"Time     : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count += 1
-
-    def test_check_specific_bit(self, n, size, bit_position, backend):
+    # -------------------------------
+    def test_check_specific_bit(self, n, size, bit_position):
         """Test 7: Check a specific bit (bit_position)."""
         test_number = self.test_count
         self._log("Test {}: Check specific bit".format(test_number), test_number, color="blue")
@@ -634,14 +874,14 @@ class BinaryFunctionTests:
         self._log(f"Time             : {t1 - t0:.6f} seconds", test_number)
         self._log("-" * 50, test_number)
         self.test_count += 1
-
-    def test_int_to_base(self, n, size, spin, spin_value, backend):
+    # -------------------------------
+    def test_int_to_base(self, n, size, spin, spin_value):
         """Test 8: Convert integer to base representation."""
         test_number         = self.test_count
         typek               = type(n)
         self._log(f"Test {test_number}: Convert integer to base representation: {typek}", test_number, color="blue")
         t0                  = time.time()
-        base_representation = int2base(n, size, backend=backend, spin=spin, spin_value=spin_value)
+        base_representation = int2base(n, size, backend=self.backend, spin=spin, spin_value=spin_value)
         t1                  = time.time()
         self._log(f"Input n           : {int2binstr(n, size)}", test_number)
         self._log(f"Base representation: {base_representation} (type: {type(base_representation)})", test_number)
@@ -650,7 +890,7 @@ class BinaryFunctionTests:
         self.test_count     += 1
         return base_representation
 
-    def test_base_to_int(self, base_representation, spin, spin_value, backend):
+    def test_base_to_int(self, base_representation, spin, spin_value):
         """Test 9: Convert base representation back to integer."""
         test_number         = self.test_count
         typek               = type(base_representation)
@@ -664,13 +904,13 @@ class BinaryFunctionTests:
         self._log("-" * 50, test_number)
         self.test_count     += 1
 
-    def test_flip_all_bits(self, n, size, spin, spin_value, backend):
+    def test_flip_all_bits(self, n, size, spin, spin_value):
         """Test 10: Flip all bits of n."""
         test_number         = self.test_count
         typek               = type(n)
         self._log(f"Test {test_number}: Flip all bits: {typek}", test_number, color="blue")
         t0                  = time.time()
-        flipped_all         = flip_all(n, size, spin=spin, spin_value=spin_value, backend=backend)
+        flipped_all         = flip_all(n, size, spin=spin, spin_value=spin_value, backend=self.backend)
         t1                  = time.time()
         self._log(f"Input n : {int2binstr(n, size)}", test_number)
         self._log(f"Flipped : {int2binstr(flipped_all, size)}", test_number)
@@ -678,13 +918,13 @@ class BinaryFunctionTests:
         self._log("-" * 50, test_number)
         self.test_count     += 1
 
-    def test_flip_specific_bit_int(self, n, size, bit_position, backend):
+    def test_flip_specific_bit_int(self, n, size, bit_position):
         """Test 11: Flip a specific bit in n (integer)."""
         test_number         = self.test_count
         typek               = type(n)
         self._log(f"Test {test_number}: Flip a specific bit in integer: {typek}", test_number, color="blue")
         t0                  = time.time()
-        flipped_bit_int     = flip(n, bit_position, backend=backend)
+        flipped_bit_int     = flip(n, bit_position, backend=self.backend)
         t1                  = time.time()
         self._log(f"Input n           : {int2binstr(n, size)}", test_number)
         self._log(f"Flipped bit at pos: {bit_position} -> {int2binstr(flipped_bit_int, size)}", test_number)
@@ -692,13 +932,13 @@ class BinaryFunctionTests:
         self._log("-" * 50, test_number)
         self.test_count     += 1
 
-    def test_flip_specific_bit_base(self, base_representation, bit_position, spin, spin_value, backend):
+    def test_flip_specific_bit_base(self, base_representation, bit_position, spin, spin_value):
         """Test 12: Flip a specific bit in the base representation."""
         test_number         = self.test_count
         typek               = type(base_representation)
         self._log(f"Test {test_number}: Flip a specific bit in base representation: {typek}", test_number, color="blue")
         t0                  = time.time()
-        flipped_bit_base    = flip(base_representation, bit_position, spin=spin, spin_value=spin_value, backend=backend)
+        flipped_bit_base    = flip(base_representation, bit_position, spin=spin, spin_value=spin_value, backend=self.backend)
         t1                  = time.time()
         self._log(f"Input base rep    : {base_representation} : {typek}", test_number)
         self._log(f"Flipped bit at pos: {bit_position} -> {flipped_bit_base} : {type(flipped_bit_base)}", test_number)
@@ -707,12 +947,12 @@ class BinaryFunctionTests:
         self.test_count     += 1
         return flipped_bit_base
 
-    def test_rotate_left_int(self, n, size, backend):
+    def test_rotate_left_int(self, n, size):
         """Test 13: Rotate left (integer)."""
         test_number         = self.test_count
         self._log(f"Test {test_number}: Rotate left (integer)", test_number, color="blue")
         t0                  = time.time()
-        rotated_left_int    = rotate_left(n, size, backend=backend)
+        rotated_left_int    = rotate_left(n, size, backend=self.backend)
         t1                  = time.time()
         self._log(f"Input n       : {int2binstr(n, size)}", test_number)
         self._log(f"Rotated left  : {int2binstr(rotated_left_int, size)}", test_number)
@@ -720,12 +960,12 @@ class BinaryFunctionTests:
         self._log("-" * 50, test_number)
         self.test_count     += 1
 
-    def test_rotate_left_base(self, base_representation, size, backend):
+    def test_rotate_left_base(self, base_representation, size):
         """Test 14: Rotate left (base representation)."""
         test_number         = self.test_count
         self._log(f"Test {test_number}: Rotate left (base representation): {type(base_representation)}", test_number, color="blue")
         t0                  = time.time()
-        rotated_left_base   = rotate_left(base_representation, size, backend=backend)
+        rotated_left_base   = rotate_left(base_representation, size, backend=self.backend)
         t1                  = time.time()
         
         self._log(f"Input base rep: {base_representation} : {type(base_representation)}", test_number)
@@ -735,12 +975,12 @@ class BinaryFunctionTests:
         self.test_count     += 1
         return rotated_left_base
 
-    def test_rotate_right_int(self, n, size, backend):
+    def test_rotate_right_int(self, n, size):
         """Test 15: Rotate right (integer)."""
         test_number         = self.test_count
         self._log(f"Test {test_number}: Rotate right (integer)", test_number, color="blue")
         t0                  = time.time()
-        rotated_right_int   = rotate_right(n, size, backend=backend)
+        rotated_right_int   = rotate_right(n, size, backend=self.backend)
         t1                  = time.time()
         self._log(f"Input n        : {int2binstr(n, size)}", test_number)
         self._log(f"Rotated right  : {int2binstr(rotated_right_int, size)}", test_number)
@@ -748,13 +988,13 @@ class BinaryFunctionTests:
         self._log("-" * 50, test_number)
         self.test_count += 1
 
-    def test_rotate_right_base(self, base_representation, size, backend):
+    def test_rotate_right_base(self, base_representation, size):
         """Test 16: Rotate right (base representation)."""
         test_number         = self.test_count
         typek               = type(base_representation)
         self._log(f"Test {test_number}: Rotate right (base representation): {typek}", test_number, color="blue")
         t0 = time.time()
-        rotated_right_base = rotate_right(base_representation, size, backend=backend)
+        rotated_right_base = rotate_right(base_representation, size, backend=self.backend)
         t1 = time.time()
         self._log(f"Input base rep : {base_representation} : {typek}", test_number)
         self._log(f"Rotated right  : {rotated_right_base} : {type(rotated_right_base)}", test_number)
@@ -762,7 +1002,41 @@ class BinaryFunctionTests:
         self._log("-" * 50, test_number)
         self.test_count += 1
         return rotated_right_base
-
+    # -------------------------------
+    def test_popcount(self, n, size, spin):
+        """Test: popcount (number of up bits/spins)."""
+        test_number = self.test_count
+        self._log(f"Test {test_number}: popcount", test_number, color="blue")
+        t0 = time.time()
+        count = popcount(n, spin=spin, backend=self.backend)
+        t1 = time.time()
+        if isinstance(n, int):
+            expected = n.bit_count()  # or bin(n).count('1') if bit_count unavailable
+            self._log(f"Input n         : {int2binstr(n, size)}", test_number)
+            self._log(f"Expected count  : {expected}", test_number)
+        else:
+            self._log(f"Input state     : {n}", test_number)
+            expected = "N/A"
+        self._log(f"popcount result : {count}", test_number)
+        self._log(f"Time            : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count += 1
+    # -------------------------------
+    def test_rotate_left_ax(self, n, x, row_mask, y, z, shift, axis):
+        '''
+        Test: rotate_left_ax
+        '''
+        test_number = self.test_count
+        self._log(f"Test {test_number}: rotate_left_ax", test_number, color="blue")
+        t0 = time.time()
+        rotated = rotate_left_ax(n, x, row_mask, y, z, shift, axis)
+        t1 = time.time()
+        self._log(f"Input state     : {n}", test_number)
+        self._log(f"Rotated state   : {rotated}", test_number)
+        self._log(f"Time            : {t1 - t0:.6f} seconds", test_number)
+        self._log("-" * 50, test_number)
+        self.test_count             += 1
+        
     # -------------------------------
     # Master test runner:
     # -------------------------------
@@ -787,6 +1061,9 @@ class BinaryFunctionTests:
             spin         (bool): Whether to use spin representation (±spin_value) for conversion.
             spin_value   (float): The value representing spin-up in spin representation.
         """
+        
+        self.change_backend(backend)
+        
         if mask_size is None:
             mask_size = size
         if positions is None:
@@ -807,22 +1084,22 @@ class BinaryFunctionTests:
         self._log("-" * 50, 0)
 
         # Run each individual test by passing all required arguments including backend.
-        self.test_extract(n, size, mask, mask_size, backend)
-        self.test_extract_left_right(n, size, backend)
-        self.test_prepare_mask(positions, size, backend)
-        self.test_prepare_mask_inverted(positions, size, backend)
-        self.test_is_power_of_two(n, size, backend)
-        self.test_reverse_bits(n, size, backend)
-        self.test_check_specific_bit(n, size, bit_position, backend)
-        base_representation = self.test_int_to_base(n, size, spin, spin_value, backend)
-        self.test_base_to_int(base_representation, spin, spin_value, backend)
-        self.test_flip_all_bits(n, size, spin, spin_value, backend)
-        self.test_flip_specific_bit_int(n, size, bit_position, backend)
-        base_representation = self.test_flip_specific_bit_base(base_representation, bit_position, spin, spin_value, backend)
-        self.test_rotate_left_int(n, size, backend)
-        base_representation = self.test_rotate_left_base(base_representation, size, backend)
-        self.test_rotate_right_int(n, size, backend)
-        base_representation = self.test_rotate_right_base(base_representation, size, backend)
+        self.test_extract(n, size, mask, mask_size)
+        self.test_extract_left_right(n, size)
+        self.test_prepare_mask(positions, size)
+        self.test_prepare_mask_inverted(positions, size)
+        self.test_is_power_of_two(n, size)
+        self.test_reverse_bits(n, size)
+        self.test_check_specific_bit(n, size, bit_position)
+        base_representation = self.test_int_to_base(n, size, spin, spin_value)
+        self.test_base_to_int(base_representation, spin, spin_value)
+        self.test_flip_all_bits(n, size, spin, spin_value)
+        self.test_flip_specific_bit_int(n, size, bit_position)
+        base_representation = self.test_flip_specific_bit_base(base_representation, bit_position, spin, spin_value)
+        self.test_rotate_left_int(n, size)
+        base_representation = self.test_rotate_left_base(base_representation, size)
+        self.test_rotate_right_int(n, size)
+        base_representation = self.test_rotate_right_base(base_representation, size)
 
         total_time = time.time() - total_start
         self._log(separator, 0)
