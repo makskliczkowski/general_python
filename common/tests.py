@@ -17,6 +17,7 @@ class GeneralTests:
     # ---------------------------------------------------------------------------------------------
     
     def __init__(self, backend = 'default'):
+        self.backendstr = backend
         self.backend    = backend
         self.logger     = get_global_logger()
         self.tests      = []
