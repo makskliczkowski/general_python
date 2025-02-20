@@ -170,8 +170,58 @@ def inner(vec1: 'array-like', vec2: 'array-like', backend="default"):
     return backend.dot(vec1, vec2)
 
 # -----------------------------------------------------------------
+#! Matrix properties
+# -----------------------------------------------------------------
+
+def __trace(matrix, backend):
+    '''Computes the trace of a matrix.'''
+    return backend.trace(matrix)
+
+def trace(matrix, backend = "default"):
+    """
+    Computes the trace of a matrix.
+    The trace of a matrix A is defined as the sum of its diagonal elements.
+    Parameters:
+        matrix (array-like): The matrix for which to compute the trace.
+        backend (module or object, optional): An object providing array operations such as
+            asarrays
+        and array transposition. This parameter should behave similarly to NumPy's API.
+        The default value "default" should be replaced with an actual backend.
+    Returns:    
+        float: The trace of the input matrix.
+    """
+    backend = __backend(backend)
+    return __trace(matrix, backend)
+
+def __hs_norm(matrix, backend):
+    '''Computes the Hilbert-Schmidt norm of a matrix.'''
+    return backend.sqrt(backend.trace(backend.dot(backend.conj(matrix), matrix)))
+
+def hilbert_schmidt_norm(matrix, backend = "default"):
+    """
+    Computes the Hilbert-Schmidt norm of a matrix.
+    The Hilbert-Schmidt norm of a matrix A is defined as:
+    ||A||_HS = sqrt(Tr(A^H A))
+    Parameters:
+        matrix (array-like): The matrix for which to compute the Hilbert-Schmidt norm.
+        backend (module or object, optional): An object providing array operations such as
+            asarray
+        and array transposition. This parameter should behave similarly to NumPy's API.
+        The default value "default" should be replaced with an actual backend.
+    Returns:
+    
+        float: The Hilbert-Schmidt norm of the input matrix.
+    """
+    backend = __backend(backend)
+    return __hs_norm(matrix, backend)
+
+# -----------------------------------------------------------------
 #! Matrix creation
 # -----------------------------------------------------------------
+
+def __identity(n, backend, dtype):
+    '''Creates an identity matrix of size n x n.'''
+    return backend.eye(n, dtype=dtype)
 
 def identity(n : int, backend = "default", dtype = None):
     """
@@ -187,4 +237,4 @@ def identity(n : int, backend = "default", dtype = None):
         array-like: The identity matrix of size n x n.
     """
     backend = __backend(backend)
-    return backend.eye(n, dtype=dtype)
+    return __identity(n, backend, dtype)

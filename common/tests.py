@@ -7,7 +7,7 @@ import unittest
 import time
 from typing import Union, Callable
 from abc import ABC, abstractmethod
-from flog import get_global_logger
+from general_python.common.flog import get_global_logger
 
 class GeneralTests:
     '''

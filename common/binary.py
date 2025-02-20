@@ -27,6 +27,9 @@ from typing import List, Optional
 import numpy as np
 
 from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit
+from general_python.common.tests import GeneralAlgebraicTest
+
+
 _BACKEND_REPR       = 0.5
 _BACKEND_DEF_SPIN   = True
 
@@ -768,9 +771,7 @@ def popcount(n : int, spin : bool = _BACKEND_DEF_SPIN, backend : str = 'default'
 
 ####################################################################################################
 
-from general_python.common.tests import GeneralAlgebraicTests
-
-class BinaryFunctionTests(GeneralAlgebraicTests):
+class BinaryFunctionTests(GeneralAlgebraicTest):
     """
     A class that implements tests for various binary manipulation functions.
     Each test is implemented as a separate method.
