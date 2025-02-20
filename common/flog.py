@@ -55,28 +55,32 @@ class Logger:
     """
     
     LEVELS = {
-        0: 'info',
-        1: 'debug',
-        2: 'warning',
-        3: 'error'
+        logging.DEBUG   : 'debug',
+        logging.INFO    : 'info',
+        logging.WARNING : 'warning',
+        logging.ERROR   : 'error'
     }
+    LEVELS_R = {v: k for k, v in LEVELS.items()}
     
-    def __init__(self, logfile: str, lvl=logging.DEBUG):
+    def __init__(self, logfile: str, lvl=logging.INFO, append_ts = False):
         """
         Initialize the logger instance.
 
         Args:
             logfile (str): Name of the log file (without extension if empty, a timestamp will be used).
-            lvl (int): Logging level (default: logging.DEBUG).
+            lvl (int): Logging level (default: logging.INFO).
             
         """
         self.now            = datetime.now()
-        self.nowStr         = self.now.strftime("%d_%m_%Y_%H-%M_%S")
+        self.now_str        = self.now.strftime("%d_%m_%Y_%H-%M_%S")
         self.lvl            = lvl
         self.logger         = logging.getLogger(__name__)
-        self.logfile        = logfile
-        self.working        = False
-        self.handler_added  = False  # Prevent adding multiple handlers
+        logging.basicConfig(level=lvl, format='%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+        self.logfile        = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
+        if append_ts:
+            self.logfile    += self.now_str
+        self.handler_added  = False
+        self.configure("./log")
         
     # --------------------------------------------------------------
     
@@ -105,31 +109,45 @@ class Logger:
         """
         
         # If logfile name is empty, use the timestamp
-        base_name       = self.nowStr if len(self.logfile) == 0 else self.logfile
+        base_name       = self.now_str if len(self.logfile) == 0 else self.logfile
         self.logfile    = os.path.join(directory, f'{base_name}.log')
         
         # Create the directory if it does not exist
         os.makedirs(directory, exist_ok=True)
+        # reset file handler
+        self.working    = False
         
         # Write initial log file header
         with open(self.logfile, 'w+') as f:
-            f.write('Log started!\n')
+            f.write('This is the log file for the current session.\n')
+            f.write(f'Log file created on {self.now_str}.\n')
+            f.write(f'Log level set to: {self.LEVELS[self.lvl]}.\n')
+            f.write(f"Author: {os.getlogin()}\n")
+            f.write(f"Machine: {os.uname().nodename}\n")
+            f.write(f"OS: {os.uname().sysname} {os.uname().release} {os.uname().version}\n")
+            f.write('--------------------------------------------------\n')
             
         # Create a file handler only once
-        if not self.handler_added:
-            self.fHandler   = logging.FileHandler(self.logfile)
-            self.fHandler.setLevel(self.lvl)
-            self.fFormat    = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
-                                                datefmt="%d_%m_%Y_%H-%M_%S")
-            self.fHandler.setFormatter(self.fFormat)
-            self.logger.addHandler(self.fHandler)
-            self.handler_added = True
+
         
-        # Also set up basic configuration (this might be redundant if multiple loggers are used)
-        logging.basicConfig(format  =   '%(asctime)s - %(levelname)s - %(message)s',
-                            datefmt =   "%d_%m_%Y_%H-%M_%S",
-                            filename=   self.logfile,
-                            level   =   self.lvl)
+        # Write initial log file header if the log file is created
+        if not self.handler_added:
+            self._f_handler = logging.FileHandler(self.logfile, encoding='utf-8')
+            self._f_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
+            self._f_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+            self._f_handler.setFormatter(self._f_format)
+            self.logger.addHandler(self._f_handler)
+
+            # Add a stream handler for console output
+            # self._s_handler = logging.StreamHandler()
+            # self._s_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
+            # self._s_handler.setFormatter(self._f_format)  # Use the same formatter
+            # self.logger.addHandler(self._s_handler)
+
+            self.handler_added = True
+            self._log_message(logging.INFO, f"Log file created: {self.logfile}")
+            self._log_message(logging.INFO, f"Log level set to: {self.LEVELS[self.lvl]}")
+            
         self.working = True
 
     # --------------------------------------------------------------
@@ -161,37 +179,37 @@ class Logger:
         Returns:
             str: Formatted message.
         """
-        now = datetime.now()
-        nowStr = now.strftime("%d/%m/%Y %H:%M:%S")
-        return f"[{nowStr}]{Logger.printTab(lvl)}{msg}"
+        now             = datetime.now()
+        # nowStr          = now.strftime("%d/%m/%Y %H:%M:%S")
+        formatted_msg   = f"{Logger.printTab(lvl)}{msg}"
+        return formatted_msg
 
     # --------------------------------------------------------------
     
-    def say(self, *args, end=True, log=0, lvl=0, verbose=True):
+    def say(self, *args, end=True, log=logging.INFO, lvl=0, verbose=True):
         """
         Print and log multiple messages if verbosity is enabled.
 
         Args:
             *args: Messages to log.
-            end (bool): Append newline (default: True).
-            log (int): Log level (0: info, 1: debug, 2: warning, 3: error).
-            lvl (int): Indentation level.
-            verbose (bool): Log if True (default: True).
+            end (bool)      : Append newline (default: True).
+            log (int)       : Log level (10 : info, 20 : debug, 30 : warning, 40 : error) (default: 10).
+            lvl (int)       : Indentation level.
+            verbose (bool)  : Log if True (default: True).
         """
-        if not verbose:
+        if not verbose or log < self.lvl:
             return
+        
         messages = [str(arg) for arg in args]
-        # if end is True, append newline
-        if end:
-            for msg in messages:
-                self._log_message(log, msg, lvl)
-        # else join messages with a space
-        else:
-            self._log_message(log, ' '.join(messages), lvl)
+        
+        # if end is True, append newlin
+        # Log the combined message only once.
+        combined_message = ' '.join(messages) if not end else '\n'.join(messages)
+        self._log_message(log, combined_message, lvl)
     
     # --------------------------------------------------------------
     
-    def _log_message(self, log_level, msg, lvl):
+    def _log_message(self, log_level, msg, lvl = 0):
         """
         Internal helper to log messages based on log level.
 
@@ -200,14 +218,8 @@ class Logger:
             msg (str): Message to log.
             lvl (int): Indentation level.
         """
-        if log_level == 0:
-            self.info(msg, lvl)
-        elif log_level == 1:
-            self.debug(msg, lvl)
-        elif log_level == 2:
-            self.warning(msg, lvl)
-        elif log_level == 3:
-            self.error(msg, lvl)
+        log_function = getattr(self.logger, self.LEVELS.get(log_level, 'info'))  # Get the appropriate log function
+        log_function(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
     
@@ -216,13 +228,12 @@ class Logger:
         Log an informational message if verbosity is enabled.
 
         Args:
-            msg (str): Message to log.
-            lvl (int): Indentation level.
-            verbose (bool): Log if True (default: True).
+            msg (str)       : Message to log.
+            lvl (int)       : Indentation level.
+            verbose (bool)  : Log if True (default: True).
         """
         if not verbose:
             return
-        print(Logger.print(msg, lvl))
         self.logger.info(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
@@ -238,11 +249,10 @@ class Logger:
         """
         if not verbose:
             return
-        print(Logger.print(msg, lvl))
         self.logger.debug(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
-
+    
     def warning(self, msg: str, lvl=0, verbose=True):
         """
         Log a warning message if verbosity is enabled.
@@ -254,7 +264,6 @@ class Logger:
         """
         if not verbose:
             return
-        print(Logger.print(msg, lvl))
         self.logger.warning(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
@@ -270,7 +279,6 @@ class Logger:
         """
         if not verbose:
             return
-        print(Logger.print(msg, lvl))
         self.logger.error(Logger.print(msg, lvl))
         
     # --------------------------------------------------------------
@@ -285,7 +293,17 @@ class Logger:
         """
         for _ in range(n):
             print()
+            
+    def _breakline(self, n: int):
+        """
+        Log multiple break lines.
 
+        Args:
+            n (int): Number of break lines.
+        """
+        for _ in range(n):
+            self.logger.info('')
+            
     # --------------------------------------------------------------
 
     def title(self, tail: str, desiredSize: int, fill: str, lvl=0, verbose=True):
@@ -301,14 +319,14 @@ class Logger:
         """
         if not verbose:
             return
-        tailLength = len(tail)
-        lvlLen = 2 + lvl * 3 * 2
+        tailLength  = len(tail)
+        lvlLen      = 2 + lvl * 3 * 2
         if tailLength + lvlLen > desiredSize:
             self.info(tail, lvl, verbose)
             return
         
-        fillSize = (desiredSize - tailLength - 2) // (2 * len(fill))
-        out = (fill * fillSize) + f" {tail} " + (fill * fillSize)
+        fillSize    = (desiredSize - tailLength - 2) // (2 * len(fill))
+        out         = (fill * fillSize) + f" {tail} " + (fill * fillSize)
         self.info(out, lvl, verbose)
 
     # --------------------------------------------------------------
@@ -399,8 +417,8 @@ def get_global_logger():
     """
     global _G_LOGGER
     if _G_LOGGER is None:
-        _G_LOGGER = Logger("/logs/global")
-        _G_LOGGER.title("Global logger initialized.", 30, '#', 0)
+        _G_LOGGER = Logger("global")
+        _G_LOGGER.title("Global logger initialized.", 50, '#', 0)
     return _G_LOGGER
 
 ######################################################

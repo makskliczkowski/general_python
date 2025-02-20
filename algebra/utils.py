@@ -297,6 +297,16 @@ except Exception as e:
 
 # ---------------------------------------------------------------------
 
+def is_traced_jax(n):
+    """
+    Internal helper function to check if an array-like n is JAX-traced integer.
+    """
+    if _JAX_AVAILABLE:
+        return hasattr(n, 'shape') and not hasattr(n, 'len')
+    return False
+
+# ---------------------------------------------------------------------
+
 def get_backend(backend, random=False, seed=None, scipy=False) -> tuple:
     """
     Return backend modules based on the provided specifier.

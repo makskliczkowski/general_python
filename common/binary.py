@@ -26,7 +26,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit, is_traced_jax
 from general_python.common.tests import GeneralAlgebraicTest
 
 
@@ -208,6 +208,11 @@ def extract_ord_right(n: int, size_r: int) -> int:
 lookup_reversal     = [reverse_byte(i) for i in range(256)]
 lookup_binary_power = [binary_power(i) for i in range(63)]
 
+if _JAX_AVAILABLE:
+    import jax.numpy as jnp
+    lookup_reversal_jax     = jnp.array(lookup_reversal)
+    lookup_binary_power_jax = jnp.array(lookup_binary_power)
+
 # --------------------------------------------------------------------------------------------------
 # Extract bits using a mask
 # --------------------------------------------------------------------------------------------------
@@ -295,7 +300,14 @@ def is_pow_of_two(n : int):
 # Vector based functions - for extracting bits from a vector
 # --------------------------------------------------------------------------------------------------
 
-def check(n, k : int):
+@maybe_jit
+def _check_traced_jax(n, k, backend = 'default'):
+    """
+    Check the i-th bit in an integer through JAX tracing.
+    """
+    return jnp.bitwise_and(n, jnp.left_shift(1, k)) > 0
+
+def check(n, k : int, backend = 'default'):
     """
     Check the i-th bit in an integer.
 
@@ -308,10 +320,12 @@ def check(n, k : int):
     """
     if isinstance(n, (int, np.integer)):
         return bool(n & (1 << k))
-    elif hasattr(n, "shape"):
-        return n[k] > 0     # Assume n is a NumPy or JAX array; index directly.
-    else:
-        return n[k] > 0
+    
+    backend = get_backend(backend)
+    
+    if is_traced_jax(n):
+        return _check_traced_jax(n, k, backend)
+    return n[k] > 0
 
 # --------------------------------------------------------------------------------------------------
 
@@ -469,6 +483,13 @@ def _flip_array_numpy(n : 'array-like',
         n[k] = 0 if n[k] == spin_value else spin_value
     return n
 
+@maybe_jit
+def _flip_traced_jax_int(n : int, k : int, backend = 'default'):
+    '''
+    Internal helper function for flipping a single bit in an integer through JAX tracing.
+    '''
+    return jnp.where(check(n, k, backend), n - lookup_binary_power_jax[k], n + lookup_binary_power_jax[k])
+
 def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR, backend = 'default'):
     '''
     Flip a single bit in a representation of a state.
@@ -488,9 +509,12 @@ def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_RE
     '''
     
     if isinstance(n, (int, np.integer)):
-        return n - lookup_binary_power[k] if check(n, k) else n + lookup_binary_power[k]
+        return n - lookup_binary_power[k] if check(n, k, backend) else n + lookup_binary_power[k]
     elif isinstance(n, list) or isinstance(n, np.ndarray):
         return _flip_array_numpy(n, k, spin, spin_value)
+    elif is_traced_jax(n):
+        return _flip_traced_jax_int(n, k, backend)
+    # otherwise, n is a NumPy or JAX array
     if spin:
         return _flip_array_spin(n, k, backend)
     return _flip_array_nspin(n, k, backend)
