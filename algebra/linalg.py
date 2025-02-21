@@ -1,8 +1,17 @@
 from abc import ABC, abstractmethod
-from .utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
+import numpy as np
+import scipy as sp
+
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, JIT
+import general_python.algebra.linalg_sparse as sparse 
+
+if _JAX_AVAILABLE:
+    import jax
+    import jax.numpy as jnp
+    import jax.scipy as jsp
 
 # -----------------------------------------------------------------
-#! MATRIX OPERATIONS
+#! Matrix operations
 # -----------------------------------------------------------------
 
 @maybe_jit
@@ -127,6 +136,8 @@ def outer(A, B, backend="default"):
     backend = __backend(backend)
     return backend.outer(A, B)
 
+# -----------------------------------------------------------------
+
 @maybe_jit
 def kron(A, B, backend="default"):
     """
@@ -223,7 +234,7 @@ def __identity(n, backend, dtype):
     '''Creates an identity matrix of size n x n.'''
     return backend.eye(n, dtype=dtype)
 
-def identity(n : int, backend = "default", dtype = None):
+def identity(n : int, dtype = None, backend = "default"):
     """
     Creates an identity matrix of size n x n.
     Parameters:
@@ -238,3 +249,159 @@ def identity(n : int, backend = "default", dtype = None):
     """
     backend = __backend(backend)
     return __identity(n, backend, dtype)
+
+# -----------------------------------------------------------------
+
+#! Transformation
+
+# -----------------------------------------------------------------
+
+def transform_backend(x, is_sparse: bool = False, backend="default"):
+    """
+    Transforms an array-like object 'x' to the appropriate backend format.
+
+    Parameters:
+        x (array-like): The input array (NumPy array, SciPy sparse matrix, JAX array, etc.).
+        is_sparse (bool, optional): If True, attempts to convert to a sparse format in the target backend
+                                    if applicable (csr_matrix for NumPy, BCOO for JAX if available).
+                                    If False, converts to a dense array format in the target backend.
+                                    Defaults to False.
+        backend (str or module, optional):  "numpy", "jax", "default", or backend module (np, jnp).
+                                            Defaults to "default", which resolves to JAX if available, NumPy otherwise.
+
+    Returns:
+        array-like: The transformed array in the specified backend format.
+    """
+    target_backend = __backend(backend)
+    
+    if target_backend == np or not _JAX_AVAILABLE:
+        if is_sparse:
+            if not sp.sparse.isspmatrix(x):
+                return sp.sparse.csr_matrix(x) # Convert to CSR if sparse is requested and not already sparse
+            else:
+                return x                        # Already sparse, return as is
+        else:
+            if sp.sparse.isspmatrix(x):
+                return x.toarray()              # Convert to dense NumPy array if sparse input and dense output requested
+            else:
+                return np.array(x)              # Ensure it's a NumPy array if dense is requested
+    # Fall back to JAX if available
+    if is_sparse:
+        if sp.sparse.isspmatrix(x):
+            coo = x.tocoo()
+            # Convert SciPy sparse to JAX BCOO format
+            return jax.experimental.sparse.BCOO((coo.data, np.array([coo.row, coo.col]).T), shape=coo.shape) 
+        return x
+    # Fall back to JAX if available - for not sparse
+    if sp.sparse.isspmatrix(x):
+        return jnp.array(x.toarray())           # Convert to dense JAX array if sparse input and dense output requested
+    return jnp.array(x)                         # Convert to dense JAX array if dense input and dense output requested
+
+# -----------------------------------------------------------------
+
+#! Diagonalization
+
+# -----------------------------------------------------------------
+
+if _JAX_AVAILABLE:
+
+    @JIT
+    def _eig_jax(matrix):
+        '''Computes the eigenvalues and eigenvectors of a matrix.'''
+        return jnp.linalg.eigh(matrix)
+    
+    def _eigsh_transfrom_jax(matrix):
+        ''' Computes the eigenvalues and eigenvectors of a matrix.'''    
+        matrix_np = np.array(matrix) if isinstance(matrix, jnp.ndarray) else matrix
+        if not sp.sparse.isspmatrix(matrix_np):
+            return sp.sparse.csr_matrix(matrix_np)
+        return matrix_np
+    
+    def _eig_sparse_jax(matrix):
+        '''Computes the eigenvalues and eigenvectors of a matrix.'''
+            
+        matrix_sparse       = _eigsh_transfrom_jax(matrix)
+        evals_np, evecs_np  = sp.sparse.linalg.eigsh(matrix_sparse)
+        return jnp.array(evals_np), jnp.array(evecs_np) # Convert results to JAX arrays
+
+    def _eig_lanczos_jax(matrix, k=6, which='SA'):
+        '''Computes the eigenvalues and eigenvectors of a matrix using the Lanczos algorithm.'''
+        matrix_sparse       = _eigsh_transfrom_jax(matrix)
+        evals_np, evecs_np  = sp.sparse.linalg.eigsh(matrix_sparse, k=k, which=which)
+        return jnp.array(evals_np), jnp.array(evecs_np) 
+
+    def _eig_shift_inv_jax(matrix, k=6, sigma=0.0, which='LM', mode='normal'):
+        '''Computes the eigenvalues and eigenvectors of a matrix using the shift-invert method.'''
+        matrix_sparse       = _eigsh_transfrom_jax(matrix)
+        evals_np, evecs_np  = sp.sparse.linalg.eigsh(matrix_sparse, k=k, sigma=sigma, which=which, mode=mode)
+        return jnp.array(evals_np), jnp.array(evecs_np)
+
+def _eig_np(matrix):
+    '''Computes the eigenvalues and eigenvectors of a matrix.'''
+    return sp.linalg.eigh(matrix)
+
+def _eig_sparse_np(matrix):
+    '''Computes the eigenvalues and eigenvectors of a matrix.'''
+    return sp.sparse.linalg.eigsh(matrix)
+
+def _eig_lanczos_np(matrix, k=6, which='SA'):
+    '''Computes the eigenvalues and eigenvectors of a matrix using the Lanczos algorithm.'''
+    return sp.sparse.linalg.eigsh(matrix, k=k, which=which)
+
+def _eig_shift_inv_np(matrix, k=6, sigma=0.0, which='LM', mode='normal'):
+    '''Computes the eigenvalues and eigenvectors of a matrix using the shift-invert method.'''
+    return sp.sparse.linalg.eigsh(matrix, k=k, sigma=sigma, which=which, mode=mode)
+
+def eigh(matrix, backend="default"):
+    """
+    Diagonalizes a Hermitian matrix.
+    This function computes the eigenvalues and eigenvectors of a Hermitian matrix.
+    Parameters:
+        matrix (array-like): The Hermitian matrix to diagonalize.
+        backend (module or object, optional): An object providing array operations such as
+            asarrays
+        and array transposition. This parameter should behave similarly to NumPy's API.
+        The default value "default" should be replaced with an actual backend.
+    Returns:
+        tuple: A tuple containing the eigenvalues and eigenvectors of the input matrix.
+    """
+    backend = __backend(backend)
+    
+    if backend == np or not _JAX_AVAILABLE:
+        return _eig_np(matrix)
+    return _eig_jax(matrix)    
+
+def eigsh(matrix, method, backend="default", **kwargs):
+    """
+    Diagonalizes a Hermitian matrix.
+    This function computes the eigenvalues and eigenvectors of a Hermitian matrix.
+    Parameters:
+        matrix (array-like): The Hermitian matrix to diagonalize.
+        backend (module or object, optional): An object providing array operations such as
+            asarrays
+        and array transposition. This parameter should behave similarly to NumPy's API.
+        The default value "default" should be replaced with an actual backend.
+    Returns:
+        tuple: A tuple containing the eigenvalues and eigenvectors of the input matrix.
+    """
+    backend = __backend(backend)
+    
+    if method == "lanczos":
+        k       = kwargs.get("k", 6)
+        which   = kwargs.get("which", "SA")
+        if backend == np or not _JAX_AVAILABLE:
+            return _eig_lanczos_np(matrix, k=k, which=which)
+        return _eig_lanczos_jax(matrix, k=k, which=which)
+    elif method == "shift-invert":
+        k       = kwargs.get("k", 6)
+        sigma   = kwargs.get("sigma", 0.0)
+        which   = kwargs.get("which", "LM")
+        mode    = kwargs.get("mode", "normal")
+        if backend == np or not _JAX_AVAILABLE:
+            return _eig_shift_inv_np(matrix, k=k, sigma=sigma, which=which, mode=mode)
+        return _eig_shift_inv_jax(matrix, k=k, sigma=sigma, which=which, mode=mode)
+    if backend == np or not _JAX_AVAILABLE:
+        return _eig_np(matrix.todense())
+    return _eig_jax(matrix.todense())
+    
+# ------------------------------------------------------------------

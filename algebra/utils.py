@@ -40,6 +40,7 @@ DEFAULT_BACKEND_RANDOM      = nrn
 DEFAULT_BACKEND_SCIPY       = sp
 DEFAULT_BACKEND_KEY         = None
 _DEFAULT_SEED               = 12345
+JIT                         = lambda x: x
 
 # ---------------------------------------------------------------------
 
@@ -100,6 +101,7 @@ class BackendManager:
         self.scipy              = sp
         self.name               = "numpy"
         self.key                = None
+        self.jit                = lambda x: x # Dummy JIT function
 
         try:
             import jax.numpy as jnp
@@ -112,6 +114,7 @@ class BackendManager:
             self.scipy          = jsp
             self.name           = "jax"
             self.key            = jrn.PRNGKey(_DEFAULT_SEED)
+            self.jit            = jit
             
             DEFAULT_JP_INT_TYPE     = jnp.int64
             DEFAULT_JP_FLOAT_TYPE   = jnp.float64
@@ -294,6 +297,7 @@ try:
     DEFAULT_INT_TYPE        = backend_mgr.np.int64
     DEFAULT_FLOAT_TYPE      = backend_mgr.np.float64
     DEFAULT_CPX_TYPE        = backend_mgr.np.complex128
+    JIT                     = backend_mgr.jit
     _JAX_AVAILABLE          = backend_mgr.jax_available
     
 except Exception as e:
@@ -456,5 +460,32 @@ def get_hardware_info():
         n_devices   = _get_gpu_info()
     n_threads       = multiprocessing.cpu_count()
     return n_devices, n_threads
+
+# ---------------------------------------------------------------------
+
+#! PADDING AND OTHER UTILITIES
+
+# ---------------------------------------------------------------------
+
+if _JAX_AVAILABLE:
+    import jax.numpy as jnp
+    
+    def pad_array_jax(x, target_size: int, pad_value):
+        """
+        Creates a padded version of x with a fixed target_size.
+        The first x.shape[0] entries are x and the rest are filled with pad_value.
+        """
+        padded = jnp.full((target_size,), pad_value, dtype=x.dtype)
+        padded = padded.at[:x.shape[0]].set(x)
+        return padded
+    
+def pad_array_np(x, target_size: int, pad_value):
+    """
+    Creates a padded version of x with a fixed target_size.
+    The first x.shape[0] entries are x and the rest are filled with pad_value.
+    """
+    padded = np.full((target_size,), pad_value, dtype=x.dtype)
+    padded[:x.shape[0]] = x
+    return padded
 
 # ---------------------------------------------------------------------
