@@ -23,14 +23,23 @@ def _log_message(msg, lvl = 0):
 
 # ---------------------------------------------------------------------
 
-_JAX_AVAILABLE          = False
-_KEY                    = None
-DEFAULT_BACKEND         = np
-DEFAULT_BACKEND_NAME    = "numpy"
-DEFAULT_BACKEND_RANDOM  = nrn
-DEFAULT_BACKEND_SCIPY   = sp
-DEFAULT_BACKEND_KEY     = None
-_DEFAULT_SEED           = 12345
+_JAX_AVAILABLE              = False
+_KEY                        = None
+DEFAULT_NP_INT_TYPE         = np.int64
+DEFAULT_NP_FLOAT_TYPE       = np.float64
+DEFAULT_NP_CPX_TYPE         = np.complex128
+DEFAULT_JP_INT_TYPE         = None
+DEFAULT_JP_FLOAT_TYPE       = None
+DEFAULT_JP_CPX_TYPE         = None
+DEFAULT_INT_TYPE            = np.int64
+DEFAULT_FLOAT_TYPE          = np.float64
+DEFAULT_CPX_TYPE            = np.complex128
+DEFAULT_BACKEND             = np
+DEFAULT_BACKEND_NAME        = "numpy"
+DEFAULT_BACKEND_RANDOM      = nrn
+DEFAULT_BACKEND_SCIPY       = sp
+DEFAULT_BACKEND_KEY         = None
+_DEFAULT_SEED               = 12345
 
 # ---------------------------------------------------------------------
 
@@ -104,11 +113,14 @@ class BackendManager:
             self.name           = "jax"
             self.key            = jrn.PRNGKey(_DEFAULT_SEED)
             
+            DEFAULT_JP_INT_TYPE     = jnp.int64
+            DEFAULT_JP_FLOAT_TYPE   = jnp.float64
+            DEFAULT_JP_CPX_TYPE     = jnp.complex128
+            
             # Set JAX global configuration by enabling 64-bit precision
             jcfg.update("jax_enable_x64", True)
             
-            # _log_message("JAX backend initialized successfully.", lvl=1)
-        except ImportError as e: # More specific exception
+        except ImportError as e:
             # _log_message(f"JAX not available: {e}. Using NumPy as backend.", lvl=1)
             pass
     # ---------------------------------------------------------------------
@@ -273,11 +285,15 @@ backend_mgr = BackendManager()
 
 # Initialize global defaults using BackendManager - for backward compatibility mainly
 try:
+    # Set the global defaults based on the backend manager's current state
     DEFAULT_BACKEND         = backend_mgr.np
     DEFAULT_BACKEND_NAME    = backend_mgr.name
     DEFAULT_BACKEND_RANDOM  = backend_mgr.random
     DEFAULT_BACKEND_SCIPY   = backend_mgr.scipy
     DEFAULT_BACKEND_KEY     = backend_mgr.key
+    DEFAULT_INT_TYPE        = backend_mgr.np.int64
+    DEFAULT_FLOAT_TYPE      = backend_mgr.np.float64
+    DEFAULT_CPX_TYPE        = backend_mgr.np.complex128
     _JAX_AVAILABLE          = backend_mgr.jax_available
     
 except Exception as e:
@@ -416,3 +432,29 @@ def maybe_jit(func):
             return jitted_func(*args, **kwargs)
 
     return wrapper
+
+# ---------------------------------------------------------------------
+
+import multiprocessing
+
+if _JAX_AVAILABLE:
+    def _get_gpu_info():
+        from jax.lib import xla_bridge
+        return xla_bridge.device_count()
+
+def get_hardware_info():
+    """
+    Get the number of available devices and CPU threads.
+    Returns:
+        n_devices : int
+            The number of available devices (GPUs) if JAX is available, otherwise 0.
+        n_threads : int
+            The number of CPU threads available.
+    """
+    n_devices       = 0
+    if _JAX_AVAILABLE:
+        n_devices   = _get_gpu_info()
+    n_threads       = multiprocessing.cpu_count()
+    return n_devices, n_threads
+
+# ---------------------------------------------------------------------
