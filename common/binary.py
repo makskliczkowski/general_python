@@ -23,8 +23,8 @@ You can choose the backend (np or jnp) by passing the corresponding module.
 
 import time
 from typing import List, Optional
-
 import numpy as np
+from numba import njit, types
 
 from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit, is_traced_jax
 from general_python.common.tests import GeneralAlgebraicTest
@@ -207,11 +207,13 @@ def extract_ord_right(n: int, size_r: int) -> int:
 # a global static variable to store the reversed bytes from 0 to 255
 lookup_reversal     = [reverse_byte(i) for i in range(256)]
 lookup_binary_power = [binary_power(i) for i in range(63)]
+lookup_reversal     = np.array(lookup_reversal, dtype = np.int64)
+lookup_binary_power = np.array(lookup_binary_power, dtype = np.int64)
 
 if _JAX_AVAILABLE:
     import jax.numpy as jnp
-    lookup_reversal_jax     = jnp.array(lookup_reversal)
-    lookup_binary_power_jax = jnp.array(lookup_binary_power)
+    lookup_reversal_jax     = jnp.array(lookup_reversal, dtype = jnp.int64)
+    lookup_binary_power_jax = jnp.array(lookup_binary_power, dtype = jnp.int64)
 
 # --------------------------------------------------------------------------------------------------
 # Extract bits using a mask
@@ -307,6 +309,13 @@ def _check_traced_jax(n, k, backend = 'default'):
     """
     return jnp.bitwise_and(n, jnp.left_shift(1, k)) > 0
 
+@njit
+def check_int(n, k):
+    """
+    Check the i-th bit in an integer.
+    """
+    return n & (1 << k)
+
 def check(n, k : int, backend = 'default'):
     """
     Check the i-th bit in an integer.
@@ -319,7 +328,7 @@ def check(n, k : int, backend = 'default'):
         bool: True if the k-th bit is set, False otherwise.
     """
     if isinstance(n, (int, np.integer)):
-        return bool(n & (1 << k))
+        return check_int(n, k)
     
     backend = get_backend(backend)
     
@@ -490,6 +499,13 @@ def _flip_traced_jax_int(n : int, k : int, backend = 'default'):
     '''
     return jnp.where(check(n, k, backend), n - lookup_binary_power_jax[k], n + lookup_binary_power_jax[k])
 
+@njit
+def flip_int(n : int, k : int):
+    '''
+    Flip a single bit in an integer.
+    '''
+    return n - lookup_binary_power[k] if check_int(n, k) else n + lookup_binary_power[k]
+
 def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR, backend = 'default'):
     '''
     Flip a single bit in a representation of a state.
@@ -509,7 +525,7 @@ def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_RE
     '''
     
     if isinstance(n, (int, np.integer)):
-        return n - lookup_binary_power[k] if check(n, k, backend) else n + lookup_binary_power[k]
+        return flip_int(n, k)
     elif isinstance(n, list) or isinstance(n, np.ndarray):
         return _flip_array_numpy(n, k, spin, spin_value)
     elif is_traced_jax(n):

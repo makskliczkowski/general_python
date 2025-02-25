@@ -199,7 +199,7 @@ class BackendManager:
             if not self._jax_available and backend_spec == self.np and self.name == "numpy": # Handle numpy specifically if jax is not available
                 return self._numpy_backend_modules(random, seed, scipy)
             elif self._jax_available and backend_spec == self.np and self.name == "jax": # Handle jax.numpy specifically if jax is available and manager is jax
-                 return self._jax_backend_modules(random, seed, scipy)
+                return self._jax_backend_modules(random, seed, scipy)
             else:
                 raise ValueError(f"Backend module mismatch or unsupported scenario.")
 
@@ -213,6 +213,8 @@ class BackendManager:
             if not self._jax_available:
                 raise ValueError("JAX backend requested but JAX is not available.")
             return self._jax_backend_modules(random, seed, scipy)
+        elif b_str == 'int':
+            return None
         else:
             raise ValueError(f"Unsupported backend string: {backend_spec}")
 
