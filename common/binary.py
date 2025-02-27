@@ -53,7 +53,7 @@ def set_global_defaults(repr_value : float, spin : bool):
 #! Searching functions
 ####################################################################################################
 
-__BAD_BINARY_SEARCH_STATE = None
+__BAD_BINARY_SEARCH_STATE = -1
 
 @maybe_jit
 def _binary_search_backend(arr, l_point, r_point, elem, backend: str = 'default') -> int:
@@ -79,6 +79,22 @@ def _binary_search_backend(arr, l_point, r_point, elem, backend: str = 'default'
     idx         = int(backend_mod.searchsorted(subarr, elem))
     idx         = idx + l_point
     return int(idx)
+
+@njit
+def binary_search_numpy(arr, l_point, r_point, elem) -> int:
+    '''
+    Perform a binary search for 'elem' in the sorted NumPy array 'arr'.
+    '''
+    if l_point < 0 or r_point >= len(arr):
+        return __BAD_BINARY_SEARCH_STATE
+    if l_point > r_point:
+        return __BAD_BINARY_SEARCH_STATE
+    middle = l_point + (r_point - l_point) // 2
+    if arr[middle] == elem:
+        return middle
+    if arr[middle] < elem:
+        return binary_search_numpy(arr, middle + 1, r_point, elem)
+    return binary_search_numpy(arr, l_point, middle - 1, elem)
 
 def _binary_search_list_notol(arr, l_point, r_point, elem) -> int:
     '''
