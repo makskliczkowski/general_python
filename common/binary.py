@@ -26,9 +26,9 @@ from typing import List, Optional
 import numpy as np
 from numba import njit, types
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend, maybe_jit, is_traced_jax
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND
+from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
 from general_python.common.tests import GeneralAlgebraicTest
-
 
 _BACKEND_REPR       = 0.5
 _BACKEND_DEF_SPIN   = True
@@ -205,15 +205,14 @@ def extract_ord_right(n: int, size_r: int) -> int:
     return n & ((1 << size_r) - 1)
 
 # a global static variable to store the reversed bytes from 0 to 255
-lookup_reversal     = [reverse_byte(i) for i in range(256)]
-lookup_binary_power = [binary_power(i) for i in range(63)]
-lookup_reversal     = np.array(lookup_reversal, dtype = np.int64)
-lookup_binary_power = np.array(lookup_binary_power, dtype = np.int64)
+lookup_binary_power = np.array([binary_power(i) for i in range(63)], dtype=DEFAULT_NP_INT_TYPE)
+lookup_reversal     = np.array([reverse_byte(i) for i in range(256)], dtype = DEFAULT_NP_INT_TYPE)
 
 if _JAX_AVAILABLE:
     import jax.numpy as jnp
-    lookup_reversal_jax     = jnp.array(lookup_reversal, dtype = jnp.int64)
-    lookup_binary_power_jax = jnp.array(lookup_binary_power, dtype = jnp.int64)
+    from general_python.algebra.utils import DEFAULT_JP_INT_TYPE
+    lookup_reversal_jax     = jnp.array(lookup_reversal, dtype = DEFAULT_JP_INT_TYPE)
+    lookup_binary_power_jax = jnp.array(lookup_binary_power, dtype = DEFAULT_JP_INT_TYPE)
 
 # --------------------------------------------------------------------------------------------------
 # Extract bits using a mask
