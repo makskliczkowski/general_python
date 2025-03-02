@@ -26,7 +26,7 @@ from typing import List, Optional
 import numpy as np
 from numba import njit, types
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, DEFAULT_INT_TYPE
 from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
 from general_python.common.tests import GeneralAlgebraicTest
 
@@ -389,7 +389,7 @@ def int2base(n          : int,
             bits.append(1 if bit else 0)
             
     # Return the list as a NumPy or JAX array.
-    return backend.array(bits)
+    return backend.array(bits, dtype = DEFAULT_INT_TYPE)
 
 # --------------------------------------------------------------------------------------------------
 
