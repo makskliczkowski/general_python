@@ -89,7 +89,7 @@ class BackendManager:
         modules = backend_manager.get_backend_modules("jax", random=True, seed=42, scipy=True)
     """
     
-    def __init__(self):
+    def __init__(self, seed = _DEFAULT_SEED):
         '''
         Initializes the backend manager by attempting to import JAX modules.
         If JAX is available, sets the backend to JAX and configures the default PRNG key.
@@ -97,8 +97,15 @@ class BackendManager:
         '''
         self._jax_available     = False
         self.np                 = np
-        self.random             = nrn.default_rng(None) if np.__version__ >= "1.17" else nrn # Default to NumPy
-        self.scipy              = sp
+        self.seed               = seed
+        # numpy
+        self.random_np          = nrn.default_rng(self.seed) if np.__version__ >= "1.17" else nrn
+        if not np.__version__ >= "1.17":
+            _log_message(f"NumPy version is {np.__version__}. Using legacy random module.", 1)
+        np.random.seed(self.seed)
+        self.scipy_np           = sp
+        self.random             = self.random_np
+        self.scipy              = self.scipy_np
         self.name               = "numpy"
         self.key                = None
         self.jit                = lambda x: x # Dummy JIT function
@@ -109,11 +116,12 @@ class BackendManager:
             import jax.random as jrn
             from jax import jit, config as jcfg
             self._jax_available = True
-            self.np             = jnp
+            self.jax            = jnp
+            self.np             = self.jax
             self.random         = jrn
             self.scipy          = jsp
             self.name           = "jax"
-            self.key            = jrn.PRNGKey(_DEFAULT_SEED)
+            self.key            = jrn.PRNGKey(self.seed)
             self.jit            = jit
             
             DEFAULT_JP_INT_TYPE     = jnp.int64
@@ -188,12 +196,12 @@ class BackendManager:
             b_str = "default"
 
         seed = _DEFAULT_SEED if seed is None else seed
-
+        
         if backend_spec == np: # Direct module comparison
-            if DEFAULT_BACKEND == np: # Use global default if it's numpy
+            if DEFAULT_BACKEND == np:
                 return self.get_global_backend_modules(random=random, seed=seed, scipy=scipy)
             return self._numpy_backend_modules(random, seed, scipy) # Use NumPy specifically
-        elif backend_spec == self.np: # Use .np to compare to jax.numpy or numpy from manager
+        elif backend_spec == self.np:
             if DEFAULT_BACKEND == self.np: # Use global default if it's the manager's current numpy (jax.numpy or numpy)
                 return self.get_global_backend_modules(random=random, seed=seed, scipy=scipy)
             if not self._jax_available and backend_spec == self.np and self.name == "numpy": # Handle numpy specifically if jax is not available
@@ -220,17 +228,18 @@ class BackendManager:
 
     # ---------------------------------------------------------------------
 
-    def _numpy_backend_modules(self, random=False, seed=None, scipy=False):
+    def _numpy_backend_modules(self, random=False, seed=_DEFAULT_SEED, scipy=False):
         """Returns NumPy backend modules."""
-        main_module = np
-        if np.__version__ < "1.17":
-            rnd_module = np.random
-            if seed is not None:
-                rnd_module.seed(seed)
-        else:
-            rnd_module = np.random.default_rng(seed) if random else None
-        scipy_module = sp if scipy else None
-        ret = [main_module]
+        
+        # reset seed if needed
+        if seed != self.seed:
+            self.seed       = seed
+            self.random_np  = nrn.default_rng(self.seed) if np.__version__ >= "1.17" else nrn
+        
+        main_module     = np
+        rnd_module      = self.random_np
+        scipy_module    = self.scipy_np
+        ret             = [main_module]
         if random:
             ret.append((rnd_module, None))
         if scipy:
@@ -247,17 +256,17 @@ class BackendManager:
         """
         from jax import random as jrn
         
+        if seed != self.seed:
+            self.seed       = seed
+            if self._jax_available:
+                self.key    = jrn.PRNGKey(self.seed)
+        
         if not self._jax_available:
             raise ValueError("JAX backend requested but JAX is not available.")
         main_module     = self.np
-        rnd_module      = self.random if random else None 
+        rnd_module      = self.random if random else None
         scipy_module    = self.scipy if scipy else None
-        key             = None
-        if random:
-            if seed is not None:
-                key = jrn.PRNGKey(seed)
-            else:
-                key = self.key # Use the default JAX key if no seed provided in this call, but random=True
+        key             = self.key if random else None
         
         ret = [main_module]
         if random:

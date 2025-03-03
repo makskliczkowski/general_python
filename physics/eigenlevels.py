@@ -5,6 +5,7 @@ from scipy.special import polygamma
 from scipy.special import erf, erfinv
 from scipy.optimize import curve_fit
 from scipy.linalg import svd
+from general_python.maths.statistics import Fraction
 
 # gap ratio average values
 rgoe        = 0.5307
@@ -83,29 +84,31 @@ def entropy_vonNeuman(  state       :   np.ndarray,
 #     return ent
 ####################################################### CALCULATORS #######################################################
 
-'''
-Calculate the gap ratio around the mean energy in a sector
-'''
-def gap_ratio(en, fraction = 0.3, use_mean_lvl_spacing = True, return_mean = True):
-    mean = np.mean(en)
-    mean_idx = find_nearest_idx_np(en, mean)
-    #print(mean, en[mean_idx])
+def gap_ratio(en: np.ndarray,
+            fraction                = 0.3,
+            use_mean_lvl_spacing    = True
+        ):
+    '''
+    Calculate the gap ratio of the eigenvalues as:
+        $\gamma = \frac{min(\Delta_n, \Delta_{n+1})}{max(\Delta_n, \Delta_{n+1})}$
+    - en                    : eigenvalues
+    - fraction              : fraction of the eigenvalues to use
+    - use_mean_lvl_spacing  : divide by mean level spacing
+    '''
     
-    bad, _, lower, upper = get_values_num(fraction, np.arange(1, len(en)), 14, mean_idx)
-    if bad: 
-        return -1
-    energies = en[lower:upper]
-    #print(lower, upper, mean_idx, len(en), len(energies))
-    # delta energies
-    d_en = energies[1:]-energies[:-1]
-    # if we use mean level spacing divide by it
+    mean            = np.mean(en)
+    energies        = Fraction.take_fraction(frac=fraction, data=en, around=mean)
+    d_en            = energies[1:]-energies[:-1]
     if use_mean_lvl_spacing:
         d_en /= np.mean(d_en)
     
     # calculate the gapratio
     gap_ratios = np.minimum(d_en[:-1], d_en[1:]) / np.maximum(d_en[:-1], d_en[1:])
-            
-    return np.mean(gap_ratios) if return_mean else gap_ratios.flatten()
+    return {
+        'mean': np.mean(gap_ratios),
+        'std' : np.std(gap_ratios),
+        'vals': gap_ratios
+    }
 
 '''
 Calculate the average entropy in a given DataFrame
