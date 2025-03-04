@@ -26,8 +26,8 @@ from typing import List, Optional
 import numpy as np
 from numba import njit, types
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, DEFAULT_INT_TYPE
-from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, DEFAULT_INT_TYPE, DEFAULT_NP_FLOAT_TYPE, DEFAULT_JP_FLOAT_TYPE
+from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE, JIT
 from general_python.common.tests import GeneralAlgebraicTest
 
 _BACKEND_REPR       = 0.5
@@ -353,6 +353,58 @@ def check(n, k : int, backend = 'default'):
 
 # --------------------------------------------------------------------------------------------------
 
+@njit(fastmath=True)
+def _int2base_np(n, size: int, dtype = DEFAULT_NP_INT_TYPE, value_true = 1, value_false = 0):
+    """
+    Convert an integer to a binary (or spin) representation using NumPy.
+
+    Args:
+        n (int): The integer to convert.
+        size (int): The number of bits in the representation.
+        dtype: The desired NumPy dtype for the output array.
+        spin (bool): If True, outputs spin values (±spin_value) instead of {0,1}.
+        spin_value (float): The value to use for spin representation.
+    Returns:
+        np.ndarray: The binary (or spin) representation of the integer.
+    """
+    bits = []
+    # Iterate from the most significant bit to the least.
+    for pos in range(size - 1, -1, -1):
+        # For a Python or NumPy integer, we use bit shifting.
+        if isinstance(n, (int, np.integer)):
+            bit = check_int(n, pos)
+        else:
+            bit = bool(np.bitwise_and(n, (1 << pos)) != 0)
+        bits.append(value_true if bit else value_false)
+    return np.array(bits, dtype=dtype)
+
+@JIT
+def _int2base_jax(n             : int,
+                size            : int,
+                dtype                   = DEFAULT_JP_INT_TYPE,
+                value_true      : float = _BACKEND_REPR,
+                value_false     : float = -_BACKEND_REPR):
+    """
+    Convert an integer to a binary (or spin) representation using JAX.
+    Args:
+        n (int)             : The integer to convert.
+        size (int)          : The number of bits in the representation.
+        dtype               : The desired dtype for the output jax array.
+        value_true          : The value to use for spin representation.
+        value_false         : The value to use for spin representation.
+    Returns:
+        jnp.ndarray: The binary (or spin) representation of the integer.
+    """
+    bits = []
+    # Iterate from the most significant bit to the least.
+    for pos in range(size - 1, -1, -1):
+        if isinstance(n, (int, np.integer)):
+            bit = (n >> pos) & 1
+        else:
+            bit = bool(jnp.bitwise_and(n, (1 << pos)) != 0)
+        bits.append(value_true if bit else value_false)
+    return jnp.array(bits, dtype=dtype)
+
 def int2base(n          : int,
             size        : int,
             backend             = 'default',
@@ -370,26 +422,12 @@ def int2base(n          : int,
     Returns:
         np.ndarray or jnp.ndarray: The binary representation of the integer.    
     '''
-    backend = get_backend(backend)
-    bits    = []
-    
-    # Loop over the bits in the integer.
-    for k in range(size):
-        pos = size - 1 - k
-
-        if isinstance(n, (int, np.integer)):
-            bit = check(n, pos)
-        else:
-            bit = bool(backend.bitwise_and(n, (1 << pos)) != 0)
-        
-        # Append the bit to the list.
-        if spin:
-            bits.append(spin_value if bit else -spin_value)
-        else:
-            bits.append(1 if bit else 0)
-            
-    # Return the list as a NumPy or JAX array.
-    return backend.array(bits, dtype = DEFAULT_INT_TYPE)
+    backend     = get_backend(backend)
+    val_true    = spin_value
+    val_false   = -spin_value if spin else 0
+    if backend == np:
+        return _int2base_np(n, size, value_true = spin_value, value_false = -spin_value)
+    return _int2base_jax(n, size, value_true = val_true, value_false = val_false)
 
 # --------------------------------------------------------------------------------------------------
 

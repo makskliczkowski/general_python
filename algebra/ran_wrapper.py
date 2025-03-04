@@ -102,7 +102,6 @@ def __uniform_np(rng, low, high, size):
             '''
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
-
     return rng.uniform(low=low, high=high, size=size)
 
 @jit
