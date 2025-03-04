@@ -2,7 +2,7 @@
 This module contains mathematical utilities and functions.
 """
 
-from . import __math__ as MathMod
+from . import math_utils as MathMod
 from . import __random__ as RandomMod
 from . import statistics as StatisticsMod
 

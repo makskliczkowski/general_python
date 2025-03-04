@@ -1,6 +1,6 @@
 import sys
 from numpy.lib.stride_tricks import sliding_window_view
-from .__math__ import *
+from .math_utils import *
 
 from scipy.signal import savgol_filter
 from scipy.ndimage import uniform_filter1d

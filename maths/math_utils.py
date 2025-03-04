@@ -562,7 +562,6 @@ def mod_floor(a: int, b: int) -> int:
         m -= 1
     return m
 
-
 def mod_ceil(a: int, b: int) -> int:
     '''
     Compute the modified ceiling division of a divided by b.
