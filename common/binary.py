@@ -513,28 +513,38 @@ def flip_all(n : 'array-like', size : int, spin : bool = _BACKEND_DEF_SPIN,
 
 # --------------------------------------------------------------------------------------------------
 
-@maybe_jit
-def _flip_array_spin(n : 'array-like', k : int, backend = 'default'):
+@JIT
+def flip_array_jax_spin(n : 'array-like', k : int):
     """
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
+    Parameters:
+        n (array-like)  : The state to flip.
+        k (int)         : The index of the bit to flip.
+    Returns:
+        array-like      : The flipped state.
     """
     # arrays are assumed to be NumPy or JAX arrays
     n = n.at[k].set(-n[k])
     return n
 
-@maybe_jit
-def _flip_array_nspin(n : 'array-like', k : int, backend = 'default'):
+@JIT
+def flip_array_jax_nspin(n : 'array-like', k : int):
     """
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
+    Parameters:
+        n (array-like)  : The state to flip.
+        k (int)         : The index of the bit to flip.
+    Returns:
+        array-like      : The flipped state.    
     """
     update  =   (n[k] + 1) % 2
     n       =   n.at[k].set(update)
     return n
 
-def _flip_array_numpy(n : 'array-like', 
-                    k : int, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR):
+@njit
+def flip_array_np(n : 'array-like', k : int, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR):
     """
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
@@ -546,7 +556,7 @@ def _flip_array_numpy(n : 'array-like',
     return n
 
 @maybe_jit
-def _flip_traced_jax_int(n : int, k : int, backend = 'default'):
+def flip_traced_jax_int(n : int, k : int, backend = 'default'):
     '''
     Internal helper function for flipping a single bit in an integer through JAX tracing.
     '''
@@ -580,16 +590,16 @@ def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_RE
     if isinstance(n, (int, np.integer)):
         return flip_int(n, k)
     elif isinstance(n, list) or isinstance(n, np.ndarray):
-        return _flip_array_numpy(n, k, spin, spin_value)
+        return flip_array_np(n, k, spin, spin_value)
     elif is_traced_jax(n):
-        return _flip_traced_jax_int(n, k, backend)
+        return flip_traced_jax_int(n, k, backend)
     # otherwise, n is a NumPy or JAX array
     if spin:
-        return _flip_array_spin(n, k, backend)
-    return _flip_array_nspin(n, k, backend)
+        return flip_array_jax_spin(n, k)
+    return flip_array_jax_nspin(n, k)
 
 # --------------------------------------------------------------------------------------------------
-# Reverse the bits in a representation of a binary string
+#! Reverse the bits in a representation of a binary string
 # --------------------------------------------------------------------------------------------------
 
 @maybe_jit

@@ -24,7 +24,7 @@ from jax import jit
 # -----------------------------------------------------------------------------
 
 from typing import Optional, Callable
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend as __backend, _KEY
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend as __backend, _KEY, JIT
 
 ###############################################################################
 #! Random number generator initialization
@@ -383,13 +383,15 @@ def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dty
 # Random randint distribution
 ###############################################################################
 
-def __randint_np(rng, low, high, size):
+def randint_np(rng, low, high, size):
+    '''Create a random integer array using NumPy.'''
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.integers(low=low, high=high, size=size)
 
-@jit
-def __randint_jax(rng_module, key, shape, low, high, dtype):
+@JIT
+def randint_jax(rng_module, key, shape, low, high, dtype):
+    '''Create a random integer array using JAX.'''
     return rng_module.randint(key, shape=shape, minval=low, maxval=high, dtype=dtype)
 
 def randint(low, high, shape, backend="default", seed: Optional[int] = None, dtype=None, rng=None, rng_k=None):
@@ -420,8 +422,8 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
     if dtype is None:
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
-        return __randint_np(rng, low, high, shape).astype(dtype)
-    return __randint_jax(rng, rng_k if rng_k is not None else _KEY, shape, low, high, dtype)
+        return randint_np(rng, low, high, shape).astype(dtype)
+    return randint_jax(rng, rng_k if rng_k is not None else _KEY, shape, low, high, dtype)
 
 ###############################################################################
 # Random choice function (already provided)
