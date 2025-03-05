@@ -30,8 +30,8 @@ from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, DEFAUL
 from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE, JIT
 from general_python.common.tests import GeneralAlgebraicTest
 
-_BACKEND_REPR       = 0.5
-_BACKEND_DEF_SPIN   = True
+BACKEND_REPR       = 0.5
+BACKEND_DEF_SPIN   = True
 
 ####################################################################################################
 #! Global functions
@@ -45,9 +45,9 @@ def set_global_defaults(repr_value : float, spin : bool):
         repr_value (float): The spin value to use.
         spin (bool): A flag to indicate whether to use spin values.
     """
-    global _BACKEND_REPR, _BACKEND_DEF_SPIN
-    _BACKEND_REPR       = repr_value
-    _BACKEND_DEF_SPIN   = spin
+    global BACKEND_REPR, BACKEND_DEF_SPIN
+    BACKEND_REPR       = repr_value
+    BACKEND_DEF_SPIN   = spin
 
 ####################################################################################################
 #! Searching functions
@@ -382,8 +382,8 @@ def _int2base_np(n, size: int, dtype = DEFAULT_NP_INT_TYPE, value_true = 1, valu
 def _int2base_jax(n             : int,
                 size            : int,
                 dtype                   = DEFAULT_JP_INT_TYPE,
-                value_true      : float = _BACKEND_REPR,
-                value_false     : float = -_BACKEND_REPR):
+                value_true      : float = BACKEND_REPR,
+                value_false     : float = -BACKEND_REPR):
     """
     Convert an integer to a binary (or spin) representation using JAX.
     Args:
@@ -409,7 +409,7 @@ def int2base(n          : int,
             size        : int,
             backend             = 'default',
             spin        : bool  = True,
-            spin_value  : float = _BACKEND_REPR):
+            spin_value  : float = BACKEND_REPR):
     '''
     Convert an integer to a base representation (spin: ±value or binary 0/1).
 
@@ -431,7 +431,7 @@ def int2base(n          : int,
 
 # --------------------------------------------------------------------------------------------------
 
-def base2int(vec : 'array-like', spin: bool = _BACKEND_DEF_SPIN, spin_value: float = _BACKEND_REPR) -> int:
+def base2int(vec : 'array-like', spin: bool = BACKEND_DEF_SPIN, spin_value: float = BACKEND_REPR) -> int:
     '''
     Convert a base representation back to an integer.
     
@@ -474,7 +474,7 @@ def _flip_all_array_nspin(n : 'array-like', backend = 'default'):
     return -n
 
 @maybe_jit
-def _flip_all_array_spin(n : 'array-like', spin_value : float = _BACKEND_REPR, backend = 'default'):
+def _flip_all_array_spin(n : 'array-like', spin_value : float = BACKEND_REPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
     - This is a helper function for flip_all.
@@ -482,8 +482,8 @@ def _flip_all_array_spin(n : 'array-like', spin_value : float = _BACKEND_REPR, b
     backend = get_backend(backend)
     return backend.where(n == spin_value, 0, spin_value)
 
-def flip_all(n : 'array-like', size : int, spin : bool = _BACKEND_DEF_SPIN,
-            spin_value : float = _BACKEND_REPR, backend = 'default'):
+def flip_all(n : 'array-like', size : int, spin : bool = BACKEND_DEF_SPIN,
+            spin_value : float = BACKEND_REPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
 
@@ -544,7 +544,7 @@ def flip_array_jax_nspin(n : 'array-like', k : int):
     return n
 
 @njit
-def flip_array_np(n : 'array-like', k : int, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR):
+def flip_array_np(n : 'array-like', k : int, spin : bool = BACKEND_DEF_SPIN, spin_value : float = BACKEND_REPR):
     """
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
@@ -569,7 +569,7 @@ def flip_int(n : int, k : int):
     '''
     return n - lookup_binary_power[k] if check_int(n, k) else n + lookup_binary_power[k]
 
-def flip(n, k, spin : bool = _BACKEND_DEF_SPIN, spin_value : float = _BACKEND_REPR, backend = 'default'):
+def flip(n, k, spin : bool = BACKEND_DEF_SPIN, spin_value : float = BACKEND_REPR, backend = 'default'):
     '''
     Flip a single bit in a representation of a state.
     Parameters:
@@ -857,7 +857,7 @@ def _popcount_nspin(n : 'array-like', backend = 'default'):
     backend = get_backend(backend)
     return backend.sum(n)
 
-def popcount(n : int, spin : bool = _BACKEND_DEF_SPIN, backend : str = 'default'):
+def popcount(n : int, spin : bool = BACKEND_DEF_SPIN, backend : str = 'default'):
     """
     Calculate the number of 1-bits in the binary representation of an integer.
 
