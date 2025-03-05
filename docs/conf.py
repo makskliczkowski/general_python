@@ -29,10 +29,3 @@ templates_path = ['_templates']
 
 # List of patterns to ignore when looking for source files.
 exclude_patterns = ['_build', 'build', 'Thumbs.db', '.DS_Store']
-
-# -- Options for HTML output -------------------------------------------------
-
-# The theme to use for HTML pages.
-html_theme = 'sphinx_rtd_theme'
-
-# (You can specify further html_theme_options here if needed.)
