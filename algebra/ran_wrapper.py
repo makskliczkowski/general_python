@@ -17,14 +17,17 @@ from tenpy.linalg.random_matrix import COE, GUE, GOE, CRE, CUE
 
 # -----------------------------------------------------------------------------
 
-from typing import Union, Tuple, Optional
+from typing import Union, Tuple, Optional, Callable
 import warnings
-from jax import jit
 
-# -----------------------------------------------------------------------------
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend as __backend, _KEY, JIT    
 
-from typing import Optional, Callable
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend as __backend, _KEY, JIT
+if _JAX_AVAILABLE:
+    import jax.numpy as jnp
+    from jax import random as jrand
+    from jax import numpy as jnp
+    from jax import random
+    from jax import jit
 
 ###############################################################################
 #! Random number generator initialization
@@ -122,9 +125,9 @@ def handle_rng(rng = None, rng_k = None, backend="default", seed: Optional[int] 
     tuple
         A tuple containing the random number generator module and the PRNG key.
     """
-    if rng is None:
-        modules = __backend(backend, random=True, seed=seed)
-        backend_mod, (rng, rng_k) = modules if isinstance(modules, tuple) else (modules, (None, None))
+    if rng is None or (backend != 'np' and backend != 'numpy' and backend != np and rng_k is None):
+        modules                     = __backend(backend, random=True, seed=seed)
+        backend_mod, (rng, rng_k)   = modules if isinstance(modules, tuple) else (modules, (None, None))
     return rng, rng_k
 
 ###############################################################################
@@ -183,7 +186,7 @@ def uniform(shape: Union[tuple, int] = (1,), backend="default", seed: Optional[i
     """
     # Obtain the main module and its random component
     
-    backend, (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
+    (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
     if dtype is None:
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
@@ -262,7 +265,7 @@ def normal(shape, backend="default", seed=None, dtype=None, mean=0.0, std=1.0, r
     array
         An array of the specified shape drawn from a normal distribution.
     """
-    backend, (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
+    rng, rng_k = handle_rng(rng, rng_k, backend, seed)
     if dtype is None:
         dtype = default_dtype(backend)
         
@@ -288,7 +291,7 @@ def exponential(shape, backend="default", seed: Optional[int] = None, scale=1.0,
     """
     Generate a random exponential array.
     """
-    backend, (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
+    (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
     
     if dtype is None:
         dtype = default_dtype(backend)
@@ -315,7 +318,7 @@ def poisson(shape, backend="default", seed: Optional[int] = None, lam=1.0, dtype
     """
     Generate a random poisson array.
     """
-    backend, (rng, rng_k) = handle_rng(None, None, backend, seed)
+    (rng, rng_k) = handle_rng(None, None, backend, seed)
     if dtype is None:
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
@@ -339,7 +342,7 @@ def gamma(shape, backend="default", seed: Optional[int] = None, a=1.0, scale=1.0
     """
     Generate a random gamma array.
     """
-    backend, (rng, rng_k) = handle_rng(None, None, backend, seed)
+    (rng, rng_k) = handle_rng(None, None, backend, seed)
     if dtype is None:
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
@@ -418,7 +421,7 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
     array
         An array of random integers.
     """
-    backend, (rng, rng_k) = handle_rng(None, None, backend, seed)
+    (rng, rng_k) = handle_rng(None, None, backend, seed)
     if dtype is None:
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
@@ -426,22 +429,42 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
     return randint_jax(rng, rng_k if rng_k is not None else _KEY, shape, low, high, dtype)
 
 ###############################################################################
-# Random choice function (already provided)
+#! Random choice function (already provided)
 ###############################################################################
 
-def __choice_np(rng, a, size, replace=True, p=None):
+def choice_np(rng, a, size, replace=True, p=None):
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.choice(a, size=size, replace=replace, p=p)
 
-@jit
-def __choice_jax(rng_module, key, a, size, backend_mod):
-    idx = rng_module.randint(key, shape=(size,) if isinstance(size, int) else size,
-                            minval=0, maxval=a.shape[0])
-    return backend_mod.take(a, idx)
+# @JIT
+def choice_jax(rng_module, key, a, shape):
+    '''
+    Randomly select elements from an array using JAX.
+    Parameters
+    ----------
+    rng_module : module
+        The JAX random module.
+    key : PRNGKey
+        The random number generator key.
+    a : array-like
+        The input array.
+    size : int or tuple
+        Number of samples to draw.
+    backend_mod : module
+        The backend module (e.g., jax.numpy).
+    Returns
+    -------
+    '''
+    a = jnp.asarray(a)
+    return rng_module.choice(key, a, shape=shape, replace=True)
+    # Generate random indices and select elements from the array)
+    # idx = rng_module.randint(key, shape=(size,) if isinstance(size, int) else size,
+                            # minval=0, maxval=a.shape[0])
+    # return jnp.take(a, idx)
 
 def choice(a    :   'array-like',
-        size    :   Union[Tuple, int],
+        shape   :   Union[Tuple, int],
         replace =   True,
         p       =   None,
         rng     =   None,
@@ -473,10 +496,10 @@ def choice(a    :   'array-like',
     array
         An array of randomly chosen elements.
     """
-    backend, (rng, rng_k) = handle_rng(rng, rng_k, backend)
+    (rng, rng_k) = handle_rng(rng, rng_k, backend)
     if backend == 'np' or backend == 'numpy' or backend is np:
-        return __choice_np(rng, a, size, replace=replace, p=p)
-    return __choice_jax(rng, rng_k if rng_k is not None else _KEY, a, size, backend)
+        return choice_np(rng, a, shape, replace=replace, p=p)
+    return choice_jax(rng, rng_k if rng_k is not None else _KEY, a, shape)
 
 ###############################################################################
 #! Random shuffle functions

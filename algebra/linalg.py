@@ -223,7 +223,7 @@ def overlap_np(a, b, mat = None):
         - in the matrix case, pairwise overlaps (each to each) are computed.
       
     The computation is performed via:
-        overlap = (a^\dagger) dot (act(mat, b))
+        overlap = (a^\\dagger) dot (act(mat, b))
         
     Parameters:
         a      : Bra state(s) as a 1D vector or a 2D array (columns are states).
@@ -265,7 +265,7 @@ def overlap(a, b, mat, backend="default"):
         - in the matrix case, pairwise overlaps (each to each) are computed.
     
     The computation is performed via:
-        overlap = (a^\dagger) dot (act(mat, b))
+        overlap = (a^\\dagger) dot (act(mat, b))
         
     Parameters:
         a      : Bra state(s) as a 1D vector or a 2D array (columns are states).
