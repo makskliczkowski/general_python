@@ -111,6 +111,7 @@ class BackendManager:
         self.jit                = lambda x: x # Dummy JIT function
 
         try:
+            import jax
             import jax.numpy as jnp
             import jax.scipy as jsp
             import jax.random as jrn
@@ -124,7 +125,7 @@ class BackendManager:
             self.key            = jrn.PRNGKey(self.seed)
             self.jit            = jit
             
-            DEFAULT_JP_INT_TYPE     = jnp.int64
+            DEFAULT_JP_INT_TYPE     = jnp.int32
             DEFAULT_JP_FLOAT_TYPE   = jnp.float64
             DEFAULT_JP_CPX_TYPE     = jnp.complex128
             
@@ -151,8 +152,20 @@ class BackendManager:
         backend_versions = {
             "NumPy": np.__version__,
             "SciPy": sp.__version__,
-            "JAX": self.np.__array_api_version__ if self._jax_available else "Not Available",
+            "JAX": "Not Available"
         }
+        
+        # If JAX is available, get its actual version
+        if self._jax_available:
+            try:
+                if hasattr(self.np, "__version__"):
+                    backend_versions["JAX"] = self.np.__version__
+                elif hasattr(self.np, "version"):
+                    backend_versions["JAX"] = self.np.version
+                elif hasattr(self.np, 'array_api'):
+                    backend_versions["JAX"] = self.np.array_api.__version__
+            except (ImportError, AttributeError):
+                pass
         
         # Print header.
         _log_message("=== Backend Initialization ===", 0)
@@ -162,15 +175,15 @@ class BackendManager:
             _log_message(f"{lib} Version: {version}", 1)
         
         # Log active backend details.
-        _log_message(f"Active Backend: {self.name}", 1)
-        _log_message(f"JAX Available: {self._jax_available}", 1)
-        _log_message(f"Default Random Key: {self.key}", 1)
+        _log_message(f"\tActive Backend: {self.name}", 1)
+        _log_message(f"\tJAX Available: {self._jax_available}", 1)
+        _log_message(f"\tDefault Random Key: {self.key}", 1)
         
         # Log current backend modules.
         _log_message("Active Backend Modules:", 1)
-        _log_message(f"  Main Module: {self.np}", 2)
-        _log_message(f"  Random Module: {self.random}", 2)
-        _log_message(f"  SciPy Module: {self.scipy}", 2)
+        _log_message(f"\tMain Module: {self.np}", 2)
+        _log_message(f"\tRandom Module: {self.random}", 2)
+        _log_message(f"\tSciPy Module: {self.scipy}", 2)
         
         # Footer.
         _log_message("=== End of Backend Info ===", 0)

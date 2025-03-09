@@ -9,6 +9,7 @@ matrices and vectors for testing solvers.
 
 import numpy as np
 import numpy.random as npr
+from numba import njit
 import scipy as sp
 from enum import Enum, unique
 
@@ -19,15 +20,18 @@ from tenpy.linalg.random_matrix import COE, GUE, GOE, CRE, CUE
 
 from typing import Union, Tuple, Optional, Callable
 import warnings
+from functools import partial
 
 from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend as __backend, _KEY, JIT    
+from general_python.algebra.utils import DEFAULT_NP_INT_TYPE, DEFAULT_NP_FLOAT_TYPE, DEFAULT_NP_CPX_TYPE
 
 if _JAX_AVAILABLE:
     import jax.numpy as jnp
     from jax import random as jrand
     from jax import numpy as jnp
-    from jax import random
+    from jax import random as random_jp
     from jax import jit
+    from general_python.algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 
 ###############################################################################
 #! Random number generator initialization
@@ -383,19 +387,30 @@ def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dty
     return __beta_jax(rnd_module, key if key is not None else _KEY, shape, a, b, dtype)
 
 ###############################################################################
-# Random randint distribution
+#! Random randint distribution
 ###############################################################################
 
-def randint_np(rng, low, high, size):
+@njit
+def randint_np(low, high, size):
     '''Create a random integer array using NumPy.'''
-    if rng is None:
-        rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
-    return rng.integers(low=low, high=high, size=size)
+    # if np.__version__ >= '1.17':
+        # if rng is None:
+            # rng = npr.default_rng(None)    
+            # return rng.integers(low=low, high=high, size=size)
+        # return rng.integers(low=low, high=high, size=size)
+    # return rng.randint(low=low, high=high, size=size)
+    return np.random.randint(low=low, high=high, size=size)
 
-@JIT
-def randint_jax(rng_module, key, shape, low, high, dtype):
-    '''Create a random integer array using JAX.'''
-    return rng_module.randint(key, shape=shape, minval=low, maxval=high, dtype=dtype)
+if _JAX_AVAILABLE:
+	@partial(JIT, static_argnames=('low', 'high', 'shape', 'dtype'))
+	def randint_jax(key, 
+					shape, 
+					low, 
+					high, 
+					dtype=DEFAULT_JP_INT_TYPE):
+		'''Create a random integer array using JAX.'''
+		return random_jp.randint(key, shape=shape, minval=low, maxval=high)
+
 
 def randint(low, high, shape, backend="default", seed: Optional[int] = None, dtype=None, rng=None, rng_k=None):
     """
@@ -421,12 +436,12 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
     array
         An array of random integers.
     """
-    (rng, rng_k) = handle_rng(None, None, backend, seed)
+    (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
     if dtype is None:
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
-        return randint_np(rng, low, high, shape).astype(dtype)
-    return randint_jax(rng, rng_k if rng_k is not None else _KEY, shape, low, high, dtype)
+        return randint_np(low, high, shape).astype(dtype)
+    return randint_jax(rng_k if rng_k is not None else _KEY, shape, low, high, dtype)
 
 ###############################################################################
 #! Random choice function (already provided)
@@ -670,3 +685,5 @@ def random_vector(shape, typek: str, backend="default", dtype = None, separator 
         return normal(shape, backend=backend, mean=val1, std=val2, dtype=dtype)
     else:
         raise ValueError("Invalid random vector type.")
+    
+##############################################################################
