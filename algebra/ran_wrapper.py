@@ -402,12 +402,11 @@ def randint_np(low, high, size):
     return np.random.randint(low=low, high=high, size=size)
 
 if _JAX_AVAILABLE:
-	@partial(JIT, static_argnames=('low', 'high', 'shape', 'dtype'))
+	@partial(JIT, static_argnames=('low', 'high', 'shape'))
 	def randint_jax(key, 
 					shape, 
 					low, 
-					high, 
-					dtype=DEFAULT_JP_INT_TYPE):
+					high):
 		'''Create a random integer array using JAX.'''
 		return random_jp.randint(key, shape=shape, minval=low, maxval=high)
 
