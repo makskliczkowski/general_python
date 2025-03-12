@@ -26,9 +26,12 @@ Note:
 """
 
 import numpy as np
+import general_python.ml.net_impl.net_general as _net_general
 from typing import Optional, Tuple, Callable
+
+# import from general python module
 from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
-from general_python.ml.activation_functions import get_activation
+from general_python.ml.net_impl.activation_functions import get_activation
 
 if _JAX_AVAILABLE:
 		import jax.numpy as jnp
@@ -36,7 +39,7 @@ if _JAX_AVAILABLE:
 
 ##################################################################
 
-class SimpleNet:
+class SimpleNet(_net_general.GeneralNet):
     """
     A simple network implementation that generates random complex outputs.
 
@@ -73,30 +76,24 @@ class SimpleNet:
             backend		: str
                             Backend to use ('default', 'numpy', or 'jax').
         """
-        # Get the backend.
-        if isinstance(backend, str):
-            self._backend_str	= backend
-            self._backend		= get_backend(backend)
-        else:
-            self._backend		= get_backend('default')
-            self._backend_str	= 'np' if backend == np else 'jax'
+        super().__init__(input_shape, backend, dtype)
 
         # Use the first element of input_shape as input_dim.
-        self._use_jax           = self.backend != np
-        self._dtype             = dtype  
-        self._input_dim	        = input_shape[0] if isinstance(input_shape, tuple) else input_shape
-        self._output_dim        = output_shape[0] if isinstance(output_shape, tuple) else output_shape
+        self._output_shape      = output_shape if isinstance(output_shape, tuple) else (output_shape,)
+        self._output_dim        = np.prod(self._output_shape)
         self.layers		        = layers
         self.bias		        = bias
 
         # Define architecture: hidden layers plus final layer of size 1.
-        dims                    = [self.input_dim] + list(layers) + [self._output_dim]
+        self._dims              = [self.input_dim] + list(layers) + [self._output_dim]
         self.params_np          = { "layers" : [] }
-        self.init_weights(dims)
+        self.init()
         
         # Initialize activation functions.
         self.init_activation(act_fun)
         
+    ###########################
+    #! INIT
     ###########################
     
     def init_activation(self, act_fun: Optional[Tuple] = None) -> None:
@@ -118,71 +115,84 @@ class SimpleNet:
 
     ###########################
 
-    def init_weights(self, dims, key: Optional[random.PRNGKey] = None) -> None:
+    def init(self, key: Optional[random.PRNGKey] = None) -> dict:
         """
-        Initialize weights of the network using JAX.
-        
-        Parameters:
-            key : jax.random.PRNGKey
-                Random key for JAX random number generation.
+        Initialize network parameters (weights and biases).
+        This method initializes the network's weights using He-like initialization
+        (scaled random normal distribution) and zeros for biases. For complex 
+        data types, it initializes both real and imaginary parts of the weights.
+        Parameters
+        ----------
+        key : Optional[random.PRNGKey]
+            JAX random key (not used in this implementation but kept for 
+            compatibility with other network implementations)
+        Returns
+        -------
+        dict
+            Dictionary containing initialized parameters with a 'layers' key 
+            that holds a list/tuple of weight-bias pairs for each layer.
+            Each pair is a tuple of (W, b) where W is the weight matrix and 
+            b is the bias vector (or None if bias is disabled).
         """
+
 
         # Initialize weights and biases using JAX.
         self.params_np["layers"] = []
-        for i in range(len(dims) - 1):
+        for i in range(len(self._dims) - 1):
             # Initialize weights with He-like scaling.
             if np.issubdtype(self._dtype, np.complexfloating):
                 # Create complex weights: real and imaginary parts.
-                W = (np.random.randn(dims[i], dims[i+1]) + 1j * np.random.randn(dims[i], dims[i+1]))
+                W = (np.random.randn(self._dims[i], self._dims[i+1]) + 1j * np.random.randn(self._dims[i], self._dims[i+1]))
                 W = W.astype(self._dtype)
             else:
-                W = np.random.randn(dims[i], dims[i+1]).astype(self._dtype)
+                W = np.random.randn(self._dims[i], self._dims[i+1]).astype(self._dtype)
             # Scale weights.
-            W   = W * np.sqrt(2.0 / dims[i])
-            b   = np.zeros(dims[i+1], dtype=self._dtype) if self.bias else None
+            W   = W * np.sqrt(2.0 / self._dims[i])
+            b   = np.zeros(self._dims[i+1], dtype=self._dtype) if self.bias else None
             self.params_np["layers"].append((W, b))
 
         if self._use_jax:
             # Convert parameters to JAX arrays.
             self.params_np["layers"] = tuple((jnp.array(W), jnp.array(b)) for W, b in self.params_np["layers"])
-
+    
+        return self.params_np
+    
     ##########################
     #! PROPERTIES
     ##########################
     
     @property
-    def input_dim(self) -> int:
-        """
-        Get the input dimension of the network.
-        
-        Returns:
-            int: Input dimension.
-        """
-        return self._input_dim
-        
-    @property
-    def dtype(self) -> np.dtype:
-        """
-        Get the data type of the network parameters.
-        
-        Returns:
-            np.dtype: Data type of the network parameters.
-        """
-        return self._dtype
+    def dtypes(self):
+        '''
+        Get the data types of the network parameters.
+        '''
+        if self._use_jax:
+            return [self._dtype] * len(self.params_np["layers"])
+        return [self._dtype] * len(self.params_np["layers"])
     
     @property
-    def backend(self) -> str:
-        """
-        Get the backend used by the network.
-        
-        Returns:
-            str: Backend used ('numpy' or 'jax').
-        """
-        return self._backend_str
+    def shapes(self):
+        '''
+        Get the shapes of the network parameters.
+        '''
+        if self._use_jax:
+            return [W.shape for W, b in self.params_np["layers"]]
+        return [W.shape for W, b in self.params_np["layers"]]
+    
+    @property
+    def nparams(self):
+        '''
+        Get the number of parameters in the network.
+        '''
+        if self._use_jax:
+            return [W.size for W, b in self.params_np["layers"]]
+        return [W.size for W, b in self.params_np["layers"]]
     
     ##########################
-
-    def apply(self, x : np.ndarray) -> np.ndarray:
+    #! APPLY
+    # ########################
+    
+    def apply(self, x: 'array-like') -> np.ndarray:
         """
         Apply the network to an input batch using NumPy
         
@@ -202,29 +212,9 @@ class SimpleNet:
                 s = s + b
             s = act(s)
         return s
-
-
+    
     ##########################
-    
-    def __call__(self, parameters = None, x : np.ndarray = None) -> np.ndarray:
-        """
-        Apply the network to an input batch.
-        
-        Parameters:
-            x : np.ndarray
-                Input array of shape (batch, input_dim)
-        
-        Returns:
-            np.ndarray: One output per sample.
-        """
-        if parameters is not None and x is not None:
-            self.set_params(parameters)
-            
-        if x is None:
-            return self.apply(parameters)
-        
-        return self.apply(x)
-    
+    #! INFO
     ##########################
     
     def __repr__(self) -> str:
@@ -234,21 +224,12 @@ class SimpleNet:
         Returns:
             str: Network architecture and parameters.
         """
-        return f"SimpleNet(input_dim={self.input_dim}, layers={self.layers}, bias={self.bias}, backend={self.backend_str})"
+        return f"SimpleNet(input_dim={self.input_dim}, layers={self.layers}, bias={self.bias}, backend={self.backend})"
     
     ##########################
-    
-    def __str__(self) -> str:
-        """
-        String representation of the network.
-        
-        Returns:
-            str: Network architecture and parameters.
-        """
-        return self.__repr__()
-    
+    #! SETTERS
     ##########################
-    
+
     def set_params(self, params: dict) -> None:
         """
         Set the parameters of the network.
@@ -260,7 +241,9 @@ class SimpleNet:
         self.params_np = params
         
     ##########################
-    
+    #! GETTERS
+    ##########################
+        
     def get_params(self) -> dict:
         """
         Get the parameters of the network.
