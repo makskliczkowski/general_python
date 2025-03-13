@@ -1,5 +1,5 @@
 """
-file    : general_python/ml/net_simple.py
+file    : general_python/ml/net_impl/net_simple.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-03-10
@@ -42,7 +42,7 @@ if _JAX_AVAILABLE:
 
 ##################################################################
 
-@numba.njit
+# @numba.njit
 def apply(params, x: 'array-like', activations) -> np.ndarray:
     """
     Apply the network to an input batch using NumPy
@@ -57,7 +57,7 @@ def apply(params, x: 'array-like', activations) -> np.ndarray:
     
     # Apply each hidden layer.
     s           = x
-    for (w, b), act in zip(params["layers"], activations):
+    for (w, b), act in zip(params['layers'], activations):
         # Apply weights and bias.
         s = np.dot(s, w) + b
         s = act(s)
@@ -107,7 +107,6 @@ def apply_wrapper(activations, use_jax: bool):
             return apply_jax(params, x, activations)
         return apply_jax_in
     
-    @numba.njit
     def apply_in(params, x):
         """
         Apply the network to an input batch using NumPy
@@ -177,10 +176,6 @@ class SimpleNet(_net_general.GeneralNet):
         self.act_fun            = act_fun
         self.init()
         
-        # Initialize activation functions.
-        self.init_activation()
-        self.init_fun()
-        
     ###########################
     #! INIT
     ###########################
@@ -196,7 +191,7 @@ class SimpleNet(_net_general.GeneralNet):
         
         if len(self.act_fun) < len(self.layers) + 1:
             # If there are not enough activation functions, fill the rest with identity.
-            self.act_fun += tuple(get_activation("identity", self._backend_str)[0] 
+            self.act_fun += tuple(get_activation("identity", self._backend_str)[0]
                         for _ in range(len(self.layers) + 1 - len(self.act_fun)))
     
     def init_fun(self):
@@ -321,12 +316,15 @@ class SimpleNet(_net_general.GeneralNet):
             params : dict
                 Dictionary of parameters.
         """
-        if not isinstance(params, dict):
-            raise TypeError("Parameters must be a dictionary.")
+        if not isinstance(params, dict) and isinstance(params, (list, tuple)):
+            params = { "layers" : params }
+        
         if "layers" not in params:
             raise KeyError("Parameters must contain 'layers' key.")
         self._parameters = params
     
-    ##########################
+    ###########################
+    #! GETTERS
+    ###########################
 
-###########################################################################    
+###########################################################################

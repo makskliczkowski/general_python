@@ -304,7 +304,7 @@ if AUTOGRAD_AVAILABLE:
 # ==============================================================================
 
 @numba.njit
-def apply_callable_np(func, states, sample_probas, logprobas_in, logproba_fun):
+def apply_callable_np(func, states, sample_probas, logprobas_in, logproba_fun, parameters):
     """
     Applies a transformation function to each state and computes a locally
     weighted estimate as motivated in the paper [2108.08631].
@@ -341,15 +341,16 @@ def apply_callable_np(func, states, sample_probas, logprobas_in, logproba_fun):
         new_states, new_vals    = func(states[i])
         
         # compute the new logprobas
-        new_logprobas           = logproba_fun(new_states)
-        
+        new_logprobas           = logproba_fun(parameters, new_states)
+        weights                 = np.exp(new_logprobas - logp)   
         # compute the weighted sum of the new logprobas
-        weights                 = sample_p * np.exp(new_logprobas - logp)
-        values[i]               = np.sum(new_vals * weights, axis=0)
+        weighted_sum            = np.sum(new_vals * weights, axis=0)
+        values[i]               = np.sum(weighted_sum * sample_p, axis=0)
+        
     return values, np.mean(values, axis = 0), np.std(values, axis = 0)
 
 @numba.njit
-def apply_callable_np_uniform(func, states, logprobas_in, logproba_fun):
+def apply_callable_np_uniform(func, states, logprobas_in, logproba_fun, parameters):
     """
     Applies a transformation function to each state and computes a locally
     weighted estimate as motivated in the paper [2108.08631].
@@ -385,16 +386,17 @@ def apply_callable_np_uniform(func, states, logprobas_in, logproba_fun):
         new_states, new_vals    = func(states[i])
         
         # compute the new logprobas
-        new_logprobas           = logproba_fun(new_states)
+        new_logprobas           = logproba_fun(parameters, new_states)
         
         # compute the weighted sum of the new logprobas
         weights                 = np.exp(new_logprobas - logp)
-        values[i]               = np.sum(new_vals * weights, axis=0)
+        weighted_sum            = np.sum(new_vals * weights, axis=0)
+        values[i]               = np.sum(weighted_sum, axis=0)
         
     return values, np.mean(values, axis=0), np.std(values, axis=0)
 
-@numba.njit(parallel=True)
-def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logproba_fun, batch_size: int):
+# @numba.njit(parallel=True)
+def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logproba_fun, parameters, batch_size: int):
     """
     Batched version of apply_callable_np with sample probabilities.
     
@@ -443,22 +445,29 @@ def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logprob
         batch_samples   = sample_batches[b]     # (batch_size, 1)
         for j in range(batch_states.shape[0]):
             # Extract scalar values.
-            logp          = batch_logps[j, 0]
-            sample_p      = batch_samples[j, 0]
+            logp                    = batch_logps[j]
+            sample_p                = batch_samples[j]
             # Apply the callable to the single state.
-            new_states, new_vals = func(batch_states[j])
-            new_logprobas = logproba_fun(new_states)
+            new_states, new_vals    = func(batch_states[j])
+            new_logprobas           = logproba_fun(parameters, new_states)
+            
+            weights                 = np.exp(new_logprobas[:,0] - logp)
+            weighted_sum            = np.dot(new_vals, weights)
+            estimates[index]        = weighted_sum * sample_p
+            
             # Compute weighted sum: sample_p * exp(new_logprobas - logp) scales new_vals.
-            weights = sample_p * np.exp(new_logprobas - logp)
-            estimates[index] = np.sum(new_vals * weights, axis=0)
-            index += 1
+            # weights = sample_p * np.exp(new_logprobas - logp)
+            # estimates[index] = np.sum(new_vals * weights, axis=0)
+            index                   += 1
+            if index >= total_samples:
+                break
     
     mean_val    = np.mean(estimates, axis=0)
     std_val     = np.std(estimates, axis=0)
     return estimates, mean_val, std_val
 
-@numba.njit(parallel=True)
-def apply_callable_batched_np_uniform(func, states, logprobas_in, logproba_fun, batch_size: int):
+# @numba.njit(parallel=True)
+def apply_callable_batched_np_uniform(func, states, logprobas_in, logproba_fun, parameters, batch_size: int):
     """
     Batched version of apply_callable_np for the uniform case (without sample probabilities).
     
@@ -505,9 +514,10 @@ def apply_callable_batched_np_uniform(func, states, logprobas_in, logproba_fun, 
         for j in range(batch_states.shape[0]):
             logp                    = batch_logps[j, 0]
             new_states, new_vals    = func(batch_states[j])
-            new_logprobas           = logproba_fun(new_states)
+            new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = np.exp(new_logprobas - logp)
-            estimates[index]        = np.sum(new_vals * weights)
+            weighted_sum            = np.sum(new_vals * weights, axis=0)
+            estimates[index]        = weighted_sum
             index                   += 1
             
     mean_val    = np.mean(estimates, axis=0)

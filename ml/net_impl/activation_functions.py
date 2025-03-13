@@ -389,6 +389,9 @@ def get_activation_np(name: str, params: Optional[dict] = None) -> Callable:
     Raises:
         ValueError: If the activation function name is not found.
     """
+    if not isinstance(name, str) and callable(name):
+        return name, params
+    
     if name not in activations_np:
         raise ValueError(f"Activation function '{name}' not found.")
     
