@@ -233,7 +233,7 @@ class GeneralNet(ABC):
             
         if x is None:
             return self.apply(params)
-        return self.apply(params, x)
+        return self.apply(x)
     
     # ---------------------------------------------------
 
