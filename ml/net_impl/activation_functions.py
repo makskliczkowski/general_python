@@ -66,6 +66,9 @@ def poly5(x):
     return ((0.133333333 * xsq - 0.333333333) * xsq + 1.) * x
 
 if _JAX_AVAILABLE:
+    import jax
+    
+    @jax.jit
     def log_cosh_jnp(x):
         ''' 
         Logarithm of the hyperbolic cosine activation function (JAX implementation).
@@ -80,6 +83,7 @@ if _JAX_AVAILABLE:
         x       = x * sgn_x
         return x + jnp.log1p(jnp.exp(-2.0 * x)) - jnp.log(2.0)
     
+    @jax.jit
     def tanh_jnp(x):
         ''' 
         Hyperbolic tangent activation function (JAX implementation).
@@ -94,6 +98,7 @@ if _JAX_AVAILABLE:
         x       = x * sgn_x
         return jnp.tanh(x)
     
+    @jax.jit
     def sigmoid_jnp(x):
         ''' 
         Sigmoid activation function (JAX implementation).
@@ -106,6 +111,7 @@ if _JAX_AVAILABLE:
         '''
         return nn.sigmoid(x)
     
+    @jax.jit
     def sigmoid_inv_jnp(x):
         ''' 
         Inverse of the sigmoid activation function (JAX implementation).
@@ -119,7 +125,8 @@ if _JAX_AVAILABLE:
         sgn_x   = -2 * jnp.signbit(x.real) + 1
         x       = x * sgn_x
         return -jnp.log(1 / x - 1)
-    
+
+    @jax.jit
     def relu_jnp(x):
         ''' 
         Rectified linear unit activation function (JAX implementation).
@@ -132,6 +139,7 @@ if _JAX_AVAILABLE:
         '''
         return nn.relu(x)
     
+    @jax.jit
     def leaky_relu_jnp(x, alpha=0.01):
         ''' 
         Leaky rectified linear unit activation function (JAX implementation).
@@ -144,7 +152,8 @@ if _JAX_AVAILABLE:
             x if x > 0 else alpha*x
         '''
         return nn.leaky_relu(x, negative_slope=alpha)
-
+    
+    @jax.jit
     def elu_jnp(x, alpha=1.0):
         ''' 
         Exponential linear unit activation function (JAX implementation).
@@ -158,6 +167,7 @@ if _JAX_AVAILABLE:
         '''
         return nn.elu(x, alpha=alpha)
     
+    @jax.jit
     def softplus_jnp(x):
         ''' 
         Softplus activation function (JAX implementation).
@@ -170,6 +180,7 @@ if _JAX_AVAILABLE:
         '''
         return nn.softplus(x)
     
+    @jax.jit
     def identity_jnp(x):
         ''' 
         Identity activation function (JAX implementation).
@@ -222,6 +233,9 @@ if _JAX_AVAILABLE:
         Raises:
             ValueError: If the activation function name is not found.
         """
+        if not isinstance(name, str) and callable(name):
+            return name, params
+        
         if name not in activations_jnp:
             raise ValueError(f"Activation function '{name}' not found.")
         

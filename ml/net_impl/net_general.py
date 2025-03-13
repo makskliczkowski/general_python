@@ -6,15 +6,17 @@ date    : 2025-03-10
 """
 
 import numpy as np
+import numba
 from typing import Optional, Tuple, Callable
 from abc import ABC, abstractmethod
 from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
 
 if _JAX_AVAILABLE:
+    import jax
     import jax.numpy as jnp
     from jax import random
     
-###################################################################
+#########################################################
 
 class GeneralNet(ABC):
     """
@@ -25,7 +27,7 @@ class GeneralNet(ABC):
     backends, depending on the provided backend argument.
     """
 
-    def __init__(self, 
+    def __init__(self,
                 input_shape     : tuple,
                 backend		    : str		        = 'default',
                 dtype           : Optional[np.dtype]= np.float64):
@@ -36,21 +38,30 @@ class GeneralNet(ABC):
             self._backend		= get_backend(backend)
             self._use_jax       = self._backend_str != 'np'
         else:
-            self._backend		= get_backend('default')
+            self._backend		= get_backend(backend)
             self._backend_str	= 'np' if backend == np else 'jax'
             self._use_jax       = self._backend_str != 'np'
         
         # Set the type.
-        self._dtype = dtype  
+        self._dtype             = dtype
 
+        # applies
+        self._apply_jax         = lambda p, x: 1
+        self._apply_np          = lambda p, x: 1
+        
+        # Set the input shape and dimension.
         self._input_shape       = input_shape if isinstance(input_shape, tuple) else (input_shape,)
         self._input_dim	        = np.prod(self._input_shape)
         self._output_shape      = None
         self._output_dim	    = None
+        self._parameters        = None
         
         # helper functions
         self._holomorphic	    = None
         self._has_analitic_grad = True
+        
+        # initialization
+        self._initialized       = False
         
     # ---------------------------------------------------
     #! INFO
@@ -76,7 +87,7 @@ class GeneralNet(ABC):
         Parameters:
             key (optional): Random key for initialization.
         """
-        pass
+        self._initialized = True
     
     # ---------------------------------------------------
     #! PROPERTIES
@@ -172,6 +183,36 @@ class GeneralNet(ABC):
         """
         return 0 # GeneralNet does not have parameters in the traditional sense.
 
+    @property
+    def output_shape(self) -> tuple:
+        """
+        Get the output shape of the network.
+        
+        Returns:
+            tuple: Output shape of the network.
+        """
+        return self._output_shape
+    
+    @property
+    def output_dim(self) -> int:
+        """
+        Get the output dimension of the network.
+        
+        Returns:
+            int: Output dimension.
+        """
+        return self._output_dim
+    
+    @property
+    def initialized(self) -> bool:
+        """
+        Check if the network is initialized.
+        
+        Returns:
+            bool: True if the network is initialized, False otherwise.
+        """
+        return self._initialized
+
     # ---------------------------------------------------
     #! SETTERS
     # ---------------------------------------------------
@@ -190,7 +231,6 @@ class GeneralNet(ABC):
     #! GETTERS
     # ---------------------------------------------------
     
-    @abstractmethod
     def get_params(self):
         """
         Get the network parameters.
@@ -198,14 +238,13 @@ class GeneralNet(ABC):
         Returns:
             dict: Network parameters.
         """
-        pass
+        return self._parameters
     
     # ---------------------------------------------------
     #! METHODS
     # ---------------------------------------------------
     
-    @abstractmethod
-    def apply(self, x: 'array-like' = None):
+    def apply_np(self, x: 'array-like'):
         """
         Apply the network to the input data.
         
@@ -215,7 +254,52 @@ class GeneralNet(ABC):
         Returns:
             array-like: Output of the network.
         """
-        pass
+        return self._apply_np(self.get_params(), x)
+    
+    def apply_jax(self, x: 'array-like'):
+        """
+        Apply the network to the input data using JAX.
+        
+        Parameters:
+            x (array-like)          : Input data.
+        
+        Returns:
+            array-like: Output of the network.
+        """
+        return self._apply_jax(self.get_params(), x)
+    
+    def apply(self, params, x: 'array-like', use_jax: bool = False):
+        """
+        Apply the network to the input data.
+        
+        Parameters:
+            x (array-like)          : Input data.
+            use_jax (bool): If True, use JAX backend. Default is False.
+        
+        Returns:
+            array-like: Output of the network.
+        """
+        if params is not None:
+            self.set_params(params)
+            
+        if self._use_jax or (use_jax and _JAX_AVAILABLE):
+            return self.apply_jax(x)
+        return self.apply_np(x)
+    
+    def get_apply(self, use_jax: bool = False) -> Callable:
+        """
+        Get the apply function of the network.
+        Parameters:
+            use_jax (bool): If True, use JAX backend. Default is False.
+        If JAX is not available, it will use NumPy backend.
+        Returns:
+            Callable: Apply function of the network.
+        """
+        if self._use_jax or (use_jax and _JAX_AVAILABLE):
+            return self._apply_jax, self.get_params()
+        return self._apply_np, self.get_params()
+    
+    # ---------------------------------------------------
     
     def __call__(self, params = None, x: 'array-like' = None) -> 'array-like':
         """
@@ -228,12 +312,7 @@ class GeneralNet(ABC):
         Returns:
             array-like: Output of the network.
         """
-        if params is not None and x is not None:
-            self.set_params(params)
-            
-        if x is None:
-            return self.apply(params)
-        return self.apply(x)
+        return self.apply(params=params, x=x, use_jax=self._use_jax)
     
     # ---------------------------------------------------
 
@@ -250,7 +329,7 @@ class CallableNet(GeneralNet):
     backends, depending on the provided backend argument.
     """
 
-    def __init__(self, 
+    def __init__(self,
                 input_shape     : tuple,
                 backend		    : str		        = 'default',
                 dtype           : Optional[np.dtype]= np.float64,
@@ -260,7 +339,21 @@ class CallableNet(GeneralNet):
         # Set the callable function.
         if callable_fun is None:
             raise ValueError("Callable function must be provided.")
-        self._callable_fun = callable_fun
+        self._callable_fun  = callable_fun
+        
+        @numba.njit
+        def apply_np_in(_, x):
+            return self._callable_fun(x)
+        
+        @jax.jit
+        def apply_jax_in(_, x):
+            return self._callable_fun(x)
+        
+        # Set the apply functions.
+        self._apply_np      = apply_np_in
+        self._apply_jax     = apply_jax_in
+        
+        self.init()
         
     # ---------------------------------------------------
     #! INFO
@@ -327,26 +420,6 @@ class CallableNet(GeneralNet):
         return 0  # CallableNet does not have parameters in the traditional sense.
     
     # ---------------------------------------------------
-    #! APPLY
-    # ---------------------------------------------------
-    
-    def apply(self, x: 'array-like' = None):
-        """
-        Apply the network to the input data.
-        
-        Parameters:
-            x (array-like)          : Input data.
-        
-        Returns:
-            array-like: Output of the network.
-        """
-        if x is None:
-            raise ValueError("Input data must be provided.")
-        
-        # Call the callable function with the input data.
-        return self._callable_fun(x)
-    
-    # ---------------------------------------------------
     #! SETTERS
     # ---------------------------------------------------
     
@@ -359,20 +432,6 @@ class CallableNet(GeneralNet):
         """
         # This method is not applicable for CallableNet.
         pass
-    
-    # ---------------------------------------------------
-    #! GETTERS
-    # ---------------------------------------------------
-    
-    def get_params(self):
-        """
-        Get the network parameters.
-        
-        Returns:
-            dict: Network parameters.
-        """
-        # This method is not applicable for CallableNet.
-        return {}
     
     # ---------------------------------------------------
     

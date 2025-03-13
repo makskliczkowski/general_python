@@ -26,6 +26,8 @@ Note:
 """
 
 import numpy as np
+import numba
+from functools import partial
 import general_python.ml.net_impl.net_general as _net_general
 from typing import Optional, Tuple, Callable
 
@@ -34,10 +36,95 @@ from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
 from general_python.ml.net_impl.activation_functions import get_activation
 
 if _JAX_AVAILABLE:
-		import jax.numpy as jnp
-		from jax import random
+    import jax
+    import jax.numpy as jnp
+    from jax import random
 
 ##################################################################
+
+@numba.njit
+def apply(params, x: 'array-like', activations) -> np.ndarray:
+    """
+    Apply the network to an input batch using NumPy
+    
+    Parameters:
+        x : np.ndarray
+            Input array of shape (batch, input_dim)
+    
+    Returns:
+        np.ndarray: One output per sample.
+    """
+    
+    # Apply each hidden layer.
+    s           = x
+    for (w, b), act in zip(params["layers"], activations):
+        # Apply weights and bias.
+        s = np.dot(s, w) + b
+        s = act(s)
+    return s
+
+if _JAX_AVAILABLE:
+    
+    @partial(jax.jit, static_argnums=(2,))
+    def apply_jax(params, x: 'array-like', activations) -> jnp.ndarray:
+        """
+        Apply the network to an input batch using JAX
+        
+        Parameters:
+            x : jnp.ndarray
+                Input array of shape (batch, input_dim)
+        
+        Returns:
+            jnp.ndarray: One output per sample.
+        """
+        
+        # Apply each hidden layer.
+        s           = x
+        for (w, b), act in zip(params["layers"], activations):
+            # Apply weights and bias.
+            s = jnp.dot(s, w) + b
+            s = act(s)
+        return s
+
+def apply_wrapper(activations, use_jax: bool):
+    '''
+    Wrapper function to apply the network using either NumPy or JAX.
+    '''
+    
+    if use_jax and _JAX_AVAILABLE:
+        @jax.jit
+        def apply_jax_in(params, x):
+            """
+            Apply the network to an input batch using JAX
+            
+            Parameters:
+                x : jnp.ndarray
+                    Input array of shape (batch, input_dim)
+            
+            Returns:
+                jnp.ndarray: One output per sample.
+            """
+            return apply_jax(params, x, activations)
+        return apply_jax_in
+    
+    @numba.njit
+    def apply_in(params, x):
+        """
+        Apply the network to an input batch using NumPy
+        
+        Parameters:
+            x : np.ndarray
+                Input array of shape (batch, input_dim)
+        
+        Returns:
+            np.ndarray: One output per sample.
+        """
+        return apply(params, x, activations)
+    return apply_in
+
+###################################################################
+#! SIMPLE NETWORK
+###################################################################
 
 class SimpleNet(_net_general.GeneralNet):
     """
@@ -48,7 +135,7 @@ class SimpleNet(_net_general.GeneralNet):
     backends, depending on the provided backend argument.
     """
 
-    def __init__(self, 
+    def __init__(self,
                 act_fun		: Optional[Tuple]   = None,
                 input_shape	: tuple		        = (10,),
                 output_shape: tuple		        = (1,),
@@ -86,77 +173,98 @@ class SimpleNet(_net_general.GeneralNet):
 
         # Define architecture: hidden layers plus final layer of size 1.
         self._dims              = [self.input_dim] + list(layers) + [self._output_dim]
-        self.params_np          = { "layers" : [] }
+        self._parameters        = { "layers" : [] }
+        self.act_fun            = act_fun
         self.init()
         
         # Initialize activation functions.
-        self.init_activation(act_fun)
+        self.init_activation()
+        self.init_fun()
         
     ###########################
     #! INIT
     ###########################
     
-    def init_activation(self, act_fun: Optional[Tuple] = None) -> None:
+    def init_activation(self) -> None:
         """
         Initialize activation functions for the network.
-        
-        Parameters:
-            act_fun : tuple
-                Activation functions for NumPy.
         """
         
         # Store activation functions.
-        self.act_fun = tuple( get_activation(act, self._backend_str)[0]
-								for act in act_fun )
+        self.act_fun = tuple(get_activation(act, self._parameters, self._backend_str)[0] 
+                        for act in self.act_fun)
+        
         if len(self.act_fun) < len(self.layers) + 1:
             # If there are not enough activation functions, fill the rest with identity.
             self.act_fun += tuple(get_activation("identity", self._backend_str)[0] 
-                                for _ in range(len(self.layers) + 1 - len(self.act_fun)))
-
-    ###########################
-
-    def init(self, key: Optional[random.PRNGKey] = None) -> dict:
+                        for _ in range(len(self.layers) + 1 - len(self.act_fun)))
+    
+    def init_fun(self):
+        """
+        Initialize the network parameters.
+        This method is a placeholder for any additional initialization logic
+        that may be needed in the future.
+        """
+        if self._use_jax:
+            # Convert parameters to JAX arrays.
+            self._apply_jax = apply_wrapper(self.act_fun, True)
+        self._apply_np = apply_wrapper(self.act_fun, False)
+    
+    def init(self, key = None) -> dict:
         """
         Initialize network parameters (weights and biases).
-        This method initializes the network's weights using He-like initialization
-        (scaled random normal distribution) and zeros for biases. For complex 
-        data types, it initializes both real and imaginary parts of the weights.
+        
+        Uses He initialization for weights (scaled random normal) and zeros for biases.
+        For complex data types, initializes both real and imaginary parts.
+        
         Parameters
         ----------
-        key : Optional[random.PRNGKey]
-            JAX random key (not used in this implementation but kept for 
-            compatibility with other network implementations)
+        key : jax.random.PRNGKey
+            JAX random key (for compatibility with other implementations)
         Returns
         -------
         dict
-            Dictionary containing initialized parameters with a 'layers' key 
-            that holds a list/tuple of weight-bias pairs for each layer.
-            Each pair is a tuple of (W, b) where W is the weight matrix and 
-            b is the bias vector (or None if bias is disabled).
+            Dictionary of initialized parameters with weights and biases
         """
-
-
-        # Initialize weights and biases using JAX.
-        self.params_np["layers"] = []
+        
+        if self.initialized:
+            # If already initialized, return existing parameters.
+            return self._parameters
+        
+        self._parameters["layers"] = []
+        
         for i in range(len(self._dims) - 1):
-            # Initialize weights with He-like scaling.
+            # Initialize weights with He initialization scaling
             if np.issubdtype(self._dtype, np.complexfloating):
-                # Create complex weights: real and imaginary parts.
-                W = (np.random.randn(self._dims[i], self._dims[i+1]) + 1j * np.random.randn(self._dims[i], self._dims[i+1]))
-                W = W.astype(self._dtype)
+                w = np.random.randn(self._dims[i], self._dims[i+1])
+                w = (w + 1j * np.random.randn(*w.shape)).astype(self._dtype)
             else:
-                W = np.random.randn(self._dims[i], self._dims[i+1]).astype(self._dtype)
-            # Scale weights.
-            W   = W * np.sqrt(2.0 / self._dims[i])
-            b   = np.zeros(self._dims[i+1], dtype=self._dtype) if self.bias else None
-            self.params_np["layers"].append((W, b))
+                w = np.random.randn(self._dims[i], self._dims[i+1]).astype(self._dtype)
+                
+            # Scale weights by sqrt(2/fan_in)
+            w *= np.sqrt(2.0 / self._dims[i])
+            
+            # Initialize biases as zeros if using bias
+            if self.bias:
+                b = np.random.random(self._dims[i+1])
+                if np.issubdtype(self._dtype, np.complexfloating):
+                    b = (b + 1j * np.random.random(self._dims[i+1])).astype(self._dtype)
+            else:
+                b = np.zeros(self._dims[i+1], dtype=self._dtype)
+            self._parameters["layers"].append((w, b))
 
+        # Convert to JAX arrays if using JAX backend
         if self._use_jax:
-            # Convert parameters to JAX arrays.
-            self.params_np["layers"] = tuple((jnp.array(W), jnp.array(b)) for W, b in self.params_np["layers"])
-    
-        return self.params_np
-    
+            self._parameters["layers"] = tuple(
+                (jnp.array(W), jnp.array(b) if b is not None else None)
+                for W, b in self._parameters["layers"])
+        
+        self.init_activation()
+        self.init_fun()
+        super().init(key)
+        
+        return self._parameters
+
     ##########################
     #! PROPERTIES
     ##########################
@@ -167,8 +275,8 @@ class SimpleNet(_net_general.GeneralNet):
         Get the data types of the network parameters.
         '''
         if self._use_jax:
-            return [self._dtype] * len(self.params_np["layers"])
-        return [self._dtype] * len(self.params_np["layers"])
+            return [self._dtype] * len(self._parameters["layers"])
+        return [self._dtype] * len(self._parameters["layers"])
     
     @property
     def shapes(self):
@@ -176,8 +284,8 @@ class SimpleNet(_net_general.GeneralNet):
         Get the shapes of the network parameters.
         '''
         if self._use_jax:
-            return [W.shape for W, b in self.params_np["layers"]]
-        return [W.shape for W, b in self.params_np["layers"]]
+            return [W.shape for W, b in self._parameters["layers"]]
+        return [W.shape for W, b in self._parameters["layers"]]
     
     @property
     def nparams(self):
@@ -185,33 +293,8 @@ class SimpleNet(_net_general.GeneralNet):
         Get the number of parameters in the network.
         '''
         if self._use_jax:
-            return [W.size for W, b in self.params_np["layers"]]
-        return [W.size for W, b in self.params_np["layers"]]
-    
-    ##########################
-    #! APPLY
-    # ########################
-    
-    def apply(self, x: 'array-like') -> np.ndarray:
-        """
-        Apply the network to an input batch using NumPy
-        
-        Parameters:
-            x : np.ndarray
-                Input array of shape (batch, input_dim)
-        
-        Returns:
-            np.ndarray: One output per sample.
-        """
-        
-        # Apply each hidden layer.
-        s = x
-        for (W, b), act in zip(self.params_np["layers"], self.act_fun):
-            s = self._backend.dot(s, W)
-            if self.bias:
-                s = s + b
-            s = act(s)
-        return s
+            return [W.size for W, b in self._parameters["layers"]]
+        return [W.size for W, b in self._parameters["layers"]]
     
     ##########################
     #! INFO
@@ -238,20 +321,11 @@ class SimpleNet(_net_general.GeneralNet):
             params : dict
                 Dictionary of parameters.
         """
-        self.params_np = params
-        
-    ##########################
-    #! GETTERS
-    ##########################
-        
-    def get_params(self) -> dict:
-        """
-        Get the parameters of the network.
-        
-        Returns:
-            dict: Dictionary of parameters.
-        """
-        return self.params_np
+        if not isinstance(params, dict):
+            raise TypeError("Parameters must be a dictionary.")
+        if "layers" not in params:
+            raise KeyError("Parameters must contain 'layers' key.")
+        self._parameters = params
     
     ##########################
 
