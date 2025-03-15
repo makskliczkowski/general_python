@@ -86,9 +86,11 @@ if _JAX_AVAILABLE:
 #! GRADIENTS
 ###########################################################################
 
+_ERR_JAX_GRADIENTS_CALLABLE = "The function must be callable."
+
 if _JAX_AVAILABLE:
 
-    def flat_gradient_analytical_jax(fun: Any, params, arg) -> jnp.ndarray:
+    def flat_gradient_analytical_jax(func_analitical: Any, params, arg) -> jnp.ndarray:
         """
         Compute a flattened complex gradient using an analytical method (JAX version).
         
@@ -116,13 +118,13 @@ if _JAX_AVAILABLE:
         """
                 
         # Call the analytical gradient function.
-        grad_val    = fun.gradient(params, arg)
+        grad_val    = func_analitical(params, arg)
         # Flatten the gradient pytree: each leaf is reshaped to 1D.
         flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
         # Concatenate all flattened arrays into one vector.
         return jnp.concatenate(flat_grad)
 
-    def flat_gradient_numerical_jax(fun: Any, params, arg) -> jnp.ndarray:
+    def flat_gradient_numerical_jax(func: Any, params, arg) -> jnp.ndarray:
         """
         Compute a flattened complex gradient using numerical differentiation (JAX version).
         
@@ -147,15 +149,15 @@ if _JAX_AVAILABLE:
         >>> flat_grad = flat_gradient_numerical_jax(fun, params, state)
         """
         # Compute gradient of the real part.
-        gr = grad(lambda p, y: jnp.real(fun.apply(p, y)))(params, arg)["params"]
-        gr = tree_flatten(tree_map(lambda x: x.ravel(), gr))[0]
+        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        gr  = tree_flatten(tree_map(lambda x: x.ravel(), gr))[0]
         # Compute gradient of the imaginary part.
-        gi = grad(lambda p, y: jnp.imag(fun.apply(p, y)))(params, arg)["params"]
-        gi = tree_flatten(tree_map(lambda x: x.ravel(), gi))[0]
+        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)["params"]
+        gi  = tree_flatten(tree_map(lambda x: x.ravel(), gi))[0]
         # Concatenate and combine into a single complex vector.
         return jnp.concatenate(gr) + 1.j * jnp.concatenate(gi)
 
-    def flat_gradient_jax(fun: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
+    def flat_gradient_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
         """
         Wrapper for computing a flattened complex gradient using JAX.
         
@@ -182,41 +184,41 @@ if _JAX_AVAILABLE:
         -------
         >>> grad_vec = flat_gradient_jax(fun, params, state, analytical=True)
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
+        if not callable(func):
+            raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
         if analytical:
-            return flat_gradient_analytical_jax(fun, params, arg)
-        return flat_gradient_numerical_jax(fun, params, arg)
+            return flat_gradient_analytical_jax(func, params, arg)
+        return flat_gradient_numerical_jax(func, params, arg)
 
     # -----------------------------------------------------------------------------
     #! Non-holomorphic Gradients: JAX
     # -----------------------------------------------------------------------------
 
-    def flat_gradient_cpx_nonholo_analytical_jax(fun: Any, params: Any, arg: Any) -> jnp.ndarray:
+    def flat_gradient_cpx_nonholo_analytical_jax(func_analitical: Any, params: Any, arg: Any) -> jnp.ndarray:
         """
         Compute an analytical flattened complex gradient for non-holomorphic networks (JAX).
 
         Assumes fun returns the analytical gradient as a pytree.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        grad_val    = fun.gradient(params, arg)
+        if not callable(func_analitical):
+            raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
+        grad_val    = func_analitical(params, arg)
         flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
         return jnp.concatenate(flat_grad)
 
-    def flat_gradient_cpx_nonholo_numerical_jax(fun: Any, params: Any, arg: Any) -> jnp.ndarray:
+    def flat_gradient_cpx_nonholo_numerical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
         """
         Compute a flattened complex gradient for non-holomorphic networks using numerical differentiation (JAX).
 
         Adjusts the sign of the imaginary part.
         """
-        gr = grad(lambda p, y: jnp.real(fun.apply(p, y)))(params, arg)["params"]
-        gr = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gr))[0]
-        gi = grad(lambda p, y: jnp.imag(fun.apply(p, y)))(params, arg)["params"]
-        gi = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gi))[0]
+        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        gr  = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gr))[0]
+        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)["params"]
+        gi  = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gi))[0]
         return jnp.concatenate(gr) + 1.j * jnp.concatenate(gi)
 
-    def flat_gradient_cpx_nonholo_jax(fun: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
+    def flat_gradient_cpx_nonholo_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
         """
         Wrapper for computing a flattened complex gradient for non-holomorphic networks using JAX.
         Parameters
@@ -237,34 +239,34 @@ if _JAX_AVAILABLE:
         -------        
         """
         if analytical:
-            return flat_gradient_cpx_nonholo_analytical_jax(fun, params, arg)
-        return flat_gradient_cpx_nonholo_numerical_jax(fun, params, arg)
+            return flat_gradient_cpx_nonholo_analytical_jax(func, params, arg)
+        return flat_gradient_cpx_nonholo_numerical_jax(func, params, arg)
 
     # -----------------------------------------------------------------------------
     #! Real Gradients: JAX
     # -----------------------------------------------------------------------------
 
-    def flat_gradient_real_analytical_jax(fun: Any, params: Any, arg: Any) -> jnp.ndarray:
+    def flat_gradient_real_analytical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
         """
         Compute an analytical flattened real gradient (JAX).
 
-        Assumes fun provides an 'analytical_gradient_real' method.
+        Assumes func provides an 'analytical_gradient_real' method.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        grad_val    = fun.gradient(params, arg).astype(jnp.float32)
+        if not callable(func):
+            raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
+        grad_val    = func(params, arg).astype(jnp.float32)
         flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
         return jnp.concatenate(flat_grad).astype(jnp.float32)
 
-    def flat_gradient_real_numerical_jax(fun: Any, params: Any, arg: Any) -> jnp.ndarray:
+    def flat_gradient_real_numerical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
         """
         Compute a flattened real gradient using numerical differentiation (JAX).
         """
-        g = grad(lambda p, y: jnp.real(fun.apply(p, y)))(params, arg)["params"]
+        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
         g = tree_flatten(tree_map(lambda x: x.ravel(), g))[0]
         return jnp.concatenate(g).astype(jnp.float32)
 
-    def flat_gradient_real_jax(fun: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
+    def flat_gradient_real_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
         """
         Wrapper for computing a flattened real gradient using JAX.
         Parameters
@@ -286,100 +288,98 @@ if _JAX_AVAILABLE:
         >>> grad_vec = flat_gradient_real_jax(fun, params, state, analytical=True)        
         """
         if analytical:
-            return flat_gradient_real_analytical_jax(fun, params, arg)
-        return flat_gradient_real_numerical_jax(fun, params, arg)
+            return flat_gradient_real_analytical_jax(func, params, arg)
+        return flat_gradient_real_numerical_jax(func, params, arg)
 
     # -----------------------------------------------------------------------------
     #! Holomorphic Gradients: JAX
     # -----------------------------------------------------------------------------
 
-    def flat_gradient_holo_analytical_jax(fun: Any, params: Any, arg: Any) -> jnp.ndarray:
+    def flat_gradient_holo_analytical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
         """
         Compute an analytical flattened gradient for holomorphic networks (JAX).
 
-        Assumes fun provides an 'analytical_gradient_holo' method.
+        Assumes func provides an 'analytical_gradient_holo' method.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        grad_val    = fun.gradient(params, arg)
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        grad_val    = func(params, arg)
         flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
         return jnp.concatenate(flat_grad)
 
-    def flat_gradient_holo_numerical_jax(fun: Any, params: Any, arg: Any) -> jnp.ndarray:
+    def flat_gradient_holo_numerical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
         """
         Compute a flattened gradient for holomorphic networks using numerical differentiation (JAX).
 
         Each parameter's raveled value is repeated once with a multiplier of 1.j.
         """
-        g = grad(lambda p, y: jnp.real(fun.apply(p, y)))(params, arg)["params"]
+        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
         # Create a list with each flattened leaf repeated with an imaginary component.
         g = tree_flatten(tree_map(lambda x: [x.ravel(), 1.j * x.ravel()], g))[0]
         return jnp.concatenate(g)
 
-    def flat_gradient_holo_jax(fun: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
+    def flat_gradient_holo_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
         """
         Wrapper for computing a flattened gradient for holomorphic networks using JAX.
         """
         if analytical:
-            return flat_gradient_holo_analytical_jax(fun, params, arg)
-        return flat_gradient_holo_numerical_jax(fun, params, arg)
+            return flat_gradient_holo_analytical_jax(func, params, arg)
+        return flat_gradient_holo_numerical_jax(func, params, arg)
 
     # -----------------------------------------------------------------------------
     #! Dictionary of Gradients: JAX
     # -----------------------------------------------------------------------------
 
-    def dict_gradient_analytical_jax(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_analytical_jax(func: Any, params: Any, arg: Any) -> Any:
         """
-        Compute an analytical dictionary of complex gradients using JAX.
-
-        Assumes fun provides an 'analytical_dict_gradient' method.
+        Wrapper for computing a dictionary of complex gradients using JAX.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        return fun.gradient(params, arg)
+        if not callable(func):
+            raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
+        return func(params, arg)
 
-    def dict_gradient_numerical_jax(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_numerical_jax(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute a dictionary of complex gradients using numerical differentiation (JAX).
         """
-        gr = grad(lambda p, y: jnp.real(fun.apply(p, y)))(params, arg)["params"]
-        gr = tree_map(lambda x: x.ravel(), gr)
-        gi = grad(lambda p, y: jnp.imag(fun.apply(p, y)))(params, arg)["params"]
-        gi = tree_map(lambda x: x.ravel(), gi)
+        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        gr  = tree_map(lambda x: x.ravel(), gr)
+        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)["params"]
+        gi  = tree_map(lambda x: x.ravel(), gi)
         return tree_map(lambda x, y: x + 1.j * y, gr, gi)
 
-    def dict_gradient_jax(fun: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
+    def dict_gradient_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
         """
         Wrapper for computing a dictionary of complex gradients using JAX.
         """
         if analytical:
-            return dict_gradient_analytical_jax(fun, params, arg)
-        return dict_gradient_numerical_jax(fun, params, arg)
+            return dict_gradient_analytical_jax(func, params, arg)
+        return dict_gradient_numerical_jax(func, params, arg)
 
-    def dict_gradient_real_analytical_jax(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_real_analytical_jax(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute an analytical dictionary of real gradients using JAX.
 
         Assumes fun provides 'analytical_dict_gradient_real'.
         """
-        if not callable(fun):
+        if not callable(func):
             raise ValueError("fun must be callable.")
-        return fun.gradient(params, arg)
-
-    def dict_gradient_real_numerical_jax(fun: Any, params: Any, arg: Any) -> Any:
+        return func(params, arg)
+    
+    def dict_gradient_real_numerical_jax(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute a dictionary of real gradients using numerical differentiation (JAX).
         """
-        g = grad(lambda p, y: jnp.real(fun.apply(p, y)))(params, arg)["params"]
+        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
         return tree_map(lambda x: x.ravel(), g)
 
-    def dict_gradient_real_jax(fun: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
+    def dict_gradient_real_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
         """
         Wrapper for computing a dictionary of real gradients using JAX.
         """
         if analytical:
-            return dict_gradient_real_analytical_jax(fun, params, arg)
-        return dict_gradient_real_numerical_jax(fun, params, arg)
+            return dict_gradient_real_analytical_jax(func, params, arg)
+        return dict_gradient_real_numerical_jax(func, params, arg)
 
 # -------------------------------------------------------------------------
 #! APPLY CALLABLE
@@ -416,9 +416,9 @@ if _JAX_AVAILABLE:
         # the input of states might be (num_samples, num_chains, num_visible)
         # logprobas_in might be (num_samples, num_chains, 1)
         # transform to (num_samples * num_chains, num_visible) and (num_samples * num_chains, 1)
-        states          = jnp.reshape(states, (-1, states.shape[-1]))
-        logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
-        sample_probas   = jnp.reshape(sample_probas, (-1, 1))
+        # states          = jnp.reshape(states, (-1, states.shape[-1]))
+        # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
+        # sample_probas   = jnp.reshape(sample_probas, (-1, 1))
     
         # function to compute the estimate for a single state
         def compute_estimate(state, logp, sample_p):
@@ -462,8 +462,8 @@ if _JAX_AVAILABLE:
         # logprobas_in might be (num_samples, num_chains, 1)
         # transform to (num_samples * num_chains, num_visible) and (num_samples * num_chains, 1)
         
-        states          = jnp.reshape(states, (-1, states.shape[-1]))
-        logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
+        # states          = jnp.reshape(states, (-1, states.shape[-1]))
+        # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
         # function to compute the estimate for a single state
         def compute_estimate(state, logp):
             # Squeeze the scalar values.
@@ -507,9 +507,9 @@ if _JAX_AVAILABLE:
             - std           : Standard deviation of the estimates (over sample dimension).
         """
         # Reshape inputs.
-        states          = jnp.reshape(states, (-1, states.shape[-1]))
-        logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))#[:, 0]
-        sample_probas   = jnp.reshape(sample_probas, (-1, 1))#[:, 0]
+        # states          = jnp.reshape(states, (-1, states.shape[-1]))
+        # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))#[:, 0]
+        # sample_probas   = jnp.reshape(sample_probas, (-1, 1))#[:, 0]
         
         # Function to compute the estimate for a single state.
         def compute_estimate(state, logp, sample_p):
@@ -567,8 +567,8 @@ if _JAX_AVAILABLE:
             - std           : Standard deviation of the estimates (over sample dimension).
         """
         # Reshape inputs.
-        states          = jnp.reshape(states, (-1, states.shape[-1]))
-        logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
+        # states          = jnp.reshape(states, (-1, states.shape[-1]))
+        # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
         
         # Function to compute the estimate for a single state.
         def compute_estimate(state, logp):

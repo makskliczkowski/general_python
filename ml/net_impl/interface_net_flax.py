@@ -56,6 +56,7 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from flax import linen as nn
+from jax.tree_util import tree_flatten, tree_unflatten, tree_map
 
 # from general_python utilities
 from general_python.ml.net_impl.net_general import GeneralNet
@@ -88,7 +89,7 @@ class FlaxInterface(GeneralNet):
         dtype       : Optional[np.dtype]
             Data type for the network parameters.
     """
-    
+    _TOL_HOLOMORPHIC         = 1e-14
     _ERR_JAX_NECESSARY       = "JAX backend is necessary for this module."
     _ERR_NET_NOT_INITIALIZED = "Network not initialized. Call init() first."
     
@@ -127,8 +128,13 @@ class FlaxInterface(GeneralNet):
         self._apply_jax     = self._flax_module.apply
         self._apply_np      = None
         
-        self.init()
+        # important to set
+        self._holomorphic       = None
+        # self._use_jax           = True
+        self._has_analitic_grad = True
         
+        self.init()
+    
     ########################################################
     #! INITIALIZATION
     ########################################################
@@ -223,5 +229,55 @@ class FlaxInterface(GeneralNet):
                 f"flax_module={self._flax_module.__class__.__name__})")
         
     #########################################################
+    #! CALL ME MAYBE
+    #########################################################
+    
+    def __call__(self, x: 'array-like'):
+        """
+        Call the network on input x.
+        """
+        return self.apply_jax(x)
+
+    #########################################################
+    #! CHECK HOLOMORPHICITY
+    #########################################################
+    
+    def check_holomorphic(self) -> bool:
+        """
+        Check if the network is holomorphic.
+        This is done by checking if the gradients of the real
+        and imaginary parts of the output are equal.
+        If they are, the network is holomorphic.
+        Returns:
+            bool: True if the network is holomorphic, False otherwise.
+        """
+        
+        # Check if the network is initialized.
+        if not self._initialized:
+            self.init()
+        
+        # Check if the network is already checked.
+        if self._holomorphic is not None:
+            return self._holomorphic
+        
+        # Check if the network is holomorphic.
+        dummy_input     = jnp.ones((1, self.input_dim), dtype=self._dtype)
+
+        # Flatten the parameters tree into a 1D array.
+        def make_flat(x):
+            leaves, _   = tree_flatten(x)
+            return jnp.concatenate([p.ravel() for p in leaves])
+        
+        # Compute gradients of the real and imaginary parts.
+        grads_real          = make_flat(jax.grad(lambda a,b: jnp.real(self._flax_module.apply(a,b)[0, 0]))(self._parameters, dummy_input)["params"])
+        grads_imag          = make_flat(jax.grad(lambda a,b: jnp.imag(self._flax_module.apply(a,b)[0, 0]))(self._parameters, dummy_input)["params"] )
+
+        # Flatten the gradients.
+        flat_real           = make_flat(grads_real)
+        flat_imag           = make_flat(grads_imag)
+        
+        norm_diff           = jnp.linalg.norm(flat_real - 1.j * flat_imag) / flat_real.shape[0]
+        self._holomorphic   = jnp.isclose(norm_diff, 0.0, atol = self._TOL_HOLOMORPHIC)
+        return self._holomorphic
 
 #############################################################

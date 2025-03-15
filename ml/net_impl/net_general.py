@@ -88,6 +88,7 @@ class GeneralNet(ABC):
             key (optional): Random key for initialization.
         """
         self._initialized = True
+        return self.get_params()
     
     # ---------------------------------------------------
     #! PROPERTIES
@@ -212,6 +213,16 @@ class GeneralNet(ABC):
             bool: True if the network is initialized, False otherwise.
         """
         return self._initialized
+    
+    @property
+    def has_analitic_grad(self) -> bool:
+        """
+        Check if the network has analytic gradients.
+        
+        Returns:
+            bool: True if the network has analytic gradients, False otherwise.
+        """
+        return self._has_analitic_grad
 
     # ---------------------------------------------------
     #! SETTERS
@@ -313,6 +324,20 @@ class GeneralNet(ABC):
             array-like: Output of the network.
         """
         return self.apply(params=params, x=x, use_jax=self._use_jax)
+    
+    # ---------------------------------------------------
+    #! CHECKER
+    # ---------------------------------------------------
+    
+    def check_holomorphic(self):
+        """
+        Check if the network is holomorphic.
+        
+        Returns:
+            bool: True if the network is holomorphic, False otherwise.
+        """
+        self.holomorphic = True
+        return True
     
     # ---------------------------------------------------
 

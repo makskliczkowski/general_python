@@ -263,5 +263,6 @@ def decide_grads(iscpx, isjax, isanalitic, isholomorphic):
                 return jaxpy.flat_gradient_real_analytical_jax
             else:
                 return jaxpy.flat_gradient_real_numerical_jax
+    return 1
 
 # ==============================================================================
