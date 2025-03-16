@@ -1,11 +1,16 @@
-from typing import Optional, Callable
+'''
+file:       general_python/algebra/solvers/direct.py
+'''
+
+from typing import Optional
 import numpy as np
 
 from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 from general_python.algebra.preconditioners import Preconditioner
+
 # -----------------------------------------------------------------------------
-# Direct Solver Class
+#! Direct Solver Class
 # -----------------------------------------------------------------------------
 
 class DirectSolver(Solver):
@@ -13,17 +18,28 @@ class DirectSolver(Solver):
     Direct solver class for linear systems of type Ax = b.
     '''
 
-    def __init__(self, backend='default', size = 1, dtype=None, eps = 1e-10, maxiter = 1000, reg = None, precond = None, restart = False, maxrestarts = 1):
+    def __init__(self,
+                backend     ='default',
+                size        = 1,
+                dtype       = None,
+                eps         = 1e-10,
+                maxiter     = 1000,
+                reg         = None,
+                precond     = None,
+                restart     = False,
+                maxrestarts = 1):
         super().__init__(backend, size, dtype, eps, maxiter, reg, precond, restart, maxrestarts)
         self._symmetric         = False
         self._positive_definite = False
         self._solver_type       = SolverType.DIRECT
         
     # -------------------------------------------------------------------------
+    #! SOLVE
+    # -------------------------------------------------------------------------
     
     def solve(self, b, x0: Optional[np.ndarray] = None, precond: Optional[Preconditioner] = None):
         '''
-        Solve the linear system Ax = b.
+        Solve the linear system Ax = b via a direct matrix inversion.
         Parameters:
         b : array-like
             The right-hand side vector.
@@ -38,16 +54,17 @@ class DirectSolver(Solver):
         
         super().solve(b, x0, precond)
         
+        # checks if the matrix - vector multiplication is already set
         self.check_mat_or_matvec(needs_matrix=True)
         
         # solve the linear system
         try:
             if self.sigma is not None:
-                ainv = self._backend.linalg.inv(self.matrix + self.sigma * self._backend.eye(self.size, self.size))
-                self.solution(ainv @ b)
+                ainv            = self._backend.linalg.inv(self.matrix + self.sigma * self._backend.eye(self.size, self.size))
+                self._solution  = ainv @ b
             else:
-                ainv = self._backend.linalg.inv(self.matrix)
-                self.solution(ainv @ b)
+                ainv            = self._backend.linalg.inv(self.matrix)
+                self._solution  = ainv @ b
             self.converged(True)
             return self.solution
         except Exception as e:

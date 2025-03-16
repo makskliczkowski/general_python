@@ -142,29 +142,30 @@ class Solver(ABC):
             Maximum number of restarts. Default is 1.
         '''
         
-        # setup backend first
-        self._solver_type               = 0
-        self._backend_str               = backend
-        self._backend, self._backend_sp = get_backend(backend, scipy=True)
-        self._dtype                     = dtype if dtype is not None else self._backend_sp.float32
+        # setup backend first - to be handled by classes
+        self._solver_type                       = 0
+        self._backend_str                       = backend
+        self._backend, self._backend_sp         = get_backend(backend, scipy=True)
+        self._dtype                             = dtype if dtype is not None else self._backend_sp.float32
         
         # flags
-        self._symmetric                 = False
-        self._gram                      = False
-        self._converged                 = False
+        self._symmetric                         = False
+        self._gram                              = False
+        self._converged                         = False
         
         # size of the matrix
-        self._n                         = size
-        self._iter                      = 0
-        self._maxiter                   = maxiter
-        self._eps                       = eps
-        self._reg                       = reg
+        self._n                                 = size
+        self._iter                              = 0
+        self._maxiter                           = maxiter
+        self._eps                               = eps
+        self._reg                               = reg
         
-        # preconditioner
-        self._preconditioner            = precond
+        # preconditioner - for better solutions
+        self._preconditioner                    = precond
         
         # matrix-vector multiplication function (as a linear operator)
         self._mat_vec_mult: Optional[Callable[[np.ndarray, float], np.ndarray]] = None
+        self._solver_func                       = lambda b, x0, precond: x0
         
         # restarts
         self._restart                           = restart

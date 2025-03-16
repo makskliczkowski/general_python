@@ -9,10 +9,10 @@ lattice objects based on the specified lattice type. The supported lattice types
 @Date: 2025-02-01
 """
 
-from .__lattice__ import Lattice, Backend as LatticeBackend, LatticeBC, LatticeDirection, LatticeType
-from .__square_lattice__ import SquareLattice
-from .__hexagonal_lattice__ import HexagonalLattice
-from .__honeycomb_lattice__ import HoneycombLattice
+from .lattice import Lattice, Backend as LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+from .square import SquareLattice
+from .hexagonal import HexagonalLattice
+from .honeycomb import HoneycombLattice
 
 # other imports
 

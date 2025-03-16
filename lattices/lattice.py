@@ -413,11 +413,11 @@ class Lattice(ABC):
         self._bc = value
     
     @property
-    def type(self):
+    def typek(self):
         ''' Lattice type '''
         return self._type
     
-    @type.setter
+    @typek.setter
     def type(self, value):
         self._type = value
     

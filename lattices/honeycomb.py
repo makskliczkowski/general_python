@@ -232,7 +232,7 @@ class HoneycombLattice(Lattice):
                     self._nn[i].append(-1)
                 else:
                     self._nn[i].append((YP * self.Lx + XP) * 2 + int(_even))
-                self._nn_forward.append((-1 if _even else self._nn[i][0]))
+                self._nn_forward[i].append((-1 if _even else self._nn[i][0]))
                 
                 # y bond: for even sites, use X - 1; for odd, use X + 1.
                 XP      = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
@@ -241,7 +241,7 @@ class HoneycombLattice(Lattice):
                     self._nn[i].append(-1)
                 else:
                     self._nn[i].append((YP * self.Lx + XP) * 2 + int(_even))
-                self._nn_forward.append(-1 if _even else self._nn[i][1])
+                self._nn_forward[i].append(-1 if _even else self._nn[i][1])
                 
                 # x bond: always within the same square cell.
                 self._nn[i].append(i + 1 if _even else i - 1)
@@ -343,13 +343,13 @@ class HoneycombLattice(Lattice):
         """
         return z * (self.Lx * self.Ly) + y * self.Lx + x
 
-    def getSymPos(self, x, y, z):
+    def get_sym_pos(self, x, y, z):
         """
         Returns the symmetry-transformed position.
         """
         return (x + self.Lx - 1, y + 2 * self.Ly - 1, z + self.Lz - 1)
 
-    def getSymPosInv(self, x, y, z):
+    def get_sym_pos_inv(self, x, y, z):
         """
         Returns the inverse symmetry-transformed position.
         """

@@ -276,13 +276,13 @@ class HexagonalLattice(Lattice):
 
     # -------------------------------------------------------------------------------------------
 
-    def getSymPos(self, x, y, z):
+    def get_sym_pos(self, x, y, z):
         """
         Returns symmetry position.
         """
         return (x + self.Lx - 1, y + 2 * self.Ly - 1, z + self.Lz - 1)
 
-    def getSymPosInv(self, x, y, z):
+    def get_sym_pos_inv(self, x, y, z):
         """
         Returns inverse symmetry position.
         """

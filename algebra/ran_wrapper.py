@@ -9,7 +9,8 @@ matrices and vectors for testing solvers.
 
 import numpy as np
 import numpy.random as npr
-from numba import njit
+import numba
+
 import scipy as sp
 from enum import Enum, unique
 
@@ -19,25 +20,25 @@ from tenpy.linalg.random_matrix import COE, GUE, GOE, CRE, CUE
 # -----------------------------------------------------------------------------
 
 from typing import Union, Tuple, Optional, Callable
-import warnings
 from functools import partial
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend as __backend, _KEY, JIT    
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 from general_python.algebra.utils import DEFAULT_NP_INT_TYPE, DEFAULT_NP_FLOAT_TYPE, DEFAULT_NP_CPX_TYPE
 
 if _JAX_AVAILABLE:
+    import jax
     import jax.numpy as jnp
     from jax import random as jrand
     from jax import numpy as jnp
     from jax import random as random_jp
-    from jax import jit
-    from general_python.algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    from general_python.algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, _KEY
 
 ###############################################################################
 #! Random number generator initialization
 ###############################################################################
 
-def initialize(backend="default", seed: Optional[int] = None):
+def initialize(backend  : str           = "default",
+                seed    : Optional[int] = None):
     ''' 
     Initializes the random number generator with a new seed.
     
@@ -50,10 +51,12 @@ def initialize(backend="default", seed: Optional[int] = None):
     Returns:
         A tuple (rnd_module, key) where key is the PRNG key for JAX (or None for NumPy).
     '''
-    module = __backend(backend, random=True, seed=seed)
+    module = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = module if isinstance(module, tuple) else (module, (None, None))
-    if key is None:
+    if key is None and _JAX_AVAILABLE:
         key = _KEY
+    
+    # goon
     if rnd_module is None:
         if backend_mod is np:
             rnd_module = npr
@@ -78,9 +81,10 @@ def set_global_seed(seed: int, backend: str = "default"):
     backend : str, optional
         Backend specifier (default is "default").
     """
+    
     global _KEY
-    modules = __backend(backend, random=True, seed=seed)
-    backend_mod, (rnd_module, key) = modules if isinstance(modules, tuple) else (modules, (None, None))
+    modules                         = get_backend(backend, random=True, seed=seed)
+    backend_mod, (rnd_module, key)  = modules if isinstance(modules, tuple) else (modules, (None, None))
     if backend_mod is np:
         np.random.seed(seed)
     else:
@@ -130,7 +134,7 @@ def handle_rng(rng = None, rng_k = None, backend="default", seed: Optional[int] 
         A tuple containing the random number generator module and the PRNG key.
     """
     if rng is None or (backend != 'np' and backend != 'numpy' and backend != np and rng_k is None):
-        modules                     = __backend(backend, random=True, seed=seed)
+        modules                     = get_backend(backend, random=True, seed=seed)
         backend_mod, (rng, rng_k)   = modules if isinstance(modules, tuple) else (modules, (None, None))
     return rng, rng_k
 
@@ -158,13 +162,21 @@ def __uniform_np(rng, low, high, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.uniform(low=low, high=high, size=size)
 
-@jit
-def __uniform_jax(rng_module, key, shape, minval, maxval, dtype):
-    ''' Generate a random uniform array using JAX. '''
-    return rng_module.uniform(key, shape=shape, minval=minval, maxval=maxval, dtype=dtype)
+# if _JAX_AVAILABLE:
 
-def uniform(shape: Union[tuple, int] = (1,), backend="default", seed: Optional[int]=None,
-            minval=0.0, maxval=1.0, dtype=None, rng=None, rng_k=None):
+@partial(jax.jit, static_argnames=('minval', 'maxval', 'shape'))
+def _uniform_jax(key, shape, minval, maxval):
+    ''' Generate a random uniform array using JAX. '''
+    return jrand.uniform(key, shape=shape, minval=minval, maxval=maxval)
+
+def uniform(shape   : Union[tuple, int] =   (1,),
+            backend                     =   "default",
+            seed    : Optional[int]     =   None,
+            minval                      =   0.0,
+            maxval                      =   1.0,
+            dtype                       =   None,
+            rng                         =   None,
+            rng_k                       =   None):
     """
     Generate a random uniform array.
 
@@ -192,10 +204,12 @@ def uniform(shape: Union[tuple, int] = (1,), backend="default", seed: Optional[i
     
     (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
     if dtype is None:
-        dtype = default_dtype(backend)
+        dtype = default_dtype(backend)        
     if backend is np or backend == 'np' or backend == 'numpy':
         return __uniform_np(rng, minval, maxval, shape).astype(dtype)
-    return __uniform_jax(rng, rng_k if rng_k is not None else _KEY, shape, minval, maxval, dtype)
+    if rng_k is None:
+        rng_k = _KEY
+    return _uniform_jax(rng_k, shape, minval, maxval).astype(dtype)
 
 ###############################################################################
 #! Random normal distribution with specified mean and standard deviation
@@ -219,33 +233,40 @@ def __normal_np(rng, shape, mean=0.0, std=1.0):
     '''
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
-
     return rng.normal(loc=mean, scale=std, size=shape)
 
-@jit
-def __normal_jax(rng_module, key, shape, dtype, mean, std):
-    ''' 
-        Generate a random normal array using JAX. 
-        Parameters:
-            - rng_module : module
-                The JAX random module.
-            - key : PRNGKey
-                The random number generator key.
-            - shape : tuple
-                Shape of the output array.
-            - dtype : data-type
-                Desired output dtype.
-            - mean : float
-                Mean of the distribution.
-            - std : float
-                Standard deviation of the distribution.
-        Returns:
-            - array
-                An array of the specified shape drawn from a normal distribution.        
-    '''
-    return rng_module.normal(key, shape=shape, dtype=dtype) * std + mean
+if _JAX_AVAILABLE:
+    @jax.jit
+    def __normal_jax(key, shape, dtype, mean, std):
+        ''' 
+            Generate a random normal array using JAX. 
+            Parameters:
+                - rng_module : module
+                    The JAX random module.
+                - key : PRNGKey
+                    The random number generator key.
+                - shape : tuple
+                    Shape of the output array.
+                - dtype : data-type
+                    Desired output dtype.
+                - mean : float
+                    Mean of the distribution.
+                - std : float
+                    Standard deviation of the distribution.
+            Returns:
+                - array
+                    An array of the specified shape drawn from a normal distribution.        
+        '''
+        return jrand.normal(key, shape=shape, dtype=dtype) * std + mean
 
-def normal(shape, backend="default", seed=None, dtype=None, mean=0.0, std=1.0, rng=None, rng_k=None):
+def normal(shape,
+        backend =   "default",
+        seed    =   None,
+        dtype   =   None,
+        mean    =   0.0,
+        std     =   1.0,
+        rng     =   None,
+        rng_k   =   None):
     """
     Generate a random normal array.
 
@@ -275,7 +296,9 @@ def normal(shape, backend="default", seed=None, dtype=None, mean=0.0, std=1.0, r
         
     if backend is np or backend == 'np' or backend == 'numpy':
         return __normal_np(rng, shape, mean, std).astype(dtype)
-    return __normal_jax(rng, rng_k if rng_k is not None else _KEY, shape, dtype, mean, std)
+    if rng_k is None:
+        rng_k = _KEY
+    return __normal_jax(rng_k, shape, dtype, mean, std)
 
 ###############################################################################
 #! Random exponential distribution
@@ -284,14 +307,17 @@ def normal(shape, backend="default", seed=None, dtype=None, mean=0.0, std=1.0, r
 def __exponential_np(rng, scale, size):
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
-
     return rng.exponential(scale=scale, size=size)
 
-@jit
-def __exponential_jax(rng_module, key, shape, scale, dtype):
-    return rng_module.exponential(key, shape=shape, dtype=dtype) * scale
+if _JAX_AVAILABLE:
+    @jax.jit
+    def __exponential_jax(key, shape, scale, dtype):
+        return jrand.exponential(key, shape=shape, dtype=dtype) * scale
 
-def exponential(shape, backend="default", seed: Optional[int] = None, scale=1.0, dtype=None, rng=None, rng_k=None):
+def exponential(shape,
+                backend="default",
+                seed: Optional[int] = None,
+                scale=1.0, dtype=None, rng=None, rng_k=None):
     """
     Generate a random exponential array.
     """
@@ -302,7 +328,9 @@ def exponential(shape, backend="default", seed: Optional[int] = None, scale=1.0,
         
     if backend is np or backend == 'np' or backend == 'numpy':
         return __exponential_np(rng, scale, shape).astype(dtype)
-    return __exponential_jax(rng, rng_k if rng_k is not None else _KEY, shape, scale, dtype)
+    if rng_k is None:
+        rng_k = _KEY
+    return __exponential_jax(rng, rng_k, shape, scale, dtype)
 
 ###############################################################################
 #! Random poisson distribution
@@ -311,14 +339,16 @@ def exponential(shape, backend="default", seed: Optional[int] = None, scale=1.0,
 def __poisson_np(rng, lam, size):
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
-
     return rng.poisson(lam=lam, size=size)
 
-@jit
-def __poisson_jax(rng_module, key, shape, lam, dtype):
-    return rng_module.poisson(key, lam=lam, shape=shape, dtype=dtype)
+if _JAX_AVAILABLE:
+    @jax.jit
+    def __poisson_jax(key, shape, lam, dtype):
+        return jrand.poisson(key, lam=lam, shape=shape, dtype=dtype)
 
-def poisson(shape, backend="default", seed: Optional[int] = None, lam=1.0, dtype=None, rng=None, rng_k=None):
+def poisson(shape, backend="default",
+            seed: Optional[int] = None,
+            lam=1.0, dtype=None, rng=None, rng_k=None):
     """
     Generate a random poisson array.
     """
@@ -327,7 +357,9 @@ def poisson(shape, backend="default", seed: Optional[int] = None, lam=1.0, dtype
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
         return __poisson_np(rng, lam, shape).astype(dtype)
-    return __poisson_jax(rng, rng_k if rng_k is not None else _KEY, shape, lam, dtype)
+    if rng_k is None:
+        rng_k = _KEY
+    return __poisson_jax(rng, rng_k, shape, lam, dtype)
 
 ###############################################################################
 #! Random gamma distribution
@@ -338,11 +370,14 @@ def __gamma_np(rng, a, scale, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.gamma(shape=a, scale=scale, size=size)
 
-@jit
-def __gamma_jax(rng_module, key, shape, a, scale, dtype):
-    return rng_module.gamma(key, a, shape=shape, dtype=dtype) * scale
+if _JAX_AVAILABLE:
+    @jax.jit
+    def __gamma_jax(key, shape, a, scale, dtype):
+        return jrand.gamma(key, a, shape=shape, dtype=dtype) * scale
 
-def gamma(shape, backend="default", seed: Optional[int] = None, a=1.0, scale=1.0, dtype=None, rng=None, rng_k=None):
+def gamma(shape, backend="default",
+        seed: Optional[int] = None,
+        a=1.0, scale=1.0, dtype=None, rng=None, rng_k=None):
     """
     Generate a random gamma array.
     """
@@ -351,7 +386,9 @@ def gamma(shape, backend="default", seed: Optional[int] = None, a=1.0, scale=1.0
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
         return __gamma_np(rng, a, scale, shape).astype(dtype)
-    return __gamma_jax(rng, rng_k if rng_k is not None else _KEY, shape, a, scale, dtype)
+    if rng_k is None:
+        rng_k = _KEY
+    return __gamma_jax(rng, rng_k, shape, a, scale, dtype)
     
 ###############################################################################
 # Random beta distribution
@@ -362,35 +399,36 @@ def __beta_np(rng, a, b, size):
         rng = npr.default_rng(None)
     return rng.beta(a, b, size=size)
 
-@jit
-def __beta_jax(rng_module, key, shape, a, b, dtype):
-    try:
-        return rng_module.beta(key, a, b, shape=shape, dtype=dtype)
-    except AttributeError:
-        # Fall back to the gamma approach: X ~ Gamma(a,1), Y ~ Gamma(b,1) => X/(X+Y) ~ Beta(a,b)
-        from jax import random as jrand
-        key1, key2 = jrand.split(key)
-        x = rng_module.gamma(key1, a, shape=shape, dtype=dtype)
-        y = rng_module.gamma(key2, b, shape=shape, dtype=dtype)
-        return x / (x + y)
+if _JAX_AVAILABLE:
+    @jax.jit
+    def __beta_jax(key, shape, a, b, dtype):
+        try:
+            return jrand.beta(key, a, b, shape=shape, dtype=dtype)
+        except AttributeError as e:
+            # Fall back to the gamma approach: X ~ Gamma(a,1), Y ~ Gamma(b,1) => X/(X+Y) ~ Beta(a,b)
+            key1, key2 = jrand.split(key)
+            x = jrand.gamma(key1, a, shape=shape, dtype=dtype)
+            y = jrand.gamma(key2, b, shape=shape, dtype=dtype)
+            return x / (x + y)
 
 def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dtype=None):
     """
     Generate a random beta array.
     """
-    modules = __backend(backend, random=True, seed=seed)
+    modules = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = modules if isinstance(modules, tuple) else (modules, (None, None))
     if dtype is None:
         dtype = backend_mod.float32
     if backend_mod is np:
         return __beta_np(rnd_module, a, b, shape).astype(dtype)
-    return __beta_jax(rnd_module, key if key is not None else _KEY, shape, a, b, dtype)
+    if key is None:
+        key = _KEY
+    return __beta_jax(key, shape, a, b, dtype)
 
 ###############################################################################
 #! Random randint distribution
 ###############################################################################
 
-@njit
 def randint_np(low, high, size):
     '''Create a random integer array using NumPy.'''
     # if np.__version__ >= '1.17':
@@ -402,14 +440,13 @@ def randint_np(low, high, size):
     return np.random.randint(low=low, high=high, size=size)
 
 if _JAX_AVAILABLE:
-	@partial(JIT, static_argnames=('low', 'high', 'shape'))
-	def randint_jax(key, 
-					shape, 
-					low, 
+	@partial(jax.jit, static_argnames=('low', 'high', 'shape'))
+	def randint_jax(key,
+					shape,
+					low,
 					high):
 		'''Create a random integer array using JAX.'''
 		return random_jp.randint(key, shape=shape, minval=low, maxval=high)
-
 
 def randint(low, high, shape, backend="default", seed: Optional[int] = None, dtype=None, rng=None, rng_k=None):
     """
@@ -440,7 +477,9 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
         dtype = default_dtype(backend)
     if backend is np or backend == 'np' or backend == 'numpy':
         return randint_np(low, high, shape).astype(dtype)
-    return randint_jax(rng_k if rng_k is not None else _KEY, shape, low, high, dtype)
+    if rng_k is None:
+        rng_k = _KEY
+    return randint_jax(rng_k, shape, low, high).astype(dtype)
 
 ###############################################################################
 #! Random choice function (already provided)
@@ -451,31 +490,33 @@ def choice_np(rng, a, size, replace=True, p=None):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.choice(a, size=size, replace=replace, p=p)
 
-# @JIT
-def choice_jax(rng_module, key, a, shape):
-    '''
-    Randomly select elements from an array using JAX.
-    Parameters
-    ----------
-    rng_module : module
-        The JAX random module.
-    key : PRNGKey
-        The random number generator key.
-    a : array-like
-        The input array.
-    size : int or tuple
-        Number of samples to draw.
-    backend_mod : module
-        The backend module (e.g., jax.numpy).
-    Returns
-    -------
-    '''
-    a = jnp.asarray(a)
-    return rng_module.choice(key, a, shape=shape, replace=True)
-    # Generate random indices and select elements from the array)
-    # idx = rng_module.randint(key, shape=(size,) if isinstance(size, int) else size,
-                            # minval=0, maxval=a.shape[0])
-    # return jnp.take(a, idx)
+if _JAX_AVAILABLE:
+
+    @partial(jax.jit, static_argnames=('shape'))
+    def choice_jax(key, a, shape):
+        '''
+        Randomly select elements from an array using JAX.
+        Parameters
+        ----------
+        rng_module : module
+            The JAX random module.
+        key : PRNGKey
+            The random number generator key.
+        a : array-like
+            The input array.
+        size : int or tuple
+            Number of samples to draw.
+        backend_mod : module
+            The backend module (e.g., jax.numpy).
+        Returns
+        -------
+        '''
+        a = jnp.asarray(a)
+        return jrand.choice(key, a, shape=shape, replace=True)
+        # Generate random indices and select elements from the array)
+        # idx = jrand.randint(key, shape=(size,) if isinstance(size, int) else size,
+                                # minval=0, maxval=a.shape[0])
+        # return jnp.take(a, idx)
 
 def choice(a    :   'array-like',
         shape   :   Union[Tuple, int],
@@ -513,7 +554,9 @@ def choice(a    :   'array-like',
     (rng, rng_k) = handle_rng(rng, rng_k, backend)
     if backend == 'np' or backend == 'numpy' or backend is np:
         return choice_np(rng, a, shape, replace=replace, p=p)
-    return choice_jax(rng, rng_k if rng_k is not None else _KEY, a, shape)
+    if rng_k is None:
+        rng_k = _KEY
+    return choice_jax(rng_k, a, shape)
 
 ###############################################################################
 #! Random shuffle functions
@@ -538,7 +581,7 @@ def shuffle(a, backend="default", seed: Optional[int] = None):
         A shuffled copy of the array.
     """
     # Obtain backend modules (main and random/key)
-    modules = __backend(backend, random=True, seed=seed)
+    modules = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = modules if isinstance(modules, tuple) else (modules, (None, None))
     
     # Ensure a is an array of the proper type.
@@ -573,7 +616,7 @@ def shuffle_indices(n, backend="default", seed: Optional[int] = None):
     array
         An array containing a random permutation of the indices 0,...,n-1.
     """
-    modules = __backend(backend, random=True, seed=seed)
+    modules = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = modules if isinstance(modules, tuple) else (modules, (None, None))
     
     if backend_mod is np:
@@ -633,7 +676,7 @@ def random_matrix(shape, typek : RMT, backend="default", dtype=None):
         raise ValueError("Invalid random matrix type.")
 
     if not ((isinstance(backend, str) and (backend == 'np' or backend == 'numpy')) or backend == np):
-        backend = __backend(backend)
+        backend = get_backend(backend)
         mat     = backend.array(mat, dtype=dtype)
     return mat
 

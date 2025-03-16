@@ -64,6 +64,7 @@ class GeneralNet(ABC):
         # helper functions
         self._holomorphic	    = None
         self._has_analitic_grad = True
+        self._gradient_func     = lambda p, x: None
         
         # initialization
         self._initialized       = False
@@ -85,6 +86,14 @@ class GeneralNet(ABC):
     # ---------------------------------------------------
     #! INIT 
     # ---------------------------------------------------
+    
+    def force_init(self, key = None):
+        '''
+        Force the network initialization...
+        '''
+        
+        self._initialized = False
+        return self._initialized
     
     def init(self, key = None):
         """
@@ -326,6 +335,14 @@ class GeneralNet(ABC):
             return self._apply_jax, self.get_params()
         return self._apply_np, self.get_params()
     
+    def get_gradient(self, use_jax: bool = False):
+        '''
+        For the networks that may have an analytic gradient obtainable via 
+        '''
+        if self._use_jax or (use_jax and _JAX_AVAILABLE):
+            return None
+        return None
+    
     # ---------------------------------------------------
     
     def __call__(self, params = None, x: 'array-like' = None) -> 'array-like':
@@ -352,6 +369,19 @@ class GeneralNet(ABC):
         Returns:
             bool: True if the network is holomorphic, False otherwise.
         """
+        #     # Using numpy-based gradients.
+        #     def make_flat(x):
+        #         leaves, _ = flatten_func(x)
+        #         return np.concatenate([p.ravel() for p in leaves])
+            
+        #     grads_real      = make_flat(np_grad(lambda a,b: anp.real(self.net.apply(a,b)))(self._weights, sample_state)["params"] )
+        #     grads_imag      = make_flat(np_grad(lambda a,b: anp.imag(self.net.apply(a,b)))(self._weights, sample_state)["params"] )
+            
+        #     flat_real       = make_flat(grads_real)
+        #     flat_imag       = make_flat(grads_imag)
+            
+        #     norm_diff       = np.linalg.norm(flat_real - 1.j * flat_imag) / flat_real.shape[0]
+        #     return np.isclose(norm_diff, 0.0, atol= self._TOL_HOLOMORPHIC)
         self.holomorphic = True
         return True
     
