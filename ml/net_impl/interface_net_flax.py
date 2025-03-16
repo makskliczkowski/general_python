@@ -134,7 +134,7 @@ class FlaxInterface(GeneralNet):
         # self._use_jax           = True
         
         self.init()
-    
+        
     ########################################################
     #! INITIALIZATION
     ########################################################
@@ -170,10 +170,16 @@ class FlaxInterface(GeneralNet):
             key = random.PRNGKey(0)
         
         # create a dummy input for initialization.
-        dummy_input       = jnp.ones((1, self.input_dim), dtype=self._dtype)
-        self._parameters  = self._flax_module.init(key, dummy_input)
+        dummy_input             = jnp.ones((1, self.input_dim), dtype=self._dtype)
+        self._parameters        = self._flax_module.init(key, dummy_input)
         
-        self._initialized = True
+        self._initialized       = True
+        
+        # set the internal parameters shapes and tree structure.
+        self._param_shapes      = [(p.size, p.shape) for p in tree_flatten(self._parameters["params"])[0]]
+        self._param_tree_def    = jax.tree_util.tree_structure(self._parameters["params"])
+        self._param_num         = jnp.sum(jnp.array([p.size for p in tree_flatten(self._parameters["params"])[0]]))
+
         return self._parameters
         
     ########################################################
@@ -184,7 +190,7 @@ class FlaxInterface(GeneralNet):
         """
         Set the network parameters.
         """
-        self._parameters = params
+        self._parameters['params'] = params
         
     ########################################################
     #! GETTERS

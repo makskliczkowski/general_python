@@ -54,7 +54,12 @@ class GeneralNet(ABC):
         self._input_dim	        = np.prod(self._input_shape)
         self._output_shape      = None
         self._output_dim	    = None
+        
+        # parameters
         self._parameters        = None
+        self._param_shapes      = None
+        self._param_num         = None
+        self._param_tree_def    = None
         
         # helper functions
         self._holomorphic	    = None
@@ -62,6 +67,7 @@ class GeneralNet(ABC):
         
         # initialization
         self._initialized       = False
+
         
     # ---------------------------------------------------
     #! INFO
@@ -174,7 +180,17 @@ class GeneralNet(ABC):
         Returns:
             Tuple[tuple, ...]: Shapes of the network parameters.
         """
-        return [self._input_shape]
+        return self._param_shapes
+    
+    @property
+    def tree_def(self):
+        """
+        Get the tree definition of the network parameters.
+        
+        Returns:
+            dict: Tree definition of the network parameters.
+        """
+        return self._param_tree_def
     
     @property
     def nparams(self):
@@ -182,7 +198,7 @@ class GeneralNet(ABC):
         Get the number of parameters in the
         network.    
         """
-        return 0 # GeneralNet does not have parameters in the traditional sense.
+        return self._param_num
 
     @property
     def output_shape(self) -> tuple:
