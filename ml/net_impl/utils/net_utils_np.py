@@ -9,6 +9,9 @@ try:
     from autograd.misc.flatten import flatten_func
     AUTOGRAD_AVAILABLE = True
 except ImportError:
+    def np_grad(func):
+        return lambda x,y: np.ones_like(y)
+    
     AUTOGRAD_AVAILABLE = False
     
 #########################################################################
@@ -132,172 +135,172 @@ def eval_batched_np_simple(batch_size      : int,
 ##########################################################################
 
 # ==============================================================================
-#! NumPy (Autograd) Implementations: Analytical and Numerical Gradient Functions
+#! NumPy (Autograd) Implementations: Analytical and Numerical Gradient functions
 # ==============================================================================
 
-if AUTOGRAD_AVAILABLE:
-    def flat_gradient_analytical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+if True:
+    def flat_gradient_analytical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute a flattened complex gradient using an analytical method (NumPy version).
 
-        Assumes fun is callable and has an 'analytical_gradient' attribute.
+        Assumes func is callable and has an 'analytical_gradient' attribute.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        grad_val    = fun.gradient(params, arg)
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        grad_val    = func(params, arg)
         flat_grad   = np.concatenate([v.ravel() for v in grad_val.values()])
         return flat_grad
 
-    def flat_gradient_numerical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_numerical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute a flattened complex gradient using numerical differentiation (NumPy/Autograd).
 
         Uses autograd's np_grad for both real and imaginary parts.
         """
-        gr = np_grad(lambda p, y: anp.real(fun.apply(p, y)))(params, arg)["params"]
-        gi = np_grad(lambda p, y: anp.imag(fun.apply(p, y)))(params, arg)["params"]
+        gr = np_grad(lambda p, y: anp.real(func.apply(p, y)))(params, arg)["params"]
+        gi = np_grad(lambda p, y: anp.imag(func.apply(p, y)))(params, arg)["params"]
         return np.concatenate([gr.ravel(), 1.j * gi.ravel()])
 
-    def flat_gradient_np(fun: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
+    def flat_gradient_np(func: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
         """
         Wrapper for computing a flattened complex gradient using NumPy.
         """
         if analytical:
-            return flat_gradient_analytical_np(fun, params, arg)
+            return flat_gradient_analytical_np(func, params, arg)
         else:
-            return flat_gradient_numerical_np(fun, params, arg)
+            return flat_gradient_numerical_np(func, params, arg)
 
-    def flat_gradient_cpx_nonholo_analytical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_cpx_nonholo_analytical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute an analytical flattened complex gradient for non-holomorphic networks (NumPy).
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        if not hasattr(fun, "analytical_gradient"):
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        if not hasattr(func, "analytical_gradient"):
             raise NotImplementedError("Analytical gradient not implemented for this function.")
-        grad_val = fun.gradient(params, arg)
+        grad_val = func(params, arg)
         return np.concatenate([v.ravel() for v in grad_val.values()])
 
-    def flat_gradient_cpx_nonholo_numerical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_cpx_nonholo_numerical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute a flattened complex gradient for non-holomorphic networks using numerical differentiation (NumPy).
         """
-        gr = np_grad(lambda p, y: anp.real(fun.apply(p, y)))(params, arg)["params"]
-        gi = np_grad(lambda p, y: anp.imag(fun.apply(p, y)))(params, arg)["params"]
+        gr = np_grad(lambda p, y: anp.real(func.apply(p, y)))(params, arg)["params"]
+        gi = np_grad(lambda p, y: anp.imag(func.apply(p, y)))(params, arg)["params"]
         return np.concatenate([gr.ravel(), 1.j * gi.ravel()])
 
-    def flat_gradient_cpx_nonholo_np(fun: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
+    def flat_gradient_cpx_nonholo_np(func: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
         """
         Wrapper for computing a flattened complex gradient for non-holomorphic networks using NumPy.
         """
         if analytical:
-            return flat_gradient_cpx_nonholo_analytical_np(fun, params, arg)
-        return flat_gradient_cpx_nonholo_numerical_np(fun, params, arg)
+            return flat_gradient_cpx_nonholo_analytical_np(func, params, arg)
+        return flat_gradient_cpx_nonholo_numerical_np(func, params, arg)
 
-    def flat_gradient_real_analytical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_real_analytical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute an analytical flattened real gradient using NumPy.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        if not hasattr(fun, "analytical_gradient_real"):
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        if not hasattr(func, "analytical_gradient_real"):
             raise NotImplementedError("Analytical real gradient not implemented for this function.")
-        grad_val = fun.analytical_gradient_real(params, arg)
+        grad_val = func.analytical_gradient_real(params, arg)
         return np.concatenate([v.ravel() for v in grad_val.values()])
 
-    def flat_gradient_real_numerical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_real_numerical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute a flattened real gradient using numerical differentiation (NumPy).
         """
-        g = np_grad(lambda p, y: anp.real(fun.apply(p, y)))(params, arg)["params"]
+        g = np_grad(lambda p, y: anp.real(func.apply(p, y)))(params, arg)["params"]
         return g.ravel()
 
-    def flat_gradient_real_np(fun: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
+    def flat_gradient_real_np(func: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
         """
         Wrapper for computing a flattened real gradient using NumPy.
         """
         if analytical:
-            return flat_gradient_real_analytical_np(fun, params, arg)
+            return flat_gradient_real_analytical_np(func, params, arg)
         else:
-            return flat_gradient_real_numerical_np(fun, params, arg)
+            return flat_gradient_real_numerical_np(func, params, arg)
 
-    def flat_gradient_holo_analytical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_holo_analytical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute an analytical flattened gradient for holomorphic networks using NumPy.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        grad_val = fun.gradient(params, arg)
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        grad_val = func(params, arg)
         return np.concatenate([v.ravel() for v in grad_val.values()])
 
-    def flat_gradient_holo_numerical_np(fun: Any, params: Any, arg: Any) -> np.ndarray:
+    def flat_gradient_holo_numerical_np(func: Any, params: Any, arg: Any) -> np.ndarray:
         """
         Compute a flattened gradient for holomorphic networks using numerical differentiation (NumPy).
         """
-        g = np_grad(lambda p, y: anp.real(fun.apply(p, y)))(params, arg)["params"]
+        g = np_grad(lambda p, y: anp.real(func.apply(p, y)))(params, arg)["params"]
         return np.concatenate([g.ravel(), 1.j * g.ravel()])
 
-    def flat_gradient_holo_np(fun: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
+    def flat_gradient_holo_np(func: Any, params: Any, arg: Any, analytical: bool = False) -> np.ndarray:
         """
         Wrapper for computing a flattened gradient for holomorphic networks using NumPy.
         """
         if analytical:
-            return flat_gradient_holo_analytical_np(fun, params, arg)
+            return flat_gradient_holo_analytical_np(func, params, arg)
         else:
-            return flat_gradient_holo_numerical_np(fun, params, arg)
+            return flat_gradient_holo_numerical_np(func, params, arg)
 
-    def dict_gradient_analytical_np(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_analytical_np(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute an analytical dictionary of complex gradients using NumPy.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        if not hasattr(fun, "analytical_dict_gradient"):
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        if not hasattr(func, "analytical_dict_gradient"):
             raise NotImplementedError("Analytical dict gradient not implemented for this function.")
-        return fun.analytical_dict_gradient(params, arg)
+        return func.analytical_dict_gradient(params, arg)
 
-    def dict_gradient_numerical_np(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_numerical_np(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute a dictionary of complex gradients using numerical differentiation (NumPy).
         """
-        gr = np_grad(lambda p, y: anp.real(fun.apply(p, y)))(params, arg)["params"]
-        gi = np_grad(lambda p, y: anp.imag(fun.apply(p, y)))(params, arg)["params"]
+        gr = np_grad(lambda p, y: anp.real(func.apply(p, y)))(params, arg)["params"]
+        gi = np_grad(lambda p, y: anp.imag(func.apply(p, y)))(params, arg)["params"]
         return {key: gr[key].ravel() + 1.j * gi[key].ravel() for key in gr}
 
-    def dict_gradient_np(fun: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
+    def dict_gradient_np(func: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
         """
         Wrapper for computing a dictionary of complex gradients using NumPy.
         """
         if analytical:
-            return dict_gradient_analytical_np(fun, params, arg)
+            return dict_gradient_analytical_np(func, params, arg)
         else:
-            return dict_gradient_numerical_np(fun, params, arg)
+            return dict_gradient_numerical_np(func, params, arg)
 
-    def dict_gradient_real_analytical_np(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_real_analytical_np(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute an analytical dictionary of real gradients using NumPy.
         """
-        if not callable(fun):
-            raise ValueError("fun must be callable.")
-        if not hasattr(fun, "analytical_dict_gradient_real"):
+        if not callable(func):
+            raise ValueError("func must be callable.")
+        if not hasattr(func, "analytical_dict_gradient_real"):
             raise NotImplementedError("Analytical dict real gradient not implemented for this function.")
-        return fun.analytical_dict_gradient_real(params, arg)
+        return func.analytical_dict_gradient_real(params, arg)
 
-    def dict_gradient_real_numerical_np(fun: Any, params: Any, arg: Any) -> Any:
+    def dict_gradient_real_numerical_np(func: Any, params: Any, arg: Any) -> Any:
         """
         Compute a dictionary of real gradients using numerical differentiation (NumPy).
         """
-        g = np_grad(lambda p, y: anp.real(fun.apply(p, y)))(params, arg)["params"]
+        g = np_grad(lambda p, y: anp.real(func.apply(p, y)))(params, arg)["params"]
         return g  # Preserving structure
 
-    def dict_gradient_real_np(fun: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
+    def dict_gradient_real_np(func: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
         """
         Wrapper for computing a dictionary of real gradients using NumPy.
         """
         if analytical:
-            return dict_gradient_real_analytical_np(fun, params, arg)
+            return dict_gradient_real_analytical_np(func, params, arg)
         else:
-            return dict_gradient_real_numerical_np(fun, params, arg)
+            return dict_gradient_real_numerical_np(func, params, arg)
         
 # ==============================================================================
 #! APPLY CALLABLE

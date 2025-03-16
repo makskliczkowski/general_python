@@ -2,7 +2,7 @@ from typing import Optional, Callable
 import numpy as np
 
 from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend
 from general_python.algebra.preconditioners import Preconditioner
 # -----------------------------------------------------------------------------
 # Direct Solver Class

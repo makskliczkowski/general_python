@@ -11,28 +11,39 @@ date    : 2025-03-01
 
 This file contains functions for creating batches of data, evaluating functions on batches, 
 and handling various network types and their corresponding operations.
-It includes implementations for both JAX and NumPy backends, as well as functions for computing gradients
+It includes implementations for both JAX and NumPy backends,
+as well as functions for computing gradients
 using both analytical and numerical methods.
-It also provides a wrapper for selecting the appropriate gradient function based on the input parameters.
+It also provides a wrapper for selecting
+the appropriate gradient function based on the input parameters.
 The code is designed to be flexible and can handle complex and real-valued functions,
 as well as holomorphic and non-holomorphic networks.
 
 ## Holomorphic networks:
 If the function (for example, a variational ansatz for a quantum state)
-is holomorphic with respect to its complex parameters, then the derivative with respect to the complex variable 
-is well defined in the usual sense. The gradient can be computed using standard complex differentiation rules,
-and the real and imaginary parts of the gradient are not independent—they satisfy the Cauchy-Riemann conditions.
+is holomorphic with respect to its complex parameters, 
+then the derivative with respect to the complex variable 
+is well defined in the usual sense. 
+The gradient can be computed using standard complex differentiation rules,
+and the real and imaginary parts of the gradient are not
+independent—they satisfy the Cauchy-Riemann conditions.
 
 ## Non-holomorphic networks:
 When we say the gradient is not holomorphic,
 it means that the function is not complex differentiable in the standard sense.
-In this case, the function does not satisfy the Cauchy-Riemann equations and the differentiation with respect
-to the complex parameters must be done by treating the real and imaginary parts as independent variables. This results
-in a gradient that generally has extra degrees of freedom compared to the holomorphic case and requires more care in its computation.
+In this case, the function does not satisfy
+the Cauchy-Riemann equations and the differentiation with respect
+to the complex parameters must be done by
+treating the real and imaginary parts as independent variables. This results
+in a gradient that generally has extra
+degrees of freedom compared to the holomorphic case and requires more care in its computation.
 
-For example, if you have a wave function ansatz ψ(s;θ), where θ is complex, a holomorphic ansatz would allow
-you to compute derivatives with respect to θ directly. However, if the ansatz is non-holomorphic,
-you need to compute the derivatives with respect to Re(θ) and Im(θ) separately and then combine them appropriately.
+For example, if you have a wave function ansatz ψ(s;θ),
+where θ is complex, a holomorphic ansatz would allow
+you to compute derivatives with respect to θ directly.
+However, if the ansatz is non-holomorphic,
+you need to compute the derivatives with respect to Re(θ) and Im(θ)
+separately and then combine them appropriately.
 '''
 
 import numpy as np
@@ -123,8 +134,6 @@ def eval_batched(batch_size : int,
 ##########################################################################
 #! GRADIENTS
 ##########################################################################
-
-
 
 # ==============================================================================
 #! Global Wrapper Functions (for both backends)
@@ -227,42 +236,42 @@ def decide_grads(iscpx, isjax, isanalitic, isholomorphic):
     Returns
     -------
     Callable
-        The appropriate gradient function.
+        The appropriate gradient function, the dictionary of the gradient function
     """
     if not isjax:  # NumPy backend
         if iscpx:  # Complex functions
             if isholomorphic:  # Holomorphic
                 if isanalitic:
-                    return numpy.flat_gradient_holo_analytical_np
+                    return numpy.flat_gradient_holo_analytical_np, numpy.dict_gradient_analytical_np
                 else:
-                    return numpy.flat_gradient_holo_numerical_np
+                    return numpy.flat_gradient_holo_numerical_np, numpy.dict_gradient_numerical_np
             else:  # Non-holomorphic
                 if isanalitic:
-                    return numpy.flat_gradient_cpx_nonholo_analytical_np
+                    return numpy.flat_gradient_cpx_nonholo_analytical_np, numpy.dict_gradient_analytical_np
                 else:
-                    return numpy.flat_gradient_cpx_nonholo_numerical_np
+                    return numpy.flat_gradient_cpx_nonholo_numerical_np, numpy.dict_gradient_numerical_np
         else:  # Real functions
             if isanalitic:
-                return numpy.flat_gradient_real_analytical_np
+                return numpy.flat_gradient_real_analytical_np, numpy.dict_gradient_real_analytical_np
             else:
-                return numpy.flat_gradient_real_numerical_np
+                return numpy.flat_gradient_real_numerical_np, numpy.dict_gradient_real_numerical_np
     else:  # JAX backend
         if iscpx:  # Complex functions
             if isholomorphic:  # Holomorphic
                 if isanalitic:
-                    return jaxpy.flat_gradient_holo_analytical_jax
+                    return jaxpy.flat_gradient_holo_analytical_jax, jaxpy.dict_gradient_analytical_jax
                 else:
-                    return jaxpy.flat_gradient_holo_numerical_jax
+                    return jaxpy.flat_gradient_holo_numerical_jax, jaxpy.dict_gradient_numerical_jax
             else:  # Non-holomorphic
                 if isanalitic:
-                    return jaxpy.flat_gradient_cpx_nonholo_analytical_jax
+                    return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.dict_gradient_analytical_jax
                 else:
-                    return jaxpy.flat_gradient_cpx_nonholo_numerical_jax
+                    return jaxpy.flat_gradient_cpx_nonholo_numerical_jax, jaxpy.dict_gradient_numerical_jax
         else:  # Real functions
             if isanalitic:
-                return jaxpy.flat_gradient_real_analytical_jax
+                return jaxpy.flat_gradient_real_analytical_jax, jaxpy.dict_gradient_real_analytical_jax
             else:
-                return jaxpy.flat_gradient_real_numerical_jax
+                return jaxpy.flat_gradient_real_numerical_jax, jaxpy.dict_gradient_real_numerical_jax
     return 1
 
 # ==============================================================================

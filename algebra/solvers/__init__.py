@@ -3,9 +3,9 @@ from typing import Union, Optional, Callable
 from enum import Enum, auto, unique
 
 # Import solvers from submodules.
-from .__cg__ import CgSolver, CgSolverScipy
-from .__direct__ import DirectSolver, DirectScipy, DirectBackend
-from .__pseudo__ import PseudoInverseSolver
+from .cg import CgSolver, CgSolverScipy
+from .direct import DirectSolver, DirectScipy, DirectBackend
+from .pseudoinverse import PseudoInverseSolver
 
 # -----------------------------------------------------------------------------
 

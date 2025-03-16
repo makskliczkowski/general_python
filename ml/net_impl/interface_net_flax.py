@@ -118,20 +118,20 @@ class FlaxInterface(GeneralNet):
             net_kwargs['act_fun'] = self._act_fun
         
         # Create the internal Flax module.
-        self._flax_module  = net_module(*net_args, **net_kwargs, dtype=self._dtype)
+        self._flax_module       = net_module(*net_args, **net_kwargs, dtype=self._dtype)
         
         # Initialize parameters to None; will be set in init().
-        self._parameters    = None
-        self._initialized   = False
+        self._parameters        = None
+        self._initialized       = False
         
         # Set the callable functions for evaluation.
-        self._apply_jax     = self._flax_module.apply
-        self._apply_np      = None
+        self._apply_jax         = self._flax_module.apply
+        self._apply_np          = None
         
         # important to set
         self._holomorphic       = None
+        self._has_analitic_grad = False
         # self._use_jax           = True
-        self._has_analitic_grad = True
         
         self.init()
     

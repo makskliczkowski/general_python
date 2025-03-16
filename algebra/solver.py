@@ -1,17 +1,13 @@
 import numpy as np
 import scipy as sp
 from abc import ABC, abstractmethod
-from typing import Union
+from enum import Enum, auto, unique                 # for enumerations
 
 # -----------------------------------------------------------------------------
 
 from typing import Optional, Callable
-from .utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend, _KEY
-from .preconditioners import Preconditioner
-
-# -----------------------------------------------------------------------------
-
-from enum import Enum, auto, unique                 # for enumerations
+from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend
+from general_python.algebra.preconditioners import Preconditioner
 
 # -----------------------------------------------------------------------------
 
@@ -31,7 +27,7 @@ class SolverType(Enum):
 
 # -----------------------------------------------------------------------------
 
-_SOL_TYPE_ERROR = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
+_SOL_TYPE_ERROR             = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
 
 # -----------------------------------------------------------------------------
 # Errors
@@ -101,7 +97,7 @@ class SolverError(Exception):
         return self.__str__()
 
 # -----------------------------------------------------------------------------
-# General Solver Class
+#! General Solver Class
 # -----------------------------------------------------------------------------
 
 class Solver(ABC):
@@ -112,7 +108,10 @@ class Solver(ABC):
 
     # -------------------------------------------------------------------------
     
-    def __init__(self, backend = 'default', size : int = 1, dtype = None,
+    def __init__(self,
+                backend                         = 'default',
+                size        : int               = 1,
+                dtype                           = None,
                 eps         : float             = 1e-10,
                 maxiter     : int               = 1000,
                 reg         : float             = None,
@@ -146,7 +145,7 @@ class Solver(ABC):
         # setup backend first
         self._solver_type               = 0
         self._backend_str               = backend
-        self._backend, self._backend_sp = __backend(backend, scipy=True)
+        self._backend, self._backend_sp = get_backend(backend, scipy=True)
         self._dtype                     = dtype if dtype is not None else self._backend_sp.float32
         
         # flags
@@ -164,30 +163,34 @@ class Solver(ABC):
         # preconditioner
         self._preconditioner            = precond
         
-        # matrix-vector multiplication function (as linear operator)
+        # matrix-vector multiplication function (as a linear operator)
         self._mat_vec_mult: Optional[Callable[[np.ndarray, float], np.ndarray]] = None
         
         # restarts
-        self._restart                   = restart
-        self._maxrestarts               = maxrestarts
-        self._restarts                  = 0
+        self._restart                           = restart
+        self._maxrestarts                       = maxrestarts
+        self._restarts                          = 0
         
         # solution
-        self._solution: Optional[np.ndarray] = None
-        self._a                              = None # matrix, only used when mat_vec_mult is not set
-        self._s                              = None # matrix S, only used when mat_vec_mult is not set
-        self._sp                             = None # matrix S^T, only used when mat_vec_mult is not set
+        self._solution: Optional[np.ndarray]    = None
+        self._a                                 = None # matrix, only used when mat_vec_mult is not set
+        self._s                                 = None # matrix S, only used when mat_vec_mult is not set
+        self._sp                                = None # matrix S^T, only used when mat_vec_mult is not set
     
     def check_mat_or_matvec(self, needs_matrix = False):
         '''
         Check if either the matrix or matrix-vector multiplication function is set.
-        @note This is a helper function for the derived classes and only some classes
+        
+        Note:
+        
+        This is a helper function for the derived classes and only some classes
         use it.
+        
         Parameters:
         needs_matrix : bool, optional
             Whether the matrix is needed. Default is False.
         Raises:
-        SolverError : If neither the matrix nor the matrix-vector multiplication function is set.
+            SolverError : If neither the matrix nor the matrix-vector multiplication function is set.
         '''
         
         if self._a is None and needs_matrix:
@@ -209,7 +212,7 @@ class Solver(ABC):
             raise SolverError(SolverErrorMsg.MATMULT_NOT_SET)
     
     # -------------------------------------------------------------------------
-    # Getters and properties
+    #! Getters and properties
     # -------------------------------------------------------------------------
     
     @property
@@ -357,7 +360,7 @@ class Solver(ABC):
         return self._maxiter
     
     # -------------------------------------------------------------------------
-    # Setters
+    #! Setters
     # -------------------------------------------------------------------------
     
     @backend_str.setter
@@ -479,7 +482,7 @@ class Solver(ABC):
             return func
 
     # -------------------------------------------------------------------------
-    # Abstract methods that use only the right-hand side vector b (and optionally x0)
+    #! Abstract methods that use only the right-hand side vector b (and optionally x0)
     # -------------------------------------------------------------------------
 
     def init(self, b: np.ndarray, x0: Optional[np.ndarray] = None) -> None:
@@ -514,7 +517,7 @@ class Solver(ABC):
             self._preconditioner = precond
             
     # -------------------------------------------------------------------------
-    # specific initialization routines
+    #! specific initialization routines
     # -------------------------------------------------------------------------
     
     def init_from_matrix(self,
@@ -615,7 +618,7 @@ class Solver(ABC):
         self.init(b, x0)
         
     # -------------------------------------------------------------------------
-    # specific solve routines
+    #! specific solve routines
     # -------------------------------------------------------------------------
     
     def solve_from_matrix(self,
