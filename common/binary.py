@@ -340,20 +340,39 @@ if _JAX_AVAILABLE:
         """
         return jnp.bitwise_and(n, jnp.left_shift(1, k)) > 0
 
-@numba.njit
 def check_int(n, k):
     """
-    Check the i-th bit in an integer.
+    Checks if the k-th bit in the binary representation of an integer n is set (1).
+
+    Args:
+        n (int): The integer to check.
+        k (int): The position of the bit to check (0-indexed, from the right).
+
+    Returns:
+        int: A non-zero value if the k-th bit is set, otherwise 0.
     """
     return n & (1 << k)
 
-@numba.njit
+# @numba.njit
 def check_arr_np(n, k : int):
+    '''
+    Check the value at numpy array
+    '''
     return n[k] > 0
 
 if _JAX_AVAILABLE:
     @jax.jit
     def check_arr_jax(n, k : int):
+        """
+        Checks if the k-th element of the input array `n` is greater than 0.
+
+        Args:
+            n (array-like): The input array to check.
+            k (int): The index of the element to check in the array `n`.
+
+        Returns:
+            bool: True if the k-th element of `n` is greater than 0, False otherwise.
+        """
         return n[k] > 0
 
 def check(n, k : int):
@@ -372,7 +391,7 @@ def check(n, k : int):
     
     if is_traced_jax(n):
         return check_int_traced_jax(n, k)
-    # no matter if it is a NumPy or JAX array
+    
     return n[k] > 0
 
 # --------------------------------------------------------------------------------------------------
@@ -381,8 +400,8 @@ def check(n, k : int):
 def int2base_np(n,
                 size        : int,
                 dtype       = DEFAULT_NP_INT_TYPE,
-                value_true  = 1,
-                value_false = 0):
+                value_true  = BACKEND_REPR,
+                value_false = -BACKEND_REPR):
     """
     Convert an integer to a binary (or spin) representation using NumPy.
 
@@ -395,15 +414,15 @@ def int2base_np(n,
     Returns:
         np.ndarray          : The binary (or spin) representation of the integer.
     """
-    bits = []
+    bits = np.zeros(size, dtype=dtype)
     # Iterate from the most significant bit to the least.
     for pos in range(size - 1, -1, -1):
         # For a Python or NumPy integer, we use bit shifting.
-        if isinstance(n, (int, np.integer)):
-            bit = check_int(n, pos)
-        else:
-            bit = bool(np.bitwise_and(n, (1 << pos)) != 0)
-        bits.append(value_true if bit else value_false)
+        # if isinstance(n, (int, np.integer)):
+        bit = check_int(n, pos)
+        # else:
+        #     bit = bool(np.bitwise_and(n, (1 << pos)) != 0)
+        bits[size - 1 - pos] = (value_true if bit else value_false)
     return np.array(bits, dtype=dtype)
 
 if _JAX_AVAILABLE:
@@ -424,15 +443,12 @@ if _JAX_AVAILABLE:
         Returns:
             jnp.ndarray: The binary (or spin) representation of the integer.
         """
-        bits = []
+        bits = jnp.zeros(size, dtype=dtype)
         # Iterate from the most significant bit to the least.
         for pos in range(size - 1, -1, -1):
-            if isinstance(n, (int, np.integer)):
-                bit = (n >> pos) & 1
-            else:
-                bit = bool(jnp.bitwise_and(n, (1 << pos)) != 0)
-            bits.append(value_true if bit else value_false)
-        return jnp.array(bits, dtype=dtype)
+            bit     = check_int_traced_jax(n, pos)
+            bits    = bits.at[size - 1 - pos].set(value_true if bit else value_false)
+        return bits
 
 def int2base(n          : int,
             size        : int,
@@ -516,7 +532,7 @@ def base2int(vec        : 'array-like',
 
 if _JAX_AVAILABLE:
     @jax.jit
-    def flip_all_array_nspin(n : 'array-like'):
+    def flip_all_array_spin(n : 'array-like'):
         """
         Flip all bits in a representation of a state.
         - This is a helper function for flip_all.
@@ -531,7 +547,7 @@ if _JAX_AVAILABLE:
         return -n
 
 @maybe_jit
-def flip_all_array_spin(n : 'array-like', spin_value : float = BACKEND_REPR, backend = 'default'):
+def flip_all_array_nspin(n : 'array-like', spin_value : float = BACKEND_REPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
     - This is a helper function for flip_all.
@@ -572,9 +588,11 @@ def flip_all(n          : 'array-like',
         else:
             return [0 if x == spin_value else spin_value for x in n]
     if spin:
-        return flip_all_array_spin(n, spin_value, backend)
-    return flip_all_array_nspin(n)
+        return flip_all_array_spin(n)
+    return flip_all_array_nspin(n, spin_value, backend)
 
+# --------------------------------------------------------------------------------------------------
+#! SINGLE BIT FLIP
 # --------------------------------------------------------------------------------------------------
 
 if _JAX_AVAILABLE:
@@ -624,7 +642,7 @@ if _JAX_AVAILABLE:
         return flip_array_jax_nspin(n, k)
     
     # Multi-index versions using vectorized operations
-    @JIT
+    @jax.jit
     def flip_array_jax_spin_multi(n: 'array-like', ks: 'array-like'):
         """
         Flip multiple spins in a JAX array (spin representation).
@@ -637,7 +655,7 @@ if _JAX_AVAILABLE:
         """
         return n.at[ks].set(-n[ks])
 
-    @JIT
+    @jax.jit
     def flip_array_jax_nspin_multi(n: 'array-like', ks: 'array-like'):
         """
         Flip multiple bits in a JAX array (binary representation).
@@ -666,7 +684,7 @@ if _JAX_AVAILABLE:
             return flip_array_jax_spin_multi(n, ks)
         return flip_array_jax_nspin_multi(n, ks)
     
-    @JIT
+    @jax.jit
     def flip_int_traced_jax(n : int, k : int):
         '''
         Internal helper function for flipping a single bit in an integer through JAX tracing.
@@ -675,12 +693,10 @@ if _JAX_AVAILABLE:
             k (int)         : The index of the bit to flip.
         Returns:
             array-like      : The flipped state.
-        Returns:
-            array-like      : The flipped state.
         '''
         return jnp.where(check_int_traced_jax(n, k), n - lookup_binary_power_jax[k], n + lookup_binary_power_jax[k])
     
-    @JIT
+    @jax.jit
     def flip_int_traced_jax_multi(n: int, ks: 'array-like'):
         """
         Flip multiple bits in an integer representation using JAX.
@@ -694,7 +710,7 @@ if _JAX_AVAILABLE:
         deltas      = jnp.where(conds, -lookup_vals, lookup_vals)
         return n + jnp.sum(deltas)
 
-@numba.njit
+# @numba.njit
 def flip_array_np_spin(n : 'array-like', k : int):
     """
     Flip a single bit in a representation of a state.
@@ -703,7 +719,7 @@ def flip_array_np_spin(n : 'array-like', k : int):
     n[k] = -n[k]
     return n
 
-@numba.njit
+# @numba.njit
 def flip_array_np_nspin(n           : 'array-like',
                         k           : int,
                         spin_value  : float = BACKEND_REPR):
@@ -715,7 +731,7 @@ def flip_array_np_nspin(n           : 'array-like',
     return n
 
 # Multi-index versions for NumPy arrays.
-@numba.njit
+# @numba.njit
 def flip_array_np_spin_multi(n: 'array-like', ks: 'array-like'):
     """
     Flip multiple spins in a NumPy array using advanced indexing.
@@ -726,7 +742,7 @@ def flip_array_np_spin_multi(n: 'array-like', ks: 'array-like'):
     n[ks] = -n[ks]
     return n
 
-@numba.njit
+# @numba.njit
 def flip_array_np_nspin_multi(n: 'array-like', ks: 'array-like', spin_value: float = BACKEND_REPR):
     """
     Flip multiple bits (binary representation) in a NumPy array.
@@ -752,7 +768,7 @@ def flip_array_np(n         : 'array-like',
         return flip_array_np_spin(n, k)
     return flip_array_np_nspin(n, k, spin_value)
 
-@numba.njit
+# @numba.njit
 def flip_array_np_multi(n           : 'array-like',
                         ks          : 'array-like',
                         spin        : bool  = BACKEND_DEF_SPIN,
@@ -771,14 +787,14 @@ def flip_array_np_multi(n           : 'array-like',
         return flip_array_np_spin_multi(n, ks)
     return flip_array_np_nspin_multi(n, ks, spin_value)
 
-@numba.njit
+# @numba.njit
 def flip_int(n : int, k : int):
     '''
     Flip a single bit in an integer.
     '''
     return n - lookup_binary_power[k] if check_int(n, k) else n + lookup_binary_power[k]
 
-@numba.njit
+# @numba.njit
 def flip_int_multi(n: int, ks: 'array-like'):
     """
     Flip multiple bits in an integer representation.
