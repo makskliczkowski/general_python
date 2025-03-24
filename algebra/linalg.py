@@ -192,11 +192,12 @@ def act_np(mat, x):
     return np.matmul(mat, x)
 
 def act_dense_or_sparse_np(mat, x):
+    '''
+    '''
     # If mat is sparse, use its built-in multiplication (which is in object mode)
     if sp.sparse.issparse(mat):
-        return mat * x
-    else:
-        return act_np(mat, x)
+        return mat @ x
+    return act_np(mat, x)
 
 @maybe_jit
 def act(mat, x, backend="default"):
@@ -213,7 +214,7 @@ def act(mat, x, backend="default"):
     backend = get_backend(backend)
     if backend == np or not _JAX_AVAILABLE:
         return act_dense_or_sparse_np(mat, x)
-    return mat * x
+    return mat @ x
 
 # @njit
 def overlap_np(a, b, mat = None):
@@ -257,7 +258,7 @@ def overlap_np(a, b, mat = None):
     else:
         raise ValueError("Invalid dimensions for states a and b.")
 
-@maybe_jit
+# @maybe_jit
 def overlap(a, b, mat, backend="default"):
     """
     Compute the quantum overlap <a|mat|b> where:
@@ -312,7 +313,7 @@ def overlap(a, b, mat, backend="default"):
     else:
         raise ValueError("Invalid dimensions for states a and b.")
 
-@maybe_jit
+# @maybe_jit
 def overlap_diag(a, mat, b, backend="default"):
     """
     Compute only the diagonal overlaps <a_i|mat|b_i> for each state, where
@@ -533,7 +534,7 @@ def eigh(matrix, backend="default"):
     
     if backend == np or not _JAX_AVAILABLE:
         return _eig_np(matrix)
-    return _eig_jax(matrix)    
+    return _eig_jax(matrix)
 
 def eigsh(matrix, method, backend="default", **kwargs):
     """

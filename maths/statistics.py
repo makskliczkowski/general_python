@@ -567,8 +567,11 @@ class Histogram:
         """
         if hasattr(values, 'ndim') and values.ndim == 0 or np.isscalar(values):
             values = np.array([values])
-            
-        indices = np.searchsorted(self.bin_edges, values, side='right')
+        indices = np.zeros_like(values, dtype = np.int64)
+        for iv, v in enumerate(values):
+            indices[iv] = np.argmin(np.abs(v - self.bin_edges))
+        
+        # indices = np.searchsorted(self.bin_edges, values, side='right')
         # Correct for underflow and overflow
         indices = np.where(values < self.bin_edges[0], 0, indices)
         indices = np.where(values >= self.bin_edges[-1], self.n_bins, indices)
@@ -672,7 +675,10 @@ class HistogramAverage(Histogram):
             - bin_idx: The indices of the bin where the value was appended.
         """
         bin_idx                     = super().append(values)
-        self.bin_averages[bin_idx]  += elements
+        # for i, idx in enumerate(bin_idx):
+            # self.bin_averages[idx]  += elements[i]
+        np.add.at(self.bin_averages, bin_idx, elements)
+        # self.bin_averages[bin_idx]  += elements
         return bin_idx
     
     # ------------------ Merge ------------------
