@@ -62,6 +62,11 @@ if _JAX_AVAILABLE:
         """
         return n[k] > 0
     
+        k           = jnp.asarray(k)
+        start_index = k.reshape(1,)
+        sliced_val  = jax.lax.dynamic_slice(n, start_index, (1,))
+        return sliced_val[0] > 0
+    
     @jax.jit
     def int2base_jax(n              : int,
                     size            : int,
