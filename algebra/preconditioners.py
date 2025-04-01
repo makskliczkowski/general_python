@@ -41,7 +41,7 @@ class PreconditionersTypeNoSym(Enum):
 
 # ---------------------------------------------------------------------
 
-# PRECONDITIONERS
+#! PRECONDITIONERS
 
 # ---------------------------------------------------------------------
 
@@ -204,7 +204,7 @@ class Preconditioner(ABC):
         return self.apply(r, sigma)
 
 # =====================================================================
-# Identity preconditioner
+#! Identity preconditioner
 # =====================================================================
 
 class IdentityPreconditioner(Preconditioner):
@@ -231,7 +231,7 @@ class IdentityPreconditioner(Preconditioner):
         return "Identity Preconditioner"
     
 # =====================================================================
-# Jacobi preconditioner
+#! Jacobi preconditioner
 # =====================================================================
 
 class JacobiPreconditioner(Preconditioner):
@@ -277,7 +277,7 @@ class JacobiPreconditioner(Preconditioner):
         return f"pre_jacobi_{self._sigma:.2e}"
     
 # =====================================================================
-# Incomplete Cholesky factorization
+#! Incomplete Cholesky factorization
 # =====================================================================
 
 class IncompleteCholeskyPreconditioner(Preconditioner):
@@ -353,7 +353,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         return f"pre_ichol_{self._sigma:.2e}"
     
 # =====================================================================
-# Choose wisely
+#! Choose wisely
 # =====================================================================
 
 def choose_precond(precond_type  : Union[PreconditionersTypeSym, PreconditionersTypeNoSym],
@@ -381,6 +381,9 @@ def choose_precond(precond_type  : Union[PreconditionersTypeSym, Preconditioners
             If precond_type is not an instance of either PreconditionersTypeSym or PreconditionersTypeNoSym.
     """
     
+    if isinstance(precond_type, str):
+        precond_type = PreconditionersTypeSym[precond_type]
+        
     if isinstance(precond_type, PreconditionersTypeNoSym):
         match (precond_type):
             case PreconditionersTypeNoSym.IDENTITY:
@@ -395,6 +398,6 @@ def choose_precond(precond_type  : Union[PreconditionersTypeSym, Preconditioners
                 return IncompleteCholeskyPreconditioner(backend = backend)
     else:
         raise ValueError("Only PreconditionersTypeNoSym and PreconditionersTypeSym are supported.")
-    
+
 # =====================================================================
 

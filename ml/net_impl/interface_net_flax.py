@@ -56,6 +56,7 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from flax import linen as nn
+from flax.core import unfreeze, freeze
 from jax.tree_util import tree_flatten, tree_unflatten, tree_map
 
 # from general_python utilities
@@ -190,7 +191,34 @@ class FlaxInterface(GeneralNet):
         """
         Set the network parameters.
         """
-        self._parameters['params'] = params
+        # Unfreeze the incoming parameters (they might be a subset of the full tree).
+        new_params = unfreeze(params)
+        
+        # Get the current full parameters.
+        current_params = unfreeze(self._parameters)['params']
+        
+        # Recursively update the current parameters with the new parameters.
+        def recursive_update(old, new):
+            if isinstance(old, dict) and isinstance(new, dict):
+                for k, v in new.items():
+                    if k in old:
+                        old[k] = recursive_update(old[k], v)
+                    else:
+                        old[k] = v
+                return old
+            else:
+                # When not dicts, simply use the new value.
+                return new
+
+        updated_params = recursive_update(current_params, new_params)
+        
+        # Apply dtype conversion.
+        updated_params = tree_map(lambda x: x.astype(self._dtype), updated_params)
+        
+        # Update the internal parameters structure.
+        internal = unfreeze(self._parameters)
+        internal['params'] = updated_params
+        self._parameters = freeze(internal)
         
     ########################################################
     #! GETTERS

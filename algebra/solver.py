@@ -18,19 +18,24 @@ class SolverType(Enum):
     """
     DIRECT          = auto() # Direct solver x = A^-1 b
     BACKEND_SOLVER  = auto() # Use the default backend solver
+    PSEUDO_INVERSE  = auto() # Pseudo-inverse solver
+    
+    # scipy based solvers
     SCIPY_DIRECT    = auto() # Direct solver - using scipy (or jax equivalent)
     SCIPY_CJ        = auto() # Conjugate gradient - using scipy (or jax equivalent)
-    CJ              = auto() # Conjugate gradient
     SCIPY_MINRES    = auto() # Minimum residual - using scipy (or jax equivalent)
+    # my solvers
+    CJ              = auto() # Conjugate gradient
     MINRES          = auto() # Minimum residual
     MINRES_QLP      = auto() # Minimum residual - using QLP
+    ARNOLDI         = auto() # Arnoldi iteration (basis generation, might be used by other solvers like GMRES)
 
 # -----------------------------------------------------------------------------
 
-_SOL_TYPE_ERROR             = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
+_SOL_TYPE_ERROR     = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
 
 # -----------------------------------------------------------------------------
-# Errors
+#! Errors
 # -----------------------------------------------------------------------------
 
 SOL_ERR_MSG_MATMULT_NOT_SET = "Matrix-vector multiplication function not set."
@@ -370,7 +375,7 @@ class Solver(ABC):
         Sets the backend for computation.
         '''
         self._backend_str = backend
-        self._backend, self._backend_sp = __backend(backend, scipy=True)
+        self._backend, self._backend_sp = get_backend(backend, scipy=True)
         
     @eps.setter
     def eps(self, eps: float) -> None:
@@ -760,7 +765,7 @@ def sym_ortho(a, b, backend: str = "default"):
     # Select the numerical backend: jax.numpy if "jax" is chosen; otherwise, NumPy.
     
     # select backend
-    backend = __backend(backend)
+    backend = get_backend(backend)
 
     # Determine if the inputs are complex.
     # is_complex = backend.iscomplexobj(a) or backend.iscomplexobj(b)

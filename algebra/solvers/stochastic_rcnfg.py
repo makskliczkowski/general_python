@@ -10,17 +10,46 @@ import general_python.algebra.solver as solver_utils
 
 #####################################
 
-    
 def loss_centered(loss, loss_m):
     '''
+    Calculates the centered loss:
+    
+    centered loss L - <L>_{samples}
+    where L is the loss function and <L>_{samples} is the mean of the loss
+    function over the samples.
+    
+    Parameters:
+        loss:    
+            loss function L
+        loss_m:
+            mean of the loss function <L>_{samples}
+    
+    Returns:
+        centered loss L - <L>_{samples}
     '''
     return loss - loss_m
 
 def derivatives_centered(derivatives, derivatives_m):
     '''
+    Calculates the centered derivatives:
+    O_k - <O_k> = O_k - <O_k>_{samples}
+    where O_k is the variational derivative and <O_k>_{samples} is the mean
+    of the variational derivative over the samples.
+    
+    --- 
+    The centered derivatives are used to calculate the covariance matrix
+    S_{kk'} = (<O_k^*O_k'> - <O_k^*><O_k>) / n_samples
+    where <O_k^*> is the mean of the variational derivative over the samples.
+    
+    Parameters:
+        derivatives:
+            variational derivatives O_k
+        derivatives_m:
+            mean of the variational derivative <O_k>_{samples}    
+    Returns:
+        centered derivatives O_k - <O_k>_{samples}
     '''
     return derivatives - derivatives_m
-
 
 # jax specific
 if _JAX_AVAILABLE:
@@ -82,7 +111,14 @@ class StochasticReconfiguration(ABC):
                 solver      : solver_utils.Solver,
                 backend     : str = 'default'):
         '''
-        
+        Initializes the StochasticReconfiguration class.
+        Parameters:
+            solver:
+                solver to use for the stochastic reconfiguration
+            backend:
+                backend to use for the stochastic reconfiguration
+                'jax' or 'numpy'
+                'default' will use the default backend for the system
         '''
         super().__init__()
         
@@ -177,31 +213,73 @@ class StochasticReconfiguration(ABC):
         # calculate F
         self._f     = self._gradient_fun(self._derivatives_c_h, self._loss_c, self._nsamples)
     
+    def set_solver(self, solver):
+        '''
+        Sets the solver for the Stochastic Reconfiguration (Natural Gradient)
+        The solver shall be able to solve the system of equations
+        
+        $$
+        S_{kk'} x_k = F_k
+        $$
+        
+        where S_{kk'} is the covariance matrix, x_k is the solution and F_k is the
+        variational gradient of the loss function.
+        
+        Parameters:
+            solver:
+                solver to use for the stochastic reconfiguration
+        
+        ---
+        Notes:
+            The solver must be able to handle the case where S_{kk'} is not
+            a square matrix. This is the case when the number of samples is
+            less than the number of variational parameters.
+        
+        '''
+        self._solver = solver
+    
     def solve(self, use_s = False, use_minsr = False):
         '''
+        Solves the stochastic reconfiguration problem.
+        Parameters:
+            use_s:
+                whether to use the covariance matrix S. This
+                step involves the creation of the covariance matrix
+                S = <O_k^*O_k'> - <O_k^*><O_k> / n_samples
+                This is a slow step and should be avoided if possible.
+            use_minsr:
+                whether to use the minres solver for the covariance matrix.
         '''
         
         self._minsr = use_minsr
         
         if use_s:
-            self._s = self._calculate_s()
+            self._s         = self._calculate_s()
             # solve with s
+            self._solver.init_from_matrix(self._s, self._f)
+            self._solution = self._solver.solve(self._f, None)
             #! TODO, add my solver
             # self._solution = self._backend.linalg.solve(self._s, self._f)
-            self._solution = self._backend.linalg.pinv(self._s) @ self._f
+            # self._solution = self._backend.linalg.pinv(self._s) @ self._f
         else:
             # solve without creating a matrix explicitely (using the Fisher form)
-            #! TODO, add my solver
+            # ! TODO, add my solver
             if self._minsr:
-                def mat_vec_mult(x):
-                    applied = self._derivatives_c_h @ x
-                    return self._derivatives_c @ applied / self._nsamples
-                self._solution = jax.lax.custom_linear_solve(mat_vec_mult, self._loss_c, solve=jax.jit(jsp.linalg.solve))
+                
+                self._solver.init_from_fisher(self._derivatives_c_h, self._derivatives_c, self._loss_c, None)
+                self._solution = self._solver.solve(self._loss_c, None)
+                # def mat_vec_mult(x):
+                #     applied = self._derivatives_c_h @ x
+                #     return self._derivatives_c @ applied / self._nsamples
+                # self._solution = jax.lax.custom_linear_solve(mat_vec_mult, self._loss_c, solve=jax.jit(jsp.linalg.solve))
             else:
-                def mat_vec_mult(x):
-                    applied = self._derivatives_c @ x
-                    return self._derivatives_c_h @ applied / self._nsamples
-                self._solution = jax.lax.custom_linear_solve(mat_vec_mult, self._f, solve=jax.jit(jsp.linalg.solve))
+                self._solver.init_from_fisher(self._derivatives_c, self._derivatives_c_h, self._f, None)
+                self._solution = self._solver.solve(self._f, None)
+                
+                # def mat_vec_mult(x):
+                #     applied = self._derivatives_c @ x
+                #     return self._derivatives_c_h @ applied / self._nsamples
+                # self._solution = jax.lax.custom_linear_solve(mat_vec_mult, self._f, solve=jax.jit(jsp.linalg.solve))
         
         # return the forces
         if self._minsr:
@@ -214,32 +292,44 @@ class StochasticReconfiguration(ABC):
 
     @property
     def forces(self):
-        ''''''
+        '''
+        Returns the forces (solution) of the stochastic reconfiguration
+        '''
         return self._f
     
     @property
     def derivatives(self):
-        ''''''
+        '''
+        Returns the logarithmic derivatives of the ansatz
+        '''
         return self._derivatives
     
     @property
     def derivatives_c(self):
-        ''''''
+        '''
+        Returns the centered derivatives of the ansatz
+        '''
         return self._derivatives_c
     
     @property
     def derivatives_c_h(self):
-        ''''''
+        ''' 
+        Returns the centered derivatives of the ansatz -> conjugate transpose
+        '''
         return self.derivatives_c_h
     
     @property
     def solution(self):
-        ''''''
+        '''
+        Returns the solution of the stochastic reconfiguration
+        '''
         return self._solution
     
     @property
     def covariance_matrix(self):
-        ''''''
+        '''
+        Returns the covariance matrix S_{kk'} = (<O_k^*O_k'> - <O_k^*><O_k>) / n_samples
+        '''
         if self._s is None:
             self._s = self._calculate_s()
         return self._s

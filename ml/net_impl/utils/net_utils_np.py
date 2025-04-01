@@ -398,7 +398,7 @@ def apply_callable_np_uniform(func, states, logprobas_in, logproba_fun, paramete
         
     return values, np.mean(values, axis=0), np.std(values, axis=0)
 
-# @numba.njit(parallel=True)
+# @numba.njit
 def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logproba_fun, parameters, batch_size: int):
     """
     Batched version of apply_callable_np with sample probabilities.
@@ -411,25 +411,34 @@ def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logprob
         estimate(x) = sum_i { V[i] * (sample_proba * exp(new_logproba[i] - logprobas_in(x)) ) }
     
     Parameters:
-        func          : Callable that accepts a state (vector) and returns a tuple (S, V)
-                        where S is an array of modified states (M x state_size) and V is an
-                        array of corresponding values (M,).
-        states        : Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
-        sample_probas : Array of sampling probabilities (with the same leading dimensions as states).
-        logprobas_in  : Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
-        logproba_fun  : Callable that computes the log-probabilities for given states S.
-        batch_size    : Integer size for batching the evaluation.
+        func:
+            Callable that accepts a state (vector) and returns a tuple (S, V)
+            where S is an array of modified states (M x state_size) and V is an
+            array of corresponding values (M,).
+        states:
+            Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
+        sample_probas:
+            Array of sampling probabilities (with the same leading dimensions as states).
+        logprobas_in:
+            Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
+        logproba_fun:
+            Callable that computes the log-probabilities for given states S.
+        batch_size:
+            Integer size for batching the evaluation.
     
     Returns:
-        values : Array of per-state estimates.
-        mean   : Mean of the estimates.
-        std    : Standard deviation of the estimates.
+        values:
+            Array of per-state estimates.
+        mean:
+            Mean of the estimates.
+        std:
+            Standard deviation of the estimates.
     """
     # Reshape inputs if provided in 3D.
     if states.ndim == 3:
-        states = states.reshape(-1, states.shape[-1])
-        logprobas_in = logprobas_in.reshape(-1, 1)
-        sample_probas = sample_probas.reshape(-1, 1)
+        states          = states.reshape(-1, states.shape[-1])
+        logprobas_in    = logprobas_in.reshape(-1, 1)
+        sample_probas   = sample_probas.reshape(-1, 1)
     
     # Create batches.
     states_batches      = create_batches_np(states, batch_size)
@@ -442,7 +451,7 @@ def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logprob
     
     index = 0  # Global index in the flattened estimates array.
     # Loop over batches in parallel.
-    for b in numba.prange(n_batches):
+    for b in range(n_batches):
         batch_states    = states_batches[b]     # (batch_size, state_size)
         batch_logps     = logprobas_batches[b]  # (batch_size, 1)
         batch_samples   = sample_batches[b]     # (batch_size, 1)

@@ -429,6 +429,7 @@ def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dty
 #! Random randint distribution
 ###############################################################################
 
+@numba.njit
 def randint_np(low, high, size):
     '''Create a random integer array using NumPy.'''
     # if np.__version__ >= '1.17':

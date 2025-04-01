@@ -553,13 +553,19 @@ if _JAX_AVAILABLE:
         as described in [2108.08631]. This version does not incorporate sample probabilities.
         
         Parameters:
-            - func          : Callable that accepts a state (vector) and returns a tuple (S, V), where S is an array of modified 
-                            states (M x state_size) and V is an array of corresponding values (M,).
-            - states        : Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
-            - logprobas_in  : Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
-            - logproba_fun  : Callable that computes the log-probabilities for given states S; should accept (parameters, S).
-            - parameters    : Additional parameters for logproba_fun.
-            - batch_size    : Batch size to use for evaluation.
+            - func:
+                Callable that accepts a state (vector) and returns a tuple (S, V), where S is an array of modified 
+                states (M x state_size) and V is an array of corresponding values (M,).
+            - states:
+                Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
+            - logprobas_in:
+                Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
+            - logproba_fun:
+                Callable that computes the log-probabilities for given states S; should accept (parameters, S).
+            - parameters:
+                Additional parameters for logproba_fun.
+            - batch_size:
+                Batch size to use for evaluation.
         
         Returns:
             - estimates     : Per-state estimates (flattened) -> shape (n_samples * n_chains,).
