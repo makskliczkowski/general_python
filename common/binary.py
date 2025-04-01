@@ -331,7 +331,7 @@ def check_int(n, k):
     out = bool(n & (1 << k))
     return int(out)
 
-# @numba.njit
+@numba.njit
 def check_arr_np(n, k : int):
     '''
     Check the value at numpy array
@@ -517,7 +517,7 @@ def flip_all(n          : 'array-like',
 #! SINGLE BIT FLIP
 # --------------------------------------------------------------------------------------------------
 
-# @numba.njit
+@numba.njit
 def flip_array_np_spin(n : 'array-like', k : int):
     """
     Flip a single bit in a representation of a state.
@@ -526,7 +526,7 @@ def flip_array_np_spin(n : 'array-like', k : int):
     n[k] = -n[k]
     return n
 
-# @numba.njit
+@numba.njit
 def flip_array_np_nspin(n           : 'array-like',
                         k           : int,
                         spin_value  : float = BACKEND_REPR):
@@ -538,7 +538,7 @@ def flip_array_np_nspin(n           : 'array-like',
     return n
 
 # Multi-index versions for NumPy arrays.
-# @numba.njit
+@numba.njit
 def flip_array_np_spin_multi(n: 'array-like', ks: 'array-like'):
     """
     Flip multiple spins in a NumPy array using advanced indexing.
@@ -549,7 +549,7 @@ def flip_array_np_spin_multi(n: 'array-like', ks: 'array-like'):
     n[ks] = -n[ks]
     return n
 
-# @numba.njit
+@numba.njit
 def flip_array_np_nspin_multi(n: 'array-like', ks: 'array-like', spin_value: float = BACKEND_REPR):
     """
     Flip multiple bits (binary representation) in a NumPy array.
@@ -575,7 +575,7 @@ def flip_array_np(n         : 'array-like',
         return flip_array_np_spin(n, k)
     return flip_array_np_nspin(n, k, spin_value)
 
-# @numba.njit
+@numba.njit
 def flip_array_np_multi(n           : 'array-like',
                         ks          : 'array-like',
                         spin        : bool  = BACKEND_DEF_SPIN,
@@ -620,7 +620,8 @@ def flip_int_multi(n: int, ks: 'array-like'):
             delta += lookup_binary_power[k]
     return n + delta
 
-def flip(n, k,
+def flip(n, 
+        k,
         spin        : bool  = BACKEND_DEF_SPIN,
         spin_value  : float = BACKEND_REPR):
     '''
