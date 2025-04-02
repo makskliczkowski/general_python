@@ -22,7 +22,6 @@ from jax import random
 import flax.linen as nn
 
 # import the initializers
-from general_python.ml.net_impl.activation_functions import get_activation
 from general_python.ml.net_impl.utils.net_init_jax import complex_he_init, real_he_init
 from general_python.ml.net_impl.interface_net_flax import FlaxInterface
 
@@ -49,14 +48,14 @@ class _FlaxNet(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        s           = x
-        num_layers  = len(self.layers)
+        s               = x
+        num_layers      = len(self.layers)
         
         # Extend activation functions if not enough are provided.
         if len(self.act_fun) < num_layers:
-            act_funs = self.act_fun + (lambda x: x,) * (num_layers - len(self.act_fun))
+            act_funs    = self.act_fun + (lambda x: x,) * (num_layers - len(self.act_fun))
         else:
-            act_funs = self.act_fun[:num_layers]
+            act_funs    = self.act_fun[:num_layers]
         
         if jnp.issubdtype(self.dtype, jnp.complexfloating):
             # Use complex He initialization for complex weights.
@@ -74,7 +73,10 @@ class _FlaxNet(nn.Module):
         # Final output layer.
         s = nn.Dense(self.output_dim, use_bias=self.bias, kernel_init=kernel_init_fn,
                     dtype=self.dtype, param_dtype=self.dtype)(s)
-        return s
+        
+        # finalize to get the output.
+        real, imag  =   jnp.split(s, 2, axis=-1)
+        return real + 1j * imag
 
 ##########################################################
 #! FLAX SIMPLE NET
@@ -112,7 +114,7 @@ class FlaxSimpleNet(FlaxInterface):
                 layers          : tuple = (1,),
                 bias            : bool  = True,
                 backend         : str   = 'jax',
-                dtype           : Optional[np.dtype] = jnp.float32):
+                dtype           : Optional[np.dtype] = jnp.complex64):
         # call the parent initializer.
         super().__init__(
             net_module  = _FlaxNet,
@@ -186,11 +188,11 @@ def example():
     )
 
     # Initialize parameters (this is done in __init__ but can be re-initialized if desired).
-    params = net.get_params()
+    params          = net.get_params()
 
     # Evaluate the network on some input.
-    x       = jnp.ones((5, 10))
-    output  = net.apply_jax(x)
+    x               = jnp.ones((5, 10))
+    output          = net.apply_jax(x)
     return output
 
 ######################################################################

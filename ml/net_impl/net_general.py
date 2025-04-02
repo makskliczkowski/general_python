@@ -64,10 +64,12 @@ class GeneralNet(ABC):
         # helper functions
         self._holomorphic	    = None
         self._has_analitic_grad = True
-        self._gradient_func     = lambda p, x: None
         
         # initialization
         self._initialized       = False
+        
+        self._compiled_grad_fn  = None
+        self._compiled_apply_fn     = None
 
         
     # ---------------------------------------------------

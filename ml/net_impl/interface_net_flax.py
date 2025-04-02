@@ -100,9 +100,13 @@ class FlaxInterface(GeneralNet):
                 net_kwargs    : Optional[dict] = None,
                 input_shape   : tuple = (10,),
                 backend       : str   = 'jax',
-                dtype         : Optional[np.dtype] = jnp.float32):
+                dtype         : Optional[jnp.dtype] = jnp.float32):
         # call the parent initializer.
         super().__init__(input_shape, backend, dtype)
+        
+        # check the dtype.
+        if not isinstance(self.dtype, jnp.dtype):
+            self._dtype = jnp.dtype(self._dtype)
         
         if self._backend != jnp:
             raise ValueError(self._ERR_JAX_NECESSARY)
@@ -111,34 +115,52 @@ class FlaxInterface(GeneralNet):
             net_kwargs = {}
             
         # try to get the activation from the kwargs.
-        self._act_fun       = net_kwargs.get('act_fun', None)
-        if self._act_fun is not None:
-            # initialize the activation functions
-            self.init_activation()
-            # reset the activation in the kwargs.
-            net_kwargs['act_fun'] = self._act_fun
+        self._act_fun               = net_kwargs.get('act_fun', None)
+        self._handle_activations(net_kwargs)
         
         # Create the internal Flax module.
-        self._flax_module       = net_module(*net_args, **net_kwargs, dtype=self._dtype)
+        self._flax_module           = net_module(*net_args, **net_kwargs, dtype=self._dtype)
         
         # Initialize parameters to None; will be set in init().
-        self._parameters        = None
-        self._initialized       = False
+        self._parameters            = None
+        self._initialized           = False
         
         # Set the callable functions for evaluation.
-        self._apply_jax         = self._flax_module.apply
-        self._apply_np          = None
+        self._apply_jax             = self._flax_module.apply
+        self._apply_np              = None
         
         # important to set
-        self._holomorphic       = None
-        self._has_analitic_grad = False
-        # self._use_jax           = True
+        self._holomorphic           = None
+        self._has_analitic_grad     = False
+        self._use_jax               = True
+        
+        self._compiled_grad_fn      = None
+        self._compiled_apply_fn     = None
         
         self.init()
         
     ########################################################
     #! INITIALIZATION
     ########################################################
+    
+    def _handle_activations(self, net_kwargs: dict) -> None:
+        '''
+        Handle the activation functions for the network.
+        This method checks if the activation functions are provided'
+        in the kwargs. If they are, it initializes them.
+        If not, it sets the activation functions to identity.
+        Note:
+            - The activation functions are stored in a tuple.
+            - If there are not enough activation functions provided,
+        Params:
+            net_kwargs: dict
+                The keyword arguments for the network module.
+        '''
+        if self._act_fun is not None:
+            # initialize the activation functions
+            self.init_activation()
+            # reset the activation in the kwargs.
+            net_kwargs['act_fun'] = self._act_fun
     
     def init_activation(self) -> None:
         """
@@ -166,63 +188,48 @@ class FlaxInterface(GeneralNet):
     def init(self, key: Optional[jax.random.PRNGKey] = None):
         """
         Initialize the network parameters using Flax.
+        Params:
+            key: jax.random.PRNGKey
+                Random key for initialization. If None, a default key is used.
         """
         if key is None:
             key = random.PRNGKey(0)
         
         # create a dummy input for initialization.
-        dummy_input             = jnp.ones((1, self.input_dim), dtype=self._dtype)
-        self._parameters        = self._flax_module.init(key, dummy_input)
+        try:
+            dummy_input             = jnp.ones((1, self.input_dim), dtype=self._dtype)
+            variables               = self._flax_module.init(key, dummy_input)
+            self._parameters        = freeze(variables)['params']
+        except Exception as e:
+            self._initialized       = False
+            raise ValueError(f"Failed to initialize the network: {e}")
         
         self._initialized       = True
-        
         # set the internal parameters shapes and tree structure.
-        self._param_shapes      = [(p.size, p.shape) for p in tree_flatten(self._parameters["params"])[0]]
-        self._param_tree_def    = jax.tree_util.tree_structure(self._parameters["params"])
-        self._param_num         = jnp.sum(jnp.array([p.size for p in tree_flatten(self._parameters["params"])[0]]))
-
-        return self._parameters
+        self._param_shapes      = [(p.size, p.shape) for p in tree_flatten(self._parameters)[0]]
+        self._param_tree_def    = jax.tree_util.tree_structure(self._parameters)
+        self._param_num         = jnp.sum(jnp.array([p.size for p in tree_flatten(self._parameters)[0]]))
         
+        # set the compiled functions.
+        self._compiled_apply_fn = jax.jit(
+            lambda p, x: self._flax_module.apply({'params': p}, x)
+        )
+        self._compiled_grad_fn  = jax.jit(
+            lambda p, x: jax.jacrev(lambda _p: jnp.log(self._flax_module.apply({'params': _p}, x)))(p)
+        )
+        
+        return self._parameters
+    
     ########################################################
     #! SETTERS
     ########################################################
     
     def set_params(self, params: dict):
         """
-        Set the network parameters.
+        Set the network parameters. Now the parameters are
+        unfrozen and set to the network.
         """
-        # Unfreeze the incoming parameters (they might be a subset of the full tree).
-        new_params = unfreeze(params)
-        
-        # Get the current full parameters.
-        current_params = unfreeze(self._parameters)['params']
-        
-        # Recursively update the current parameters with the new parameters.
-        def recursive_update(old, new):
-            if isinstance(old, dict) and isinstance(new, dict):
-                for k, v in new.items():
-                    if k in old:
-                        old[k] = recursive_update(old[k], v)
-                    else:
-                        old[k] = v
-                return old
-            else:
-                # When not dicts, simply use the new value.
-                return new
-
-        updated_params = recursive_update(current_params, new_params)
-        
-        # Apply dtype conversion.
-        updated_params = tree_map(lambda x: x.astype(self._dtype), updated_params)
-        
-        # Update the internal parameters structure.
-        internal = unfreeze(self._parameters)
-        internal['params'] = updated_params
-        self._parameters = freeze(internal)
-        
-    ########################################################
-    #! GETTERS
-    ########################################################
+        self._parameters = params
     
     def get_params(self):
         """
@@ -237,18 +244,44 @@ class FlaxInterface(GeneralNet):
     def apply_jax(self, x: 'array-like'):
         """
         Evaluate the network on input x using Flax (and JAX).
+        Params:
+            x: array-like
+                Input data to evaluate the network.
+        Returns:
+            array-like
+                Output of the network.
         """
         if not self.initialized:
-            raise ValueError(self._ERR_NET_NOT_INITIALIZED)
-        return self._flax_module.apply(self._parameters, x)
+            self.init()
+        return self._flax_module.apply({'params': self._parameters}, x)
         
     def get_apply(self, use_jax = False) -> Tuple[Callable, dict]:
         """
         Return the apply function and current parameters.
+        Params:
+            use_jax: bool
+                not used here as the flax module is always jax.
+        Returns:
+            Tuple[Callable, dict]
+                The apply function and the current parameters.
         """
         if not self._use_jax:
             raise ValueError(self._ERR_JAX_NECESSARY)
-        return self._apply_jax, self.get_params()
+        return self._compiled_apply_fn, self.get_params()
+    
+    def get_gradient(self, use_jax = False):
+        '''
+        Get the gradient of the network.
+        Params:
+            use_jax: bool
+                not used here as the flax module is always jax.
+        Returns:
+            Tuple[Callable, dict]
+                The apply function and the current parameters.
+        '''
+        if self._use_jax:
+            return self._compiled_grad_fn
+        raise ValueError(self._ERR_JAX_NECESSARY)
     
     #########################################################
     #! STRING REPRESENTATION
@@ -266,11 +299,19 @@ class FlaxInterface(GeneralNet):
     #! CALL ME MAYBE
     #########################################################
     
+    @jax.jit
     def __call__(self, x: 'array-like'):
         """
         Call the network on input x.
+        This is a wrapper around the Flax module's apply method.
+        Params:
+            x: array-like
+                Input data to evaluate the network.
+        Returns:
+            array-like
+                Output of the network.
         """
-        return self.apply_jax(x)
+        return self._compiled_apply_fn(self._parameters, x)
 
     #########################################################
     #! CHECK HOLOMORPHICITY
@@ -314,4 +355,17 @@ class FlaxInterface(GeneralNet):
         self._holomorphic   = jnp.isclose(norm_diff, 0.0, atol = self._TOL_HOLOMORPHIC)
         return self._holomorphic
 
+    #########################################################
+    
+    @property
+    def activations(self):
+        """
+        Get the activation functions for the network.
+        Returns:
+            tuple: A tuple of activation functions for each layer.
+        """
+        return self._activations
+    
+    #########################################################
+    
 #############################################################
