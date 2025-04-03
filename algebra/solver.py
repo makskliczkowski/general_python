@@ -81,7 +81,6 @@ class SolverErrorMsg(Enum):
 
     def __repr__(self):
         return self.__str__()
-    
 class SolverError(Exception):
     '''
     Base class for exceptions in the solver module.
