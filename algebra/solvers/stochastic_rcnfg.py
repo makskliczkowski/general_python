@@ -1,93 +1,117 @@
 '''
 file    : general_python/algebra/solvers/stochastic_rcnfg.py
 author  : Maksymilian Kliczkowski
+date    : 2025-04-01
+version : 1.0.0
 
 Standard Stochastic Reconfiguration (SR) and Minimum-Step SR (MinSR)
+
 =====================================================================================================
 
-Overview
+# Overview
+
 --------
-In variational Monte Carlo (VMC) for neural quantum states (NQS), the goal is to optimize the variational 
-parameters θ such that the variational wave function |Ψ(θ)⟩ approaches the ground state of a given Hamiltonian.
-Both standard stochastic reconfiguration (SR) and its efficient variant—minimum-step SR (MinSR)—aim to update 
+In variational Monte Carlo (VMC), the goal is to optimize the variational 
+parameters θ such that the variational wave function |Ψ(θ)⟩
+approaches the ground state of a given Hamiltonian.
+Both standard stochastic reconfiguration (SR)
+[and its efficient variant—minimum-step SR (MinSR) - see below] — aim to update 
 the parameters by approximately following an imaginary-time evolution:
 
-    |Ψ'⟩ = exp(–H · δτ) |Ψ(θ)⟩
+    |Ψ'⟩ = exp(-H · δτ) |Ψ(θ)⟩                              (Eq. 1)
 
-The update is performed by minimizing the Fubini–Study (FS) distance between the evolved state |Ψ'⟩ and the 
+The update is performed by minimizing the Fubini-Study (FS)
+distance between the evolved state |Ψ'⟩ and the 
 variational state |Ψ(θ+δθ)⟩.
 
-Fubini–Study Distance
+## Fubini-Study Distance
 ----------------------
 For small changes δθ and a small time step δτ, the FS distance is expanded as:
 
-    d²(Ψ(θ+δθ), Ψ′) = ∑₍σ₎ | ∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎ |²    (Eq. 2)
+    d²(Ψ(θ+δθ), Ψ′) = ∑₍σ₎ | ∑₍k₎ O₍σ,k₎ · δθₖ - ε₍σ₎ |²    (Eq. 2)
 
 with:
-  - O₍σ,k₎ = (1/ψ₍σ₎) ∂ψ₍σ₎/∂θₖ – ⟨(1/ψ₍σ₎) ∂ψ₍σ₎/∂θₖ⟩, computed over Ns Monte Carlo samples :contentReference[oaicite:0]{index=0},
-  - ε₍σ₎ = –δτ · (E^loc₍σ₎ – ⟨E^loc⟩)/√(Ns), where the local energy is given by:
-      
-        E^loc₍σ₎ = ∑₍σ'₎ (ψ₍σ'₎/ψ₍σ₎) · H₍σ,σ'₎.
+    
+    O₍σ,k₎ = (1/ψ₍σ₎) ∂ψ₍σ₎/∂θₖ – ⟨(1/ψ₍σ₎) ∂ψ₍σ₎/∂θₖ⟩,
+    
+computed over Ns Monte Carlo samples:
+    
+    ε₍σ₎ = –δτ · (E^loc₍σ₎ – ⟨E^loc⟩)/√(Ns),
+    
+where the local energy is given by:
+
+    E^loc₍σ₎ = ∑₍σ'₎ (ψ₍σ'₎/ψ₍σ₎) · H₍σ,σ'₎.
 
 The minimization of this distance is equivalent to solving the linear equation:
 
-    O · δθ = ε                                          (Eq. 3)
+    O · δθ = ε                                              (Eq. 3)
 
-Standard Stochastic Reconfiguration (SR)
+## Standard Stochastic Reconfiguration (SR)
 ------------------------------------------
 In conventional SR, one defines the **quantum metric** (or Fisher information matrix) as:
 
-    S = O† · O
+    S = O† · O                                              (Eq. 4)
 
-This metric measures the change in the quantum state induced by a parameter update, and the FS distance can be 
+This metric measures the change in the quantum state induced by a parameter update,
+and the FS distance can be 
 written as:
 
-    d²(Ψ(θ), Ψ(θ+δθ)) = δθ† · S · δθ
+    d²(Ψ(θ), Ψ(θ+δθ)) = δθ† · S · δθ                        (Eq. 5)
 
 The SR method then updates the variational parameters using the solution of the linear equation (Eq. 3). The 
 standard solution is obtained as:
 
-    δθ = S⁻¹ · O† · ε                                   (Eq. 4)
+    δθ = S⁻¹ · O† · ε                                       (Eq. 6)
 
-This approach requires computing and inverting the matrix S, which is of size Nₚ×Nₚ (Nₚ is the number of 
-variational parameters). When Nₚ is large, the inversion becomes computationally expensive with a typical 
-cost scaling of O(Nₚ³), or O(Nₚ²·Nₛ + Nₚ³) when iterative solvers are employed. Moreover, for deep networks 
-with Nₚ ≫ Nₛ (the number of Monte Carlo samples), the matrix S is rank-deficient (its rank is at most Nₛ), 
-posing additional numerical challenges :contentReference[oaicite:1]{index=1}.
+This approach requires computing and inverting the matrix S,
+which is of size NₚxNₚ (Nₚ is the number of 
+variational parameters). When Nₚ is large,
+the inversion becomes computationally expensive with a typical 
+cost scaling of O(Nₚ³), or O(Nₚ²·Nₛ + Nₚ³) when iterative solvers are employed.
+Moreover, for deep networks 
+with Nₚ ≫ Nₛ (the number of Monte Carlo samples),
+the matrix S is rank-deficient (its rank is at most Nₛ), 
+posing additional numerical challenges.
 
-Minimum-Step Stochastic Reconfiguration (MinSR)
+## Minimum-Step Stochastic Reconfiguration (MinSR)
 ------------------------------------------------
 To overcome the computational bottleneck in standard SR, MinSR reformulates the optimization by introducing the 
 **neural tangent kernel**:
 
     T = O · O†
 
-T is an Nₛ×Nₛ matrix and shares the same nonzero eigenvalues as S. By imposing a minimum-norm (or minimum-step) 
-condition—i.e. selecting, among all solutions of Eq. (3), the one with the smallest ||δθ||—the MinSR update is 
+T is an NₛxNₛ matrix and shares the same nonzero eigenvalues as S.
+By imposing a minimum-norm (or minimum-step) 
+condition—i.e. selecting, among all solutions of Eq. (3),
+the one with the smallest ||δθ||—the MinSR update is 
 given by:
 
     δθ = O† · T⁻¹ · ε                                  (Eq. 5)
 
-This formulation avoids the costly inversion of the full S matrix. The inversion is now only on the smaller T matrix, 
-reducing the computational complexity to approximately O(Nₚ·Nₛ² + Nₛ³). Two derivations support this result:
-  
-1. **Lagrangian Multiplier Approach:**  
-   The method minimizes ||δθ|| subject to O · δθ = ε by forming the Lagrangian:
-   
-       L({δθₖ}, {α₍σ₎}) = ∑₍k₎ |δθₖ|² – [∑₍σ₎ α₍σ₎* (∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎) + c.c.]
-   
-   Solving the resulting equations leads to δθ = O† · (O · O†)⁻¹ · ε, which is equivalent to Eq. (5) :contentReference[oaicite:2]{index=2}.
-  
-2. **Pseudo-Inverse Method:**  
-   By showing that the least-squares minimum-norm solution of O · δθ = ε is given by:
-   
-       δθ = O† · (O · O†)⁻¹ · ε,
-   
-   and using properties of the pseudo-inverse, one establishes the equivalence (O · O†)⁻¹ = T⁻¹, thereby recovering 
-   Eq. (5) :contentReference[oaicite:3]{index=3}.
+This formulation avoids the costly inversion of the full S matrix.
+The inversion is now only on the smaller T matrix, 
+reducing the computational complexity to approximately O(Nₚ·Nₛ² + Nₛ³).
+Two derivations support this result:
 
-Regularization is typically applied to T⁻¹ (using a cutoff with, for example, relative tolerance rtol = 1e-12) 
-to stabilize the inversion in the presence of small eigenvalues :contentReference[oaicite:4]{index=4}.
+1. **Lagrangian Multiplier Approach:**  
+    The method minimizes ||δθ|| subject to O · δθ = ε by forming the Lagrangian:
+
+    L({δθₖ}, {α₍σ₎}) = ∑₍k₎ |δθₖ|² – [∑₍σ₎ α₍σ₎* (∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎) + c.c.]
+
+Solving the resulting equations leads to δθ = O† · (O · O†)⁻¹ · ε, which is equivalent to Eq. (5).
+
+2. **Pseudo-Inverse Method:**  
+By showing that the least-squares minimum-norm solution of O · δθ = ε is given by:
+
+    δθ = O† · (O · O†)⁻¹ · ε,
+
+and using properties of the pseudo-inverse,
+one establishes the equivalence (O · O†)⁻¹ = T⁻¹, thereby recovering 
+Eq. (5).
+
+Regularization is typically applied to T⁻¹
+(using a cutoff with, for example, relative tolerance rtol = 1e-12) 
+to stabilize the inversion in the presence of small eigenvalues.
 
 Usage Example
 -------------
@@ -108,8 +132,7 @@ optimization loop can be implemented as follows:
 References
 ----------
 For detailed derivations and benchmarks, refer to:
-  - "Efficient optimization of deep neural quantum states toward machine precision" :contentReference[oaicite:5]{index=5},
-  - Derivations in the Methods sections :contentReference[oaicite:6]{index=6}, :contentReference[oaicite:7]{index=7}.
+- "Efficient optimization of deep neural quantum states toward machine precision",
 '''
 
 import numpy as np
@@ -180,12 +203,20 @@ if _JAX_AVAILABLE:
         the variational derivatives.
         
         Parameters:
-            -   
+            derivatives_c:
+                centered variational derivatives O_k - <O_k>_{samples}
+            derivatives_c_h:
+                centered variational derivatives hermitian conjugate
+                O_k^* - <O_k^*>_{samples}
+            num_samples:
+                number of samples used to calculate the covariance matrix
+        Returns:
+            covariance matrix S_{kk'} = (<O_k^*O_k'> - <O_k^*><O_k>) / n_samples
         '''
         return jnp.matmul(derivatives_c, derivatives_c_h) / num_samples
     
     @jax.jit
-    def covariance_jax(derivatives_c, derivatives_c_h, num_samples):
+    def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, num_samples: int) -> jnp.ndarray:
         '''
         Calculates the covariance matrix for stochastic reconfiguration from
         the variational derivatives.
@@ -203,7 +234,7 @@ if _JAX_AVAILABLE:
         return jnp.matmul(derivatives_c_h, derivatives_c) / num_samples
     
     @jax.jit
-    def gradient_jax(derivatives_c_h,  loss_c, num_samples):
+    def gradient_jax(derivatives_c_h: jnp.ndarray,  loss_c: jnp.ndarray, num_samples: int) -> jnp.ndarray:
         '''
         Calculates the gradient of the loss function with respect to the
         variational parameters.
@@ -224,6 +255,16 @@ if _JAX_AVAILABLE:
     def solve_jax_prepare(loss, var_deriv):
         """
         Prepares the loss and variational derivatives for the stochastic reconfiguration solver.
+        Namely, it calculates the centered loss and centered variational derivatives.
+        This is a helper function to be used before calling the solver.
+        
+        $$
+        L_c = L - <L>_{samples}
+        $$
+
+        $$        
+        O_k^* - <O_k^*>_{samples}
+        $$
         
         Parameters:
             loss:
@@ -250,11 +291,16 @@ if _JAX_AVAILABLE:
         var_deriv_c_h   = jnp.conj(var_deriv_c).T
         return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
 
-    # --- Covariance Solver with Precomputed Data ---
-
     @jax.jit
-    def solve_jax_cov_in(solver, loss_c, var_deriv_c, var_deriv_c_h, n_samples,
-                        min_sr, x0=None, precond=None, s=None):
+    def solve_jax_cov_in(solver,
+                        loss_c          :   jnp.ndarray,
+                        var_deriv_c     :   jnp.ndarray,
+                        var_deriv_c_h   :   jnp.ndarray,
+                        n_samples       :   int,
+                        min_sr          :   bool,
+                        x0              =   None,
+                        precond         =   None,
+                        s               : Optional[jnp.ndarray] = None):
         """
         Solves the covariance problem using the specified solver with precomputed parameters.
         
@@ -283,24 +329,37 @@ if _JAX_AVAILABLE:
             - For the MinSR branch, solution = var_deriv_c_h @ (solver.solve(...))
             - Otherwise, solution is the direct output from the solver.
         """
+        
+        # In the MinSR case, compute S using the MinSR covariance function if not provided.
         if min_sr:
-            # In the MinSR case, compute S using the MinSR covariance function if not provided.
             if s is None:
                 s = covariance_jax_minsr(var_deriv_c, var_deriv_c_h, n_samples)
                 solver.init_from_matrix(s, loss_c, x0=x0)
-            solution = solver.solve(loss_c, x0, precond=precond)
+            
+            # Solve the linear equation using the solver.
+            solution = solver.solve(loss_c, x0=x0, precond=precond)
             return jnp.matmul(var_deriv_c_h, solution), s
-        else:
-            # Compute forces using a gradient function; assume gradient_jax is defined.
-            f = gradient_jax(var_deriv_c_h, loss_c, n_samples)
-            if s is None:
-                s = covariance_jax(var_deriv_c, var_deriv_c_h, n_samples)
-                solver.init_from_matrix(s, f, x0=x0)
-            solution = solver.solve(f, x0=x0, precond=precond)
-            return solution, s
+        
+        # Compute forces using a gradient function; assume gradient_jax is defined.
+        f = gradient_jax(var_deriv_c_h, loss_c, n_samples)
+        
+        if s is None:
+            # Compute the covariance matrix if not provided.
+            s = covariance_jax(var_deriv_c, var_deriv_c_h, n_samples)
+            solver.init_from_matrix(s, f, x0=x0)
+            
+        # Solve the linear equation using the solver.
+        solution = solver.solve(f, x0=x0, precond=precond)
+        return solution, s
 
     @jax.jit
-    def solve_jax_cov(solver, loss, var_deriv, min_sr, x0=None, precond=None, s=None):
+    def solve_jax_cov(solver,
+                    loss,
+                    var_deriv,
+                    min_sr,
+                    x0          = None,
+                    precond     = None,
+                    s           : Optional[jnp.ndarray] = None):
         """
         Solves the covariance problem from scratch using the specified solver.
         
@@ -328,8 +387,6 @@ if _JAX_AVAILABLE:
         loss_c, var_deriv_c, var_deriv_c_h, n_samples, _ = solve_jax_prepare(loss, var_deriv)
         return solve_jax_cov_in(solver, loss_c, var_deriv_c, var_deriv_c_h, n_samples,
                                 min_sr, x0=x0, precond=precond, s=s)
-
-    # --- Direct Solver without Explicit Covariance Matrix ---
 
     @jax.jit
     def solve_jax_in(solver, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
@@ -368,11 +425,11 @@ if _JAX_AVAILABLE:
             solver.init_from_fisher(var_deriv_c_h, var_deriv_c, loss_c, x0=x0)
             solution = solver.solve(loss_c, x0, precond=precond)
             return jnp.matmul(var_deriv_c_h, solution)
-        else:
-            f = gradient_jax(var_deriv_c_h, loss_c, n_samples)  # Assume gradient_jax is defined.
-            solver.init_from_fisher(var_deriv_c, var_deriv_c_h, f, x0=x0)
-            solution = solver.solve(f, x0=x0, precond=precond)
-            return solution
+
+        f = gradient_jax(var_deriv_c_h, loss_c, n_samples)  # Assume gradient_jax is defined.
+        solver.init_from_fisher(var_deriv_c, var_deriv_c_h, f, x0=x0)
+        solution = solver.solve(f, x0=x0, precond=precond)
+        return solution
 
     @jax.jit
     def solve_jax(solver, loss, var_deriv, min_sr, x0=None, precond=None):
@@ -746,11 +803,11 @@ class StochasticReconfiguration(ABC):
         
         Parameters:
             solver:
-                solver to use for the stochastic reconfiguration. At one
-                point of stochastic reconfiguration, the solver will be used to
-                solve the system of equations S_{kk'} x_k = F_k
-                where S_{kk'} is the covariance matrix, x_k is the solution
-                and F_k is the variational gradient of the loss function.
+                solver to use for the linear system of equations:
+                    At one point of stochastic reconfiguration, the solver will be used to
+                    solve the system of equations S_{kk'} x_k = F_k
+                    where S_{kk'} is the covariance matrix, x_k is the solution
+                    and F_k is the variational gradient of the loss function.
             backend:
                 backend to use for the stochastic reconfiguration
                 'jax' or 'numpy'

@@ -8,6 +8,7 @@ import numpy as np
 import numpy.random as nrn
 import scipy as sp
 import inspect
+from typing import Union, Optional
 
 # ---------------------------------------------------------------------
 
@@ -324,6 +325,12 @@ try:
     JIT                     = backend_mgr.jit
     _JAX_AVAILABLE          = backend_mgr.jax_available
     
+    try:
+        import jax.numpy as jnp
+        Array = Union[np.ndarray, jnp.ndarray]
+    except ImportError:
+        Array = np.ndarray
+    
 except Exception as e:
     _log_message(f"Error initializing global defaults: {e}")
     
@@ -486,9 +493,7 @@ def get_hardware_info():
     return n_devices, n_threads
 
 # ---------------------------------------------------------------------
-
 #! PADDING AND OTHER UTILITIES
-
 # ---------------------------------------------------------------------
 
 if _JAX_AVAILABLE:

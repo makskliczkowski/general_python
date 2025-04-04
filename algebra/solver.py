@@ -1,13 +1,25 @@
 import numpy as np
 import scipy as sp
+from typing import Optional, Callable, Union
 from abc import ABC, abstractmethod
 from enum import Enum, auto, unique                 # for enumerations
+from typing import NamedTuple                       # Alternative to dataclass
 
 # -----------------------------------------------------------------------------
 
-from typing import Optional, Callable
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend
+from general_python.algebra.utils import _JAX_AVAILABLE, maybe_jit, get_backend
 from general_python.algebra.preconditioners import Preconditioner
+
+try:
+    if _JAX_AVAILABLE:
+        import jax.numpy as jnp
+        Array   = Union[np.ndarray, jnp.ndarray]
+    else:
+        jnp     = None
+        Array   = np.ndarray
+except ImportError:
+    jnp     = None
+    Array   = np.ndarray
 
 # -----------------------------------------------------------------------------
 
@@ -32,7 +44,7 @@ class SolverType(Enum):
 
 # -----------------------------------------------------------------------------
 
-_SOL_TYPE_ERROR     = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
+_SOL_TYPE_ERROR             = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
 
 # -----------------------------------------------------------------------------
 #! Errors
@@ -81,6 +93,7 @@ class SolverErrorMsg(Enum):
 
     def __repr__(self):
         return self.__str__()
+
 class SolverError(Exception):
     '''
     Base class for exceptions in the solver module.
@@ -99,6 +112,29 @@ class SolverError(Exception):
     
     def __repr__(self):
         return self.__str__()
+
+class SolverResult(NamedTuple):
+    '''
+    Named tuple to store the result of a solver.
+    
+    Attributes:
+        x : np.ndarray
+            The solution vector.
+        converged : bool
+            Whether the solver converged.
+        iterations : int
+            The number of iterations performed.
+        error : float
+            The error of the solution.
+    '''
+    x          : Array                  # The solution vector
+    converged  : bool                   # Whether the solver converged
+    iterations : int                    # The number of iterations performed
+    error      : float                  # The error of the solution
+    res_norm   : Optional[float] = None # The residual norm (if available)
+
+# -----------------------------------------------------------------------------
+
 
 # -----------------------------------------------------------------------------
 #! General Solver Class
@@ -177,7 +213,7 @@ class Solver(ABC):
         self._restarts                          = 0
         
         # solution
-        self._solution: Optional[np.ndarray]    = None
+        self._solution: Optional[Array]         = None
         self._a                                 = None # matrix, only used when mat_vec_mult is not set
         self._s                                 = None # matrix S, only used when mat_vec_mult is not set
         self._sp                                = None # matrix S^T, only used when mat_vec_mult is not set
