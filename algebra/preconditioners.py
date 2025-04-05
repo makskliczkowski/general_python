@@ -23,10 +23,14 @@ operation M^{-1}r should be computationally inexpensive.
 
 # Import the required modules
 from abc import ABC, abstractmethod
-from typing import Union, Callable, Optional, Any
+from typing import Union, Callable, Optional, Any, Type
+import inspect
 import numpy as np
 import numpy.random as nrn
 import scipy as sp
+# Add sparse imports at the top of the file
+import scipy.sparse as sps
+import scipy.sparse.linalg as spsla
 
 from .utils import _JAX_AVAILABLE, get_backend as get_backend, maybe_jit
 from enum import Enum, auto, unique
@@ -83,9 +87,7 @@ class PreconditionersTypeSym(Enum):
     JACOBI              = auto()
     INCOMPLETE_CHOLESKY = auto()
     COMPLETE_CHOLESKY   = auto()
-    # INCOMPLETE_LU might be symmetric if A is, but often listed separately
-    # Add others like SSOR etc.
-
+    SSOR                = auto()
 @unique
 class PreconditionersTypeNoSym(Enum):
     """
@@ -145,16 +147,16 @@ class Preconditioner(ABC):
                 The apply function for the preconditioner.
         """
         self._backend_str                : str
-        self._backend                    : Any # The numpy-like module (np or jnp)
-        self._backends                   : Any # The scipy-like module
-        self._isjax                      : bool
+        self._backend                    : Any  # The numpy-like module (np or jnp)
+        self._backends                   : Any  # The scipy-like module (sp or jax.scipy)
+        self._isjax                      : bool # True if using JAX backend
         self.reset_backend(backend) # Sets backend attributes
         self._tol_small                  = 1e-10
         self._tol_big                    = 1e10
         self._zero                       = 1e10
 
-        self._is_positive_semidefinite   = is_positive_semidefinite
-        self._is_gram                    = is_gram # Gram matrix flag
+        self._is_positive_semidefinite   = is_positive_semidefinite     # Positive semidefinite flag
+        self._is_gram                    = is_gram                      # Gram matrix flag
 
         if self._is_positive_semidefinite:
             self._stype                  = PreconditionersType.SYMMETRIC
@@ -162,7 +164,7 @@ class Preconditioner(ABC):
             # May still be symmetric, but we don't assume based on this flag alone
             self._stype                  = PreconditionersType.NONSYMMETRIC
 
-        self._sigma                      = 0.0
+        self._sigma                      = 0.0                          # Regularization parameter
 
         # Store reference to the static apply logic of the concrete class
         self._base_apply_logic : Callable[..., Array] = self.__class__.apply if not apply_func else apply_func
@@ -191,7 +193,9 @@ class Preconditioner(ABC):
             self._update_apply_func()
         
     # -----------------------------------------------------------------
-
+    #! Closure for the apply function
+    # -----------------------------------------------------------------
+    
     def _update_apply_func(self):
         """
         Creates the instance's apply function, potentially JIT-compiled.
@@ -202,62 +206,32 @@ class Preconditioner(ABC):
         """
         if not hasattr(self, '_base_apply_logic'):
             # Should not happen if __init__ runs correctly
-            print("Warning: _base_apply_logic not set during _update_apply_func.")
-            self._apply_func = self._base_apply_logic(self._get_precomputed_data())
+            print("Warning: _base_apply_logic not set during _update_apply_func. Setting to None.")
+            self._apply_func = self.__class__.apply
             return
 
         base_apply      = self._base_apply_logic
-        current_sigma   = self._sigma
         backend_mod     = self._backend
 
         # Define the function to be potentially compiled.
         # It calls the static method, passing necessary instance data.
-        def wrapped_apply_instance(r: Array) -> Array:
+        def wrapped_apply_instance(r: Array, sig: float) -> Array:
             # Get data computed during set() specific to the instance
             precomputed_data    = self._get_precomputed_data()
             # Call the static apply logic of the concrete class
             # Pass instance data as well
-            return base_apply(  r         =   r,
-                                sigma     =   current_sigma,
-                                **precomputed_data) 
+            return base_apply(  r               =   r,
+                                sigma           =   sig,
+                                backend_mod     =   backend_mod,
+                                **precomputed_data)
 
         # Apply JIT compilation if using JAX backend
         if self._isjax and jax is not None:
-            print(f"({self._name}) JIT compiling apply function for sigma={current_sigma}")
+            print(f"({self._name}) JIT compiling apply function...")
             self._apply_func = jax.jit(wrapped_apply_instance)
         else:
             # !TODO: Add numba?
             self._apply_func = wrapped_apply_instance
-
-    # -----------------------------------------------------------------
-
-    @staticmethod
-    def wrap_apply(
-                sigma       : Optional[float],
-                apply_func  : Callable,
-                isjax       : bool = True,
-                **kwargs) -> Array:
-        """
-        Wrap the apply function to include sigma.
-        
-        Args:
-            sigma (float):
-                The regularization parameter.
-            apply_func (PreconitionerApplyFun):
-                The apply function to be wrapped.
-            isjax:
-                If True, use JAX backend.
-            
-        Returns:
-            Callable: The wrapped apply function.
-        """
-        
-        def wrapped_apply(r: Array) -> Array:
-            return apply_func(r, sigma, **kwargs)
-        
-        if isjax and _JAX_AVAILABLE:
-            return jax.jit(wrapped_apply)
-        return wrapped_apply
     
     # -----------------------------------------------------------------
     
@@ -452,7 +426,7 @@ class Preconditioner(ABC):
 
     @staticmethod
     @abstractmethod
-    def apply(r: Array, sigma: float, **precomputed_data: Any) -> Array:
+    def apply(r: Array, sigma: float, backend_mod: Any, **precomputed_data: Any) -> Array:
         '''
         Applies the core preconditioner logic M^{-1}r statically.
 
@@ -464,6 +438,8 @@ class Preconditioner(ABC):
                     The residual vector to precondition.
             sigma (float):
                     The regularization parameter used in M.
+            backend_mod (Any):
+                    The backend module (e.g., np, jnp) to use for computations.
             **precomputed_data (Any):
                     Precomputed data stored by the instance during set()
                     (e.g., inv_diag for Jacobi, L/U factors for ILU).
@@ -561,23 +537,21 @@ class IdentityPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
     @staticmethod
-    def apply(r: Array, sigma: float, **precomputed_data: Any) -> Array:
+    def apply(r: Array, sigma: float, backend_mod: Any, **precomputed_data: Any) -> Array:
         '''
         Static apply method for the Identity preconditioner. Returns the input vector `r`.
 
         Args:
             r (Array)             : The residual vector.
             sigma (float)         : Regularization (ignored).
-            backend_module (Any)  : The backend module (ignored).
+            backend_mod (Any)     : The backend module (ignored).
             **precomputed_data (Any): Ignored.
 
         Returns:
             Array: The input vector `r`.
         '''
         # Ensure output has same type as input for consistency if needed by backend
-        # return backend_module.asarray(r)
-        # Usually just returning r is fine
-        return r
+        return backend_mod.asarray(r) if backend_mod is not None else r
 
 # =====================================================================
 #! Jacobi preconditioner
@@ -592,7 +566,7 @@ class JacobiPreconditioner(Preconditioner):
     division by the diagonal entries.
 
     Math:
-        M = diag(A) + sigma*I = D + sigma*I
+        M       = diag(A) + sigma*I = D + sigma*I
         M^{-1}r = (D + sigma*I)^{-1} r = [1 / (A_ii + sigma)] * r_i
 
     References:
@@ -626,9 +600,9 @@ class JacobiPreconditioner(Preconditioner):
                 (effectively setting the result component to zero,
                 1 / large_number -> 0).
         """
-        super().__init__(is_positive_semidefinite=is_positive_semidefinite,
-                        is_gram=is_gram,
-                        backend=backend)
+        super().__init__(is_positive_semidefinite   =   is_positive_semidefinite,
+                        is_gram                     =   is_gram,
+                        backend                     =   backend)
         # Tolerances / constants for safe division
         self._tol_small         = tol_small
         self._zero              = zero_replacement
@@ -637,27 +611,27 @@ class JacobiPreconditioner(Preconditioner):
 
     # -----------------------------------------------------------------
 
-    @property
-    def zero_replacement(self) -> float:
-        ''' Replaces the value of 0 numerically '''
-        return self._zero_replacement
-    
-    @zero_replacement.setter
-    def zero_replacement(self, value: float):
-        self._zero_replacement = value
-
-    # -----------------------------------------------------------------
-
     def _compute_inv_diag(self, diag_a: Array, sigma: float):
-        """Internal helper to compute the inverse diagonal safely."""
+        """
+        Internal helper to compute the inverse diagonal safely.
+        
+        Math:
+            M = diag(A) + sigma*I
+            M^{-1} = diag(1 / (A_ii + sigma))
+        
+        Sets self._inv_diag to the computed inverse diagonal of diagonal matrix A + sigma*I.
+        """
         be              = self._backend
-        reg_diag        = diag_a + sigma
+        if sigma is not None and sigma != 0.0:
+            reg_diag    = diag_a + sigma
+        else:
+            reg_diag    = diag_a
         # Handle small or zero values after regularization
         is_small        = be.abs(reg_diag) < self._tol_small
         # Replace small values with a large number before inversion
-        safe_diag       = be.where(is_small, be.sign(reg_diag) * self._zero_replacement, reg_diag)
+        safe_diag       = be.where(is_small, be.sign(reg_diag) * self._zero, reg_diag)
         # Replace exact zeros with the replacement value directly
-        safe_diag       = be.where(safe_diag == 0.0, self._zero_replacement, safe_diag)
+        safe_diag       = be.where(safe_diag == 0.0, self._zero, safe_diag)
         
         self._inv_diag  = 1.0 / safe_diag
         # Ensure components corresponding to initially small values are effectively zero
@@ -668,12 +642,29 @@ class JacobiPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
     def _set_standard(self, a: Array, sigma: float):
-        """ Sets up Jacobi from matrix A. """
+        """
+        Sets up Jacobi from matrix A.
+        
+        Computes diag(A + sigma*I) and stores the inverse diagonal.
+        """
         diag_a      = self._backend.diag(a)
         self._compute_inv_diag(diag_a, sigma)
 
     def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """ Sets up Jacobi from factors S, Sp. Computes diag(Sp @ S / N). """
+        """
+        Sets up Jacobi from factors S, Sp. Computes diag(Sp @ S / N).
+        
+        This is especially usefull when one does not want to compute the full
+        Gram matrix A = Sp @ S / N explicitly.
+        
+        Parameters:
+            s (Array):
+                Matrix S.
+            sp (Array):
+                Matrix Sp (conjugate transpose of S).
+            sigma (float):
+                Regularization parameter.
+        """
         be          = self._backend
         # Estimate N if not provided? Assume N = s.shape[0] (num outputs)
         n           = float(s.shape[0])
@@ -701,7 +692,7 @@ class JacobiPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
     @staticmethod
-    def apply(r: Array, sigma: float, inv_diag: Array) -> Array:
+    def apply(r: Array, sigma: float, backend_mod: Any, inv_diag: Array) -> Array:
         '''
         Static apply method for Jacobi: element-wise multiplication by inverse diagonal.
 
@@ -710,11 +701,14 @@ class JacobiPreconditioner(Preconditioner):
                 The residual vector.
             sigma (float):
                 Regularization (already included in inv_diag).
+            backend_mod (Any):
+                The backend module (e.g., np, jnp).
             inv_diag (Array):
                 The precomputed inverse diagonal (1 / (A_ii + sigma)).
 
         Returns:
-            Array: The preconditioned vector inv_diag * r.
+            Array:
+                The preconditioned vector inv_diag * r.
         '''
         if inv_diag is None:
             raise ValueError("Jacobi 'inv_diag' data not provided to static apply.")
@@ -727,6 +721,9 @@ class JacobiPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
     def __repr__(self) -> str:
+        ''' 
+        Returns the name and configuration of the Jacobi preconditioner. 
+        '''
         base_repr = super().__repr__()
         return f"{base_repr[:-1]}, tol_small={self._tol_small})"
     
@@ -793,9 +790,17 @@ class CholeskyPreconditioner(Preconditioner):
     def _set_standard(self, a: Array, sigma: float):
         """ 
         Sets up Cholesky by factorizing A + sigma*I. 
+        Computes the lower Cholesky factor L.
+        Parameters:
+            a (Array):
+                The matrix A.
+            sigma (float):
+                Regularization parameter.
+        Raises:
+            ValueError: If the matrix is not square or not positive definite.
         """
         
-        be = self._backend
+        be              = self._backend
         print(f"({self._name}) Performing Cholesky decomposition...")
         try:
             # Regularize the matrix
@@ -831,6 +836,8 @@ class CholeskyPreconditioner(Preconditioner):
         # Now call the standard setup
         self._set_standard(a_gram, sigma)
 
+    # -----------------------------------------------------------------
+
     def _get_precomputed_data(self) -> dict:
         """ 
         Returns the computed Cholesky factor L.
@@ -839,14 +846,14 @@ class CholeskyPreconditioner(Preconditioner):
         # Do not raise error here, let apply handle None L
         # if self._l is None:
         #      raise RuntimeError(f"({self._name}) Preconditioner not set up or failed. Call set() first.")
-        return {'backend_module': self._backend, 'l': self._l}
+        return {'l': self._l}
 
     # -----------------------------------------------------------------
     #! Static Apply Method
     # -----------------------------------------------------------------
 
     @staticmethod
-    def apply(r: Array, sigma: float, backend_module: Optional[Any], l: Optional[Array]) -> Array:
+    def apply(r: Array, sigma: float, backend_mod: Optional[Any], l: Optional[Array]) -> Array:
         '''
         Static apply method for Cholesky: solves L y = r and L.T z = y.
 
@@ -855,7 +862,7 @@ class CholeskyPreconditioner(Preconditioner):
                 The residual vector.
             sigma (float):
                 Regularization (used during factorization, ignored here).
-            backend_module (Any):
+            backend_mod (Any):
                 The backend numpy-like module (e.g., numpy or jax.numpy).
             l (Optional[Array]):
                 The precomputed lower Cholesky factor.
@@ -870,41 +877,39 @@ class CholeskyPreconditioner(Preconditioner):
             print("Warning: Cholesky factor l is None in apply, returning original vector.")
             return r
         
-        if backend_module is None:
+        if backend_mod is None:
             raise ValueError(f"Which backend to use?")
         
         if r.shape[0] != l.shape[0]:
             raise ValueError(f"Shape mismatch in Cholesky apply: r ({r.shape[0]}) vs L ({l.shape[0]})")
 
-        if backend_module == np:
-            
-
         try:
             # Check if matrix is complex to use conjugate transpose
-            use_conj_transpose = backend_module.iscomplexobj(l)
+            use_conj_transpose = backend_mod.iscomplexobj(l)
             
-            L_H = backend_module.conjugate(l).T if use_conj_transpose else l.T
+            lh                  = backend_mod.conjugate(l).T if use_conj_transpose else l.T
 
             # Forward substitution: Solve L y = r
-            y = backend_module.linalg.solve_triangular(l, r, lower=True, check_finite=False)
+            y                   = backend_mod.linalg.solve_triangular(l, r, lower=True, check_finite=False)
             # Backward substitution: Solve L^H z = y
-            z = backend_module.linalg.solve_triangular(L_H, y, lower=False, check_finite=False, trans='N') # Use L_H directly
-
+            z                   = backend_mod.linalg.solve_triangular(lh, y, lower=False, check_finite=False, trans='N')
             return z
-        except Exception as e: # Catch specific linalg errors if possible
+        except Exception as e:
             print(f"Cholesky triangular solve failed during apply: {e}")
-            # Return original vector if solve fails
-            return r
+            return r            # Return original vector if solve fails
+
 
     # -----------------------------------------------------------------
+    
     def __repr__(self) -> str:
-        status = "Factorized" if self._L is not None else "Not Factorized/Failed"
-        base_repr = super().__repr__()
+        status      = "Factorized" if self._l is not None else "Not Factorized/Failed"
+        base_repr   = super().__repr__()
         return f"{base_repr[:-1]}, status='{status}')"
+    
     # -----------------------------------------------------------------
 
 # =====================================================================
-#! Suggestion: SSOR Preconditioner
+#! SSOR Preconditioner
 # =====================================================================
 
 class SSORPreconditioner(Preconditioner):
@@ -931,135 +936,172 @@ class SSORPreconditioner(Preconditioner):
         - Saad, Y. (2003). Iterative Methods for Sparse Linear Systems (2nd ed.). SIAM. Chapter 10.
         - Axelsson, O. (1996). Iterative Solution Methods. Cambridge University Press.
     """
-    _name = "SSOR Preconditioner"
-    # Although often used for SPD, the setup doesn't strictly require it
-    _type = PreconditionersTypeSym.JACOBI # No specific SSOR enum yet, Jacobi is placeholder
+    
+    # -----------------------------------------------------------------
+    
+    _name = "SSOR Preconditioner"           # Although often used for SPD, the setup doesn't strictly require it
+    _type = PreconditionersTypeSym.JACOBI   # No specific SSOR enum yet, Jacobi is placeholder
 
     def __init__(self,
-                 omega                   : float = 1.0,
-                 is_positive_semidefinite: bool = False, # User hint
-                 is_gram                 : bool = False, # Typically used with explicit A
-                 backend                 : str  = 'default',
-                 tol_small               : float = 1e-10, # For inverting diagonal
-                 zero_replacement        : float = 1e10):
+                omega                   : float = 1.0,
+                is_positive_semidefinite: bool = False,     # User hint
+                is_gram                 : bool = False,     # Typically used with explicit A
+                backend                 : str  = 'default', # Backend for computations
+                tol_small               : float = 1e-10,    # For inverting diagonal
+                zero_replacement        : float = 1e10):
         """
         Initialize the SSOR preconditioner.
 
         Args:
-            omega (float): Relaxation parameter (0 < omega < 2). Default is 1.0 (SGS).
-            is_positive_semidefinite (bool): If A is assumed positive semi-definite.
-            is_gram (bool): If setting up from Gram matrix factors (less common for SSOR).
-            backend (str) : The computational backend.
-            tol_small (float): Tolerance for safe diagonal inversion.
-            zero_replacement (float): Value for safe diagonal inversion.
+            omega (float):
+                Relaxation parameter (0 < omega < 2). Default is 1.0 (SGS).
+            is_positive_semidefinite (bool):
+                If A is assumed positive semi-definite.
+            is_gram (bool):
+                If setting up from Gram matrix factors (less common for SSOR).
+            backend (str):
+                The computational backend.
+            tol_small (float):
+                Tolerance for safe diagonal inversion.
+            zero_replacement (float):
+                Value for safe diagonal inversion.
         """
         if not (0 < omega < 2):
             raise ValueError("SSOR relaxation parameter omega must be between 0 and 2.")
 
         super().__init__(is_positive_semidefinite=is_positive_semidefinite,
-                         is_gram=is_gram,
-                         backend=backend)
+                        is_gram=is_gram,
+                        backend=backend)
         # Assume symmetric application if A is symmetric
-        self._stype = PreconditionersType.SYMMETRIC
+        self._stype             = PreconditionersType.SYMMETRIC
 
-        self._omega            = omega
-        self._tol_small        = tol_small
-        self._zero_replacement = zero_replacement
+        self._omega             = omega
+        self._tol_small         = tol_small
+        self._zero              = zero_replacement  
 
         # Precomputed data storage
         self._inv_diag_scaled : Optional[Array] = None # Stores omega / (diag(A) + sigma)
         self._L_scaled        : Optional[Array] = None # Stores omega * L
         self._U_scaled        : Optional[Array] = None # Stores omega * U
 
-    # --- Properties ---
+    # -----------------------------------------------------------------
+    #! Properties
+    # -----------------------------------------------------------------
+    
     @property
-    def omega(self) -> float: return self._omega
+    def omega(self) -> float:
+        ''' Relaxation parameter omega (0 < omega < 2). '''
+        return self._omega
+    
     @omega.setter
     def omega(self, value: float):
-         if not (0 < value < 2): raise ValueError("omega must be in (0, 2)")
-         self._omega = value
-         # Note: Need to call set() again to recompute scaled factors
+        if not (0 < value < 2):
+            raise ValueError("omega must be in (0, 2)")
+        self._omega = value
+        # Note: Need to call set() again to recompute scaled factors
 
-    @property
-    def tol_small(self) -> float: return self._tol_small
-    @property
-    def zero_replacement(self) -> float: return self._zero_replacement
-
-    # --- Setup Methods ---
+    # -----------------------------------------------------------------
+    #! Setup Methods
+    # -----------------------------------------------------------------
+    
     def _set_standard(self, a: Array, sigma: float):
-        """ Sets up SSOR from matrix A = D + L + U. """
-        be = self._backend
+        """ 
+        Sets up SSOR from matrix A = D + L + U.
+        Computes the lower and upper triangular parts of A + sigma*I.
+        Parameters:
+            a (Array):
+                The matrix A.
+            sigma (float):
+                Regularization parameter.
+        Raises:
+            ValueError: If the matrix is not square or not positive definite.
+        """
+        
         print(f"({self._name}) Setting up SSOR factors...")
-
-        a_reg = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
+        be          = self._backend
+        a_reg       = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
 
         # Extract parts
-        diag_A_reg = be.diag(a_reg)
+        diag_a_reg  = be.diag(a_reg)
         # Use backend's tril/triu. Ensure k=-1/+1 for strict parts.
-        L = be.tril(a_reg, k=-1)
-        U = be.triu(a_reg, k=1)
+        L           = be.tril(a_reg, k=-1)
+        U           = be.triu(a_reg, k=1)
 
         # Compute scaled inverse diagonal safely
-        diag_scaled = diag_A_reg / self._omega # Use original omega
-        is_small = be.abs(diag_scaled) < self._tol_small
-        safe_diag_scaled = be.where(is_small, be.sign(diag_scaled) * self._zero_replacement, diag_scaled)
-        safe_diag_scaled = be.where(safe_diag_scaled == 0.0, self._zero_replacement, safe_diag_scaled)
+        diag_scaled             = diag_a_reg / self._omega # Use original omega
+        is_small                = be.abs(diag_scaled) < self._tol_small
+        safe_diag_scaled        = be.where(is_small, be.sign(diag_scaled) * self._zero, diag_scaled)
+        safe_diag_scaled        = be.where(safe_diag_scaled == 0.0, self._zero, safe_diag_scaled)
         
-        self._inv_diag_scaled = 1.0 / safe_diag_scaled
-        self._inv_diag_scaled = be.where(is_small, 0.0, self._inv_diag_scaled)
+        self._inv_diag_scaled   = 1.0 / safe_diag_scaled
+        self._inv_diag_scaled   = be.where(is_small, 0.0, self._inv_diag_scaled)
         
         # Store D_inv_scaled, L and U (or scaled versions if preferred for apply)
         # Let's store the original L and U, apply will use omega
-        self._L = L
-        self._U = U
+        self._L                 = L
+        self._U                 = U 
         
         # We need D for the backward step, store its inverse
-        is_small_D = be.abs(diag_A_reg) < self._tol_small
-        safe_D = be.where(is_small_D, be.sign(diag_A_reg) * self._zero_replacement, diag_A_reg)
-        safe_D = be.where(safe_D == 0.0, self._zero_replacement, safe_D)
-        self._inv_diag_unscaled = 1.0 / safe_D
-        self._inv_diag_unscaled = be.where(is_small_D, 0.0, self._inv_diag_unscaled)
+        is_small_d              = be.abs(diag_a_reg) < self._tol_small
+        safe_d                  = be.where(is_small_d, be.sign(diag_a_reg) * self._zero, diag_a_reg)
+        safe_d                  = be.where(safe_d == 0.0, self._zero, safe_d)
+        self._inv_diag_unscaled = 1.0 / safe_d
+        self._inv_diag_unscaled = be.where(is_small_d, 0.0, self._inv_diag_unscaled)
         
         print(f"({self._name}) SSOR setup complete.")
 
-
     def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """ Set up SSOR by forming A = Sp @ S / N first. """
+        """
+        Set up SSOR by forming A = Sp @ S / n first.
+        This is less common for SSOR, but can be useful in some cases.
+        """
+        
         # Similar warning as Cholesky
-        be = self._backend
-        N = float(s.shape[0])
-        if N <= 0.0: N = 1.0
+        be      = self._backend
+        n       = float(s.shape[0])
+        if n <= 0.0:
+            n = 1.0
+        
         print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for SSOR setup (N={N}).")
-        a_gram = (sp @ s) / N
+        a_gram  = (sp @ s) / n
         self._set_standard(a_gram, sigma)
 
     def _get_precomputed_data(self) -> dict:
         """ Returns the computed factors needed for SSOR apply. """
         if self._inv_diag_unscaled is None or self._L is None or self._U is None:
-             raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
+            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
+        
         return {
-            'inv_diag_unscaled': self._inv_diag_unscaled,
-            'L': self._L,
-            'U': self._U,
-            'omega': self._omega
+            'inv_diag_unscaled' : self._inv_diag_unscaled,
+            'L'                 : self._L,
+            'U'                 : self._U,
+            'omega'             : self._omega
         }
 
     # --- Static Apply ---
     @staticmethod
-    def apply(r: Array, sigma: float, backend_module: Any,
-              inv_diag_unscaled: Array, L: Array, U: Array, omega: float) -> Array:
+    def apply(r                 : Array,
+            sigma               : float,
+            backend_mod         : Any,
+            inv_diag_unscaled   : Array, L: Array, U: Array, omega: float) -> Array:
         '''
         Static apply method for SSOR: forward and backward triangular solves.
         Solves Mz = r where M = (D/w + L) D^{-1} (D/w + U) / (w(2-w))
 
         Args:
-            r (Array)                : The residual vector.
-            sigma (float)            : Regularization (used during setup).
-            backend_module (Any)     : The backend numpy-like module.
+            r (Array):
+                The residual vector.
+            sigma (float):
+                Regularization (used during setup).
+            backend_mod (Any):
+                The backend numpy-like module.
             inv_diag_unscaled (Array): Precomputed 1.0 / (diag(A)+sigma).
-            L (Array)                : Precomputed strictly lower part of A+sigma*I.
-            U (Array)                : Precomputed strictly upper part of A+sigma*I.
-            omega (float)            : Relaxation parameter.
+            L (Array):
+                Precomputed strictly lower part of A+sigma*I.
+            U (Array):
+                Precomputed strictly upper part of A+sigma*I.
+            omega (float):
+                Relaxation parameter.
 
         Returns:
             Array: The preconditioned vector M^{-1}r.
@@ -1068,10 +1110,10 @@ class SSORPreconditioner(Preconditioner):
             print("Warning: SSOR factors missing in apply, returning original vector.")
             return r
 
-        be = backend_module
+        be          = backend_module
 
         # Check for complex type
-        use_conj = be.iscomplexobj(L) # Assume L/U reflect complexness of A
+        use_conj    = be.iscomplexobj(L) # Assume L/U reflect complexness of A
         
         # Factor D/omega + L = D/omega * (I + omega * D^-1 * L)
         # Factor D/omega + U = D/omega * (I + omega * D^-1 * U)
@@ -1079,8 +1121,8 @@ class SSORPreconditioner(Preconditioner):
         # Forward sweep: Solve (I + omega * D^-1 * L) y = r
         # This requires a triangular solve with matrix (I + omega*L*D_inv) -> Requires op @ vec
         # OR solve (D/omega + L) y = r directly
-        D_over_omega_plus_L = be.diag(1.0 / (omega * inv_diag_unscaled)) + L
-        y = be.linalg.solve_triangular(D_over_omega_plus_L, r, lower=True, check_finite=False)
+        d_over_omega_plus_l = be.diag(1.0 / (omega * inv_diag_unscaled)) + L
+        y = be.linalg.solve_triangular(d_over_omega_plus_l, r, lower=True, check_finite=False)
 
         # Intermediate step (needed for common formulation):
         # y_intermediate = D y / omega (element-wise mult)
@@ -1088,8 +1130,8 @@ class SSORPreconditioner(Preconditioner):
 
         # Backward sweep: Solve (D/omega + U) z = y_intermediate
         # U_H = U.conj().T if use_conj else U.T # SSOR uses U, not U^H typically
-        D_over_omega_plus_U = be.diag(1.0 / (omega * inv_diag_unscaled)) + U
-        z = be.linalg.solve_triangular(D_over_omega_plus_U, y_intermediate, lower=False, check_finite=False)
+        d_over_omega_plus_u = be.diag(1.0 / (omega * inv_diag_unscaled)) + U
+        z = be.linalg.solve_triangular(d_over_omega_plus_u, y_intermediate, lower=False, check_finite=False)
 
         # No final scaling needed for this common form Mz=r solve
         
@@ -1101,132 +1143,16 @@ class SSORPreconditioner(Preconditioner):
         # Let's stick to the solve Mz=r formulation -> z is the result
         return z
 
-    # --- Representation ---
+    # -----------------------------------------------------------------
+    #! String Representation
+    # -----------------------------------------------------------------
+    
     def __repr__(self) -> str:
-         base_repr = super().__repr__()
-         return f"{base_repr[:-1]}, omega={self.omega})"
+        base_repr = super().__repr__()
+        return f"{base_repr[:-1]}, omega={self.omega})"
 
-# =====================================================================
-#! Choose wisely
-# =====================================================================
-
-      
-# (Keep imports and other class definitions as they are)
-import inspect # Needed to inspect constructor arguments
-
-# =====================================================================
-#! Factory Function
-# =====================================================================
-
-def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
-    """
-    Factory function to select and instantiate a preconditioner.
-
-    Accepts various identifiers for the preconditioner type and passes
-    additional keyword arguments (like 'backend', 'omega', 'tol_small')
-    to the specific preconditioner's constructor.
-
-    Args:
-        precond_id (Any): Identifier for the preconditioner. Can be:
-            - A Preconditioner instance: Returns the instance directly.
-            - A PreconditionersTypeSym or PreconditionersTypeNoSym Enum member.
-            - A string matching an Enum member name (case-sensitive, e.g., "JACOBI").
-            - An integer matching an Enum member value.
-        **kwargs: Additional keyword arguments to pass to the selected
-                  preconditioner's constructor (e.g., backend='jax', omega=1.2).
-
-    Returns:
-        Preconditioner: An instance of the selected preconditioner class.
-
-    Raises:
-        TypeError: If precond_id has an unsupported type.
-        ValueError: If a string or integer identifier doesn't match a known Enum member.
-    """
-    # 1. Check if it's already an instance
-    if isinstance(precond_id, Preconditioner):
-        # If kwargs are provided, maybe warn that they are ignored?
-        if kwargs:
-            print(f"Warning: Preconditioner instance provided to choose_precond; ignoring additional kwargs: {kwargs}")
-        return precond_id
-
-    precond_type: Optional[Union[PreconditionersTypeSym, PreconditionersTypeNoSym]] = None
-
-    # 2. Handle string or integer identifiers -> Convert to Enum
-    if isinstance(precond_id, str):
-        try:
-            # Prioritize Symmetric Enums if name exists in both (like IDENTITY)
-            precond_type = PreconditionersTypeSym[precond_id]
-        except KeyError:
-            try:
-                precond_type = PreconditionersTypeNoSym[precond_id]
-            except KeyError:
-                raise ValueError(f"Unknown preconditioner name: '{precond_id}'. "
-                                 f"Valid names: {[e.name for e in PreconditionersTypeSym]} or "
-                                 f"{[e.name for e in PreconditionersTypeNoSym]}.")
-    elif isinstance(precond_id, int):
-        try:
-            # Prioritize Symmetric Enums
-            precond_type = PreconditionersTypeSym(precond_id)
-        except ValueError:
-            try:
-                precond_type = PreconditionersTypeNoSym(precond_id)
-            except ValueError:
-                 raise ValueError(f"Unknown preconditioner value: {precond_id}. "
-                                  f"Valid values: {[e.value for e in PreconditionersTypeSym]} or "
-                                  f"{[e.value for e in PreconditionersTypeNoSym]}.")
-    elif isinstance(precond_id, (PreconditionersTypeSym, PreconditionersTypeNoSym)):
-        precond_type = precond_id # It's already an Enum
-    else:
-        raise TypeError(f"Unsupported type for precond_id: {type(precond_id)}. "
-                        "Expected Preconditioner instance, Enum, str, or int.")
-
-    # 3. Map Enum to Class and Instantiate with kwargs
-    target_class: Optional[Type[Preconditioner]] = None
-
-    if isinstance(precond_type, PreconditionersTypeSym):
-        match precond_type:
-            case PreconditionersTypeSym.IDENTITY:
-                target_class = IdentityPreconditioner
-                # Identity doesn't take is_positive_semidefinite, set it if needed
-                kwargs.setdefault('is_positive_semidefinite', True)
-            case PreconditionersTypeSym.JACOBI:
-                target_class = JacobiPreconditioner
-            case PreconditionersTypeSym.INCOMPLETE_CHOLESKY:
-                # Decide whether to point to Complete or Incomplete here
-                target_class = IncompleteCholeskyPreconditioner # Pointing to new IC class
-            case PreconditionersTypeSym.SSOR: # Added SSOR here
-                 target_class = SSORPreconditioner
-            case _:
-                raise ValueError(f"Symmetric Preconditioner type {precond_type} not handled in choose_precond.")
-    elif isinstance(precond_type, PreconditionersTypeNoSym):
-         match precond_type:
-            case PreconditionersTypeNoSym.IDENTITY:
-                target_class = IdentityPreconditioner
-                kwargs.setdefault('is_positive_semidefinite', False)
-            case PreconditionersTypeNoSym.INCOMPLETE_LU:
-                # Need an ILU Preconditioner class implemented similar to IC
-                raise NotImplementedError("IncompleteLU preconditioner not implemented yet.")
-            case _:
-                raise ValueError(f"Non-Symmetric Preconditioner type {precond_type} not handled in choose_precond.")
-    else:
-         # Should not happen if type checking above worked
-         raise TypeError("Internal error: precond_type is not a valid Enum type.")
-
-
-    # Filter kwargs to only pass valid arguments to the target constructor
-    valid_args = inspect.signature(target_class.__init__).parameters
-    filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_args}
-    ignored_kwargs = {k: v for k, v in kwargs.items() if k not in valid_args and k != 'self'}
-    if ignored_kwargs:
-        print(f"Warning: Ignoring invalid keyword arguments for {target_class.__name__}: {ignored_kwargs}")
-
-    # Instantiate the class
-    return target_class(**filtered_kwargs)
-
-# Add sparse imports at the top of the file
-import scipy.sparse as sps
-import scipy.sparse.linalg as spsla
-
+    # -----------------------------------------------------------------
+    
 # =====================================================================
 #! Incomplete Cholesky Preconditioner (using ILU Proxy)
 # =====================================================================
@@ -1267,43 +1193,70 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         Args:
             backend (str): The computational backend. Must be 'numpy'.
         """
+        
         # Requires positive definite matrix for true IC, ILU is more general but works best for SPD.
         super().__init__(is_positive_semidefinite=True, is_gram=False, backend=backend)
         self._stype = PreconditionersType.SYMMETRIC
 
         # Check for backend compatibility
-        if self.backend_str != 'numpy':
+        if self._backend != np:
             raise NotImplementedError(f"{self._name} requires the 'numpy' backend (uses SciPy sparse). "
-                                      f"Current backend: '{self.backend_str}'.")
+                                f"Current backend: '{self.backend_str}'.")
 
         # Precomputed data storage
         self._ilu_obj : Optional[spsla.SuperLU] = None # Stores the SuperLU object from spilu
-
-        # Default ILU parameters (can be overridden in set via kwargs)
-        self._fill_factor = 1.0
-        self._drop_tol = None
-
-    # --- Properties for ILU parameters (Optional) ---
-    @property
-    def fill_factor(self) -> float: return self._fill_factor
-    @fill_factor.setter
-    def fill_factor(self, value: float): self._fill_factor = value
-
-    @property
-    def drop_tol(self) -> Optional[float]: return self._drop_tol
-    @drop_tol.setter
-    def drop_tol(self, value: Optional[float]): self._drop_tol = value
-
+        self._fill_factor                       = 1.0
+        self._drop_tol                          = None
 
     # -----------------------------------------------------------------
-    # Setup Methods
+    #! Properties
+    # -----------------------------------------------------------------
+    
+    @property
+    def fill_factor(self) -> float:
+        ''' The fill factor for ILU(0) (default 1.0). '''
+        return self._fill_factor
+    
+    @fill_factor.setter
+    def fill_factor(self, value: float): 
+        if value <= 0:
+            raise ValueError("fill_factor must be positive.")
+        self._fill_factor = value
+
+    @property
+    def drop_tol(self) -> Optional[float]: 
+        ''' The drop tolerance for ILU(0) (default None). '''
+        return self._drop_tol
+    
+    @drop_tol.setter
+    def drop_tol(self, value: Optional[float]): 
+        if value is not None and value < 0:
+            raise ValueError("drop_tol must be non-negative.")
+        self._drop_tol = value
+
+    # -----------------------------------------------------------------
+    #! Setup Methods
     # -----------------------------------------------------------------
 
     def _set_standard(self, a: Array, sigma: float, **kwargs):
-        """ Sets up ILU factorization for A + sigma*I. """
+        """
+        Sets up ILU factorization for A + sigma*I. 
+        Converts dense input to sparse CSC format if needed.
+        
+        Parameters:
+            a (Array):
+                The matrix A.
+            sigma (float):
+                Regularization parameter.
+            kwargs (dict):
+                Additional parameters for ILU setup (e.g., fill_factor, drop_tol).
+        Raises:
+            RuntimeError: If the backend is not NumPy or if ILU factorization fails.
+        """
+        
         # Ensure NumPy backend
         if self._backend is not np:
-             raise RuntimeError(f"{self._name} internal error: Backend is not NumPy despite check.")
+            raise RuntimeError(f"{self._name} internal error: Backend is not NumPy despite check.")
 
         print(f"({self._name}) Setting up ILU factorization...")
 
@@ -1318,23 +1271,22 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         # Apply regularization (sparse identity needed)
         if sigma != 0.0:
             print(f"({self._name}) Applying regularization sigma={sigma} to sparse matrix.")
-            eye_sparse = sps.identity(a.shape[0], dtype=a.dtype, format='csc')
-            a_reg_sparse = a_sparse + sigma * eye_sparse
+            eye_sparse      = sps.identity(a.shape[0], dtype=a.dtype, format='csc')
+            a_reg_sparse    = a_sparse + sigma * eye_sparse
         else:
-            a_reg_sparse = a_sparse
+            a_reg_sparse    = a_sparse
 
         # Get ILU parameters from kwargs or use defaults
-        fill_factor = kwargs.get('fill_factor', self._fill_factor)
-        drop_tol = kwargs.get('drop_tol', self._drop_tol)
-        # Use relaxation? options = spsla.superlu.panel_t() # Example, check spilu docs
+        fill_factor         = kwargs.get('fill_factor', self._fill_factor)
+        drop_tol            = kwargs.get('drop_tol', self._drop_tol)
 
         try:
             # Perform ILU decomposition using SuperLU through spilu
-            self._ilu_obj = spsla.spilu(a_reg_sparse,
-                                        drop_tol=drop_tol,
-                                        fill_factor=fill_factor,
-                                        # panel_size=options.panel_size, # Example options
-                                        # relax=options.relax,          # Example options
+            self._ilu_obj   = spsla.spilu(a_reg_sparse,
+                                        drop_tol            = drop_tol,
+                                        fill_factor         = fill_factor,
+                                        # panel_size        = options.panel_size,
+                                        # relax             = options.relax,
                                         )
             print(f"({self._name}) ILU decomposition successful.")
         except RuntimeError as e:
@@ -1342,33 +1294,38 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
             print(f"({self._name}) Matrix might be singular or factorization numerically difficult.")
             self._ilu_obj = None # Ensure object is None if decomposition fails
 
+    # -----------------------------------------------------------------
+
     def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
         """ Set up ILU by forming A = Sp @ S / N first (sparse recommended). """
         # Ensure NumPy backend
         if self._backend is not np:
-             raise RuntimeError(f"{self._name} internal error: Backend is not NumPy despite check.")
+            raise RuntimeError(f"{self._name} internal error: Backend is not NumPy despite check.")
 
-        be = self._backend
-        N = float(s.shape[0])
-        if N <= 0.0: N = 1.0
+        be      = self._backend
+        n       = float(s.shape[0])
+        if n <= 0.0: 
+            n = 1.0
 
         # Check if s/sp are sparse
-        s_is_sparse = sps.issparse(s)
-        sp_is_sparse = sps.issparse(sp)
+        s_is_sparse     = sps.issparse(s)
+        sp_is_sparse    = sps.issparse(sp)
 
         if not s_is_sparse or not sp_is_sparse:
-             print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for ILU setup (N={N}). "
-                   "Input factors should ideally be sparse.")
-             # Convert to sparse if necessary before matmul
-             s_mat = sps.csc_matrix(s) if not s_is_sparse else s.tocsc()
-             sp_mat = sps.csc_matrix(sp) if not sp_is_sparse else sp.tocsc()
-             a_gram = (sp_mat @ s_mat) / N
+            print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for ILU setup (N={n}). "
+                "Input factors should ideally be sparse.")
+            # Convert to sparse if necessary before matmul
+            s_mat   = sps.csc_matrix(s) if not s_is_sparse else s.tocsc()
+            sp_mat  = sps.csc_matrix(sp) if not sp_is_sparse else sp.tocsc()
+            a_gram  = (sp_mat @ s_mat) / n
         else:
-             # Perform sparse matrix multiplication
-             a_gram = (sp.tocsc() @ s.tocsc()) / N
+            # Perform sparse matrix multiplication
+            a_gram  = (sp.tocsc() @ s.tocsc()) / n
 
         # Now call the standard setup
         self._set_standard(a_gram, sigma, **kwargs)
+
+    # -----------------------------------------------------------------
 
     def _get_precomputed_data(self) -> dict:
         """ Returns the computed ILU object. """
@@ -1376,7 +1333,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         return {'ilu_obj': self._ilu_obj}
 
     # -----------------------------------------------------------------
-    # Static Apply Method
+    #! Static Apply Method
     # -----------------------------------------------------------------
 
     @staticmethod
@@ -1385,17 +1342,21 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         Static apply method for ILU: solves Mz = r using the LU factors.
 
         Args:
-            r (Array)                     : The residual vector.
-            sigma (float)                 : Regularization (used during setup).
-            backend_module (Any)          : The backend numpy module (must be numpy).
-            ilu_obj (Optional[SuperLU])   : The precomputed ILU object from spilu.
+            r (Array):
+                The residual vector.
+            sigma (float):
+                Regularization (used during setup).
+            backend_module (Any):
+                The backend numpy module (must be numpy).
+            ilu_obj (Optional[SuperLU]):
+                The precomputed ILU object from spilu.
 
         Returns:
             Array: The preconditioned vector M^{-1}r, or r if ilu_obj is None.
         '''
         if backend_module is not np:
             # This check is important because spsla.SuperLU is SciPy/NumPy specific
-             raise RuntimeError("IncompleteCholeskyPreconditioner.apply requires NumPy backend.")
+            raise RuntimeError("IncompleteCholeskyPreconditioner.apply requires NumPy backend.")
 
         if ilu_obj is None:
             # Factorization failed or not performed, return original vector
@@ -1412,9 +1373,168 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
             return r
 
     # -----------------------------------------------------------------
+    
     def __repr__(self) -> str:
-        status = "Factorized" if self._ilu_obj is not None else "Not Factorized/Failed"
-        base_repr = super().__repr__()
-        # Add ILU specific parameters if desired
+        '''
+        Returns the name and configuration of the Incomplete Cholesky preconditioner.
+        '''
+        
+        # Check if the ILU object is None (not factorized) or not
+        status      = "Factorized" if self._ilu_obj is not None else "Not Factorized/Failed"
+        base_repr   = super().__repr__()
+        
+        # Add ILU specific params
         return f"{base_repr[:-1]}, ILU_status='{status}')"
+    
     # -----------------------------------------------------------------
+
+# =====================================================================
+#! Choose wisely
+# =====================================================================
+
+def _resolve_precond_type(
+    precond_id: Any
+    ) -> Union[PreconditionersTypeSym, PreconditionersTypeNoSym]:
+    """
+    Helper to convert string/int/Enum id to a specific Enum member. 
+    
+    Args:
+        precond_id (Any):
+            Identifier (instance, Enum, str, int).
+    Raises:
+        ValueError:
+            If the id is not recognized.
+        TypeError:
+            If the id is of an unsupported type.
+    """
+    
+    # Check if precond_id is None
+    precond_type = None
+    if isinstance(precond_id, str):
+        try:
+            precond_type                = PreconditionersTypeSym[precond_id]
+        except KeyError as e:
+            try:
+                precond_type            = PreconditionersTypeNoSym[precond_id]
+            except KeyError as e:
+                raise ValueError(f"Unknown preconditioner name: '{precond_id}'.") from e
+    elif isinstance(precond_id, int):
+        try:
+            precond_type                = PreconditionersTypeSym(precond_id)
+        except ValueError as e:
+            try:
+                precond_type            = PreconditionersTypeNoSym(precond_id)
+            except ValueError as e:
+                raise ValueError(f"Unknown preconditioner value: {precond_id}.") from e
+    elif isinstance(precond_id, (PreconditionersTypeSym, PreconditionersTypeNoSym)):
+        precond_type                    = precond_id
+    else:
+        raise TypeError(f"Unsupported type for precond_id: {type(precond_id)}. Expected Enum, str, or int.")
+    return precond_type
+
+# =====================================================================
+
+def _get_precond_class_and_defaults(precond_type: Union[PreconditionersTypeSym, PreconditionersTypeNoSym]) -> Tuple[Type[Preconditioner], dict]:
+    """
+    Helper to map Enum type to class and set default kwargs.
+    
+    Returns:
+        target_class (Type[Preconditioner]):
+            The target preconditioner class.
+        defaults (dict):
+            Default arguments for the preconditioner constructor.
+    Raises:
+        ValueError:
+            If the preconditioner type is not recognized.
+        TypeError:
+            If the preconditioner type is of an unsupported type.
+    """
+    target_class : Type[Preconditioner] = None
+    defaults     : dict                 = {}
+
+    if isinstance(precond_type, PreconditionersTypeSym):
+        match precond_type:
+            case PreconditionersTypeSym.IDENTITY:
+                target_class            = IdentityPreconditioner
+                defaults['is_positive_semidefinite'] = True
+            case PreconditionersTypeSym.JACOBI:
+                target_class            = JacobiPreconditioner
+            case PreconditionersTypeSym.INCOMPLETE_CHOLESKY:
+                target_class            = IncompleteCholeskyPreconditioner
+            case PreconditionersTypeSym.COMPLETE_CHOLESKY:
+                target_class            = CholeskyPreconditioner
+            case PreconditionersTypeSym.SSOR:
+                target_class            = SSORPreconditioner
+            case _:
+                raise ValueError(f"Symmetric type {precond_type} not handled.")
+    elif isinstance(precond_type, PreconditionersTypeNoSym):
+        match precond_type:
+            case PreconditionersTypeNoSym.IDENTITY:
+                target_class            = IdentityPreconditioner
+                defaults['is_positive_semidefinite'] = False
+            case PreconditionersTypeNoSym.INCOMPLETE_LU:
+                # TODO: Implement ILUPreconditioner similar to IncompleteCholesky
+                raise NotImplementedError("IncompleteLU preconditioner not implemented yet.")
+            case _:
+                raise ValueError(f"Non-Symmetric type {precond_type} not handled.")
+    else:
+        raise TypeError("Internal error: Invalid precond_type.")
+
+    return target_class, defaults
+
+# =====================================================================
+
+def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
+    """
+    Factory function to select and instantiate a preconditioner.
+
+    Accepts various identifiers (Enum, str, int, instance) and passes kwargs
+    to the specific preconditioner's constructor.
+
+    Args:
+        precond_id (Any): Identifier (instance, Enum, str, int).
+        **kwargs: Additional arguments for the constructor (e.g., backend='jax').
+
+    Returns:
+        Preconditioner: An instance of the selected preconditioner.
+    """
+    
+    # 1. Handle Instance Passthrough
+    if isinstance(precond_id, Preconditioner):
+        if kwargs: print(f"Warning: Instance provided; ignoring kwargs: {kwargs}")
+        return precond_id
+
+    # 2. Resolve ID to Enum Type
+    try:
+        precond_type                    = _resolve_precond_type(precond_id)
+    except (ValueError, TypeError) as e:
+        # Re-raise with more context if needed, or just let the original error propagate
+        raise e
+
+    # 3. Get Target Class and Default Kwargs
+    try:
+        target_class, default_kwargs    = _get_precond_class_and_defaults(precond_type)
+    except (ValueError, TypeError, NotImplementedError) as e:
+        raise e
+
+    # 4. Combine Defaults and User Kwargs (User kwargs override defaults)
+    final_kwargs                        = default_kwargs.copy()
+    final_kwargs.update(kwargs)
+
+    # 5. Filter Kwargs for Constructor and Instantiate
+    try:
+        valid_args                      = inspect.signature(target_class.__init__).parameters
+        filtered_kwargs                 = {k: v for k, v in final_kwargs.items() if k in valid_args}
+        ignored_kwargs                  = {k: v for k, v in final_kwargs.items() if k not in valid_args and k != 'self'}
+        if ignored_kwargs:
+            print(f"Warning: Ignoring invalid kwargs for {target_class.__name__}: {ignored_kwargs}")
+
+        return target_class(**filtered_kwargs)
+    except Exception as e:
+        print(f"Error instantiating {target_class.__name__} with kwargs {filtered_kwargs}: {e}")
+        raise e
+    return None # Fallback, should not reach here if everything is correct
+
+# =====================================================================
+#! End of File
+# =====================================================================
