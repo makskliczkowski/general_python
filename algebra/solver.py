@@ -1,15 +1,40 @@
+'''
+file:       general_python/algebra/solver.py
+author:     Maksymilian Kliczkowski
+
+Defines the abstract interface and helper structures for solving linear systems
+
+$$
+Ax = b,
+$$
+
+potentially using preconditioning
+
+$$
+M^{-1}Ax = M^{-1}b \rm {[left]},
+$$
+
+or
+
+$$
+A M^{-1} y = b, x = M^{-1}y \rm {[right]},
+$$ 
+
+Supports different backends (NumPy, JAX) and promotes a static-method-based
+interface for solver algorithms, allowing for easier compilation (e.g., JIT).
+'''
+
 import numpy as np
 import numba
 import scipy as sp
-from typing import Optional, Callable, Union, Any
+from typing import Optional, Callable, Union, Any, NamedTuple, Type
 from abc import ABC, abstractmethod
 from enum import Enum, auto, unique                 # for enumerations
-from typing import NamedTuple                       # Alternative to dataclass
 
 # -----------------------------------------------------------------------------
 
-from general_python.algebra.utils import _JAX_AVAILABLE, maybe_jit, get_backend
-from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
+from general_python.algebra.utils import _JAX_AVAILABLE, get_backend, maybe_jit
+from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun, preconditioner_idn
 
 try:
     if _JAX_AVAILABLE:
@@ -26,1004 +51,684 @@ except ImportError:
     Array   = np.ndarray
 
 # -----------------------------------------------------------------------------
+#! Type hints
+# -----------------------------------------------------------------------------
+
+MatVecFunc          = Callable[[Array], Array]
+StaticSolverFunc    = Callable[..., 'SolverResult']
+
+# -----------------------------------------------------------------------------
 
 @unique
 class SolverType(Enum):
     """
     Enumeration class for the different types of solvers.
     """
+    
+    # Default
     DIRECT          = auto() # Direct solver x = A^-1 b
     BACKEND_SOLVER  = auto() # Use the default backend solver
     PSEUDO_INVERSE  = auto() # Pseudo-inverse solver
-    
-    # scipy based solvers
-    SCIPY_DIRECT    = auto() # Direct solver - using scipy (or jax equivalent)
-    SCIPY_CJ        = auto() # Conjugate gradient - using scipy (or jax equivalent)
-    SCIPY_MINRES    = auto() # Minimum residual - using scipy (or jax equivalent)
+    # Wrappers around backend/scipy solvers (might use instance methods)
+    SCIPY_CG        = auto()
+    SCIPY_MINRES    = auto()
+    SCIPY_GMRES     = auto()
+    SCIPY_DIRECT    = auto()
     # my solvers
-    CJ              = auto() # Conjugate gradient
+    CG              = auto() # Conjugate gradient
     MINRES          = auto() # Minimum residual
     MINRES_QLP      = auto() # Minimum residual - using QLP
-    ARNOLDI         = auto() # Arnoldi iteration (basis generation, might be used by other solvers like GMRES)
-
-# -----------------------------------------------------------------------------
-
-_SOL_TYPE_ERROR             = f"Unknown solver type: must be one of {', '.join([s.name for s in SolverType])}"
-
+    GMRES           = auto() # Generalized Minimal Residual
+    ARNOLDI         = auto() # Arnoldi iteration for building the Krylov subspaces
+    
 # -----------------------------------------------------------------------------
 #! Errors
 # -----------------------------------------------------------------------------
-
-SOL_ERR_MSG_MATMULT_NOT_SET = "Matrix-vector multiplication function not set."
-SOL_ERR_MSG_MAT_NOT_SET     = "Matrix A not set."
-SOL_ERR_MSG_MAT_S_NOT_SET   = "Matrix S not set."
-SOL_ERR_MSG_MAT_SP_NOT_SET  = "Matrix S^T not set."
-SOL_ERR_MSG_CONV_FAILED     = "Convergence failed after maximum number of iterations."
-SOL_ERR_MSG_DIM_MISMATCH    = "Dimension mismatch in the linear system."
-SOL_ERR_MSG_PSEUDOINV       = "Pseudo-inverse solver failed to converge."
-SOL_ERR_MSG_MAT_SINGULAR    = "Matrix is singular."
-SOL_ERR_MSG_METHOD_NOT_IMPL = "The subclass has to implement this method..."
 
 class SolverErrorMsg(Enum):
     '''
     Enumeration class for solver error messages.
     '''
-    MATMULT_NOT_SET = 101
-    MAT_NOT_SET     = 102
-    MAT_S_NOT_SET   = 103
-    MAT_SP_NOT_SET  = 104
-    CONV_FAILED     = 105
-    DIM_MISMATCH    = 106
-    PSEUDOINV       = 107
-    MAT_SINGULAR    = 108
-    METH_NOT_IMPL   = 109
+    MATVEC_FUNC_NOT_SET = 101
+    MAT_NOT_SET         = 102
+    MAT_S_NOT_SET       = 103
+    MAT_SP_NOT_SET      = 104
+    CONV_FAILED         = 105
+    DIM_MISMATCH        = 106
+    PSEUDOINV_FAILED    = 107
+    MAT_SINGULAR        = 108
+    METHOD_NOT_IMPL     = 109
+    PRECOND_INVALID     = 110
+    BACKEND_MISMATCH    = 111
+    INVALID_INPUT       = 112
+    COMPILATION_NA      = 113
     
     def __str__(self):
-        match (self):
-            case SolverErrorMsg.MATMULT_NOT_SET:
-                return SOL_ERR_MSG_MATMULT_NOT_SET
-            case SolverErrorMsg.MAT_NOT_SET:
-                return SOL_ERR_MSG_MAT_NOT_SET
-            case SolverErrorMsg.MAT_S_NOT_SET:
-                return SOL_ERR_MSG_MAT_S_NOT_SET
-            case SolverErrorMsg.MAT_SP_NOT_SET:
-                return SOL_ERR_MSG_MAT_SP_NOT_SET
-            case SolverErrorMsg.CONV_FAILED:
-                return SOL_ERR_MSG_CONV_FAILED
-            case SolverErrorMsg.DIM_MISMATCH:
-                return SOL_ERR_MSG_DIM_MISMATCH
-            case SolverErrorMsg.PSEUDOINV:
-                return SOL_ERR_MSG_PSEUDOINV
-            case SolverErrorMsg.MAT_SINGULAR:
-                return SOL_ERR_MSG_MAT_SINGULAR
-            case SolverErrorMsg.METH_NOT_IMPL
-                return SOL_ERR_MSG_METHOD_NOT_IMPL
+        # Simple default string conversion
+        return self.name.replace('_', ' ').title()
 
     def __repr__(self):
-        return self.__str__()
+        return f"<{self.__class__.__name__}.{self.name}: '{str(self)}'>"
 
 class SolverError(Exception):
     '''
-    Base class for exceptions in the solver module. It 
-    shall handle the messages and codes of the errors.
-    Attributes:
-        message : str
-            The error message.
-        code : SolverErrorMsg
-            The error code.
+    Base class for exceptions in the solver module. 
     '''
-
-    def __init__(self, code: SolverErrorMsg):
-        ''' Initialize the solver error with the given message and code. '''
-        self.message    = str(code)
+    def __init__(self, code: SolverErrorMsg, message: Optional[str] = None):
         self.code       = code
+        self.message    = message if message else str(code)
         super().__init__(self.message)
-    
+
     def __str__(self):
-        if self.code is not None:
-            return f"[Error {self.code}]: {self.message}"
-        return self.message
-    
+        return f"[SolverError {self.code.name} ({self.code.value})]: {self.message}"
+
     def __repr__(self):
         return self.__str__()
 
 class SolverResult(NamedTuple):
     '''
-    Named tuple to store the result of a solver.
-    
+    Stores the result of a solver's static execution.
+
     Attributes:
-        x : np.ndarray
-            The solution vector.
-        converged : bool
-            Whether the solver converged.
-        iterations : int
+        x (Array):
+            The computed solution vector.
+        converged (bool):
+            Whether the solver reached the desired tolerance.
+        iterations (int):
             The number of iterations performed.
-        error : float
-            The error of the solution.
+        residual_norm (Optional[float]):
+            The norm of the final residual (||b - Ax||).
     '''
-    x          : Array                  # The solution vector
-    converged  : bool                   # Whether the solver converged
-    iterations : int                    # The number of iterations performed
-    error      : float                  # The error of the solution
-    res_norm   : Optional[float] = None # The residual norm (if available)
+    x               : Array
+    converged       : bool
+    iterations      : int
+    residual_norm   : Optional[float]
 
 # -----------------------------------------------------------------------------
-#! General Solver Class
+#! General Solver Abstract Base Class
 # -----------------------------------------------------------------------------
-
-MatVecFun           = Callable[[Array, float], Array]
-SolverFun           = Callable[[MatVecFun, Array, Array, float, int, PreconitionerApplyFun], SolverResult]
-
-# numpy backend functions
-if True:
-    
-    # ---
-    # just return x man
-    def mat_vec_function_idn(_: Any):
-        '''
-        Standard interface example for the matrix-vector multiplication function
-        $$
-        Ax = b
-        $$
-        
-        Parameters:
-            a : np.ndarray
-                The matrix A.
-        Returns:
-            Function -> np.ndarray
-                The result of A @ x.
-        '''
-        def wrap(x):
-            return x
-        return wrap
-    
-    # ---
-    # standard Matrix-vector multiplication
-    def mat_vec_function(a: np.ndarray, sigma: Optional[float] = None) -> np.ndarray:
-        """
-        Matrix-vector multiplication function.
-        
-        $$
-        Ax = b
-        $$
-        
-        Parameters:
-        a : np.ndarray
-            The matrix A.
-        sigma : Optional[float]
-            add identity to the matrix with a parameter $\sigma$
-            to the matrix \tilde{A} = A + \sigma * \hat{I}
-        Returns:
-            Function -> np.ndarray
-                The result of A @ x.
-        """
-        if sigma is not None:
-            def wrap(x):
-                return a @ x + sigma * x
-            return wrap
-        def wrap(x):
-            return a @ x
-        return wrap
-    
-    # ---
-    # matrix-vector multiplication with a preconditioner
-    def mat_vec_function_precond(a      : np.ndarray,
-                                p_apply : PreconitionerApplyFun,
-                                sigma   : Optional[float] = None) -> np.ndarray:
-        """
-        Matrix-vector multiplication function with a preconditioner.
-        
-        $$
-        A x + M^{-1}Ax,
-        $$
-        where M is the preconditioner.
-        
-        Parameters:
-        a : np.ndarray
-            The matrix A.
-        p_apply : PreconitionerApplyFun
-            The function to apply the preconditioner.
-        sigma : Optional[float]
-            The 
-        Returns:
-            Function -> np.ndarray
-                The result of A @ x + M^{-1}Ax
-        """
-        if sigma is not None:
-            def wrap(x):
-                r = a @ x
-                return r + p_apply(r) + sigma * x
-            return wrap
-        def wrap(x):
-            r = a @ x
-            return r + p_apply(r)
-        return wrap
-    
-    # ---
-    # matrix-vector multiplication function with a Fisher type matrix
-    # (provided S and S+, where A = S^+S)
-    def mat_vec_function_fisher(smat    : np.ndarray,
-                                spmat   : np.ndarray,
-                                sigma   : Optional[float] = None) -> np.ndarray:
-        """
-        Matrix-vector multiplication function for a Fisher type matrix.
-        
-        $$
-        Ax = b, where A = S^\dag S / n
-        $$
-        
-        Parameters:
-        smat : np.ndarray
-            Part of the Fisher matrix
-        spmat : np.ndarray
-            The conjugate transpose of the Fisher matrix
-        sigma : 
-        Returns:
-            Function -> np.ndarray
-                The result of A @ x, where A = S^\dag S / n
-        """
-        if sigma is not None:
-            def wrap(x):
-                n               = smat.shape[1]
-                intermediate    = smat @ x
-                return spmat @ intermediate / n + sigma * x
-            return wrap
-        def wrap(x):
-            n               = smat.shape[1]
-            intermediate    = smat @ x
-            return spmat @ intermediate / n
-        return wrap
-    
-    # ---
-    # matrix-vector multiplication function with a Fisher type matrix using a preconditioner
-    def mat_vec_function_fisher_precond(smat    : np.ndarray,
-                                        spmat   : np.ndarray,
-                                        p_apply : PreconitionerApplyFun,
-                                        sigma   : Optional[float] = None) -> np.ndarray:
-        """
-        Matrix-vector multiplication function for a Fisher type matrix with a preconditioner.
-        
-        $$
-        Ax = b, where A = S^\dag S / n
-        $$
-        
-        Parameters:
-        smat : np.ndarray
-            Part of the Fisher matrix
-        spmat : np.ndarray
-            The conjugate transpose of the Fisher matrix
-        p_apply : PreconitionerApplyFun
-            The function to apply the preconditioner.
-        x : np.ndarray
-            The vector x.
-        Returns:
-            Function -> np.ndarray
-                The result of A @ x, where A = S^\dag S / n
-        """
-        
-        if sigma is not None:
-            def wrap(x):
-                n               = smat.shape[1]
-                intermediate    = smat @ x
-                r               = spmat @ intermediate / n
-                return r + p_apply(r) + sigma * x
-            return wrap
-        def wrap(x):
-            n               = smat.shape[1]
-            intermediate    = smat @ x
-            r               = spmat @ intermediate / n
-            return r + p_apply(r)
-        return wrap
-    
-# -----------------------------------------------------------------------------
-
-
 
 class Solver(ABC):
     '''
-    Abstract base class for all solvers of linear systems of type Ax = b
-    or with a preconditioner M, M^{-1}Ax = M^{-1}b.
+    Abstract base class for linear system solvers
+    
+    $$
+    Ax = b.
+    $$
+    
+    Primarily defines the static interface `solve` that concrete algorithm
+    implementations (like CG, MINRES) must provide.
+
+    Also includes static helpers `create_matvec_from_*` to construct the
+    matrix-vector product function and an optional instance method `solve_instance`
+    for convenience when working with configured Solver objects.
+    
+    Normally, one should focus on using the implementation provided
+    by the constructor-set function due to the optimized call. Nevertheless,
+    instance based setups are convenient for the less-time consuming tasks.
     
     The solver can be initialized with a matrix A, a matrix-vector multiplication
     function, or a Fisher matrix S. The solver can also be initialized with
-    a preconditioner M. The solver can be used to solve the linear system
+    a preconditioner M. 
+    
+    The solver can be used to solve the linear system
     Ax = b or M^{-1}Ax = M^{-1}b.
-    
-    There are several methods to initialize the solver:
-    - init_from_matrix(a, b, x0=None, sigma=None): Initializes the solver from a matrix A.
-    - init_from_fisher(s, sp, b, x0=None, sigma=None): Initializes the solver from a Fisher matrix S.
-    - init_from_function(func, b, x0=None): Initializes the solver from a matrix-vector multiplication function.
-    
-    The implmentation of the solver shall provide static (potentially compiled methods
-    for the backend) and dynamic methods (Python functions) to solve the linear system.
-    
-    It follows the usage of numpy, scipy solvers and jax solvers.
-    
-    Subclasses implement specific algorithms (e.g., CG, MINRES) as static methods.
-    The primary interface is the `solve` static method.
     '''
+    _solver_type : Optional[SolverType] = None # To be set by concrete subclasses
+
+    def __init__(self,
+                backend         : str                             = 'default',
+                dtype           : Optional[Type]                  = None,
+                # Default parameters (mainly informational or for convenience wrappers)
+                eps             : float                           = 1e-8,
+                maxiter         : int                             = 1000,
+                default_precond : Optional[Preconditioner]        = None,
+                # Configuration for convenience instance setup (optional)
+                a               : Optional[Array]                 = None,
+                s               : Optional[Array]                 = None,
+                s_p             : Optional[Array]                 = None,
+                matvec_func     : Optional[MatVecFunc]            = None,
+                sigma           : Optional[float]                 = None,
+                is_gram         : bool                            = False
+                ):
+        '''
+        Initializes solver metadata and optionally pre-configures for instance usage.
+
+        Args:
+            backend (str):
+                Preferred backend ('numpy', 'jax'). Affects helpers.
+            dtype (Type, optional):
+                Default data type.
+            eps (float):
+                Default tolerance for convenience methods.
+            maxiter (int):
+                Default max iterations for convenience methods.
+            default_precond (Preconditioner, optional):
+                A default preconditioner instance.
+            a (Array, optional):
+                Explicit matrix A for instance setup.
+            s (Array, optional):
+                Matrix S for Fisher setup.
+            s_p (Array, optional):
+                Matrix Sp for Fisher setup.
+            matvec_func (Callable, optional):
+                Explicit matvec function.
+            sigma (float, optional):
+                Default regularization for setup helpers.
+            is_gram (bool):
+                If using Fisher setup (S, Sp).
+        '''
+        self._backend_str               : str
+        self._backend                   : Any  # numpy-like module
+        self._backend_sp                : Any  # scipy-like module (potential use)
+        self._isjax                     : bool
+        self._set_backend(backend)      # Set backend attributes
+
+        self._dtype                     = dtype if dtype is not None else self._backend.float32
+
+        # Store defaults / config
+        self._default_eps               = eps
+        self._default_maxiter           = maxiter
+        self._default_precond           = default_precond   # Store the instance
+        self._conf_a                    = a                 # Store the default A
+        self._conf_s                    = s                 # Store the default decomposition of A
+        self._conf_sp                   = s_p
+        self._conf_matvec_func          = matvec_func       # Store the default matvec function
+        self._conf_sigma                = sigma
+        self._conf_is_gram              = is_gram
+
+        # Store results from last instance solve call
+        self._last_solution             : Optional[Array]   = None
+        self._last_converged            : Optional[bool]    = None
+        self._last_iterations           : Optional[int]     = None
+        self._last_residual_norm        : Optional[float]   = None
 
     # -------------------------------------------------------------------------
-    
-    _solver_type    : Optional[SolverType] = None
-    
+
+    def _set_backend(self, backend: str):
+        """ 
+        Internal method to set backend attributes.
+        """
+        new_backend_str                 = backend
+        if new_backend_str == 'default' and _JAX_AVAILABLE:
+            new_backend_str = 'jax'
+        else:
+            new_backend_str = 'numpy'
+        self._backend_str               = new_backend_str
+        self._backend, self._backend_sp = get_backend(self._backend_str, scipy=True)
+        self._isjax                     = _JAX_AVAILABLE and self._backend is not np
+
     # -------------------------------------------------------------------------
-    
-    def __init__(self,
-                backend                         = 'default',
-                size        : int               = 1,
-                dtype                           = None,
-                eps         : float             = 1e-10,
-                maxiter     : int               = 1000,
-                reg         : float             = None,
-                precond     : Preconditioner    = None,
-                restart     : bool              = False,
-                maxrestarts : int               = 1,
-                matvecfun   : Optional[MatVecFun] = None,
-                solverfun   : Optional[SolverFun] = None):
-        '''
-        Initializes the solver with the given backend and size.
-        
-        Parameters:
-        backend : str, optional
-            The backend to be used for computation. Default is 'default'.
-        size : int, optional
-            The size of the linear system. Default is 1.
-        dtype : data type, optional
-            The data type of the matrix and vectors. Default is None.
-        eps : float, optional
-            The convergence tolerance. Default is 1e-10.
-        maxiter : int, optional
-            The maximum number of iterations for the solver. Default is 1000.
-        reg : float, optional
-            Regularization parameter. Default is None.
-        precond : Preconditioner, optional
-            Preconditioner to be used. Default is None.
-        restart : bool, optional
-            Whether to enable restarts. Default is False.
-        maxrestarts : int, optional
-            Maximum number of restarts. Default is 1.
-        matvecfun : MatVecFun, optional
-            The matrix-vector multiplication function. Default is None.
-        solverfun : SolverFun, optional
-            The solver function. Default is None.
-        '''
-        
-        # setup backend first - to be handled by classes
-        self._backend_str                       = backend
-        self._backend, self._backend_sp         = get_backend(backend, scipy=True)
-        self._isjax                             = _JAX_AVAILABLE and self._backend != np
-        self._dtype                             = dtype if dtype is not None else self._backend_sp.float32
-        
-        # flags
-        self._symmetric                         = False
-        self._gram                              = False
-        self._converged                         = False
-        
-        # size of the matrix
-        self._n                                 = size
-        self._iter                              = 0
-        self._maxiter                           = maxiter
-        self._eps                               = eps
-        self._reg                               = reg
-        
-        # preconditioner - for better solutions
-        self._preconditioner                    = precond
-        
-        # matrix-vector multiplication function (as a linear operator)
-        self._mat_vec_func: Optional[MatVecFun] = matvecfun
-        self._solve_func: SolverFun             = self._wrap_function(self.solve) if solverfun is None else solverfun
-        self._precond_func: Optional[PreconitionerApplyFun] = None
-        # restarts
-        self._restart                           = restart
-        self._maxrestarts                       = maxrestarts
-        self._restarts                          = 0
-        
-        # solution
-        self._solution: Optional[Array]         = None
-        self._a                                 = None # matrix, only used when mat_vec_mult is not set
-        self._s                                 = None # matrix S, only used when mat_vec_mult is not set
-        self._sp                                = None # matrix S^T, only used when mat_vec_mult is not set
-    
+    #! Static Solve Interface (Core Requirement)
     # -------------------------------------------------------------------------
-    
-    def check_mat_or_matvec(self, needs_matrix = False):
-        '''
-        Check if either the matrix or matrix-vector multiplication function is set.
-        
-        Note:
-        
-        This is a helper function for the derived classes and only some classes
-        use it.
-        
-        Parameters:
-        needs_matrix : bool, optional
-            Whether the matrix is needed. Default is False.
-        Raises:
-            SolverError : If neither the matrix nor the matrix-vector multiplication function is set.
-        '''
-        
-        if self._a is None and needs_matrix:
-            if self._s is not None and self._sp is not None:
-                self._a = self._sp @ self._s / self._n
-                return
-            else:
-                raise SolverError(SolverErrorMsg.MAT_NOT_SET)
-            
-        if not needs_matrix:
-            return
-        
-        # check if the matrix-vector multiplication function is set
-        if self._mat_vec_func is None and self._a is not None:
-            self.init_from_matrix(self._a, np.zeros(self._n))
-        elif self._mat_vec_func is None and self._sp is not None and self._s is not None:
-            self.init_from_fisher(self._s, self._sp, np.zeros(self._n))
-        elif self._mat_vec_func is None:
-            raise SolverError(SolverErrorMsg.MATMULT_NOT_SET)
-    
-    # -------------------------------------------------------------------------
-    
+
     @staticmethod
     @abstractmethod
     def solve(
             # Core Problem Definition
-            matvec          : MatVecFun,
-            # Problem Definition
+            matvec          : MatVecFunc,
             b               : Array,
             x0              : Array,
             # Solver Parameters
-            *,              # Enforce keyword arguments for parameters
+            *,              # Enforce keyword arguments
             tol             : float,
             maxiter         : int,
-            # Optional Preconditioner
-            precond_apply   : Optional[PreconitionerApplyFun] = None,
+            # Optional Preconditioner, This is the function r -> M^{-1}r
+            precond_apply   : Optional[Callable[[Array], Array]] = None,
+            # Backend Specification
+            backend_module  : Any,
             # Solver Specific Arguments
-            **kwargs        : Any) -> SolverResult:
+            **kwargs        : Any
+            ) -> SolverResult:
         """
-        Solves the linear system Ax = b using a specific algorithm.
-        
-        Note:
-            If the preconditioner is provided, the solver aims to 
-            improve the solution stability and convergence by solving 
-            
-        This is a static method requiring all inputs to be provided explicitly.
+        Abstract Static:
+            Solves the linear system Ax = b using a specific algorithm.
+
+        Requires all inputs explicitly. Concrete implementations (e.g., `CgSolver.solve`)
+        contain the actual algorithm for the specified backend.
 
         Args:
-            matvec (Callable):
-                The matrix-vector product function (A @ x). Must be compatible
-                with the specified backend.
+            matvec:
+                Function implementing the matrix-vector product A @ x.
+                Must be compatible with `backend_module`.
             b:
-                The right-hand side vector. Must be a numpy or jnp array.
+                Right-hand side vector (as `backend_module` array).
             x0:
-                The initial guess vector. Must be a `backend_module` array.
+                Initial guess vector (as `backend_module` array).
             tol:
                 Relative convergence tolerance (||Ax - b|| / ||b||).
             maxiter:
                 Maximum number of iterations.
             precond_apply:
-                A function to apply the preconditioner M^-1 (optional).
+                Function applying the preconditioner M^{-1} (optional).
+                Takes `r` and returns `M^{-1}r`. Must be compatible
+                with `backend_module`.
+            backend_module:
+                The numerical backend module (e.g., `numpy` or `jax.numpy`).
+            **kwargs:
+                Additional solver-specific keyword arguments.
 
         Returns:
-            A SolverResult object containing the solution, convergence status,
-            iterations run, and final residual norm.
+            SolverResult:
+                Named tuple with solution, convergence status, iterations, residual norm.
 
         Raises:
-            SolverError:
-                If convergence fails or inputs are invalid.
             NotImplementedError:
                 If a subclass hasn't implemented this method.
+            SolverError:
+                If convergence fails or inputs are invalid within implementation.
         """
-        raise NotImplementedError(SolverErrorMsg.METH_NOT_IMPL)
-    
-    def get_apply_p(self) -> PreconitionerApplyFun:
-        ''' Returns the preconditioner application function '''
-        return self._precond_func
-    
-    def get_apply(self) -> MatVecFun:
-        '''
-        Returns the preconditioner apply function.
-        '''
-        return self._mat_vec_func
-    
-    def get_solve(self) -> SolverFun:
-        '''
-        Returns the solver function.
-        '''
-        return self._solve_func
-    
+        raise NotImplementedError(str(SolverErrorMsg.METHOD_NOT_IMPL))
+
     # -------------------------------------------------------------------------
-    #! Getters and properties
+    #! Static Interface to Get the Compiled Solver Function
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    @abstractmethod
+    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+        """
+        Abstract Static:
+            Returns the core solver function, potentially compiled.
+
+        Implementations return the JITted JAX function, Numba-compiled function,
+        or plain Python function based on `backend_module`.
+
+        Args:
+            backend_module:
+                The numerical backend (e.g., `numpy` or `jax.numpy`).
+
+        Returns:
+            StaticSolverFunc:
+                A callable with the signature:
+                    `(matvec, b, x0, tol, maxiter, precond_apply, backend_module) -> SolverResult`
+        Note:
+            backend_module might not be strictly needed if func is already specialized.
+        """
+        raise NotImplementedError(str(SolverErrorMsg.METHOD_NOT_IMPL))
+
+    # -------------------------------------------------------------------------
+    #! Static Helpers for Creating MatVec Functions
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _compile_helper(func: Callable, backend_module: Any) -> Callable:
+        """
+        Internal helper to apply JIT or Numba based on backend.
+        Parameters:
+            func (Callable):
+                a function to compile
+            backend_module:
+                np or jax...
+        Returns:
+            A compiled function.
+        """
+        
+        # get the function name for convenience
+        func_name = getattr(func, '__name__', '<anonymous_lambda>')
+        
+        if _JAX_AVAILABLE and backend_module is jnp:
+            if jax is None:
+                raise SolverError(SolverErrorMsg.COMPILATION_NA, "JAX not available for JIT.")
+            print(f"(Solver) JIT compiling function {func_name}...")
+            return jax.jit(func)
+        elif backend_module is np:
+            if numba is None:
+                print(f"Warning: Numba not available, cannot compile function {func_name} for NumPy.")
+                return func
+            print(f"(Solver) Numba compiling function {func_name}...")
+            try:
+                # cache=True is generally good. fastmath=True might affect precision.
+                return numba.njit(cache=True, fastmath=True)(func)
+            except Exception as e:
+                print(f"Warning: Numba compilation failed for {func_name}: {e}. Returning original function.")
+                return func
+        else:
+            return func # Unknown backend
+        
+    @staticmethod
+    def create_matvec_from_matrix(
+            a               : Array,
+            sigma           : Optional[float]   = None,
+            backend_module  : Any               = np,
+            compile_func    : bool              = False) -> MatVecFunc:
+        """
+        Static Helper:
+            Creates matvec function `x -> (A + sigma*I) @ x`.
+
+        Args:
+            a (np.ndarray, jnp.ndarray):
+                The matrix (dense or sparse compatible with backend).
+            sigma (float):
+                Optional regularization parameter.
+            backend_module:
+                The backend (e.g., np, jnp) to use for operations.
+
+        Returns:
+            Callable[[Array], Array]:
+                The matrix-vector product function.
+        """
+
+        # take the module
+        mat_op = backend_module.asarray(a)
+
+        if sigma is not None and sigma != 0:
+            #! Should Precompute A + sigma*I (potential memory cost for large A)?
+            # effective_a = mat_op + sigma * backend_module.eye(mat_op.shape[0], dtype=mat_op.dtype)
+            def matvec(x: Array) -> Array:
+                '''
+                Multiply a vector x by a matrix A
+                '''
+                effective_a = mat_op + sigma * backend_module.eye(mat_op.shape[0], dtype=mat_op.dtype)
+                return backend_module.dot(effective_a, backend_module.asarray(x))
+            
+            print(f"Created matvec from matrix with sigma={sigma} using {backend_module.__name__}")
+        else:
+            def matvec(x: Array) -> Array:
+                return backend_module.dot(mat_op, backend_module.asarray(x))
+            print(f"Created matvec from matrix (no regularization) using {backend_module.__name__}")
+        return Solver._compile_helper(matvec, backend_module) if compile_func else matvec
+    
+    @staticmethod
+    def create_matvec_from_fisher(
+            s               : Array,
+            s_p             : Array,
+            n               : Optional[int]     = None,
+            sigma           : Optional[float]   = None,
+            backend_module  : Any               = np,
+            create_full     : bool              = False,
+            compile_func    : bool              = False) -> MatVecFunc:
+        """
+        Static Helper:
+            Creates matvec function `x -> (Sp @ S / N + sigma*I) @ x`.
+
+        Args:
+            s:
+                Matrix S.
+            s_p:
+                Matrix Sp (transpose/adjoint of S).
+            n:
+                Normalization factor (often number of samples/outputs). Defaults to S.shape[0].
+            sigma:
+                Optional regularization parameter.
+            backend_module:
+                The backend (e.g., np, jnp) to use for operations.
+
+        Returns:
+            Callable[[Array], Array]: The matrix-vector product function.
+        """
+        if s.ndim != 2 or s_p.ndim != 2:
+            raise SolverError(SolverErrorMsg.INVALID_INPUT, "S and Sp must be 2D.")
+        if s.shape[1] != s_p.shape[0] or s.shape[0] != s_p.shape[1]:
+            raise SolverError(SolverErrorMsg.DIM_MISMATCH, f"Shape mismatch: S {s.shape}, Sp {s_p.shape}")
+
+        if create_full:
+            return Solver.create_matvec_from_matrix(s_p @ s / n, sigma, backend_module)
+        
+        norm_factor                     = float(n) if n is not None and n > 0 else float(s.shape[0])
+        if norm_factor <= 0:
+            norm_factor                 = 1.0 # Avoid division by zero/negative
+
+        s_op                            = backend_module.asarray(s)
+        sp_op                           = backend_module.asarray(s_p)
+        if sigma is not None and sigma != 0:
+            def matvec(x: Array) -> Array:
+                x_arr                   = backend_module.asarray(x)
+                s_dot_x                 = backend_module.dot(s_op, x_arr)
+                sp_dot_s_dot_x          = backend_module.dot(sp_op, s_dot_x)
+                return sp_dot_s_dot_x / norm_factor + sigma * x_arr
+            print(f"Created Fisher matvec (Sp S / {norm_factor:.1f}) with sigma={sigma} using {backend_module.__name__}")
+        else:
+            def matvec(x: Array) -> Array:
+                x_arr                   = backend_module.asarray(x)
+                s_dot_x                 = backend_module.dot(s_op, x_arr)
+                sp_dot_s_dot_x          = backend_module.dot(sp_op, s_dot_x)
+                return sp_dot_s_dot_x / norm_factor
+            print(f"Created Fisher matvec (Sp S / {norm_factor:.1f}) (no regularization) using {backend_module.__name__}")
+        return Solver._compile_helper(matvec, backend_module) if compile_func else matvec
+
+    # -------------------------------------------------------------------------
+    #! Convenience Instance Method (Wrapper around Static Solve)
+    # -------------------------------------------------------------------------
+
+    def _form_gram_matrix(self) -> Array:
+        """
+        Forms the Gram matrix A = (Sp @ S) / N if the configuration is set for Gram matrix computation.
+        Returns:
+            Array: The computed Gram matrix.
+        Raises:
+            SolverError: If the required components for Gram matrix computation are not set.
+        """
+        if self._conf_s is not None and self._conf_sp is not None:
+            print(f"({self.__class__.__name__}) Forming Gram matrix A = (Sp @ S) / N.")
+            n_size      = self._conf_s.shape[0]
+            norm_factor = float(n_size) if n_size > 0 else 1.0
+            return (self._conf_sp @ self._conf_s) / norm_factor
+        else:
+            raise SolverError(SolverErrorMsg.MAT_NOT_SET, "Required components for Gram matrix computation are not set.")
+
+    def _check_precond_solve(self, precond):
+        """
+        Validates and processes the provided preconditioner for the solver.
+        This method checks the type and compatibility of the given preconditioner
+        and returns a callable function to apply the preconditioner if valid.
+        Args:
+            precond (Union[Preconditioner, Callable, None, str]):
+                The preconditioner to be used.
+                    - If 'default', it is treated as None.
+                    - If an instance of `Preconditioner`, it ensures compatibility with the solver's backend.
+                    - If callable, it is assumed to be a valid preconditioner function.
+                    - If None, no preconditioner is applied.        
+        Returns:
+            Optional[Callable[[Array], Array]]:
+                A callable function to apply the preconditioner,
+                or None if no valid preconditioner is provided.
+        Raises:
+            TypeError: If the provided preconditioner is not of a valid type.
+        """
+
+        
+        precond_apply_func: Optional[Callable[[Array], Array]] = None
+        # Can be Instance, Callable, None, 'default'
+        actual_precond_source           = precond
+
+        # check if is string
+        if actual_precond_source == 'default':
+            actual_precond_source       = None
+
+        if isinstance(actual_precond_source, Preconditioner):
+            # Ensure preconditioner uses the same backend
+            if actual_precond_source.backend_str != self.backend_str:
+                print(f"Warning: Preconditioner backend '{actual_precond_source.backend_str}' "
+                    f"differs from solver backend '{self.backend_str}'. Resetting preconditioner.")
+                actual_precond_source.reset_backend(self._backend)
+            # Use the instance's compiled apply function
+            precond_apply_func          = actual_precond_source
+        elif callable(actual_precond_source):
+            # Assume it's the correct r -> M^{-1}r function
+            precond_apply_func          = actual_precond_source
+        elif actual_precond_source is not None:
+            raise TypeError(f"Invalid 'precond' type: {type(actual_precond_source)}. Expected Preconditioner, Callable, None, or 'default'.")
+        return precond_apply_func
+    
+    def _check_matvec_solve(self,
+                            current_sigma: float,
+                            current_backend_mod: Any,
+                            compile_matvec: bool,
+                            **kwargs) -> MatVecFunc:
+        """ 
+        Internal: Determines the matvec function based on instance config.
+        """
+        if self._conf_matvec_func is not None:
+            matvec_func                 = self._conf_matvec_func
+            # TODO: Consider if recompilation should happen if sigma differs?
+        elif self._conf_a is not None and not self._conf_is_gram:
+            matvec_func                 = self.create_matvec_from_matrix(
+                                                self._conf_a, current_sigma, current_backend_mod, compile_func=compile_matvec)
+        elif self._conf_s is not None and self._conf_sp is not None and self._conf_is_gram:
+            create_full                 = kwargs.get("create_full", False)
+            n_guess                     = self._conf_s.shape[0]
+            matvec_func                 = self.create_matvec_from_fisher(
+                                                self._conf_s, self._conf_sp,
+                                                n_guess, current_sigma, current_backend_mod,
+                                                compile_func=compile_matvec, create_full=create_full)
+        else:
+            raise SolverError(SolverErrorMsg.MATVEC_FUNC_NOT_SET, "Instance needs matvec func or matrices.")
+        return matvec_func
+
+    def solve_instance(self,
+                    b               : Array,
+                    x0              : Optional[Array]   = None,
+                    *,
+                    # Overrides for this call
+                    tol             : Optional[float]   = None,
+                    maxiter         : Optional[int]     = None,
+                    precond         : Union[Preconditioner, Callable[[Array], Array], None] = 'default',
+                    sigma           : Optional[float]   = None,
+                    compile_matvec  : bool              = False,
+                    # Kwargs for the static solver
+                    **kwargs) -> SolverResult:
+        """
+        Convenience instance method to run the solver.
+
+        Sets up `matvec` and `precond_apply` based on instance configuration
+        (if provided during __init__) or arguments, then calls the static `solve`
+        method of this solver's class. Stores the result in instance attributes.
+
+        Args:
+            b (Array):
+                Right-hand side vector.
+            x0 (Optional[Array]):
+                Initial guess. Defaults to zeros.
+            tol (Optional[float]):
+                Tolerance override. Uses instance default if None.
+            maxiter (Optional[int]):
+                Max iterations override. Uses instance default if None.
+            precond (Union[Preconditioner, Callable, None, str]):
+                Preconditioner for this solve.
+                    - If `Preconditioner` instance:
+                        Uses its `__call__` method.
+                    - If `Callable`:
+                        Assumes it's `r -> M^{-1}r` and uses it directly.
+                    - If None:
+                        No preconditioning.
+                    - If 'default':
+                        Uses None...
+            sigma (Optional[float]):
+                Regularization for `matvec` creation *if* `matvec`
+                is not already defined for the instance. Uses
+                instance default `_conf_sigma` if None.
+            **kwargs:
+                Additional arguments passed directly to the static `solve`.
+
+        Returns:
+            SolverResult:
+                Result from the static solve method.
+        """
+        # Determine Parameters for this Call
+        current_tol                     = tol if tol is not None else self._default_eps
+        current_maxiter                 = maxiter if maxiter is not None else self._default_maxiter
+        current_backend_mod             = self._backend # Use instance's backend
+
+        # Determine MatVec Function
+        current_sigma                   = sigma if sigma is not None else self._conf_sigma
+        matvec_func                     : MatVecFunc = self._check_matvec_solve(current_sigma,
+                                                                                current_backend_mod,
+                                                                                compile_matvec=compile_matvec,
+                                                                                **kwargs)
+        
+
+        # Determine Preconditioner Apply Function
+        precond_apply_func              = self._check_precond_solve(precond)
+        
+        # Prepare b and x0
+        b_be                            = current_backend_mod.asarray(b, dtype=self._dtype)
+        if x0 is None:
+            x0_be                       = current_backend_mod.zeros_like(b_be)
+        else:
+            x0_be                       = current_backend_mod.asarray(x0, dtype=self._dtype)
+            if x0_be.shape != b_be.shape:
+                raise SolverError(SolverErrorMsg.DIM_MISMATCH, f"Shape mismatch: b={b_be.shape}, x0={x0_be.shape}")
+
+        # Call the Static Solve Method of the Concrete Class
+        print(f"({self.__class__.__name__}) Calling static solve with backend={self.backend_str}, tol={current_tol}, maxiter={current_maxiter}...")
+        result = self.__class__.solve(
+            matvec          = matvec_func,
+            b               = b_be,
+            x0              = x0_be,
+            tol             = current_tol,
+            maxiter         = current_maxiter,
+            precond_apply   = precond_apply_func,
+            backend_module  = current_backend_mod,
+            **kwargs
+        )
+
+        # Store results in instance
+        self._last_solution             = result.x
+        self._last_converged            = result.converged
+        self._last_iterations           = result.iterations
+        self._last_residual_norm        = result.residual_norm
+
+        print(f"({self.__class__.__name__}) Instance solve finished. Converged: {result.converged}, Iterations: {result.iterations}, Residual Norm: {result.residual_norm:.4e}")
+        return result
+
+    # -------------------------------------------------------------------------
+    #! Properties for Last Result
+    # -------------------------------------------------------------------------
+    
+    @property
+    def solution(self) -> Optional[Array]:
+        ''' What is the last solution? '''
+        return self._last_solution
+    
+    @property
+    def converged(self) -> Optional[bool]:
+        ''' Is it converged solution? '''
+        return self._last_converged
+    
+    @property
+    def iterations(self) -> Optional[int]:
+        ''' How many iterations? '''
+        return self._last_iterations
+    
+    @property
+    def residual_norm(self) -> Optional[float]:
+        ''' What is the quality of the last result? '''
+        return self._last_residual_norm
+
+    # -------------------------------------------------------------------------
+    #! Properties for Configuration (Read-only access)
     # -------------------------------------------------------------------------
     
     @property
     def backend_str(self) -> str:
-        '''
-        Returns the backend used for computation.
-        '''
+        ''' Default backend string '''
         return self._backend_str
     
     @property
-    def dtype(self) -> np.dtype:
-        '''
-        Returns the data type used for computation.
-        '''
+    def dtype(self) -> Type:
+        ''' Default type of the arrays '''
         return self._dtype
     
     @property
-    def size(self) -> int:
-        '''
-        Returns the size of the linear system.
-        '''
-        return self._n
+    def default_eps(self) -> float:
+        ''' Default error epsilon '''
+        return self._default_eps
     
     @property
-    def maxiter(self) -> int:
-        '''
-        Returns the maximum number of iterations.
-        '''
-        return self._maxiter
-    
-    @property
-    def eps(self) -> float:
-        '''
-        Returns the convergence tolerance.
-        '''
-        return self._eps
-    
-    @property
-    def reg(self) -> float:
-        '''
-        Returns the regularization parameter.
-        '''
-        return self._reg
-    
-    @property
-    def preconditioner(self) -> Optional[Preconditioner]:
-        '''
-        Returns the preconditioner used.
-        '''
-        return self._preconditioner
-    
-    @property
-    def restart(self) -> bool:
-        '''
-        Returns whether restarts are enabled.
-        '''
-        return self._restart
-    
-    @property
-    def maxrestarts(self) -> int:
-        '''
-        Returns the maximum number of restarts.
-        '''
-        return self._maxrestarts
-    
-    @property
-    def restarts(self) -> int:
-        '''
-        Returns the number of restarts.
-        '''
-        return self._restarts
-    
-    @property
-    def solution(self) -> Optional[np.ndarray]:
-        '''
-        Returns the solution of the linear system.
-        '''
-        return self._solution
-    
-    @property
-    def matrix(self) -> Optional[np.ndarray]:
-        '''
-        Returns the matrix A used for the linear system.
-        '''
-        return self._a
-    
-    @property
-    def s(self) -> Optional[np.ndarray]:
-        '''
-        Returns the matrix S used for the linear system.
-        '''
-        return self._s
-    
-    @property
-    def sp(self) -> Optional[np.ndarray]:
-        '''
-        Returns the matrix S^T used for the linear system.
-        '''
-        return self._sp
-    
-    @property
-    def symmetric(self) -> bool:
-        '''
-        Returns whether the matrix is symmetric.
-        '''
-        return self._symmetric
-    
-    @property
-    def gram(self) -> bool:
-        '''
-        Returns whether the matrix is the Gram matrix.
-        '''
-        return self._gram
-    
-    @property
-    def converged(self) -> bool:
-        '''
-        Returns whether the solver has converged.
-        '''
-        return self._converged
-    
-    @property
-    def sigma(self) -> Optional[float]:
-        '''
-        Returns the regularization parameter.
-        '''
-        return self._reg
-    
-    def get_restarts(self) -> int:
-        '''
-        Returns the number of restarts.
-        '''
-        return self._restarts
-    
-    def get_maxrestarts(self) -> int:
-        '''
-        Returns the maximum number of restarts.
-        '''
-        return self._maxrestarts
-    
-    def get_maxiter(self) -> int:
-        '''
-        Returns the maximum number of iterations.
-        '''
-        return self._maxiter
-    
-    # -------------------------------------------------------------------------
-    #! Setters
-    # -------------------------------------------------------------------------
-    
-    @backend_str.setter
-    def backend_str(self, backend: str) -> None:
-        '''
-        Sets the backend for computation.
-        '''
-        self._backend_str = backend
-        self._backend, self._backend_sp = get_backend(backend, scipy=True)
-        
-    @eps.setter
-    def eps(self, eps: float) -> None:
-        '''
-        Sets the convergence tolerance.
-        '''
-        self._eps = eps
-        
-    @maxiter.setter
-    def maxiter(self, maxiter: int) -> None:
-        '''
-        Sets the maximum number of iterations.
-        '''
-        self._maxiter = maxiter
-        
-    @reg.setter
-    def reg(self, reg: float) -> None:
-        '''
-        Sets the regularization parameter.
-        '''
-        self._reg = reg
-        
-    @preconditioner.setter
-    def preconditioner(self, precond: Preconditioner) -> None:
-        '''
-        Sets the preconditioner.
-        '''
-        self._preconditioner = precond
-
-    @matrix.setter
-    def matrix(self, a: np.ndarray) -> None:
-        '''
-        Sets the matrix A used for the linear system.
-        '''
-        self._a = a
-        self._n = a.shape[1]
-        
-    @s.setter
-    def s(self, s: np.ndarray) -> None:
-        '''
-        Sets the matrix S used for the linear system.
-        '''
-        self._s = s
-        
-    @sp.setter
-    def sp(self, sp: np.ndarray) -> None:
-        '''
-        Sets the matrix S^T used for the linear system.
-        '''
-        self._sp = sp
-        
-    @solution.setter
-    def solution(self, x: np.ndarray) -> None:
-        '''
-        Sets the solution of the linear system.
-        '''
-        self._solution = x
-    
-    def set_matrix_vector(self, matvec: MatVecFun) -> None:
-        '''
-        Sets the matrix-vector multiplication function.
-        It additionally compiles it.
-        
-        Parameters:
-            matvec: Callable
-                matrix vector multiplication
-        '''
-        self._mat_vec_func = self._wrap_function(matvec)
-    
-    def set_preconditioner(self, precond: Preconditioner) -> None:
-        '''
-        Sets the preconditioner.
-        Parameters:
-            precond: Preconditioner
-                the preconditioner for the linear solve
-        '''
-        self._preconditioner    = precond
-        self._precond_func      = precond.get_apply()
-    
-    def set_preconditioner_sigma(self, sigma: float) -> None:
-        '''
-        Sets the regularization parameter for the preconditioner.
-        '''
-        if self._preconditioner is not None:
-            self._preconditioner.sigma = sigma
-        
-    def set_matrix(self, a: np.ndarray) -> None:
-        '''
-        Sets the matrix A used for the linear system.
-        '''
-        self._a = a
-        self._n = a.shape[1]
-    
-    def next_restart(self) -> None:
-        '''
-        Increments the number of restarts.
-        '''
-        self._restarts += 1
-    
-    def check_restart_up(self) -> bool:
-        '''
-        Checks whether the maximum number of restarts has been reached.
-        '''
-        return self._restarts > self._maxrestarts
-    
-    def increase_reg(self, factor = 1.1):
-        '''
-        Increases the regularization parameter.
-        '''
-        if self._reg is not None:
-            self._reg *= factor
-    
-    # -------------------------------------------------------------------------
-
-    def _wrap_function(self, func: MatVecFun) -> Callable:
-        """
-        Wrap the given function with either 
-        jax.jit or numba.njit
-        
-        Parameters:
-            func : MatVecFun
-                The function to be wrapped.
-        Returns:
-            A compiled function...
-        """
-        if _JAX_AVAILABLE and self._isjax:
-            return jax.jit(func)
-        else:
-            return numba.njit(func)
+    def default_maxiter(self) -> int:
+        ''' Default maximal number of iterations '''
+        return self._default_maxiter
 
     # -------------------------------------------------------------------------
-    #! Abstract methods that use only the right-hand side vector b (and optionally x0)
-    # -------------------------------------------------------------------------
 
-    def init(self, b: Array, x0: Optional[Array] = None) -> None:
-        """
-        Abstract initialization routine that is called once the
-        matrix-vector multiplication function has been set.
-        This method must initialize any solver-specific data using b (and x0 if provided).
-        
-        Parameters:
-        b : array-like
-            The right-hand side vector.
-        
-        x0 : array-like, optional
-            Initial guess for the solution.
-        """
-        self._n = b.shape[0]
-        
-        if x0 is not None:
-            self._solution = x0
-        else:
-            self._solution = self._backend.zeros(self._n, dtype=self._dtype)
-    
-    def solve_class(self,
-                    b       : Array,
-                    x0      : Optional[Array] = None,
-                    precond : Optional[Preconditioner] = None,
-                    **kwargs) -> SolverResult:
-        """
-        Solves a linear system of equations using the specified solver function.
-        Parameters:
-            b (Array):
-                The right-hand side vector of the linear system.
-            x0 (Optional[Array], optional):
-                The initial guess for the solution. Defaults to None.
-            precond (Optional[Preconditioner], optional):
-                A preconditioner to improve convergence. Defaults to None.
-            **kwargs:
-                Additional keyword arguments passed to the solver function.
-        Returns:
-            SolverResult: The result of the solver, including the solution and metadata.
-        Notes:
-            - If a preconditioner is provided, it will be set before solving the system.
-            - The solver function is defined by `self._solve_func` and operates on the matrix-vector product function `self._mat_vec_func`.
-        """
-        
-        if precond is not None:
-            self.set_preconditioner(precond)
-        return self._solve_func(self._mat_vec_func, b, x0,
-                    self._eps, self._maxiter, self._precond_func, **kwargs)
-    
-    # -------------------------------------------------------------------------
-    #! specific initialization routines
-    # -------------------------------------------------------------------------
-    
-    def init_from_matrix(self, a, sigma: Optional[float] = None) -> None:
-        """
-        Initialize the solver from a dense or sparse matrix A.
-        The operation performed is: A*x + sigma*x.
-        Parameters:
-        a : array-like
-            The matrix A.
-        """
-        
-        # reference to the matrix - do not copy!
-        self._a     = a
-        # self._s     = None  # this should be set when using the Fisher matrix
-        # self._sp    = None  # this should be set when using the Fisher matrix
-        self._n     = a.shape[1]
-        if self._precond_func is not None:
-            func = mat_vec_function_precond(self._a, self._precond_func, sigma)
-        else:
-            func = mat_vec_function(self._a, sigma)
-        self.set_matrix_vector(func)
-        
-    def init_from_fisher(self,
-                        s       : Array,
-                        sp      : Array,
-                        sigma   : float = None,
-                        set_a   : bool  = False) -> None:
-        '''
-        Initialize the solver from the Fisher matrix.
-        The operation performed is for matrix A = S^\dag * S + sigma * I. but the matrix is not stored.
-        Parameters:
-        s : array-like
-            The matrix S.
-        sp : array-like
-            The matrix S^\dag
-        sigma : float, optional
-            Regularization parameter. Default is None. 
-        '''
-        self._gram  = True
-        self._n     = s.shape[1]
-        self._s     = s     # this should be set when using the Fisher matrix - do not copy!
-        self._sp    = sp    # this should be set when using the Fisher matrix - do not copy!
-        if set_a:
-            return self.init_from_matrix(self._sp @ self._s / self._n, sigma)
-        if self._precond_func is not None:
-            func = mat_vec_function_fisher_precond(self._s, self._sp,
-                                                self._precond_func, sigma)
-        else:
-            func = mat_vec_function_fisher(self._s, self._sp, sigma)
-        self._a     = None
-    
-    def init_from_function(self,
-                        func    : Callable,
-                        n       : int) -> None:
-        '''
-        Initialize the solver from a matrix-vector multiplication function.
-        Parameters:
-        func : callable
-            The matrix-vector multiplication function.
-        b : array-like
-            The right-hand side vector.
-        x0 : array-like, optional
-            Initial guess for the solution.
-        '''
-        self._mat_vec_func  = self._wrap_function(func)
-        self._n             = n
-        self._a             = None
-        self._s             = None
-        self._sp            = None
-        
-    # -------------------------------------------------------------------------
-    #! specific solve routines
-    # -------------------------------------------------------------------------
-    
-    def solve_from_matrix(self,
-                        a,
-                        b,
-                        x0      : Optional[np.ndarray] = None,
-                        precond : Optional[Preconditioner] = None) -> np.ndarray:
-        '''
-        Solve the linear system Ax = b with the given matrix A.
-        Parameters:
-        a : array-like
-            The matrix A.
-        b : array-like
-            The right-hand side vector.
-        x0 : array-like, optional
-            Initial guess for the solution.
-        precond : Preconditioner, optional
-            Preconditioner to be used. Default is None.
-        Returns:
-        array-like
-            The solution x.
-        '''
-        self.init_from_matrix(a, b, x0)
-        return self.solve(b, x0, precond)
-    
-    def solve_from_fisher(self,
-                        s,
-                        sp,
-                        b,
-                        x0      : Optional[np.ndarray] = None,
-                        sigma   : float = None,
-                        precond : Optional[Preconditioner] = None) -> np.ndarray:
-        '''
-        Solve the linear system Ax = b with the given Fisher matrix.
-        Parameters:
-        s : array-like
-            The matrix S.
-        sp : array-like
-            The matrix S^T.
-        b : array-like
-            The right-hand side vector.
-        x0 : array-like, optional
-            Initial guess for the solution.
-        sigma : float, optional
-            Regularization parameter. Default is None.
-        precond : Preconditioner, optional
-            Preconditioner to be used. Default is None.
-        Returns:
-        array-like
-            The solution x.
-        '''
-        self.init_from_fisher(s, sp, b, x0, sigma)
-        return self.solve(b, x0, precond)
-    
-    def solve_from_function(self,
-                        func    : Callable,
-                        b,
-                        x0      : Optional[np.ndarray] = None,
-                        precond : Optional[Preconditioner] = None) -> np.ndarray:
-        '''
-        Solve the linear system Ax = b with the given matrix-vector multiplication function.
-        Parameters:
-        func : callable
-            The matrix-vector multiplication function.
-        b : array-like
-            The right-hand side vector.
-        x0 : array-like, optional
-            Initial guess for the solution.
-        precond : Preconditioner, optional
-            Preconditioner to be used. Default is None.
-        Returns:
-        array-like
-            The solution x.
-        '''
-        self.init_from_function(func, b, x0)
-        return self.solve(b, x0, precond)
-    
-    # -------------------------------------------------------------------------
+    def __repr__(self) -> str:
+        ''' Returns the name and configuration of the solver. '''
+        return f"{self.__class__.__name__}(type={self._solver_type.name if self._solver_type else 'Unknown'}, backend='{self.backend_str}')"
+
+    def __str__(self) -> str:
+        ''' Returns the name of the solver. '''
+        return self.__repr__()
 
 # -----------------------------------------------------------------------------
 
@@ -1089,9 +794,20 @@ def sym_ortho(a, b, backend: str = "default"):
     # select backend
     backend = get_backend(backend)
 
-    # Determine if the inputs are complex.
-    # is_complex = backend.iscomplexobj(a) or backend.iscomplexobj(b)
-    
+    # Promote types if necessary for the backend
+    # Example: Ensure floats for division/sqrt
+    is_complex = isinstance(a, complex) or isinstance(b, complex) or \
+                (hasattr(backend, 'iscomplexobj') and (backend.iscomplexobj(a) or backend.iscomplexobj(b)))
+
+    if not is_complex and isinstance(a, (int, float)) and isinstance(b, (int, float)):
+        a = float(a)
+        b = float(b)
+        
+    # Add promotion to complex type if needed by backend
+    elif is_complex:
+        a = backend.astype(a, backend.complex128) # Or appropriate complex type
+        b = backend.astype(b, backend.complex128)
+
     return _sym_ortho(a, b, backend)
 
 # -----------------------------------------------------------------------------

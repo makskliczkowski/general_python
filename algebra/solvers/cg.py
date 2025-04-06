@@ -1,327 +1,793 @@
-from typing import Optional, Callable
+'''
+file:       general_python/algebra/solvers/cg_solver.py
+author:     Maksymilian Kliczkowski
+
+Implements the Conjugate Gradient (CG) iterative algorithm for solving linear systems
+of equations $ Ax = b $, where the matrix A is symmetric and positive-definite (SPD).
+This file provides:
+    1. A concrete `CgSolver` class inheriting from the base `Solver`, utilizing
+        backend-specific implementations (NumPy/Numba or JAX JIT).
+    2. A `CgSolverScipy` class wrapping `scipy.sparse.linalg.cg`.
+    3. Helper functions containing the core CG logic for different backends.
+
+Mathematical Formulation (Preconditioned CG):
+-------------------------------------------
+Given an SPD matrix $ A $, a right-hand side vector $ b $, an initial guess $ x_0 $,
+and an SPD preconditioner $ M \\approx A $:
+
+1.  Initialize:
+    *   $ r_0 = b - Ax_0 $ (initial residual)
+    *   $ z_0 = M^{-1}r_0 $ (apply preconditioner)
+    *   $ p_0 = z_0 $ (initial search direction)
+    *   $ \\rho_0 = r_0^T z_0 $
+
+2.  Iterate $ k = 0, 1, 2, \dots $ until convergence:
+    *   $ \\mathbf{v}_k = A p_k $
+    *   $ \\alpha_k = \\rho_k / (p_k^T \\mathbf{v}_k) $ (step length)
+    *   $ x_{k+1} = x_k + \\alpha_k p_k $               (update solution)
+    *   $ r_{k+1} = r_k - \\alpha_k \\mathbf{v}_k $     (update residual)
+    *   Check convergence: e.g., $ ||r_{k+1}||_2 < \\epsilon ||b||_2 $
+    *   $ z_{k+1} = M^{-1} r_{k+1} $                    (apply preconditioner)
+    *   $ \\rho_{k+1} = r_{k+1}^T z_{k+1} $
+    *   $ \\beta_k = \\rho_{k+1} / \\rho_k $            (update coefficient)
+    *   $ p_{k+1} = z_{k+1} + \\beta_k p_k $            (update search direction)
+    *   $ \\rho_k = \\rho_{k+1} $
+
+If no preconditioner is used ($ M = I $), then $ z_k = r_k $.
+
+References:
+-----------
+    - Hestenes, M. R., & Stiefel, E. (1952). Methods of Conjugate Gradients for
+        Solving Linear Systems. Journal of Research of the National Bureau of Standards, 49(6), 409.
+    - Saad, Y. (2003). Iterative Methods for Sparse Linear Systems (2nd ed.). SIAM. Chapter 6.
+    - Shewchuk, J. R. (1994). An Introduction to the Conjugate Gradient Method
+        Without the Agonizing Pain. Carnegie Mellon University Technical Report CS-94-125.
+'''
+
+from typing import Optional, Callable, Union, Any, Tuple, Type
 import numpy as np
 
-from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
-from general_python.algebra.preconditioners import Preconditioner
+from general_python.algebra.solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
+    SolverType, Array, MatVecFunc, StaticSolverFunc)
+from general_python.algebra.preconditioners import Preconditioner, PreconditionerApplyFunc
 
+# Import backend specifics and compilation tools
+from general_python.algebra.utils import _JAX_AVAILABLE
 try:
     import jax
     import jax.numpy as jnp
-    import jax.scipy as jsp
+    import jax.lax as lax
+except ImportError:
+    jax = None
+    jnp = None
+    lax = None
+
+try:
+    import numba
+    _NUMBA_AVAILABLE = True
+except ImportError:
+    numba = None
+    _NUMBA_AVAILABLE = False
+
+# Import SciPy sparse if needed by CgSolverScipy
+import scipy.sparse.linalg as spsla
+import scipy.linalg
+
+# -----------------------------------------------------------------------------
+#! Helper functions for CG logic (NumPy)
+# -----------------------------------------------------------------------------
+
+def _cg_logic_numpy(matvec          : MatVecFunc,
+                    b               : np.ndarray,
+                    x0              : np.ndarray,
+                    tol             : float,
+                    maxiter         : int,
+                    precond_apply   : Optional[Callable[[np.ndarray], np.ndarray]] = None
+                    ) -> SolverResult:
+    """
+    Core Conjugate Gradient (CG) algorithm implementation using NumPy.
+
+    Solves the linear system $ Ax = b $ for a symmetric positive definite matrix A.
+    If a preconditioner $ M \\approx A $ is provided, it solves $ M^{-1}Ax = M^{-1}b $
+    implicitly by modifying the search direction updates.
+
+    Args:
+        matvec (MatVecFunc):
+            Function performing the matrix-vector product $ v \\mapsto Av $.
+        b (np.ndarray):
+            Right-hand side vector $ b $.
+        x0 (np.ndarray):
+            Initial guess $ x_0 $.
+        tol (float):
+            Relative tolerance $ \\epsilon_{rel} $. Convergence if $ ||r_k|| / ||b|| < \\epsilon_{rel} $.
+        maxiter (int):
+            Maximum number of iterations.
+        precond_apply (Optional[Callable[[np.ndarray], np.ndarray]]):
+            Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+
+    Returns:
+        SolverResult:
+            Named tuple containing the solution $ x_k $, convergence status,
+            iteration count, and final residual norm $ ||r_k|| $.
+    """
+    x           = x0.copy()             # Work on a copy
+    r           = b - matvec(x)         # Get the residual of the initial guess 
+    res_norm_sq = np.dot(r, r)
+    norm_b_sq   = np.dot(b, b)
+    
+    # Use absolute tolerance if b is zero, otherwise relative
+    tol_crit_sq = (tol**2) * norm_b_sq if norm_b_sq > 1e-15 else tol**2
+    iterations  = 0
+    
+    # this is already a result
+    if res_norm_sq < tol_crit_sq:
+        return SolverResult(x=x, converged=True, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
+    
+    if precond_apply:
+        z       = precond_apply(r)      # z_0 = M^{-1} r_0
+        if not isinstance(z, np.ndarray) or z.shape != r.shape:
+            raise SolverError(SolverErrorMsg.PRECOND_INVALID,
+                f"Preconditioner output invalid shape/type: {z.shape} / {type(z)}")
+    else:
+        z       = r                     # z_0 = r_0
+    p           = z.copy()              # p_0 = z_0
+    rs_old      = np.dot(r, z)          # rho_k = r_k^T z_k (initially rho_0)
+
+    for i in range(maxiter):
+        iterations  = i + 1             # check the iterations of the algorithm
+        ap          = matvec(p)         # v_k = A p_k
+        alpha_denom = np.dot(p, ap)     # p_k^T v_k
+
+        if alpha_denom <= 1e-15:
+            print(f"Warning (CG NumPy): Potential breakdown/non-SPD at iter {iterations}. Denom={alpha_denom:.4e}")
+            res_norm_sq = np.dot(r, r)
+            converged   = res_norm_sq < tol_crit_sq
+            return SolverResult(x=x, converged=converged, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
+
+        alpha       = rs_old / alpha_denom  # alpha_k
+        x          += alpha * p             # x_{k+1}
+        r          -= alpha * ap            # r_{k+1}
+        res_norm_sq = np.dot(r, r)
+
+        if res_norm_sq < tol_crit_sq:
+            return SolverResult(x=x, converged=True, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
+
+        if precond_apply:
+            z       = precond_apply(r)      # z_{k+1} = M^{-1} r_{k+1}
+            if not isinstance(z, np.ndarray) or z.shape != r.shape:
+                raise SolverError(SolverErrorMsg.PRECOND_INVALID,
+                    f"Preconditioner output invalid shape/type: {z.shape} / {type(z)}")
+        else:
+            z       = r                     # z_{k+1} = r_{k+1}
+        rs_new      = np.dot(r, z)          # rho_{k+1} = r_{k+1}^T z_{k+1}
+
+        if abs(rs_old) < 1e-15:
+            print(f"Warning (CG NumPy): rs_old near zero at iter {iterations}, potential breakdown.")
+            converged = res_norm_sq < tol_crit_sq
+            return SolverResult(x=x, converged=converged, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
+
+        beta        = rs_new / rs_old   # beta_k
+        p           = z + beta * p      # p_{k+1}
+        rs_old      = rs_new            # Update rho_k for next iteration
+
+    # Max iterations reached
+    final_residual_norm = np.sqrt(res_norm_sq)
+    converged           = res_norm_sq < tol_crit_sq
+    if not converged:
+        print(f"Warning (CG NumPy): Did not converge within {maxiter} iterations.")
+    return SolverResult(x=x, converged=converged, iterations=iterations, residual_norm=final_residual_norm)
+
+_cg_logic_numpy_numba_no_precond_impl   = None
+_cg_logic_numpy_numba_precond_impl      = None
+
+#! NUMBA CG Logic
+if _NUMBA_AVAILABLE:
+    
+    @numba.njit(cache=True, error_model='numpy', fastmath=True)
+    def _cg_logic_numpy_numba_no_precond_impl(
+            matvec_nb       : Callable[[np.ndarray], np.ndarray],
+            b_nb            : np.ndarray,
+            x0_nb           : np.ndarray,
+            tol_nb          : float,
+            maxiter_nb      : int) -> Tuple[np.ndarray, bool, int, float]:
+        """
+        Numba-compiled CG core (no preconditioner). 
+        
+        Parameters:
+            matvec_nb Callable[[np.ndarray], np.ndarray]:
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b_nb np.ndarray:
+                Right-hand side vector $ b $.
+            x0_nb np.ndarray:
+                Initial guess $ x_0 $.
+            tol_nb float:
+                Relative tolerance $ \\epsilon_{rel} $. Convergence if $ ||r_k|| / ||b|| < \\epsilon_{rel} $.
+            maxiter_nb int:
+                Maximum number of iterations.
+        Returns: 
+            Tuple[np.ndarray, bool, int, float]:
+                SolverResult:
+                    Named tuple containing the solution $ x_k $, convergence status,
+                    iteration count, and final residual norm $ ||r_k|| $.       
+        Note:
+            See _cg_logic_numpy for math.
+        """
+        
+        x           = x0_nb.copy()
+        r           = b_nb - matvec_nb(x)
+        p           = r.copy()
+        rs_old      = np.dot(r, r)
+        norm_b_sq   = np.dot(b_nb, b_nb)
+        tol_crit_sq = (tol_nb**2) * norm_b_sq if norm_b_sq > 0 else tol_nb**2
+        iterations  = 0
+
+        def fallback(r, tol_crit_sq):
+            """ Fallback for when rs_old is near zero. """
+            final_res_norm_sq   = np.dot(r, r)
+            converged           = final_res_norm_sq < tol_crit_sq
+            return final_res_norm_sq, converged
+        
+        # check the convergence already
+        if rs_old < tol_crit_sq:
+            return x, True, 0, np.sqrt(rs_old)
+
+        # iterate over the maximum number of iterations
+        # Note: Numba does not support Python's `break` statement in loops
+        # so we use a fallback function to handle the case where rs_old is near zero
+        # and we cannot compute the denominator for alpha.
+        for i in range(maxiter_nb):
+            iterations  = i + 1
+            Ap          = matvec_nb(p)
+            alpha_denom = np.dot(p, Ap)
+            
+            # Check for potential breakdown (denominator near zero)
+            # This is a fallback for when rs_old is near zero
+            # and we cannot compute the denominator for alpha.
+            if np.abs(alpha_denom) < 1e-15:
+                rr, converged = fallback(r, tol_crit_sq)
+                return x, converged, iterations, np.sqrt(rr)
+            
+            alpha       = rs_old / alpha_denom
+            x          += alpha * p
+            r          -= alpha * Ap
+            rs_new      = np.dot(r, r)
+            
+            # Check for convergence
+            if rs_new < tol_crit_sq:
+                return x, True, iterations, np.sqrt(rs_new)
+            
+            beta        = rs_new / rs_old
+            p           = r + beta * p
+            rs_old      = rs_new
+            
+            # Check for potential breakdown (rs_old near zero)
+            # This is a fallback for when rs_old is near zero
+            # and we cannot compute the denominator for alpha.
+            if np.abs(rs_old) < 1e-15:
+                return x, rs_new < tol_crit_sq, iterations, np.sqrt(rs_new)
+
+        final_res_norm_sq, converged = fallback(r, tol_crit_sq)
+        return x, converged, iterations, np.sqrt(final_res_norm_sq)`
+
+    @numba.njit(cache=True, error_model='numpy', fastmath=True)
+    def _cg_logic_numpy_numba_precond_impl(
+            matvec_nb       : Callable[[np.ndarray], np.ndarray],
+            b_nb            : np.ndarray,
+            x0_nb           : np.ndarray,
+            tol_nb          : float,
+            maxiter_nb      : int,
+            precond_apply_nb: Callable[[np.ndarray], np.ndarray] # Required
+            ) -> Tuple[np.ndarray, bool, int, float]:
+        """ 
+        Numba-compiled CG core (WITH preconditioner).
+        Parameters:
+            matvec_nb Callable[[np.ndarray], np.ndarray]:
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b_nb np.ndarray:
+                Right-hand side vector $ b $.
+            x0_nb np.ndarray:
+                Initial guess $ x_0 $.
+            tol_nb float:
+                Relative tolerance $ \\epsilon_{rel} $. Convergence if $ ||r_k|| / ||b|| < \\epsilon_{rel} $.
+            maxiter_nb int:
+                Maximum number of iterations.
+            precond_apply_nb Callable[[np.ndarray], np.ndarray]:
+                Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+        Returns:
+            Tuple[np.ndarray, bool, int, float]:
+                SolverResult:
+                    Named tuple containing the solution $ x_k $, convergence status,
+                    iteration count, and final residual norm $ ||r_k|| $.
+        """
+        
+        # Initialize variables
+        x           = x0_nb.copy()
+        r           = b_nb - matvec_nb(x)
+        z           = precond_apply_nb(r)
+        p           = z.copy()
+        rs_old      = np.dot(r, z)
+        norm_b_sq   = np.dot(b_nb, b_nb)
+        tol_crit_sq = (tol_nb**2) * norm_b_sq if norm_b_sq > 0 else tol_nb**2
+        iterations  = 0
+        res_norm_sq = np.dot(r, r)
+
+        if res_norm_sq < tol_crit_sq:
+            return x, True, 0, np.sqrt(res_norm_sq)
+
+        # iterate over the maximum number of iterations
+        for i in range(maxiter_nb):
+            iterations  = i + 1
+            Ap          = matvec_nb(p)
+            alpha_denom = np.dot(p, Ap)
+            
+            # Check for potential breakdown (denominator near zero)
+            if np.abs(alpha_denom) < 1e-15:
+                break
+            
+            alpha       = rs_old / alpha_denom
+            x          += alpha * p
+            r          -= alpha * Ap
+            res_norm_sq = np.dot(r, r)
+
+            # Check for convergence
+            if res_norm_sq < tol_crit_sq:
+                return x, True, iterations, np.sqrt(res_norm_sq)
+
+            z           = precond_apply_nb(r)
+            rs_new      = np.dot(r, z)
+
+            # Check for potential breakdown (rs_old near zero)
+            if np.abs(rs_old) < 1e-15:
+                break
+            
+            beta        = rs_new / rs_old
+            p           = z + beta * p
+            rs_old      = rs_new
+
+        final_res_norm_sq   = np.dot(r,r)
+        converged           = final_res_norm_sq < tol_crit_sq
+        return x, converged, iterations, np.sqrt(final_res_norm_sq)
+
+    # Wrapper that calls the appropriate Numba function
+    def _cg_logic_numpy_compiled_wrapper(matvec,
+                                        b,
+                                        x0,
+                                        tol             : float,
+                                        maxiter         : int,
+                                        precond_apply   : Callable[[np.ndarray], np.ndarray] = None):
+        """ 
+        Wrapper for Numba CG: Calls no_precond or precond version. 
+        Parameters:
+            matvec Callable[[np.ndarray], np.ndarray]:
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b np.ndarray:
+                Right-hand side vector $ b $.
+            x0 np.ndarray:
+                Initial guess $ x_0 $.
+            tol float:
+                Relative tolerance $ \\epsilon_{rel} $. Convergence if $ ||r_k|| / ||b|| < \\epsilon_{rel} $.
+            maxiter int:
+                Maximum number of iterations.
+            precond_apply Callable[[np.ndarray], np.ndarray]:
+                Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+        """
+        dtype   = b.dtype
+        b_nb    = b.astype(dtype, copy=False)
+        x0_nb   = x0.astype(dtype, copy=False)
+
+        if precond_apply is not None:
+            # Try calling the preconditioned Numba version
+            # Note: This assumes precond_apply itself is Numba-compatible!
+            # If it fails, it will raise an exception. Consider adding try-except here
+            # to fallback to plain numpy if Numba compilation fails for the combination.
+            # print("Attempting Numba CG with preconditioner...")
+            x, conv, it, res = _cg_logic_numpy_numba_precond_impl(
+                matvec, b_nb, x0_nb, float(tol), int(maxiter), precond_apply)
+        else:
+            # print("Running Numba CG without preconditioner...")
+            x, conv, it, res = _cg_logic_numpy_numba_no_precond_impl(
+                matvec, b_nb, x0_nb, float(tol), int(maxiter))
+
+        return SolverResult(x=x, converged=conv, iterations=it, residual_norm=res)
+    
+    # Compile the Numba functions
+    _cg_logic_numpy_compiled = _cg_logic_numpy_compiled_wrapper
+else:
+    _cg_logic_numpy_compiled = _cg_logic_numpy
+
+#! JAX CG Logic
+_cg_logic_jax_compiled                  = None
+if _JAX_AVAILABLE:
+    import jax
+    import jax.numpy as jnp
     import jax.lax as lax
     from jax import jit
-    _JAX_AVAILABLE = True
-except ImportError:
-    _JAX_AVAILABLE = False
-
-
-# -----------------------------------------------------------------------------
-# Conjugate Gradient Solver Class for symmetric positive definite matrices using SciPy
-# -----------------------------------------------------------------------------
-
-class CgSolverScipy(Solver):
-    '''
-    Conjugate Gradient Solver for symmetric positive definite matrices using SciPy.
-    '''
-
-    def __init__(self, backend='default', size = 1, dtype=None, eps = 1e-10, maxiter = 1000, reg = None, precond = None, restart = False, maxrestarts = 1):
-        super().__init__(backend, size, dtype, eps, maxiter, reg, precond, restart, maxrestarts)
-        self._symmetric     = True
-        self._solver_type   = SolverType.SCIPY_CJ
-
-    # -------------------------------------------------------------------------
-
-    def solve(self, b, x0: Optional[np.ndarray] = None, precond: Optional[Preconditioner] = None):
-        '''
-        Solve the linear system Ax = b.
-        Parameters:
-            b : array-like
-                The right-hand side vector.
-            x0 : array-like, optional
-                Initial guess for the solution.
-            precond : Preconditioner, optional
-                Preconditioner to be used. Default is None.
+    
+    # Define the core JAX logic function (can include preconditioning logic)
+    def _cg_logic_jax_core(
+            matvec          : MatVecFunc,
+            b               : jnp.ndarray,
+            x0              : jnp.ndarray,
+            tol             : float,
+            maxiter         : int,
+            precond_apply   : Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None) -> SolverResult:
+        """
+        Core CG algorithm implementation using JAX. See _cg_logic_numpy for math.
+        
+        Args:
+            matvec (MatVecFunc):
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b (jnp.ndarray):
+                Right-hand side vector $ b $.
+            x0 (jnp.ndarray):
+                Initial guess $ x_0 $. 
+            tol (float):
+                Relative tolerance $ \\epsilon_{rel} $. Convergence if $ ||r_k|| / ||b|| < \\epsilon_{rel} $.
+            maxiter (int):
+                Maximum number of iterations.
+            precond_apply (Optional[Callable[[jnp.ndarray], jnp.ndarray]]):
+                Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
         Returns:
-            array-like
-                The solution x.
-        '''
+            SolverResult:
+                Named tuple containing the solution $ x_k $, convergence status,
+                iteration count, and final residual norm $ ||r_k|| $.
+        """
         
-        self.check_mat_or_matvec()
+        # Initialize variables
+        x           = x0
+        r           = b - matvec(x)
+        norm_b_sq   = jnp.dot(b, b)
+        tol_crit_sq = (tol**2) * jnp.where(norm_b_sq == 0.0, 1.0, norm_b_sq)
+
+        # Use lax.cond for conditional preconditioning application
+        # Define identity function for the 'else' branch
+        no_precond  = lambda vec: vec
+        precond_app = lambda vec: lax.cond(precond_apply is not None,
+                                precond_apply,   # Function if True
+                                no_precond,      # Function if False
+                                vec)             # Argument to the chosen function
+        z           = precond_app(r)            # Argument to the chosen function
+        p           = z             # p_0 = z_0
+        rs_old      = jnp.dot(r, z) # rho_0
+        res_norm_sq = jnp.dot(r, r) # ||r_k||^2
         
-        m = None
-        if precond is not None:
-            self.set_preconditioner(precond)
-            if self.reg is not None:
-                self.set_preconditioner_sigma(self.reg)
-            m = self._backend_sp.sparse.linalg.LinearOperator((self.size, self.size), matvec=precond.__call__)
+        # Initial State: (iter, x, r, p, rho_k, res_norm_sq)
+        initial_state = (0, x, r, p, rs_old, res_norm_sq)
+
+        def cond_fun(state):
+            """ 
+            Loop condition: iter < maxiter and ||r||^2 >= tol_crit^2
             
-        try:             
-            return self._backend_sp.sparse.linalg.cg(self._mat_vec_mult, b, x0=x0, rtol=self._eps, maxiter=self._maxiter, M=m)
-        except Exception as e:
-            raise SolverError(SolverErrorMsg.MATRIX_INVERSION_FAILED) from e
-        return None
-    
-    # -------------------------------------------------------------------------
+            Allows for early exit if the residual norm is already below the tolerance.
+            Requires the state to be unpacked.
+            """
+            i, _, _, _, _, current_res_norm_sq = state
+            return jnp.logical_and(i < maxiter, current_res_norm_sq >= tol_crit_sq)
+
+        def body_fun(state):
+            """ 
+            One CG iteration (see math in _cg_logic_numpy). 
+            Runs the CG algorithm body logic.
+            Note: 
+                The preconditioner is applied conditionally using lax.cond.
+            """
+            i, x_i, r_i, p_i, rs_old_i, _ = state
+            Ap                  = matvec(p_i)
+            alpha_denom         = jnp.dot(p_i, Ap)
+            safe_denom          = jnp.where(jnp.abs(alpha_denom) < 1e-15, 1.0, alpha_denom)
+            alpha               = rs_old_i / safe_denom
+            x_next              = x_i + alpha * p_i
+            r_next              = r_i - alpha * Ap
+
+            # Apply preconditioner conditionally inside body
+            z_next              = precond_app(r_next) if precond_apply is not None else r_next
+            rs_new              = jnp.dot(r_next, z_next)
+            safe_rs_old         = jnp.where(jnp.abs(rs_old_i) < 1e-15, 1.0, rs_old_i)
+            beta                = rs_new / safe_rs_old
+            p_next              = z_next + beta * p_i
+            res_norm_sq_next    = jnp.dot(r_next, r_next)
+            return (i + 1, x_next, r_next, p_next, rs_new, res_norm_sq_next)
+
+        # Run the JAX loop
+        final_state = lax.while_loop(cond_fun, body_fun, initial_state)
+
+        # Unpack final results
+        iter_run, x_final, _, _, _, final_res_norm_sq = final_state
+        conv        = final_res_norm_sq < tol_crit_sq
+        final_res   = jnp.sqrt(final_res_norm_sq)
+        return SolverResult(x=x_final, converged=conv, iterations=iter_run, residual_norm=final_res)
+
+    # JIT compile the core logic function
+    # Note: JITting handles the Optional Callable via lax.cond
+    # JIT matvec and precond_apply statically if they dont change
+    _cg_logic_jax_compiled = jax.jit(_cg_logic_jax_core, static_argnums=(0, 5)) 
     
 # -----------------------------------------------------------------------------
-# Conjugate Gradient Solver Class for symmetric positive definite matrices not using SciPy
-# -----------------------------------------------------------------------------
-
-@jit
-def solve_no_precond_jit(mat_vec_mult: Callable,
-        b,
-        x0          : Optional[jnp.ndarray] = None,
-        _eps        : float = 1e-10,
-        _maxiter    : int = 100):
-    """
-    Solve a linear system using the Conjugate Gradient (CG) algorithm with JIT compilation.
-    Parameters:
-        mat_vec_mult : Callable
-            A function implementing the matrix-vector multiplication for the system matrix.
-        b : array_like
-            The right-hand side vector of the linear system.
-        x0 : Optional[np.ndarray], default None
-            The initial guess for the solution. If None, a zero vector with the same shape as b is used.
-        _eps : float, default 1e-10
-            The convergence tolerance. The algorithm stops when the squared residual is below this value.
-        _maxiter : int, default 100
-            The maximum number of iterations allowed.
-    Returns:
-        tuple
-            A tuple containing:
-            - x_final : np.ndarray
-                The computed solution vector.
-            - converged : bool
-                A flag indicating whether the solution converged (True) or the maximum number of iterations was reached (False).
-    Notes:
-        This function uses JAX's JIT compilation and automatic vectorization (via lax.while_loop) to speed up the CG iteration.
-    """
-
-    x       = jnp.zeros_like(b) if x0 is None else x0
-    r       = b - mat_vec_mult(x)
-    rs_old  = jnp.dot(r, r)
-    # The state is a 5-tuple: (iteration, x, r, p, rs_old)
-    state   = (0, x, r, r, rs_old)
-    
-    def cond(state):
-        '''
-        Condition for the loop to stop iterating.
-        '''
-        i, _, _, _, rs_old = state
-        # Continue if iteration count is below _maxiter and residual norm not converged.
-        return jnp.logical_and(i < _maxiter, rs_old >= _eps)
-    
-    def body(state):
-        '''
-        The body of the loop. Implements the CG algorithm.
-        '''
-        i, x, r, p, rs_old  = state
-        ap                  = mat_vec_mult(p)
-        alpha               = rs_old / jnp.dot(p, ap)
-        x_new               = x + alpha * p
-        r_new               = r - alpha * ap
-        rs_new              = jnp.dot(r_new, r_new)
-        p_new               = r_new + (rs_new / rs_old) * p
-        return (i + 1, x_new, r_new, p_new, rs_new)
-    
-    state_final                         = lax.while_loop(cond, body, state)
-    _, x_final, r_final, _, rs_final    = state_final
-    converged                           = rs_final < _eps
-    return x_final, converged
-
-@jit
-def solve_precond_jit(mat_vec_mult : Callable,
-        b,
-        x0          : Optional[jnp.ndarray] = None,
-        precond     : Optional[Preconditioner] = None,
-        _eps        : float = 1e-10,
-        _maxiter    : int   = 100):
-    '''
-    Solve a linear system using the Conjugate Gradient (CG) algorithm with JIT compilation and preconditioning.
-    Parameters:        
-        mat_vec_mult : Callable
-            A function implementing the matrix-vector multiplication for the system matrix.
-        b : array_like
-            The right-hand side vector of the linear system.
-        x0 : Optional[np.ndarray], default None
-            The initial guess for the solution. If None, a zero vector with the same shape as b is used.
-        precond : Optional[Preconditioner], default None
-            The preconditioner to be used for the CG algorithm.
-        _eps : float, default 1e-10
-            The convergence tolerance. The algorithm stops when the squared residual is below this value.
-        _maxiter : int, default 100
-            The maximum number of iterations allowed.
-    Returns:
-        tuple
-            A tuple containing:
-            - x_final : np.ndarray
-                The computed solution vector.
-            - converged : bool
-                A flag indicating whether the solution converged (True) or the maximum number of iterations was reached (False).
-    '''
-    
-    x       = jnp.zeros_like(b) if x0 is None else x0
-    r       = b - mat_vec_mult(x)
-    z       = precond(r)
-    p       = z
-    rs_old  = jnp.dot(r, z)
-    # The state is a 5-tuple: (iteration, x, r, p, rs_old)
-    state   = (0, x, r, r, rs_old)
-    
-    def cond(state):
-        '''
-        Condition for the loop to stop iterating.
-        '''
-        i, _, r, _, _ = state
-        return jnp.logical_and(i < _maxiter, jnp.dot(r, r) >= _eps)
-    
-    def body(state):
-        '''
-        The body of the loop. Implements the CG algorithm.
-        '''
-        i, x, r, p, rs_old  = state
-        ap                  = mat_vec_mult(p)
-        alpha               = rs_old / jnp.dot(p, ap)
-        x_new               = x + alpha * p
-        r_new               = r - alpha * ap
-        z_new               = precond(r_new)
-        rs_new              = jnp.dot(r_new, z_new)
-        p_new               = z_new + (rs_new / rs_old) * p
-        return (i + 1, x_new, r_new, p_new, rs_new)
-    
-    state_final                         = lax.while_loop(cond, body, state)
-    _, x_final, r_final, _, rs_final    = state_final
-    converged                           = jnp.dot(r_final, r_final) < _eps
-    return x_final, converged
-
+#! Concrete CgSolver Implementation
 # -----------------------------------------------------------------------------
 
 class CgSolver(Solver):
     '''
-    A Conjugate Gradient (CG) solver for linear systems that supports both preconditioned 
-    and non-preconditioned formulations. This solver can leverage JAX's JIT compilation 
-    for improved performance or fall back to a traditional NumPy-based implementation.
+    Conjugate Gradient (CG) solver for symmetric positive definite linear systems.
+
+    Implements the static `solve` and `get_solver_func` methods required by
+    the `Solver` base class, dispatching to backend-specific implementations
+    (NumPy/Numba or JAX JIT). Assumes the operator A (defined by `matvec`)
+    is symmetric positive definite.
     '''
-    
-    def __init__(self, backend='default', size = 1, dtype=None, eps = 1e-10, maxiter = 1000, reg = None, precond = None, restart = False, maxrestarts = 1):
-        super().__init__(backend, size, dtype, eps, maxiter, reg, precond, restart, maxrestarts)
-        self._symmetric     = True
-        self._solver_type   = SolverType.CJ
-    
-    # -------------------------------------------------------------------------
-    
+    _solver_type = SolverType.CG
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    # --------------------------------------------------
+    #! Static Methods Override
+    # --------------------------------------------------
+
     @staticmethod
-    def solve_no_precond(
-            mat_vec_mult : Callable,
-            b,
-            x0          : Optional[np.ndarray] = None,
-            _eps        : float = 1e-10,
-            _maxiter    : int   = 100):
-        '''
-        Core function to solve the linear system Ax = b through the Conjugate Gradient method 
-        using JAX. This function is JIT-compiled and does not support precond.
-        '''
-        x       = np.zeros_like(b) if x0 is None else x0
-        r       = b - mat_vec_mult(x)
-        rs_old  = np.dot(r, r)
-        
-        # check convergence already
-        if np.abs(rs_old) < _eps:
-            return x, True
-        
-        p       = r
-        for _ in range(_maxiter):
-            ap      = mat_vec_mult(p)
-            alpha   = rs_old / np.dot(p, ap)
-            x       += alpha * p
-            r       -= alpha * ap
-            rs_new  = np.dot(r, r)
-            
-            if np.abs(rs_new) < _eps:
-                return x, True
-            
-            p       = r + (rs_new / rs_old) * p
-            rs_old  = rs_new
-        
-        return x, False
-    
-    # -------------------------------------------------------------------------
-    
-    @staticmethod
-    def solve_precond(mat_vec_mult : Callable,
-            b           : np.ndarray,
-            x0          : Optional[np.ndarray]      = None, 
-            precond     : Optional[Preconditioner]  = None,
-            _eps        : float = 1e-10,
-            _maxiter    : int   = 100):
-        '''
-        Core function to solve the linear system Ax = b through the Conjugate Gradient method via SciPy.
-        '''
-        x       = np.zeros_like(b) if x0 is None else x0
-        r       = b - mat_vec_mult(x)
-        z       = precond(r)
-        p       = z
-        rs_old  = np.dot(r, z)
-        
-        # iterate over the maximum number of iterations
-        for _ in range(_maxiter):
-            ap      = mat_vec_mult(p)
-            alpha   = rs_old / np.dot(p, ap) 
-            x       += alpha * p
-            r       -= alpha * ap
-            
-            if np.abs(np.dot(r, r)) < _eps:
-                return x, True
-            
-            z       = precond(r)
-            rs_new  = np.dot(r, z)
-            p       = z + (rs_new / rs_old) * p
-            rs_old  = rs_new
-        return x, False
-    
-    # -------------------------------------------------------------------------
-    
-    def solve(self, b, x0: Optional[np.ndarray] = None, precond: Optional[Preconditioner] = None):
-        '''
-        Solve the linear system Ax = b.
-        Parameters:
-            b : array-like
-                The right-hand side vector.
-            x0 : array-like, optional
-                Initial guess for the solution.
-            precond : Preconditioner, optional
-                Preconditioner to be used. Default is None.
+    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+        """
+        Returns the backend-specific compiled/optimized CG function.
+
+        Args:
+            backend_module (Any):
+                The numerical backend (`numpy` or `jax.numpy`).
+
         Returns:
-            array-like
-                The solution x.
-        '''
-        
-        self.check_mat_or_matvec()
-        
-        _take_jax = (_JAX_AVAILABLE and (self._backend_str == 'jax' or self._backend_str == 'jnp')) or \
-                    (self._backend_str == 'default' and _JAX_AVAILABLE)
-        
+            StaticSolverFunc:
+                The core CG function for the backend.
+        """
+        if backend_module is jnp:
+            if _cg_logic_jax_compiled is None:
+                raise ImportError("JAX function not available/compiled.")
+            return _cg_logic_jax_compiled
+        elif backend_module is np:
+            if _cg_logic_numpy_compiled is None:
+                print("Warning: Numba CG function not available, returning plain Python version.")
+                return _cg_logic_numpy
+            return _cg_logic_numpy_compiled
+        else:
+            raise ValueError(f"Unsupported backend module for CG: {backend_module}")
+
+    @staticmethod
+    def solve(
+            matvec          : MatVecFunc,
+            b               : Array,
+            x0              : Array,
+            *,
+            tol             : float,
+            maxiter         : int,
+            precond_apply   : Optional[Callable[[Array], Array]] = None,
+            backend_module  : Any,
+            **kwargs        : Any) -> SolverResult:
+        """
+        Static CG execution: Gets the appropriate backend function and calls it.
+
+        Args:
+            matvec (MatVecFunc):
+                Function $ v \\mapsto Av $.
+            b (Array):
+                RHS vector $ b $.
+            x0 (Array):
+                Initial guess $ x_0 $.
+            tol (float):
+                Relative tolerance $ \\epsilon_{rel} $.
+            maxiter (int):
+                Maximum number of iterations.
+            precond_apply (Optional[Callable[[Array], Array]]):
+                Function $ r \\mapsto M^{-1}r $.
+            backend_module (Any):
+                Backend module (`numpy` or `jax.numpy`).
+            **kwargs (Any):
+                Ignored.
+
+        Returns:
+            SolverResult: Result tuple.
+        """
+        solver_func = CgSolver.get_solver_func(backend_module)
         try:
-            if precond is not None:
-                self.set_preconditioner_sigma(self.reg)
-                if _take_jax:
-                    self._solution, self._converged = solve_precond_jit(self._mat_vec_mult, b, x0, precond)
-                    return self._solution
-                else:
-                    self._solution, self._converged = self.solve_precond(self._mat_vec_mult, b, x0, precond)
-                    return self._solution
-            else:
-                if _take_jax:
-                    self._solution, self._converged = solve_no_precond_jit(self._mat_vec_mult, b, x0)
-                    return self._solution
-                else:
-                    self._solution, self._converged = self.solve_no_precond(self._mat_vec_mult, b, x0)
-                    return self._solution
+            return solver_func(matvec, b, x0, tol, maxiter, precond_apply)
         except Exception as e:
-            raise SolverError(SolverErrorMsg.CONV_FAILED) from e
-        return None
+            raise SolverError(SolverErrorMsg.CONV_FAILED, f"CG execution failed: {e}") from e
+
+# -----------------------------------------------------------------------------
+#! Conjugate Gradient Solver Class Wrapper for SciPy
+# -----------------------------------------------------------------------------
+
+class CgSolverScipy(Solver):
+    '''
+    Wrapper for SciPy's Conjugate Gradient solver (`scipy.sparse.linalg.cg`).
+
+    Uses instance configuration but overrides `solve_instance` to call SciPy.
+    Does *not* implement the static `solve`/`get_solver_func` interface.
+    Requires NumPy backend.
+    '''
+    _solver_type = SolverType.SCIPY_CG
+
+    def __init__(self,
+                backend         : str                             = 'numpy', # Force numpy
+                dtype           : Optional[Type]                  = None,
+                eps             : float                           = 1e-8,
+                maxiter         : int                             = 1000,
+                default_precond : Optional[Preconditioner]        = None,
+                a               : Optional[Array]                 = None,
+                s               : Optional[Array]                 = None,
+                sp              : Optional[Array]                 = None,
+                matvec_func     : Optional[MatVecFunc]            = None,
+                sigma           : Optional[float]                 = None,
+                is_gram         : bool                            = False):
+        
+        if backend != 'numpy': print(f"Warning: {self.__class__.__name__} uses SciPy, forcing backend to 'numpy'.")
+        super().__init__(backend='numpy', dtype=dtype, eps=eps, maxiter=maxiter,
+                        default_precond=default_precond, a=a, s=s, sp=sp,
+                        matvec_func=matvec_func, sigma=sigma, is_gram=is_gram)
+        self._symmetric = True
+
+    # --------------------------------------------------
+    #! Static Methods Override
+    # --------------------------------------------------
+
+    @staticmethod
+    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+        """
+        Returns a wrapper function that calls the static `CgSolverScipy.solve`.
+
+        Args:
+            backend_module (Any): Must be `numpy`.
+
+        Returns:
+            StaticSolverFunc: A callable matching the required signature.
+        """
+        if backend_module is not np:
+            raise SolverError(SolverErrorMsg.BACKEND_MISMATCH,
+                            f"{SolverType.SCIPY_CG.name} requires NumPy backend.")
+
+        # Return a lambda that captures the static solve method
+        return lambda matvec, b, x0, tol, maxiter, precond_apply, backend_mod, **kwargs: \
+                    CgSolverScipy.solve(matvec=matvec, b=b, x0=x0, tol=tol, maxiter=maxiter,
+                                          precond_apply=precond_apply, backend_module=backend_mod, **kwargs)
+
+    @staticmethod
+    def solve(
+            # === Core Problem Definition ===
+            matvec          : MatVecFunc,
+            b               : Array,
+            x0              : Array,
+            # === Solver Parameters ===
+            *,
+            tol             : float,
+            maxiter         : int,
+            # === Optional Preconditioner ===
+            precond_apply   : Optional[Callable[[Array], Array]] = None,
+            # === Backend Specification ===
+            backend_module  : Any,
+            # === Solver Specific Arguments ===
+            **kwargs        : Any # Pass SciPy specific args (atol, callback) here
+            ) -> SolverResult:
+        """
+        Static solve implementation calling `scipy.sparse.linalg.cg`.
+
+        Args: See base class `solve` docstring.
+
+        Returns: SolverResult.
+        """
+        if backend_module is not np:
+            raise SolverError(SolverErrorMsg.BACKEND_MISMATCH,
+                    f"{SolverType.SCIPY_CG.name} requires NumPy backend.")
+
+        # Prepare Arguments for SciPy
+        M_op    = None
+        n_size  = b.shape[0]
+        if precond_apply is not None:
+            if not callable(precond_apply):
+                raise SolverError(SolverErrorMsg.PRECOND_INVALID,
+                        "precond_apply must be callable.")
+            M_op = spsla.LinearOperator((n_size, n_size), matvec=precond_apply)
+
+        # Ensure NumPy arrays (SciPy works best with NumPy arrays)
+        # Assume matvec is already NumPy compatible if backend_module is np
+        b_np    = np.asarray(b)
+        x0_np   = np.asarray(x0) # x0 is guaranteed not None by signature? No, x0 is required now.
+        # Add dimension checks? Assume caller provides correct shapes.
+        if x0_np.shape != b_np.shape:
+            raise SolverError(SolverErrorMsg.DIM_MISMATCH,
+                    f"Shape mismatch: b={b_np.shape}, x0={x0_np.shape}")
+
+
+        # Setup Callback for Iteration Count
+        iter_count = [0]
+        def scipy_callback(xk):
+            iter_count[0] += 1
+        
+        # User can override callback via kwargs
+        kwargs.setdefault('callback', scipy_callback)
+        # SciPy uses 'tol' (relative), ensure 'atol' is handled if needed
+        kwargs.setdefault('atol', 'legacy')
+
+        # Call SciPy CG
+        try:
+            print(f"({CgSolverScipy.__name__}) Calling static scipy.sparse.linalg.cg...")
+            x_sol, exit_code = spsla.cg(
+                                        matvec,     # Pass the Python callable
+                                        b_np,       # RHS vector
+                                        x0=x0_np,   # Initial guess
+                                        tol=tol,
+                                        maxiter=maxiter,
+                                        M=M_op,
+                                        **kwargs    # Pass atol, callback etc.
+                                        )
+
+            converged       = (exit_code == 0)
+            iterations_run  = iter_count[0]
+            # Calculate final residual norm if needed
+            final_residual  = b_np - matvec(x_sol)
+            final_res_norm  = np.linalg.norm(final_residual)
+            return SolverResult(x=x_sol, converged=converged, iterations=iterations_run, residual_norm=final_res_norm)
+        except Exception as e:
+            raise SolverError(SolverErrorMsg.CONV_FAILED,
+                    f"Static SciPy CG call failed: {e}") from e
+
+    # --------------------------------------------------
+    #! Instance Methods Override
+    # --------------------------------------------------
     
-    # -------------------------------------------------------------------------
-    
+    def solve_instance(self,
+                    b               : Array,
+                    x0              : Optional[Array]   = None,
+                    *,
+                    tol             : Optional[float]   = None,
+                    maxiter         : Optional[int]     = None,
+                    precond         : Union[Preconditioner, Callable[[Array], Array], None] = 'default',
+                    sigma           : Optional[float]   = None,
+                    **kwargs) -> SolverResult:
+        """
+        Overrides base method to solve $ Ax = b $ using `scipy.sparse.linalg.cg`.
+        Uses instance configuration to set up defaults and call static solve.
+
+        Args: See previous docstring.
+
+        Returns: SolverResult.
+        """
+        if self._backend is not np:
+            raise SolverError(SolverErrorMsg.BACKEND_MISMATCH, f"{self.__class__.__name__} requires NumPy backend.")
+
+        current_tol                     = tol if tol is not None else self._default_eps
+        current_maxiter                 = maxiter if maxiter is not None else self._default_maxiter
+        current_sigma                   = sigma if sigma is not None else self._conf_sigma
+
+        # Get matvec func (compile=False)
+        matvec_func                     = self._check_matvec_solve(current_sigma, np, compile_matvec=False, **kwargs)
+        # Get precond apply func
+        precond_apply_func              = self._check_precond_solve(precond)
+
+        # Prepare b and x0 (handle optional x0)
+        b_np                            = np.asarray(b, dtype=self._dtype)
+        x0_np                           = np.zeros_like(b_np) if x0 is None else np.asarray(x0, dtype=self._dtype)
+        if x0_np.shape != b_np.shape:
+            raise SolverError(SolverErrorMsg.DIM_MISMATCH, f"Shape mismatch: b={b_np.shape}, x0={x0_np.shape}")
+
+        # Call the static solve method of this class
+        print(f"({self.__class__.__name__}) Calling static solve via instance method...")
+        result = CgSolverScipy.solve(
+            matvec          = matvec_func,
+            b               = b_np,
+            x0              = x0_np,
+            tol             = current_tol,
+            maxiter         = current_maxiter,
+            precond_apply   = precond_apply_func,
+            backend_module  = np, # Explicitly numpy
+            **kwargs
+        )
+
+        # Store results
+        self._last_solution             = result.x
+        self._last_converged            = result.converged
+        self._last_iterations           = result.iterations
+        self._last_residual_norm        = result.residual_norm
+
+        print(f"({self.__class__.__name__}) Instance solve finished. Converged: {result.converged}, Iter: {result.iterations}, ResNorm: {result.residual_norm:.4e}")
+        return result
+
+    # --------------------------------------------------
+
 # -----------------------------------------------------------------------------

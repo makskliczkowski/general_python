@@ -98,7 +98,7 @@ class PreconditionersTypeNoSym(Enum):
     # Add others like Gauss-Seidel etc.
     
 # ---------------------------------------------------------------------
-#! PRECONDITIONERS
+#! Preconditioners
 # ---------------------------------------------------------------------
 
 class Preconditioner(ABC):
@@ -482,7 +482,7 @@ class Preconditioner(ABC):
         return self.__repr__()
     
     # -----------------------------------------------------------------
-    
+
 # =====================================================================
 #! Identity preconditioner
 # =====================================================================
@@ -1501,7 +1501,8 @@ def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
     
     # 1. Handle Instance Passthrough
     if isinstance(precond_id, Preconditioner):
-        if kwargs: print(f"Warning: Instance provided; ignoring kwargs: {kwargs}")
+        if kwargs:
+            print(f"Warning: Instance provided; ignoring kwargs: {kwargs}")
         return precond_id
 
     # 2. Resolve ID to Enum Type
