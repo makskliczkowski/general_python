@@ -23,17 +23,16 @@ operation M^{-1}r should be computationally inexpensive.
 
 # Import the required modules
 from abc import ABC, abstractmethod
-from typing import Union, Callable, Optional, Any, Type
+from typing import Union, Callable, Optional, Any, Type, Tuple
+from enum import Enum, auto, unique
 import inspect
 import numpy as np
-import numpy.random as nrn
-import scipy as sp
+
 # Add sparse imports at the top of the file
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsla
 
-from .utils import _JAX_AVAILABLE, get_backend as get_backend, maybe_jit
-from enum import Enum, auto, unique
+from general_python.algebra.utils import _JAX_AVAILABLE, get_backend as get_backend, maybe_jit
 
 # ---------------------------------------------------------------------
 

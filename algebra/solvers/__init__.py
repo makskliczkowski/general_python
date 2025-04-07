@@ -17,7 +17,7 @@ from general_python.algebra.solver import Solver, SolverResult, SolverError, Sol
 from general_python.algebra.solvers.cg import CgSolver, CgSolverScipy
 from general_python.algebra.solvers.direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
 from general_python.algebra.solvers.pseudoinverse import PseudoInverseSolver
-# Add imports for MinresQLPSolver etc. when they are refactored/implemented
+from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
 
 # Import utility and preconditioner chooser
 from general_python.algebra.utils import get_backend, _JAX_AVAILABLE
@@ -39,8 +39,8 @@ _SOLVER_TYPE_TO_CLASS_MAP: dict[SolverType, Type[Solver]] = {
     # Iterative Solvers
     #! symmetric
     SolverType.CG               : CgSolver,
+    SolverType.MINRES_QLP       : MinresQLPSolver,
     # SolverType.MINRES: MinresSolver, # Add when implemented
-    # SolverType.MINRES_QLP: MinresQLPSolver, # Add when implemented
     #! general
     # SolverType.GMRES: GmresSolver, # Add when implemented
 
