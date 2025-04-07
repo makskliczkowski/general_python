@@ -842,8 +842,8 @@ class StochasticReconfiguration(ABC):
             self._covariance_minres_fun = covariance_jax_minsr
             self._covariance_fun        = covariance_jax
             self._gradient_fun          = gradient_jax
-            self._der_c_fun             = derivatives_centered
-            self._loss_c_fun            = loss_centered
+            self._der_c_fun             = derivatives_centered_jax
+            self._loss_c_fun            = loss_centered_jax
         else:
             self._covariance_minres_fun = covariance_np_minsr
             self._covariance_fun        = covariance_np
@@ -948,7 +948,7 @@ class StochasticReconfiguration(ABC):
             use_minsr:
                 whether to use the minres solver for the covariance matrix.
         '''
-        self._nsamples      = self._loss.shape[0]
+        self._nsamples      = loss.shape[0]
         
         # get the loss
         self._loss          = loss

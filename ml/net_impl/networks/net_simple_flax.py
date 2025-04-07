@@ -7,7 +7,7 @@ date    : 2025-03-10
 
 import numpy as np
 import general_python.ml.net_impl.net_general as _net_general
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple, Callable, Any
 
 # import from general python module
 from general_python.algebra.utils import _JAX_AVAILABLE
@@ -45,38 +45,46 @@ class _FlaxNet(nn.Module):
     bias            : bool                  = True
     act_fun         : Tuple[Callable, ...]  = (jax.nn.relu,)
     dtype           : jnp.dtype             = jnp.float32
-
+    param_dtype     : Optional[jnp.dtype]   = None        # Allow separate param dtype
+    
     @nn.compact
     def __call__(self, x):
-        s               = x
+        s               = x.astype(self.dtype)
         num_layers      = len(self.layers)
-        
+        param_dtype     = self.param_dtype if self.param_dtype is not None else self.dtype
         # Extend activation functions if not enough are provided.
         if len(self.act_fun) < num_layers:
             act_funs    = self.act_fun + (lambda x: x,) * (num_layers - len(self.act_fun))
         else:
             act_funs    = self.act_fun[:num_layers]
         
-        if jnp.issubdtype(self.dtype, jnp.complexfloating):
-            # Use complex He initialization for complex weights.
+        if jnp.issubdtype(param_dtype, jnp.complexfloating):
             kernel_init_fn = complex_he_init
         else:
-            # Use real He initialization for real weights.
             kernel_init_fn = real_he_init
         
         # Hidden layers.
-        for neurons, act in zip(self.layers, act_funs):
-            s = nn.Dense(neurons, use_bias=self.bias, kernel_init=kernel_init_fn,
-                        dtype=self.dtype, param_dtype=self.dtype)(s)
+        for i, (neurons, act) in enumerate(zip(self.layers, act_funs)):
+            s = nn.Dense(neurons,
+                        name        =   f"Dense_{i}",       # Add names for clarity
+                        use_bias    =   self.bias,
+                        kernel_init =   kernel_init_fn,     # Kernel initializer
+                        dtype       =   self.dtype,         # Layer computation dtype
+                        param_dtype =   param_dtype)(s)     # Parameter dtype
             s = act(s)
             
         # Final output layer.
-        s = nn.Dense(self.output_dim, use_bias=self.bias, kernel_init=kernel_init_fn,
-                    dtype=self.dtype, param_dtype=self.dtype)(s)
+        s = nn.Dense(self.output_dim,
+                    name        =   f"Dense_{num_layers}",  # Add names for clarity
+                    use_bias    =   self.bias,
+                    kernel_init =   kernel_init_fn,         # Kernel initializer
+                    dtype       =   self.dtype,             # Layer computation dtype
+                    param_dtype =   param_dtype)(s)
         
         # finalize to get the output.
-        real, imag  =   jnp.split(s, 2, axis=-1)
-        return real + 1j * imag
+        # if self.output_dim == 1:
+            # s = jnp.squeeze(s, axis=-1)
+        return s
 
 ##########################################################
 #! FLAX SIMPLE NET
@@ -108,21 +116,42 @@ class FlaxSimpleNet(FlaxInterface):
     """
     
     def __init__(self,
-                act_fun         : Optional[Tuple[Callable, ...]] = None,
+                act_fun         : Any = ('relu', 'tanh'), # Allow strings or callables
                 input_shape     : tuple = (10,),
                 output_shape    : tuple = (1,),
-                layers          : tuple = (1,),
+                layers          : tuple = (20, 15), # Example default layers
                 bias            : bool  = True,
-                backend         : str   = 'jax',
-                dtype           : Optional[np.dtype] = jnp.complex64):
-        # call the parent initializer.
+                backend         : str   = 'jax', # Only JAX supported
+                dtype           : Optional[Any] = jnp.complex64, # Default complex
+                param_dtype     : Optional[Any] = None, # Allow separate param dtype
+                seed            : int = 42):
+
+        # Ensure output_shape is a tuple
+        if not isinstance(output_shape, tuple):
+            output_shape = (output_shape,)
+        output_dim = int(np.prod(output_shape))
+
+        # Prepare kwargs for _FlaxNet via FlaxInterface
+        net_kwargs = {
+            'layers'        : layers,
+            'output_dim'    : output_dim,
+            'bias'          : bias,
+            'act_fun'       : act_fun, # Pass specs, FlaxInterface will handle conversion
+            # Pass both dtype and param_dtype if specified
+            'dtype'         : dtype,
+            'param_dtype'   : param_dtype if param_dtype is not None else dtype
+        }
+
+        # Call the FlaxInterface parent initializer
         super().__init__(
-            net_module  = _FlaxNet,
-            net_args    = (layers, int(np.prod(output_shape))),
-            net_kwargs  = {'bias': bias, 'act_fun': act_fun},
+            net_module  = _FlaxNet,      # The Flax module class to wrap
+            net_args    = (),            # No positional args for _FlaxNet
+            net_kwargs  = net_kwargs,    # Keyword args for _FlaxNet
             input_shape = input_shape,
             backend     = backend,
-            dtype       = dtype)
+            dtype       = dtype,         # Interface default dtype
+            seed        = seed           # Seed for initialization
+        )
 
     #########################################################
     #! INFO
@@ -132,7 +161,7 @@ class FlaxSimpleNet(FlaxInterface):
         """
         Returns a string representation of the FlaxSimpleNet object.
         """
-        return f"FlaxSimpleNet(layers={self.net_kwargs['layers']}, input_shape={self.input_shape}, output_shape={self.output_shape}, dtype={self.dtype})"
+        return f"FlaxSimpleNet(layers={self._net_kwargs_in['layers']}, input_shape={self.input_shape}, output_shape={self.output_shape}, dtype={self.dtype})"
 
     #########################################################
     

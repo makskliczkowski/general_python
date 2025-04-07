@@ -149,10 +149,10 @@ if _JAX_AVAILABLE:
         >>> flat_grad = flat_gradient_numerical_jax(fun, params, state)
         """
         # Compute gradient of the real part.
-        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
         gr  = tree_flatten(tree_map(lambda x: x.ravel(), gr))[0]
         # Compute gradient of the imaginary part.
-        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)["params"]
+        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)
         gi  = tree_flatten(tree_map(lambda x: x.ravel(), gi))[0]
         # Concatenate and combine into a single complex vector.
         return jnp.concatenate(gr) + 1.j * jnp.concatenate(gi)
@@ -212,9 +212,9 @@ if _JAX_AVAILABLE:
 
         Adjusts the sign of the imaginary part.
         """
-        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
         gr  = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gr))[0]
-        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)["params"]
+        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)
         gi  = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gi))[0]
         return jnp.concatenate(gr) + 1.j * jnp.concatenate(gi)
 
@@ -262,7 +262,7 @@ if _JAX_AVAILABLE:
         """
         Compute a flattened real gradient using numerical differentiation (JAX).
         """
-        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
         g = tree_flatten(tree_map(lambda x: x.ravel(), g))[0]
         return jnp.concatenate(g).astype(jnp.float32)
 
@@ -313,7 +313,7 @@ if _JAX_AVAILABLE:
 
         Each parameter's raveled value is repeated once with a multiplier of 1.j.
         """
-        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
         # Create a list with each flattened leaf repeated with an imaginary component.
         g = tree_flatten(tree_map(lambda x: [x.ravel(), 1.j * x.ravel()], g))[0]
         return jnp.concatenate(g)
@@ -342,9 +342,9 @@ if _JAX_AVAILABLE:
         """
         Compute a dictionary of complex gradients using numerical differentiation (JAX).
         """
-        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
         gr  = tree_map(lambda x: x.ravel(), gr)
-        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)["params"]
+        gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)
         gi  = tree_map(lambda x: x.ravel(), gi)
         return tree_map(lambda x, y: x + 1.j * y, gr, gi)
 
@@ -370,7 +370,7 @@ if _JAX_AVAILABLE:
         """
         Compute a dictionary of real gradients using numerical differentiation (JAX).
         """
-        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)["params"]
+        g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
         return tree_map(lambda x: x.ravel(), g)
 
     def dict_gradient_real_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> Any:
