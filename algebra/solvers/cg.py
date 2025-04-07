@@ -1,4 +1,4 @@
-'''
+r'''
 file:       general_python/algebra/solvers/cg_solver.py
 author:     Maksymilian Kliczkowski
 
@@ -49,7 +49,7 @@ import numpy as np
 
 from general_python.algebra.solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc)
-from general_python.algebra.preconditioners import Preconditioner, PreconditionerApplyFunc
+from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 # Import backend specifics and compilation tools
 from general_python.algebra.utils import _JAX_AVAILABLE
@@ -267,7 +267,7 @@ if _NUMBA_AVAILABLE:
                 return x, rs_new < tol_crit_sq, iterations, np.sqrt(rs_new)
 
         final_res_norm_sq, converged = fallback(r, tol_crit_sq)
-        return x, converged, iterations, np.sqrt(final_res_norm_sq)`
+        return x, converged, iterations, np.sqrt(final_res_norm_sq)
 
     @numba.njit(cache=True, error_model='numpy', fastmath=True)
     def _cg_logic_numpy_numba_precond_impl(

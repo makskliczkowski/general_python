@@ -1,4 +1,4 @@
-'''
+r'''
 file:       general_python/algebra/solvers/minres_qlp.py
 author:     Maksymilian Kliczkowski
 desc:       Native MINRES-QLP solver implementation for symmetric systems.
@@ -80,7 +80,7 @@ from general_python.algebra.solver import (
     SolverType, Array, MatVecFunc, StaticSolverFunc, _sym_ortho)
 # Utilities and Preconditioners
 from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
-from general_python.algebra.preconditioners import Preconditioner, PreconditionerApplyFunc
+from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 # JAX imports
 try:
@@ -865,7 +865,7 @@ def _minres_qlp_logic_numpy(matvec, b, x0, tol, maxiter, precond_apply, shift, b
 # -----------------------------------------------------------------------------
 
 class MinresQLPSolver(Solver):
-    '''
+    r'''
     Minimum Residual method with QLP stabilization for symmetric systems.
 
     Solves $ (A - \sigma I)x = b $. Assumes operator A is symmetric.
@@ -917,7 +917,7 @@ class MinresQLPSolver(Solver):
             # MINRES/QLP specific: shift (sigma)
             shift           : float = 0.0,
             **kwargs        : Any) -> SolverResult:
-        """
+        r"""
         Static MINRES-QLP execution: Gets backend function and calls it.
 
         Args:

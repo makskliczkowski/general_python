@@ -373,6 +373,13 @@ class Preconditioner(ABC):
         # Example: return {'inv_diag': self._inv_diag} for Jacobi
         raise NotImplementedError
     
+    @property
+    def precomputed_data(self) -> dict:
+        """
+        Returns empty dict as no precomputed data is needed. 
+        """
+        return self._get_precomputed_data()
+
     # -----------------------------------------------------------------
     
     def set(self, a: Array, sigma: float = 0.0, ap: Optional[Array] = None, backend: Optional[str] = None):
@@ -530,7 +537,7 @@ class IdentityPreconditioner(Preconditioner):
     def _get_precomputed_data(self) -> dict:
         """ Returns empty dict as no precomputed data is needed. """
         return {}
-
+    
     # -----------------------------------------------------------------
     #! Static Apply Method
     # -----------------------------------------------------------------
@@ -621,22 +628,21 @@ class JacobiPreconditioner(Preconditioner):
         Sets self._inv_diag to the computed inverse diagonal of diagonal matrix A + sigma*I.
         """
         be              = self._backend
-        if sigma is not None and sigma != 0.0:
+        if sigma is not None and sigma >= 0.0:
             reg_diag    = diag_a + sigma
         else:
             reg_diag    = diag_a
-        # Handle small or zero values after regularization
-        is_small        = be.abs(reg_diag) < self._tol_small
-        # Replace small values with a large number before inversion
-        safe_diag       = be.where(is_small, be.sign(reg_diag) * self._zero, reg_diag)
-        # Replace exact zeros with the replacement value directly
-        safe_diag       = be.where(safe_diag == 0.0, self._zero, safe_diag)
+        # Clamp the diagonal values to avoid division by zero or very small values
+        big_values      = reg_diag > self._zero
+        small_values    = be.abs(reg_diag) < self._tol_small
         
-        self._inv_diag  = 1.0 / safe_diag
-        # Ensure components corresponding to initially small values are effectively zero
-        self._inv_diag  = be.where(is_small, 0.0, self._inv_diag)
-        print(f"({self._name}) Computed inverse diagonal. "
-            f"Number of near-zero entries handled: {be.sum(is_small)}")
+        # replace the small values with the big ones
+        # self._zero is of order 10^10, therefore 1 / self._zero is of order 10^-10 - minimal number
+        # and the small values are replaced to avoid division by zero
+        reg_diag        = be.where(small_values, 1.0 / self._zero, reg_diag)
+        reg_diag        = be.where(big_values, self._zero, reg_diag)
+        self._inv_diag  = 1.0 / reg_diag
+        print(f"({self._name}) Computed inverse diagonal using clamping.")
 
     # -----------------------------------------------------------------
 
@@ -1067,81 +1073,90 @@ class SSORPreconditioner(Preconditioner):
 
     def _get_precomputed_data(self) -> dict:
         """ Returns the computed factors needed for SSOR apply. """
-        if self._inv_diag_unscaled is None or self._L is None or self._U is None:
-            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
         
+        # Ensure D_inv_scaled is computed and stored during set if using the alternative form below
+        # For the direct solve form, we need L, U, and D/w. Let's store D and use it.
+        
+        if self._L is None or self._U is None or self._inv_diag_unscaled is None:
+            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
+
+        # Return D itself (or its diagonal) instead of its inverse if computing D/w directly in apply
+        diag_a_reg = 1.0 / self._inv_diag_unscaled  # Reconstruct the regularized diagonal
         return {
-            'inv_diag_unscaled' : self._inv_diag_unscaled,
-            'L'                 : self._L,
-            'U'                 : self._U,
-            'omega'             : self._omega
+            'd_diag': diag_a_reg,                   # Pass the diagonal D = diag(A_reg)
+            'L': self._L,
+            'U': self._U,
+            'omega': self._omega
         }
 
     # --- Static Apply ---
-    @staticmethod
-    def apply(r                 : Array,
-            sigma               : float,
-            backend_mod         : Any,
-            inv_diag_unscaled   : Array, L: Array, U: Array, omega: float) -> Array:
-        '''
-        Static apply method for SSOR: forward and backward triangular solves.
-        Solves Mz = r where M = (D/w + L) D^{-1} (D/w + U) / (w(2-w))
+@staticmethod
+def apply(r                 : Array,
+        sigma               : float,
+        backend_mod         : Any, # Renamed for clarity
+        d_diag              : Array, L: Array, U: Array, omega: float) -> Array: # Pass d_diag
+    '''
+    Static apply method for SSOR: forward and backward triangular solves.
+    Solves Mz = r where M = (D/w + L) D^{-1} (D/w + U) / (w(2-w)).
+    This implementation directly performs the forward and backward solves
+    associated with Mz = r, which corresponds to:
+    1. Solve (D/omega + L) y_temp = r          (Forward sweep)
+    2. Solve (D/omega + U) z = D y_temp / omega (Backward sweep)
 
-        Args:
-            r (Array):
-                The residual vector.
-            sigma (float):
-                Regularization (used during setup).
-            backend_mod (Any):
-                The backend numpy-like module.
-            inv_diag_unscaled (Array): Precomputed 1.0 / (diag(A)+sigma).
-            L (Array):
-                Precomputed strictly lower part of A+sigma*I.
-            U (Array):
-                Precomputed strictly upper part of A+sigma*I.
-            omega (float):
-                Relaxation parameter.
+    Args:
+        r (Array):
+            The residual vector.
+        sigma (float):
+            Regularization (used during setup).
+        backend_mod (Any):
+            The backend numpy-like module.
+        d_diag (Array):
+            Precomputed diagonal of A+sigma*I.
+        L (Array):
+            Precomputed strictly lower part of A+sigma*I.
+        U (Array):
+            Precomputed strictly upper part of A+sigma*I.
+        omega (float):
+            Relaxation parameter.
 
-        Returns:
-            Array: The preconditioned vector M^{-1}r.
-        '''
-        if inv_diag_unscaled is None or L is None or U is None:
-            print("Warning: SSOR factors missing in apply, returning original vector.")
-            return r
+    Returns:
+        Array: The preconditioned vector M^{-1}r (which is z).
+    '''
+    if d_diag is None or L is None or U is None:
+        print("Warning: SSOR factors missing in apply, returning original vector.")
+        return r
 
-        be          = backend_module
+    be = backend_mod # Use the shorter alias
 
-        # Check for complex type
-        use_conj    = be.iscomplexobj(L) # Assume L/U reflect complexness of A
-        
-        # Factor D/omega + L = D/omega * (I + omega * D^-1 * L)
-        # Factor D/omega + U = D/omega * (I + omega * D^-1 * U)
-        
-        # Forward sweep: Solve (I + omega * D^-1 * L) y = r
-        # This requires a triangular solve with matrix (I + omega*L*D_inv) -> Requires op @ vec
-        # OR solve (D/omega + L) y = r directly
-        d_over_omega_plus_l = be.diag(1.0 / (omega * inv_diag_unscaled)) + L
-        y = be.linalg.solve_triangular(d_over_omega_plus_l, r, lower=True, check_finite=False)
+    # Construct diagonal matrix D from d_diag
+    d = be.diag(d_diag)
 
-        # Intermediate step (needed for common formulation):
-        # y_intermediate = D y / omega (element-wise mult)
-        y_intermediate = (1.0/omega * inv_diag_unscaled) * y # Check this scaling
+    # Check for complex type might still be needed if backend requires specific handling
+    # use_conj = be.iscomplexobj(L) # Check if necessary for solve_triangular
 
-        # Backward sweep: Solve (D/omega + U) z = y_intermediate
-        # U_H = U.conj().T if use_conj else U.T # SSOR uses U, not U^H typically
-        d_over_omega_plus_u = be.diag(1.0 / (omega * inv_diag_unscaled)) + U
-        z = be.linalg.solve_triangular(d_over_omega_plus_u, y_intermediate, lower=False, check_finite=False)
+    # 1. Forward sweep: Solve (D/omega + L) y_temp = r
+    #    Matrix for forward solve: m_fwd = D/omega + L
+    try:
+        # Ensure d_diag/omega doesn't contain zeros where L is also zero (though unlikely for SPD)
+        # Add small epsilon for safety if needed, but relies on setup handling zeros.
+        diag_scaled         = d_diag / omega
+        m_fwd               = be.diag(diag_scaled) + L
+        y_temp              = be.linalg.solve_triangular(m_fwd, r, lower=True, check_finite=False)
 
-        # No final scaling needed for this common form Mz=r solve
-        
-        # Alternative formulation M = (I + wL D^-1) D (I + wU D^-1) / (w(2-w))
-        # Solve (I + w L D^-1) y = r (forward)
-        # Solve (I + w U D^-1) z = D y (backward)
-        # M^-1 r = w(2-w) z -> seems different from Saad? Check sources.
-        
-        # Let's stick to the solve Mz=r formulation -> z is the result
+        # 2. Intermediate step: Calculate right-hand-side for backward solve: rhs_bwd = D y_temp / omega
+        #    This is equivalent to (diag(D)/omega) * y_temp element-wise
+        rhs_bwd             = diag_scaled * y_temp # Element-wise multiplication
+
+        # 3. Backward sweep: Solve (D/omega + U) z = rhs_bwd
+        #    Matrix for backward solve: m_bwd = D/omega + U
+        m_bwd               = be.diag(diag_scaled) + U
+        z                   = be.linalg.solve_triangular(m_bwd, rhs_bwd, lower=False, check_finite=False)
+
         return z
-
+    except Exception as e:
+        # Catch potential LinAlgError if triangular matrices are singular
+        print(f"SSOR triangular solve failed during apply: {e}")
+        return r # Return original vector if solve fails
     # -----------------------------------------------------------------
     #! String Representation
     # -----------------------------------------------------------------
@@ -1428,7 +1443,8 @@ def _resolve_precond_type(
     elif isinstance(precond_id, (PreconditionersTypeSym, PreconditionersTypeNoSym)):
         precond_type                    = precond_id
     else:
-        raise TypeError(f"Unsupported type for precond_id: {type(precond_id)}. Expected Enum, str, or int.")
+        return None
+        # raise TypeError(f"Unsupported type for precond_id: {type(precond_id)}. Expected Enum, str, or int.")
     return precond_type
 
 # =====================================================================
@@ -1497,6 +1513,9 @@ def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
     Returns:
         Preconditioner: An instance of the selected preconditioner.
     """
+    
+    if precond_id is None:
+        return None
     
     # 1. Handle Instance Passthrough
     if isinstance(precond_id, Preconditioner):

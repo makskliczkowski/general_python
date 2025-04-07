@@ -1,8 +1,18 @@
-from datetime import datetime
+'''
+This module provides a logger class for handling console and file logging with verbosity control.
+It includes methods for printing messages with different log levels, formatting titles, and measuring execution time.
+and it is designed to be used in a quantum computing context, specifically for the Quantum EigenSolver package.
+
+file    :   general_python/common/flog.py
+author  :   Maksymilian Kliczkowski
+'''
 
 import os
 import functools
 import logging
+import numpy as np
+from datetime import datetime
+from typing import Optional, Dict, List
 
 # set the logging level to WARNING
 logging.getLogger("jax").setLevel(logging.WARNING)
@@ -62,25 +72,34 @@ class Logger:
     }
     LEVELS_R = {v: k for k, v in LEVELS.items()}
     
-    def __init__(self, logfile: str, lvl=logging.INFO, append_ts = False):
+    def __init__(self,
+                logfile     : Optional[str] = None,
+                lvl         : int = logging.INFO,
+                append_ts   : bool = False):
         """
         Initialize the logger instance.
 
         Args:
-            logfile (str): Name of the log file (without extension if empty, a timestamp will be used).
-            lvl (int): Logging level (default: logging.INFO).
-            
+            logfile (str):
+                Name of the log file (without extension if empty, a timestamp will be used).
+            lvl (int):
+                Logging level (default: logging.INFO).
+            append_ts (bool):
+                Whether to append a timestamp to the log file name (default: False).
         """
         self.now            = datetime.now()
         self.now_str        = self.now.strftime("%d_%m_%Y_%H-%M_%S")
         self.lvl            = lvl
         self.logger         = logging.getLogger(__name__)
-        logging.basicConfig(level=lvl, format='%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
-        self.logfile        = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
-        if append_ts:
-            self.logfile    += self.now_str
         self.handler_added  = False
-        self.configure("./log")
+        logging.basicConfig(level=lvl, format='%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+        if logfile is not None:
+            self.logfile    = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
+            if append_ts:
+                self.logfile    += self.now_str
+            self.configure("./log")
+        else:
+            self.logfile    = self.now_str
         
     # --------------------------------------------------------------
     
@@ -451,3 +470,183 @@ def get_example_usage():
     '\nlogger.say("This is a message.", log=2, lvl=0, verbose=True)...'
     
 ######################################################
+#! Parsing helper
+######################################################
+
+def print_arguments(parser,
+                    logger      : Optional[Logger] = None,
+                    title       : str = "Options for the script",
+                    columnsize  : int = 30):
+    """
+    Prints the arguments of a parser in a formatted table using the provided logger.
+    Args:
+        parser (argparse.ArgumentParser):
+            The argument parser containing the script's options.
+        logger (Optional[Logger]):
+            The logger instance used to print the formatted output.
+        title (str, optional):
+            The title to display above the options table. Defaults to "Options for the script".
+        columnsize (int, optional):
+            The width of the "Option" column in the table. Defaults to 30.
+    Returns:
+        None
+    """
+    _default_size       = 15
+    _description_size   = 70
+    if logger is None:
+        # Use print instead of logger
+        print("\n")
+        print(f"Title: {title}")
+        
+        # table
+        print(
+            f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|"
+        )
+        print(
+            f"| {'Option':<{columnsize}} | {'Default':<{_default_size}} | {'Description':<{_description_size}} |"
+        )
+        print(
+            f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|"
+        )
+        # Print the options
+        for action in parser._actions:
+            option      = f"| {action.dest:<{columnsize}} | {str(action.default):<{_default_size}} |"
+            description = f" {action.help:<{_description_size}} |"
+            print(option + description)
+        print(f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|")
+    else:
+        # Print the options at the beginning
+        logger.breakline(1)
+        logger.title(title, 50, '#', 0)
+        
+        # table
+        logger.info(f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|", lvl=0)
+        logger.info(
+            f"| {'Option':<{columnsize}} | {'Default':<{_default_size}} | {'Description':<{_description_size}} |",
+            lvl=0
+        )
+        logger.info(
+            f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|",
+            lvl=0
+        )
+        
+        # Print the options
+        for action in parser._actions:
+            option      = f"| {action.dest:<{columnsize}} | {str(action.default):<{_default_size}} |"
+            description = f" {action.help:<{_description_size}} |"
+            logger.info(option + description, lvl=0)
+        logger.info(f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|", lvl=0)
+        logger.breakline(1)
+        
+######################################################
+
+def log_timing_summary(
+    logger              : Logger,
+    phase_durations     : Dict[str, float],
+    total_duration      : Optional[float] = None,
+    title               : str = "Timing Summary",
+    phase_col_width     : int = 18,      # Adjusted width for potentially longer names + "Total"
+    duration_col_width  : int = 14,      # Width for "Duration (s)" column header and values
+    duration_precision  : int = 4,       # Decimal places for duration
+    lvl                 : int = 0,
+    add_total_row       : bool = True,   # Flag to add a "Total" row if total_duration is provided
+    extra_info          : Optional[List[str]] = None
+):
+    """
+    Logs a timing summary in a tabular format using the provided logger.
+
+    Parameters:
+    logger:
+        Logger instance to log the timing summary.
+    phase_durations:
+        Dictionary mapping phase names (str) to their durations (float).
+    total_duration:
+        Total duration of the process (optional). If provided and
+        add_total_row is True, a "Total" row will be added.
+    title:
+        Title for the summary table.
+    phase_col_width:
+        Width for the 'Phase' column.
+    duration_col_width:
+        Width for the 'Duration (s)' column.
+    duration_precision:
+        Decimal precision for duration values.
+    lvl:
+        Base logging level for the summary.
+    add_total_row:
+        Whether to include a 'Total' row using total_duration.
+    extra_info:
+        Optional list of strings to log after the table (e.g., notes, performance).
+    """
+    if not logger:
+        print("Error: Logger instance is required for log_timing_summary.")
+        return
+
+    # Table Structure
+    phase_header        = "Phase"
+    duration_header     = "Duration (s)"
+    # Ensure columns are wide enough for headers
+    phase_col_width     = max(phase_col_width, len(phase_header))
+    duration_col_width  = max(duration_col_width, len(duration_header))
+
+    # Horizontal separator line
+    separator           = f"|{'-' * (phase_col_width + 2)}|{'-' * (duration_col_width + 2)}|"
+    # Header format string (Phase left-aligned, Duration right-aligned)
+    header_fmt          = f"| {phase_header:<{phase_col_width}} | {duration_header:>{duration_col_width}} |"
+    # Data row format string (Phase left-aligned, Duration right-aligned with precision)
+    row_fmt             = f"| {{phase_name:<{phase_col_width}}} | {{duration:>{duration_col_width}.{duration_precision}f}} |"
+
+    # Logging
+    logger.title(f"{title}", 50, '#', lvl)
+    
+    # Print extra info above the table if desired (e.g., JAX note)
+    perf_string         = None
+    if extra_info:
+        # Filter out performance string if present, handle it later
+        filtered_extra_info = []
+        for info in extra_info:
+            if "samples/sec" in info.lower() or "performance" in info.lower() :
+                perf_string = info
+            else:
+                filtered_extra_info.append(info)
+
+        for info in filtered_extra_info:
+            logger.info(info, lvl=lvl + 1)
+
+    # Print table header
+    logger.info(separator, lvl=lvl + 1)
+    logger.info(header_fmt, lvl=lvl + 1)
+    logger.info(separator, lvl=lvl + 1)
+
+    # Print phase durations
+    calculated_sum = 0.0
+    if phase_durations:
+        for name, duration in phase_durations.items():
+            logger.info(row_fmt.format(phase_name=name, duration=duration), lvl=lvl + 1)
+            calculated_sum += duration
+    else:
+        logger.info(f"| {'No phases timed':<{phase_col_width + duration_col_width + 3}} |", lvl=lvl+1) # Indicate if dict is empty
+
+
+    # Add Total row if requested and possible
+    if add_total_row:
+        logger.info(separator, lvl=lvl + 1)
+        actual_total = total_duration if total_duration is not None else calculated_sum
+        # Warn if provided total differs significantly from sum of phases
+        if total_duration is not None and not np.isclose(total_duration, calculated_sum, rtol=1e-3, atol=1e-4):
+            logger.warning(f"Provided total duration ({total_duration:.4f}s) differs from sum of phases ({calculated_sum:.4f}s). Using provided total.", lvl=lvl+2)
+
+        if actual_total is not None:
+            logger.info(row_fmt.format(phase_name="Total", duration=actual_total), lvl=lvl + 1)
+        else:
+            logger.info(f"| {'Total duration not available':<{phase_col_width + duration_col_width + 3}} |", lvl=lvl+1)
+
+
+    # Print final table separator
+    logger.info(separator, lvl=lvl + 1)
+
+    # Print performance string (if captured earlier) below the table
+    if perf_string:
+        logger.info(perf_string, lvl=lvl+1)
+        
+########################################################

@@ -16,7 +16,7 @@ from general_python.algebra.solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc
 )
-from general_python.algebra.preconditioner import Preconditioner
+from general_python.algebra.preconditioners import Preconditioner
 
 from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
 try:
@@ -34,7 +34,7 @@ import scipy.linalg as spla
 # -----------------------------------------------------------------------------
 
 class DirectSolver(Solver):
-    '''
+    r'''
     Direct solver using the backend's `linalg.solve` function (e.g., `numpy.linalg.solve`
     or `jax.numpy.linalg.solve`).
 
@@ -183,7 +183,7 @@ class DirectSolver(Solver):
                     precond         : Union[Preconditioner, Callable[[Array], Array], None] = None, # Ignored
                     sigma           : Optional[float]   = None,
                     **kwargs) -> SolverResult:
-        """
+        r"""
         Instance: Solves $ (A + \sigma I)x = b $ using backend's `linalg.solve`.
 
         Uses matrix `A` and default `sigma` from init, overridden by `sigma` arg.
@@ -240,7 +240,7 @@ class DirectSolver(Solver):
 # -----------------------------------------------------------------------------
 
 class DirectInvSolver(Solver):
-    '''
+    r'''
     Direct solver using explicit matrix inversion: $ x = (A + \sigma I)^{-1} b $.
 
     Note:
@@ -270,7 +270,9 @@ class DirectInvSolver(Solver):
 
     @staticmethod
     def get_solver_func(backend_module: Any) -> StaticSolverFunc:
-        """ Returns a lambda function wrapping the static `DirectInvSolver.solve`. """
+        """ 
+        Returns a lambda function wrapping the static `DirectInvSolver.solve`. 
+        """
         return lambda matvec, b, x0, tol, maxiter, precond_apply, backend_mod, **kwargs: \
                     DirectInvSolver.solve(matvec=matvec, b=b, x0=x0, tol=tol, maxiter=maxiter,
                                             precond_apply=precond_apply, backend_module=backend_mod, **kwargs)
@@ -288,7 +290,7 @@ class DirectInvSolver(Solver):
             A               : Optional[Array] = None,   # REQUIRED
             sigma           : Optional[float] = None,   # Optional
             **kwargs        : Any) -> SolverResult:
-        """ 
+        r""" 
         Static solve using explicit matrix inversion $ (A + \sigma I)^{-1} b $.
         """
         if A is None:
@@ -334,7 +336,7 @@ class DirectInvSolver(Solver):
     # -------------------------------------------------------------------------
 
     def solve_instance(self, b: Array, x0: Optional[Array] = None, *, tol=None, maxiter=None, precond=None, sigma=None, **kwargs) -> SolverResult:
-        """
+        r"""
         Instance method: Solves $ x = (A + \sigma I)^{-1} b $.
         """
         matrix_a = self._conf_a if self._conf_a is not None else kwargs.get('A', None)
@@ -394,7 +396,7 @@ class DirectScipy(Solver):
 
     @staticmethod
     def solve(matvec, b, x0, *, tol, maxiter, precond_apply=None, backend_module, A=None, sigma=None, **kwargs) -> SolverResult:
-        """
+        r"""
         Static solve using `scipy.linalg.solve`.
         Args:
             matvec:
@@ -442,7 +444,7 @@ class DirectScipy(Solver):
             raise SolverError(SolverErrorMsg.CONV_FAILED, f"SciPy direct solve failed: {e}") from e
 
     def solve_instance(self, b: Array, x0=None, *, tol=None, maxiter=None, precond=None, sigma=None, **kwargs) -> SolverResult:
-        """ 
+        r""" 
         Instance method: Solves $ (A + \sigma I)x = b $ using `scipy.linalg.solve`.
         """
         matrix_a = self._conf_a if self._conf_a is not None else kwargs.get('A', None)
@@ -471,10 +473,10 @@ class DirectScipy(Solver):
 # -----------------------------------------------------------------------------
 
 class DirectJaxScipy(Solver):
-    '''
+    r'''
     Direct solver using `jax.scipy.linalg.solve`. Requires JAX backend.
 
-    Solves $ (A + \sigma I)x = b $. Functionality depends on JAX's implementation.
+    Solves $ (A + \\sigma I)x = b $. Functionality depends on JAX's implementation.
     '''
     _solver_type    = SolverType.SCIPY_DIRECT # Reusing enum, maybe needs JAX_DIRECT?
 
@@ -520,7 +522,7 @@ class DirectJaxScipy(Solver):
 
     @staticmethod
     def solve(matvec, b, x0, *, tol, maxiter, precond_apply=None, backend_module, A=None, sigma=None, **kwargs) -> SolverResult:
-        """
+        r"""
         Static solve using `jax.scipy.linalg.solve`. 
         """
         if A is None:
@@ -576,7 +578,7 @@ class DirectJaxScipy(Solver):
     # --------------------------------------------------
 
     def solve_instance(self, b: Array, x0=None, *, tol=None, maxiter=None, precond=None, sigma=None, **kwargs) -> SolverResult:
-        """ 
+        r""" 
         Instance method: Solves $ (A + \sigma I)x = b $ using `jax.scipy.linalg.solve`.
         """
         matrix_a = self._conf_a if self._conf_a is not None else kwargs.get('A', None)
