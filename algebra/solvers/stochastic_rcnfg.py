@@ -389,7 +389,7 @@ if _JAX_AVAILABLE:
                                 min_sr, x0=x0, precond=precond, s=s)
 
     @jax.jit
-    def solve_jax_in(solver, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
+    def solve_jax_in(solver_func, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
                     x0=None, precond=None):
         """
         Solves for the parameter update using the Fisher formulation without explicitly creating a covariance matrix.
@@ -422,8 +422,16 @@ if _JAX_AVAILABLE:
             The computed update vector.
         """
         if min_sr:
-            solver.init_from_fisher(var_deriv_c_h, var_deriv_c, loss_c, x0=x0)
-            solution = solver.solve(loss_c, x0, precond=precond)
+            
+            # matvec = solver_utils.Solver.create_matvec_from_fisher(
+            #     s = var_deriv_c_h,
+            #     s_p = var_deriv_c,
+            #     n = n_samples,
+            #     sigma = None,
+            #     backend_module = 'jax'
+            # )
+            solver_func.init_from_fisher(var_deriv_c_h, var_deriv_c, loss_c, x0=x0)
+            solution = solver_func.solve(loss_c, x0=x0, precond=precond)
             return jnp.matmul(var_deriv_c_h, solution)
 
         f = gradient_jax(var_deriv_c_h, loss_c, n_samples)  # Assume gradient_jax is defined.
@@ -432,7 +440,7 @@ if _JAX_AVAILABLE:
         return solution
 
     @jax.jit
-    def solve_jax(solver, loss, var_deriv, min_sr, x0=None, precond=None):
+    def solve_jax(solver_func, loss, var_deriv, min_sr, x0=None, precond=None):
         """
         Solves the stochastic reconfiguration problem using the specified solver without creating the
         covariance matrix explicitly.
@@ -455,7 +463,7 @@ if _JAX_AVAILABLE:
             The computed update vector.
         """
         loss_c, var_deriv_c, var_deriv_c_h, n_samples, _ = solve_jax_prepare(loss, var_deriv)
-        return solve_jax_in(solver, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
+        return solve_jax_in(solver_func, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
                             x0=x0, precond=precond)
 
 # numpy specific

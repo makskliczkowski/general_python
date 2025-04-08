@@ -401,7 +401,6 @@ if _JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     import jax.lax as lax
-    from jax import jit
     
     # Define the core JAX logic function (can include preconditioning logic)
     def _cg_logic_jax_core(
@@ -441,11 +440,9 @@ if _JAX_AVAILABLE:
 
         # Use lax.cond for conditional preconditioning application
         # Define identity function for the 'else' branch
-        no_precond  = lambda vec: vec
-        precond_app = lambda vec: lax.cond(precond_apply is not None,
-                                precond_apply,   # Function if True
-                                no_precond,      # Function if False
-                                vec)             # Argument to the chosen function
+        def no_precond(vec):
+            return vec
+        precond_app = no_precond if precond_apply is None else precond_apply
         z           = precond_app(r)            # Argument to the chosen function
         p           = z             # p_0 = z_0
         rs_old      = jnp.dot(r, z) # rho_0
@@ -497,10 +494,8 @@ if _JAX_AVAILABLE:
         final_res   = jnp.sqrt(final_res_norm_sq)
         return SolverResult(x=x_final, converged=conv, iterations=iter_run, residual_norm=final_res)
 
-    # JIT compile the core logic function
-    # Note: JITting handles the Optional Callable via lax.cond
     # JIT matvec and precond_apply statically if they dont change
-    _cg_logic_jax_compiled = jax.jit(_cg_logic_jax_core, static_argnums=(0, 5)) 
+    _cg_logic_jax_compiled = jax.jit(_cg_logic_jax_core, static_argnums=(0, 5))
     
 # -----------------------------------------------------------------------------
 #! Concrete CgSolver Implementation
