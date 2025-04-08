@@ -226,3 +226,16 @@ if _JAX_AVAILABLE:
         # Compute the update (delta) for each bit.
         deltas      = jnp.where(conds, -lookup_vals, lookup_vals)
         return n + jnp.sum(deltas)
+
+else:
+    flip_all_array_spin         = None
+    flip_array_jax              = None
+    flip_array_jax_multi        = None
+    flip_int_traced_jax         = None
+    flip_int_traced_jax_multi   = None
+    check_arr_jax               = None
+    int2base_jax                = None
+    check_int_traced_jax        = None
+    reverse_byte                = None
+    
+# --------------------------------------------------------------------------------------------------

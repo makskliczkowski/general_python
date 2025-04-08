@@ -362,7 +362,7 @@ def check(n, k : int):
 # @numba.njit(fastmath=True)
 def int2base_np(n,
                 size        : int,
-                dtype       = DEFAULT_NP_INT_TYPE,
+                dtype       = DEFAULT_NP_FLOAT_TYPE,
                 value_true  = BACKEND_REPR,
                 value_false = -BACKEND_REPR):
     """

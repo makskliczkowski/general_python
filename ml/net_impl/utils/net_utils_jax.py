@@ -467,7 +467,7 @@ if _JAX_AVAILABLE:
         # function to compute the estimate for a single state
         def compute_estimate(state, logp):
             # Squeeze the scalar values.
-            logp        = logp[0]
+            logp                    = logp[0]
             
             # Obtain modified states and corresponding values.
             new_states, new_vals    = func(state)
@@ -519,7 +519,7 @@ if _JAX_AVAILABLE:
             new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = jnp.exp(new_logprobas - logp)
             weighted_sum            = jnp.sum(new_vals * weights, axis=0)
-            output                  = jnp.sum(weighted_sum, axis=0)
+            output                  = (sample_p * weighted_sum)
             return output
         
         # Create batches using a helper (assumed to be defined elsewhere).
@@ -533,8 +533,8 @@ if _JAX_AVAILABLE:
         nstates         = states.shape[0]
 
         # Evaluate each batch using vmap.
-        def compute_batch(batch_states, batch_logps, batch_sampleps):
-            return jax.vmap(compute_estimate, in_axes=(0, 0, 0))(batch_states, batch_logps, batch_sampleps)
+        def compute_batch(batch_states, batch_logps, batch_samples):
+            return jax.vmap(compute_estimate, in_axes=(0, 0, 0))(batch_states, batch_logps, batch_samples)
         
         # Map over batches.
         batch_estimates = jax.vmap(compute_batch, in_axes=(0, 0, 0))(batches, log_batches, sample_batches)
