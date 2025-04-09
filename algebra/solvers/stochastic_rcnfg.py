@@ -938,7 +938,7 @@ class StochasticReconfiguration(ABC):
                 mean_loss    = None,
                 mean_deriv   = None,
                 calculate_s  = False,
-                use_minsr    : Optional[bool] = None):
+                use_minsr    : Optional[bool] = False):
         '''
         Sets the values for the Stochastic Reconfiguration (Natural Gradient)
         
