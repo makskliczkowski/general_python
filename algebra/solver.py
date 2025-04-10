@@ -27,7 +27,8 @@ interface for solver algorithms, allowing for easier compilation (e.g., JIT).
 import numpy as np
 import numba
 import scipy as sp
-from typing import Optional, Callable, Union, Any, NamedTuple, Type
+from functools import partial
+from typing import Optional, Callable, Union, Any, NamedTuple, Type, TypeAlias
 from abc import ABC, abstractmethod
 from enum import Enum, auto, unique                 # for enumerations
 
@@ -40,15 +41,15 @@ try:
     if _JAX_AVAILABLE:
         import jax
         import jax.numpy as jnp
-        Array   = Union[np.ndarray, jnp.ndarray]
+        Array : TypeAlias = Union[np.ndarray, jnp.ndarray]
     else:
         jax     = None
         jnp     = None
-        Array   = np.ndarray
+        Array : TypeAlias = np.ndarray
 except ImportError:
     jax     = None
     jnp     = None
-    Array   = np.ndarray
+    Array : TypeAlias = np.ndarray
 
 # -----------------------------------------------------------------------------
 #! Type hints
@@ -325,25 +326,222 @@ class Solver(ABC):
     # -------------------------------------------------------------------------
 
     @staticmethod
-    @abstractmethod
-    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+    def _solver_wrap_compiled(backend_module: Any,
+                            callable_comp   : StaticSolverFunc,
+                            use_matvec      : bool = True,
+                            use_fisher      : bool = False,
+                            use_matrix      : bool = False,
+                            sigma           : Optional[float] = None):
+        '''
+        Wraps a compiled solver function to accept matrices or Fisher components
+        instead of just a matvec function.
+
+        Normally (use_matvec=True) expects callable_comp signature like:
+            matvec          : MatVecFunc,
+            b               : Array,
+            x0              : Array,
+            # Solver Parameters
+            *,              # Enforce keyword arguments
+            tol             : float,
+            maxiter         : int,
+            # Optional Preconditioner, This is the function r -> M^{-1}r
+            precond_apply   : Optional[Callable[[Array], Array]] = None,
+            **kwargs
+
+        If use_matvec=False, the returned wrapper will accept:
+          - if use_fisher=True: s, s_p, b, x0, *, tol, maxiter, precond_apply, **kwargs
+          - if use_fisher=False: a, b, x0, *, tol, maxiter, precond_apply, **kwargs
+        '''
+        if use_matvec:
+            # Assume callable_comp is already appropriately jitted or handled
+            return callable_comp
+
+        # --- Define which arguments to the wrapper MUST be static for JAX ---
+        # - Functions passed as arguments: 'precond_apply'
+        # - Control parameters often treated as static: 'tol', 'maxiter'
+        # - We also need to make kwargs static if we pass them through **kwargs
+        #   to callable_comp *within* the jitted function, as JAX cannot trace
+        #   arbitrary dictionary contents. A common pattern is to require kwargs
+        #   to be hashable/pytrees or handle them outside the JIT boundary if possible.
+        #   For simplicity here, let's assume callable_comp's JIT handles its own kwargs,
+        #   or that kwargs passed to wrapper are not essential for the core JIT compilation
+        #   of the matvec creation and the call itself. The crucial ones are tol, maxiter, precond_apply.
+        #
+        # Note on 'sigma', 'use_matrix', 'callable_comp': These are values from the outer scope
+        # used *inside* the wrapper. JAX's JIT typically handles these closures correctly,
+        # capturing their values when the wrapper is defined and jitted. They don't need
+        # to be listed in static_argnames unless they were *arguments* to the wrapper itself.
+
+        static_argnames_tuple = ('tol', 'maxiter', 'precond_apply')
+
+        if use_fisher:
+            if backend_module == np:
+
+                # @np.njit !TODO: should apply?
+                def wrapper_np_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
+                    # Create the matvec function (or matrix if use_matrix=True implies that)
+                    matvec = Solver.create_matvec_from_fisher_np(s, s_p, sigma=sigma, create_full=use_matrix)
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                
+                # Numba requires default for optional function args
+                wrapper_np_fisher.__defaults__  = (None,) # For precond_apply
+                _the_wrapper                    = wrapper_np_fisher
+            else:
+                # JAX version
+                @partial(jax.jit, static_argnames=static_argnames_tuple)
+                def wrapper_jax_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
+                    # Create the matvec function (or matrix)
+                    matvec = Solver.create_matvec_from_fisher_jax(s, s_p, sigma=sigma, create_full=use_matrix)
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                _the_wrapper = wrapper_jax_fisher
+                
+        else:
+            if backend_module == np:
+                # @np.njit
+                def wrapper_np_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
+                    matvec = Solver.create_matvec_from_matrix_np(a, sigma=sigma)
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                wrapper_np_matrix.__defaults__ = (None,)
+                _the_wrapper = wrapper_np_matrix
+            else:
+                # JAX version
+                @partial(jax.jit, static_argnames=static_argnames_tuple)
+                def wrapper_jax_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
+                    matvec = Solver.create_matvec_from_matrix_jax(a, sigma=sigma)
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                _the_wrapper = wrapper_jax_matrix
+
+        # Add a default for precond_apply=None in the signature for clarity
+        # (though JAX handles Optional better than Numba typically)
+        _the_wrapper.__defaults__ = (None,) * len(static_argnames_tuple) # Set defaults for static args if needed, though keyword-only args handle None ok
+        return _the_wrapper
+    
+    @staticmethod
+    def decide_solver_func(backend_module,
+                        matvec          : Optional[Union[Callable, bool]]    = True,
+                        a               : Optional[Union[Callable, bool]]    = None,
+                        s               : Optional[Union[Array, bool]]       = None,
+                        s_p             : Optional[Union[Array, bool]]       = None,
+                        sigma           : Optional[Union[float, bool]]       = None):
         """
-        Abstract Static:
-            Returns the core solver function, potentially compiled.
+        Determines and returns the appropriate solver function based on the provided arguments.
 
-        Implementations return the JITted JAX function, Numba-compiled function,
-        or plain Python function based on `backend_module`.
+        The function chooses the solver function by evaluating the inputs in a prioritized manner:
+        1. If 'matvec' is provided and evaluates to True, it selects the solver function that uses a matrix-vector product.
+        2. If 'matvec' is not True and 's' is provided:
+            - If 's_p' is also provided (i.e., not None), it selects the solver function corresponding to the combination of 's' and 's_p'.
+            - Otherwise, it selects the solver function based solely on 's'.
+        3. If none of these conditions are met, a RuntimeError is raised, indicating that the solver function could not be determined.
 
-        Args:
+        Parameters:
             backend_module:
-                The numerical backend (e.g., `numpy` or `jax.numpy`).
+                The module providing backend solver functions.
+            matvec (Optional[Union[Callable, bool]]):
+                A callable or flag indicating usage of a matrix-vector product based solver if set to a truthy value.
+            a (Optional[Union[Array, bool]]):
+                An arr
+            s (Optional[Union[Array, bool]]):
+                An array or flag representing a solver parameter used when 'matvec' is not activated.
+            s_p (Optional[Union[Array, bool]]):
+                An additional parameter used in conjunction with 's' to determine the specific solver function.
+            sigma (Optional[Union[float, bool]]):
+                An auxiliary parameter that may be required by some solver functions.
 
         Returns:
+            The solver function as determined by the input parameters.
+
+        Raises:
+            RuntimeError: If neither 'matvec' nor 's' is provided (or valid), thereby making it impossible to decide on a solver function.
+        """
+
+        if matvec:
+            return Solver.get_solver_func(backend_module, True, False, False, sigma)
+        
+        if a is not None:
+            return Solver.get_solver_func(backend_module, False, False, True, sigma)
+        elif s is not None:
+            if s_p is not None:
+                return Solver.get_solver_func(backend_module, False, True, False, sigma)
+            else:
+                return Solver.get_solver_func(backend_module, False, True, True, sigma)
+        else:
+            raise RuntimeError("Cannot parse the solver function, all options are None...")
+    
+    @staticmethod
+    def run_solver_func(
+                        bck     : Any,
+                        func    : Callable,
+                        *args,
+                        matvec  : Optional[Callable] = None,
+                        a       : Optional[Array]    = None,
+                        s       : Optional[Array]    = None,
+                        s_p     : Optional[Array]    = None,
+                        **kwargs) -> SolverResult:
+        """
+        Executes a solver function based on the provided arguments.
+
+        ---
+        Parameters:
+            bck (Any):
+                A backend or context object used for operations.
+            func (Callable):
+                The solver function to be executed.
+            matvec (Optional[Callable], optional):
+                A callable representing a matrix-vector operation. 
+                If provided, it will be passed to `func`. Defaults to None.
+            a (Optional[Array], optional):
+                An array to be passed to `func` if `matvec` is not provided. 
+                Defaults to None.
+            s (Optional[Array], optional):
+                An array to be passed to `func` along with `s_p` if both 
+                `matvec` and `a` are not provided. Defaults to None.
+            s_p (Optional[Array], optional):
+                A secondary array to be used with `s`. If not provided, 
+                it is computed as the conjugate transpose of `s` using the `bck` object. Defaults to None.
+            *args:
+                Additional positional arguments to be passed to `func`.
+            **kwargs:
+                Additional keyword arguments to be passed to `func`.
+
+        Returns:
+            SolverResult: The result of the solver function execution.
+
+        Raises:
+            RuntimeError: If none of the required arguments (`matvec`, `a`, or `s`) are provided.
+        """
+        if matvec is not None:
+            return func(matvec, *args, **kwargs)
+        if a is not None:
+            return func(a, *args, **kwargs)
+        if s is not None:
+            if s_p is None:
+                s_p = bck.conjugate(s_p.T)
+            return func(s, s_p, *args, **kwargs)
+        raise RuntimeError("Cannot run the solver function. Wrong arguments")
+    
+    @staticmethod
+    @abstractmethod
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
+        """
+        Abstract Static:
+            Retrieves the solver function, which may be JIT-compiled (with JAX),
+            Numba-compiled, or a plain Python function based on the provided backend_module.
+        
+        Args:
+            backend_module:
+            The numerical backend (e.g., numpy or jax.numpy) used for any necessary compilation.
+        
+        Returns:
             StaticSolverFunc:
-                A callable with the signature:
-                    `(matvec, b, x0, tol, maxiter, precond_apply, backend_module) -> SolverResult`
+            A callable with the signature:
+                (matvec, b, x0, tol, maxiter, precond_apply, **kwargs) -> SolverResult
+        
         Note:
-            backend_module might not be strictly needed if func is already specialized.
+            The backend_module helps in tailoring the solver function for the appropriate numerical library.
         """
         raise NotImplementedError(str(SolverErrorMsg.METHOD_NOT_IMPL))
 
@@ -351,6 +549,20 @@ class Solver(ABC):
     #! Static Helpers for Creating MatVec Functions
     # -------------------------------------------------------------------------
 
+    @staticmethod
+    def _compile_helper_jax(func: Callable):
+        '''
+        Internal helper to apply JIT.
+        '''
+        return jax.jit(func)
+    
+    @staticmethod
+    def _compile_helper_np(func: Callable):
+        '''
+        Internal helper Numba.
+        '''
+        return numba.njit(func)
+    
     @staticmethod
     def _compile_helper(func: Callable, backend_module: Any) -> Callable:
         """
@@ -367,25 +579,77 @@ class Solver(ABC):
         # get the function name for convenience
         func_name = getattr(func, '__name__', '<anonymous_lambda>')
         
+        # if the module is jax, use JIT
         if _JAX_AVAILABLE and backend_module is jnp:
             if jax is None:
                 raise SolverError(SolverErrorMsg.COMPILATION_NA, "JAX not available for JIT.")
             print(f"(Solver) JIT compiling function {func_name}...")
-            return jax.jit(func)
+            return Solver._compile_helper_jax(func)
+        # if the module is numpy, use Numba
         elif backend_module is np:
             if numba is None:
                 print(f"Warning: Numba not available, cannot compile function {func_name} for NumPy.")
                 return func
             print(f"(Solver) Numba compiling function {func_name}...")
             try:
-                # cache=True is generally good. fastmath=True might affect precision.
-                return numba.njit(cache=True, fastmath=True)(func)
-            except Exception as e:
+                return Solver._compile_helper_np(func)
+            except numba.NumbaError as e:
                 print(f"Warning: Numba compilation failed for {func_name}: {e}. Returning original function.")
+                return func
+            except Exception as e:
+                print(f"Warning: Exception occurred in {func_name}: {e}. Returning original function.")
                 return func
         else:
             return func # Unknown backend
-        
+    
+    @staticmethod
+    def create_matvec_from_matrix_jax(
+            a               : Array,
+            sigma           : Optional[float]   = None) -> MatVecFunc:
+        """
+        Static Helper:
+            Creates matvec function `x -> (A + sigma*I) @ x`.
+        """
+
+        mat_op = jnp.asarray(a)
+        if sigma is not None and sigma != 0:
+            #! Should Precompute A + sigma*I (potential memory cost for large A)?
+            effective_a = mat_op + sigma * jnp.eye(mat_op.shape[0], dtype=mat_op.dtype)
+            def matvec(x: Array) -> Array:
+                '''
+                Multiply a vector x by a matrix A
+                '''
+                return jnp.dot(effective_a, jnp.asarray(x))
+            return Solver._compile_helper_jax(matvec)
+        else:
+            def matvec(x) -> Array:
+                return jnp.dot(a, x)
+            return Solver._compile_helper_jax(matvec)
+
+    @staticmethod
+    def create_matvec_from_matrix_np(
+            a               : Array,
+            sigma           : Optional[float]   = None) -> MatVecFunc:
+        """
+        Static Helper:
+            Creates matvec function `x -> (A + sigma*I) @ x`.
+        """
+
+        mat_op = np.asarray(a)
+        if sigma is not None and sigma != 0:
+            #! Should Precompute A + sigma*I (potential memory cost for large A)?
+            effective_a = mat_op + sigma * jnp.eye(mat_op.shape[0], dtype=mat_op.dtype)
+            def matvec(x: Array) -> Array:
+                '''
+                Multiply a vector x by a matrix A
+                '''
+                return np.dot(effective_a, x)
+            return Solver._compile_helper_np(matvec)
+        else:
+            def matvec(x) -> Array:
+                return np.dot(a, x)
+            return Solver._compile_helper_np(matvec)
+    
     @staticmethod
     def create_matvec_from_matrix(
             a               : Array,
@@ -428,6 +692,103 @@ class Solver(ABC):
                 return backend_module.dot(mat_op, backend_module.asarray(x))
             print(f"Created matvec from matrix (no regularization) using {backend_module.__name__}")
         return Solver._compile_helper(matvec, backend_module) if compile_func else matvec
+    
+    @staticmethod
+    def create_matvec_from_fisher_jax(
+            s               : Array,
+            s_p             : Array,
+            sigma           : Optional[float]   = None,
+            create_full     : Optional[bool]    = False) -> MatVecFunc:
+        """
+        Creates a matrix-vector multiplication function (MatVecFunc) based on a Fisher information inspired formulation.
+        This function constructs a custom matrix-vector product operator using the input arrays `s` and `s_p`.
+        It first computes the normalization constant `n` as the number of rows of `s`.
+        Depending on the flag `create_full`, it either:
+            - Computes the full matrix as (s @ s_p) / n and passes it along with `sigma` to Solver.create_matvec_from_matrix_jax,
+                or
+            - Constructs a matvec function that, for a given vector `x`, computes:
+                    1. s_dot_x = dot(s, x)
+                    2. sp_dot_s_dot_x = dot(s_p, s_dot_x)
+                    3. The output as sp_dot_s_dot_x / n, with an additional term sigma * x if sigma is not None and non-zero.
+        The resulting matvec function is then compiled (presumably via JAX JIT) using Solver._compile_helper_jax.
+        Parameters:
+                s (Array): A JAX array representing the first component used in constructing the operator.
+                s_p (Array): A JAX array representing the second component used alongside `s`.
+                sigma (Optional[float], optional): A scalar value to be added to the diagonal (identity) part of the operation.
+                                                                                            Defaults to None.
+                create_full (Optional[bool], optional): A flag to determine whether to create a full matrix operator using
+                                                                                                    Solver.create_matvec_from_matrix_jax. Defaults to False.
+        Returns:
+                MatVecFunc: A function that computes the matrix-vector product corresponding to the constructed operator.
+                                        This operator is compiled using Solver._compile_helper_jax.
+        """
+
+        n = s.shape[0]
+        if create_full:
+            return Solver.create_matvec_from_matrix_jax(s @ s_p / n, sigma)
+
+        s_op        = jnp.asarray(s)
+        sp_op       = jnp.asarray(s_p)
+        if sigma is not None and sigma != 0:
+            def matvec(x: Array) -> Array:
+                x_arr                   = jnp.asarray(x)
+                s_dot_x                 = jnp.dot(s_op, x_arr)
+                sp_dot_s_dot_x          = jnp.dot(sp_op, s_dot_x)
+                return sp_dot_s_dot_x / n + sigma * x_arr
+        else:
+            def matvec(x: Array) -> Array:
+                x_arr                   = jnp.asarray(x)
+                s_dot_x                 = jnp.dot(s_op, x_arr)
+                sp_dot_s_dot_x          = jnp.dot(sp_op, s_dot_x)
+                return sp_dot_s_dot_x / n
+        return Solver._compile_helper_jax(matvec)
+
+    @staticmethod
+    def create_matvec_from_fisher_np(
+            s               : np.ndarray,
+            s_p             : np.ndarray,
+            sigma           : Optional[float]   = None,
+            create_full     : Optional[bool]    = False) -> MatVecFunc:
+        """
+        Creates a matrix-vector multiplication function (matvec) based on the Fisher information matrix.
+        This function generates a matvec function that computes the product of a vector with a matrix 
+        derived from the input arrays `s` and `s_p`. Optionally, a regularization term `sigma` can be 
+        added to the diagonal of the matrix. The function can also return a full matrix-based matvec 
+        if `create_full` is set to True.
+        Args:
+            s (np.ndarray):
+                A 2D array representing the first operand in the Fisher information matrix computation.
+            s_p (np.ndarray):
+                A 2D array representing the second operand in the Fisher information matrix computation.
+            sigma (Optional[float], optional):
+                A regularization parameter added to the diagonal of the matrix. 
+                Defaults to None, which means no regularization is applied.
+            create_full (Optional[bool], optional): If True, creates a matvec function based on the full matrix 
+                `s @ s_p / n`. Defaults to False.
+        Returns:
+            MatVecFunc: A function that performs matrix-vector multiplication with the derived matrix.
+        """
+
+        
+        n = s.shape[0]
+        if create_full:
+            return Solver.create_matvec_from_matrix_np(s @ s_p / n, sigma)
+
+        s_op        = np.asarray(s)
+        sp_op       = np.asarray(s_p)
+        if sigma is not None and sigma != 0:
+            def matvec(x: np.ndarray) -> np.ndarray:
+                x_arr                   = np.asarray(x)
+                s_dot_x                 = np.dot(s_op, x_arr)
+                sp_dot_s_dot_x          = np.dot(sp_op, s_dot_x)
+                return sp_dot_s_dot_x / n + sigma * x_arr
+        else:
+            def matvec(x: np.ndarray) -> np.ndarray:
+                x_arr                   = np.asarray(x)
+                s_dot_x                 = np.dot(s_op, x_arr)
+                sp_dot_s_dot_x          = np.dot(sp_op, s_dot_x)
+                return sp_dot_s_dot_x / n
+        return Solver._compile_helper_np(matvec)
     
     @staticmethod
     def create_matvec_from_fisher(
@@ -501,9 +862,12 @@ class Solver(ABC):
         """
         if self._conf_s is not None and self._conf_sp is not None:
             print(f"({self.__class__.__name__}) Forming Gram matrix A = (Sp @ S) / N.")
-            n_size      = self._conf_s.shape[0]
-            norm_factor = float(n_size) if n_size > 0 else 1.0
-            return (self._conf_sp @ self._conf_s) / norm_factor
+            n_size = self._conf_s.shape[0]
+            if n_size > 0:
+                norm_factor = float(n_size) if n_size > 0 else 1.0
+                return (self._conf_sp @ self._conf_s) / norm_factor
+            # otherwise, return without division
+            return (self._conf_sp @ self._conf_s)
         else:
             raise SolverError(SolverErrorMsg.MAT_NOT_SET, "Required components for Gram matrix computation are not set.")
 
@@ -512,6 +876,8 @@ class Solver(ABC):
         Validates and processes the provided preconditioner for the solver.
         This method checks the type and compatibility of the given preconditioner
         and returns a callable function to apply the preconditioner if valid.
+        
+        ---
         Args:
             precond (Union[Preconditioner, Callable, None, str]):
                 The preconditioner to be used.
@@ -524,7 +890,8 @@ class Solver(ABC):
                 A callable function to apply the preconditioner,
                 or None if no valid preconditioner is provided.
         Raises:
-            TypeError: If the provided preconditioner is not of a valid type.
+            TypeError:
+                If the provided preconditioner is not of a valid type.
         """
 
         
@@ -552,12 +919,16 @@ class Solver(ABC):
         return precond_apply_func
     
     def _check_matvec_solve(self,
-                            current_sigma: float,
-                            current_backend_mod: Any,
-                            compile_matvec: bool,
+                            current_sigma       : float,
+                            current_backend_mod : Any,
+                            compile_matvec      : bool,
                             **kwargs) -> MatVecFunc:
         """ 
         Internal: Determines the matvec function based on instance config.
+        If a matrix is provided, it creates a matvec function from it.
+        
+        If a Fisher matrix is provided, it creates a matvec function from it.
+        If a matvec function is already set, it uses that.
         """
         if self._conf_matvec_func is not None:
             matvec_func                 = self._conf_matvec_func
@@ -632,10 +1003,10 @@ class Solver(ABC):
 
         # Determine MatVec Function
         current_sigma                   = sigma if sigma is not None else self._conf_sigma
-        matvec_func                     : MatVecFunc = self._check_matvec_solve(current_sigma,
-                                                                                current_backend_mod,
-                                                                                compile_matvec=compile_matvec,
-                                                                                **kwargs)
+        matvec_func : MatVecFunc        = self._check_matvec_solve(current_sigma,
+                                                                    current_backend_mod,
+                                                                    compile_matvec=compile_matvec,
+                                                                    **kwargs)
         
 
         # Determine Preconditioner Apply Function
