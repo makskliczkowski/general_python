@@ -190,7 +190,7 @@ class RBM(FlaxInterface):
             Data type for parameters. Defaults to dtype.
         seed (int): 
             Seed for parameter initialization. Default 0.
-        is_complex (bool): 
+        _is_cpx (bool): 
             Whether the RBM is complex. Default False.
     """
     def __init__(self,
@@ -237,11 +237,11 @@ class RBM(FlaxInterface):
             seed        = seed
         )
 
-        self.is_complex = final_param_dtype == jnp.complexfloating
+        self._is_cpx = final_param_dtype == jnp.complexfloating
 
     def __repr__(self) -> str:
         init_status = "initialized" if self.initialized else "uninitialized"
-        rbm_type    = "Complex" if self.is_complex else "Real"
+        rbm_type    = "Complex" if self._is_cpx else "Real"
         n_hidden    = self._net_kwargs_in.get('n_hidden', '?')
         bias        = "on" if self._net_kwargs_in.get('bias', False) else "off"
         return (f"{rbm_type}RBM(shape={self.input_shape}, hidden={n_hidden}, "

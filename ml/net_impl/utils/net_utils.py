@@ -218,7 +218,7 @@ def dict_gradient_real(fun: Any, params: Any, arg: Any,
 
 # ==============================================================================
 
-def decide_grads(iscpx, isjax, isanalitic, isholomorphic):
+def decide_grads(iscpx, isjax, isanalytic, isholomorphic):
     """
     Decide which gradient function to use based on the input flags.
 
@@ -228,7 +228,7 @@ def decide_grads(iscpx, isjax, isanalitic, isholomorphic):
         Flag indicating if the function is complex.
     isjax : bool
         Flag indicating if JAX should be used.
-    isanalitic : bool
+    isanalytic : bool
         Flag indicating if the analytical gradient should be used.
     isholomorphic : bool
         Flag indicating if the function is holomorphic.
@@ -241,40 +241,40 @@ def decide_grads(iscpx, isjax, isanalitic, isholomorphic):
     if not isjax:  # NumPy backend
         if iscpx:  # Complex functions
             if isholomorphic:  # Holomorphic
-                if isanalitic:
+                if isanalytic:
                     return numpy.flat_gradient_holo_analytical_np, numpy.dict_gradient_analytical_np
                 else:
                     return numpy.flat_gradient_holo_numerical_np, numpy.dict_gradient_numerical_np
             else:  # Non-holomorphic
-                if isanalitic:
+                if isanalytic:
                     return numpy.flat_gradient_cpx_nonholo_analytical_np, numpy.dict_gradient_analytical_np
                 else:
                     return numpy.flat_gradient_cpx_nonholo_numerical_np, numpy.dict_gradient_numerical_np
         else:  # Real functions
-            if isanalitic:
+            if isanalytic:
                 return numpy.flat_gradient_real_analytical_np, numpy.dict_gradient_real_analytical_np
             else:
                 return numpy.flat_gradient_real_numerical_np, numpy.dict_gradient_real_numerical_np
     else:  # JAX backend
         if iscpx:  # Complex functions
             if isholomorphic:  # Holomorphic
-                if isanalitic:
+                if isanalytic:
                     # return jaxpy.flat_gradient_holo_analytical_jax, jaxpy.dict_gradient_analytical_jax
                     pass
                 else:
                     return jaxpy.flat_gradient_holo_numerical_jax, jaxpy.pytree_gradient_holo_numerical_jax
             else:  # Non-holomorphic
-                if isanalitic:
+                if isanalytic:
                     # return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.dict_gradient_analytical_jax
                     pass
                 else:
                     return jaxpy.flat_gradient_cpx_nonholo_numerical_jax, jaxpy.pytree_gradient_cpx_nonholo_numerical_jax
         else:  # Real functions
-            if isanalitic:
+            if isanalytic:
                 # return jaxpy.flat_gradient_real_analytical_jax, jaxpy.dict_gradient_real_analytical_jax
                 pass
             else:
                 return jaxpy.flat_gradient_real_numerical_jax, jaxpy.pytree_gradient_real_numerical_jax
-    return 1
+    return None, None
 
 # ==============================================================================

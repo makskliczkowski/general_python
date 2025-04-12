@@ -1,3 +1,6 @@
+#   file    : general_python/ml/net_impl/interface_net_flax.py
+#   author  : Maksymilian Kliczkowski
+#   date    : 2025-04-02
 
 """
 FlaxNetInterface - A Generic Flax-Based Network Interface
@@ -50,7 +53,7 @@ Notes:
 """
 
 import numpy as np
-from typing import Tuple, Callable, Optional, Any
+from typing import Tuple, Callable, Optional, Any, List
 
 import jax
 import jax.numpy as jnp
@@ -104,33 +107,13 @@ class FlaxInterface(GeneralNet):
                 dtype         : Optional[jnp.dtype] = jnp.float32,
                 seed          : int = 42):
         
-        # check the dtype.
-        self._dtype = dtype
-        if not isinstance(self._dtype, jnp.dtype):
-            self._dtype = jnp.dtype(self._dtype)
         
-        try:
-            # Convert common numpy dtypes or use JAX default
-            if self._dtype is np.float32:
-                jax_dtype = jnp.float32
-            elif self._dtype is np.float64:
-                jax_dtype = jnp.float64
-            elif self._dtype is np.complex64:
-                jax_dtype = jnp.complex64
-            elif self._dtype is np.complex128:
-                jax_dtype = jnp.complex128
-            elif isinstance(self._dtype, jnp.dtype):
-                jax_dtype = self._dtype
-            else:
-                jax_dtype = jnp.dtype(self._dtype)
-        except TypeError:
-            print(f"Warning: Could not convert dtype {dtype} to JAX dtype. Using default {DEFAULT_JP_FLOAT_TYPE}.")
-            jax_dtype = DEFAULT_JP_FLOAT_TYPE
-        self._dtype = jax_dtype
+        #! Check the dtype.
+        self._dtype = self._dtype = self._resolve_dtype(dtype if dtype is not None else net_kwargs.get('dtype', DEFAULT_JP_FLOAT_TYPE))
         
         #! Initialize the GeneralNet class.
-        super().__init__(input_shape, backend, jax_dtype)
-        
+        super().__init__(input_shape, backend, self._dtype)
+
         #! Set the backend to JAX.
         if self._backend != jnp and self._backend != 'jax':
             raise ValueError(self._ERR_JAX_NECESSARY)
@@ -142,43 +125,72 @@ class FlaxInterface(GeneralNet):
         if net_kwargs is None:
             net_kwargs = {}
         
+        self._seed                  = seed
         self._net_module_class      = net_module
         self._net_args              = net_args
-        self._net_kwargs_in         = net_kwargs if net_kwargs is not None else {}
-        self._seed                  = seed
-        
-        # try to get the activation from the kwargs.
-        self._handle_activations(net_kwargs)
-        net_kwargs.setdefault('dtype', self._dtype)
-        
-        # Create the internal Flax module.
-        try:
-            self._flax_module: nn.Module = self._net_module_class(*self._net_args, **net_kwargs)
-        except Exception as e:
-            raise ValueError(f"Failed to instantiate Flax module {self._net_module_class.__name__} "
-                            f"with args={self._net_args}, kwargs={net_kwargs}: {e}") from e
-        
-        # Initialize parameters to None; will be set in init().
-        self._parameters            = None
         self._initialized           = False
         
-        # Set the callable functions for evaluation.
-        self._apply_jax             = self._flax_module.apply
-        self._apply_np              = None
+        #! Ensure dtype consistency in kwargs passed to the module
+        net_kwargs_processed        = net_kwargs.copy()
+        net_kwargs_processed.setdefault('dtype', self._dtype)
+        self._handle_activations(net_kwargs_processed)
         
-        # Important to set
-        self._holomorphic           = None
-        self._has_analitic_grad     = False
-        self._use_jax               = True
+        #! Create the internal Flax module.
+        try:
+            self._flax_module: nn.Module = self._net_module_class(*self._net_args, **net_kwargs_processed)
+        except Exception as e:
+            raise ValueError(f"Failed to instantiate Flax module {self._net_module_class.__name__} "
+                            f"with args={self._net_args}, kwargs={net_kwargs_processed}: {e}") from e
         
-        self._compiled_grad_fn      = None
-        self._compiled_apply_fn     = None
-        
+        # Initialize parameters to None; will be set in init().
+        self._parameters            : Optional[Any]     = None                  # PyTree of parameters
+        self._param_tree_def        : Optional[Any]     = None                  # PyTree definition
+        self._param_shapes_orig     : Optional[List[Tuple[int, tuple]]] = None  # List of (size, shape)
+        self._shapes_for_update     : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
+        self._param_num             : Optional[int]     = None                  # Total number of parameters
+        self._iscpx                 : Optional[bool]    = None                  # Is the model complex overall?
+        self._holomorphic           : Optional[bool]    = None                  # Is the model holomorphic?
+        self._initialized           : bool              = False                 # Is the model initialized?
+        self._apply_jax_handle      : Optional[Callable]= None                  # Handle to module's apply
+        self._compiled_apply_fn     : Optional[Callable]= None                  # JITted apply
+        self._has_analytic_grad     : bool              = False                 # Does the model have analytic gradients?
         self.init()
         
     ########################################################
     #! INITIALIZATION
     ########################################################
+    
+    def _resolve_dtype(self, dtype_spec: Any) -> jnp.dtype:
+        """
+        Converts various dtype specifications to a JAX dtype.
+        This method handles common numpy dtypes and attempts
+        to convert other types (like strings) to JAX dtypes.
+        """
+        try:
+            if dtype_spec is np.float32:            return jnp.float32
+            if dtype_spec is np.float64:            return jnp.float64
+            if dtype_spec is np.complex64:          return jnp.complex64
+            if dtype_spec is np.complex128:         return jnp.complex128
+            if isinstance(dtype_spec, jnp.dtype):   return dtype_spec
+            # Attempt direct conversion for other cases (like strings 'float32')
+            return jnp.dtype(dtype_spec)
+        except TypeError:
+            print(f"Warning: Could not convert dtype spec {dtype_spec} to JAX dtype. Using default {DEFAULT_JP_FLOAT_TYPE}.")
+            return DEFAULT_JP_FLOAT_TYPE
+    
+    def _compile_functions(self):
+        """
+        Compiles JITted version of the apply function.
+        This method uses JAX's JIT compilation to optimize the apply function
+        """
+        if not self._initialized or self._apply_jax_handle is None:
+            raise RuntimeError(self._ERR_NET_NOT_INITIALIZED + " Cannot compile functions.")
+        
+        apply_handle = self._apply_jax_handle
+        @jax.jit
+        def compiled_apply(p, x):
+            return apply_handle({'params': p}, x)
+        self._compiled_apply_fn = compiled_apply
     
     def _handle_activations(self, net_kwargs: dict) -> None:
         '''
@@ -235,46 +247,6 @@ class FlaxInterface(GeneralNet):
                 raise TypeError(f"Activation spec must be string or callable, got {type(spec)}")
         return tuple(initialized_funs)
     
-    def _compile_functions(self):
-        """
-        Compiles JITted versions of apply and gradient functions.
-        This method uses JAX's jit to compile the functions for
-        faster execution on the GPU/TPU.
-        
-        Note:
-            This method should be called after the network is initialized.
-        """
-        if not self._initialized:
-            raise RuntimeError(self._ERR_NET_NOT_INITIALIZED + " Cannot compile functions.")
-
-        #! Compiled Apply Function
-        # Takes params dict and input x
-        @jax.jit
-        def compiled_apply(p, x):
-            return self._apply_jax({'params': p}, x)
-        self._compiled_apply_fn = compiled_apply
-
-        #! Compiled Gradient Function
-        @jax.jit
-        def compiled_log_psi_grad(p, x):
-            #! Was used for testing the gradient of log(psi)
-            # Define function whose gradient is needed: params -> log(psi)
-            # def log_psi_of_params(_p):
-            #     psi = self._apply_jax({'params': _p}, x)
-            #     # Handle potential batch dimension in psi before log
-            #     # Assuming psi is (batch,) or scalar if x was single instance
-            #     # If psi can be zero or negative, log will produce NaN/Inf or complex results
-            #     # Add stabilization if necessary, e.g., log(psi + epsilon) or handle complex log
-            #     return jnp.log(psi + 1e-10) # Use complex-safe log with stabilization
-            # grad_tree = jax.jacrev(log_psi_of_params)(p)
-
-            # Calculate gradient w.r.t. first arg (_p)
-            # jacrev returns PyTree matching _p structure
-            psi         = self._apply_jax({'params': p}, x)
-            grad_tree   = jax.jacrev(psi)(p)
-            return grad_tree
-        self._compiled_grad_fn = compiled_log_psi_grad
-    
     def init(self, key: Optional[jax.random.PRNGKey] = None):
         """
         Initialize the network parameters using Flax.
@@ -284,55 +256,87 @@ class FlaxInterface(GeneralNet):
         """
         
         if self._initialized:
-            print("Warning: Network already initialized. Re-initializing.")
-        
+            print(f"Warning: Network {self.__class__} already initialized. Re-initializing.")
+
         if key is None:
             key = random.PRNGKey(self._seed)
-        
-        # create a dummy input for initialization.
+
         try:
-            print(f"DEBUG: Initializing Flax module. self.input_shape = {self.input_shape}")
-            print(f"DEBUG: self.input_dim = {self.input_dim}")
-            print(f"DEBUG: Creating dummy input with shape: {(1, self.input_dim)}, dtype: {self._dtype}")
-            dummy_input             = jnp.ones((1, self.input_dim), dtype=self._dtype)
-            variables               = self._flax_module.init(key, dummy_input)
-            self._parameters        = variables['params'] # Store only params collection
-            self._apply_jax         = self._flax_module.apply
-            self._initialized       = True
-            # print(f"Network initialized with parameters: {self._parameters}")
+            dummy_input     = jnp.ones((1, self.input_dim), dtype=self._dtype)
+            variables       = self._flax_module.init(key, dummy_input)
+
+            if 'params' not in variables:
+                print(f"Warning: 'params' key not found in Flax variables: {variables.keys()}. Assuming variables ARE the params.")
+                self._parameters = variables
+            else:
+                self._parameters = variables['params']
+                
+            # Get the apply function handle
+            self._apply_jax_handle = self._flax_module.apply
+
         except Exception as e:
-            self._initialized       = False
-            raise ValueError(f"Failed to initialize the network: {e}") from e
-        
-        # set the internal parameters shapes and tree structure.
-        self._param_shapes      = [(p.size, p.shape) for p in tree_flatten(self._parameters)[0]]
-        self._param_tree_def    = jax.tree_util.tree_structure(self._parameters)
-        self._param_num         = jnp.sum(jnp.array([p.size for p in tree_flatten(self._parameters)[0]]))
-        
-        # set the compiled functions.
-        self._compile_functions()
+            self._initialized = False
+            raise ValueError(f"Failed to initialize the network with shape {(1, self.input_dim)} and dtype {self._dtype}: {e}") from e
+
+        #! Calculate and Store Metadata
+        if self._parameters is None:
+            raise RuntimeError("Parameters are None after Flax initialization.")
+
+        flat_params, self._param_tree_def = tree_flatten(self._parameters)
+        if not self._param_tree_def or not flat_params:
+            raise TypeError("Initialized parameters did not yield a valid PyTree structure or leaves.")
+
+        self._param_shapes_orig     = []
+        self._shapes_for_update     = []
+        any_complex                 = False
+        total_params                = 0
+
+        #! Check if the parameters are complex
+        for x in flat_params:
+            is_leaf_complex         = jnp.iscomplexobj(x)
+            num_real_components     = x.size * 2 if is_leaf_complex else x.size
+            self._param_shapes_orig.append((x.size, x.shape))
+            self._shapes_for_update.append((num_real_components, x.shape))
+            total_params           += x.size
+            if is_leaf_complex:
+                any_complex = True
+
+        self._param_num             = total_params
+        self._iscpx                 = any_complex
+        # Confirm overall dtype from first parameter leaf
+        self._dtype                 = flat_params[0].dtype
+        # -----------------------------------
+
+        self._initialized           = True
+        self._compile_functions()   # Compile apply function
+        self._holomorphic           = None # Reset holomorphic check status
+        self.check_holomorphic()    # Perform check after init
+
+        print(f"FlaxInterface initialized: dtype={self.dtype}, is_complex={self._iscpx}, nparams={self._param_num}, is_holomorphic={self.is_holomorphic}")
         return self._parameters
     
     ########################################################
     #! SETTERS
     ########################################################
     
-    def set_params(self, params: dict):
+    def set_params(self, params: Any):
         """
-        Set the network parameters. Now the parameters are
-        unfrozen and set to the network.
+        Set the network parameters, checking tree structure.
         """
+        if not self._initialized:
+            raise RuntimeError(self._ERR_NET_NOT_INITIALIZED)
+        
         new_flat, new_tree = tree_flatten(params)
         if new_tree != self._param_tree_def:
             raise ValueError("New parameters have different tree structure.")
-        self._params = params
+        self._parameters = params   # assume correct type is provided
     
     def get_params(self):
         """
         Get the current network parameters.
         """
-        if not self._initialized:
-            print("Warning: Network not initialized.")
+        if not self._initialized: 
+            raise RuntimeError(self._ERR_NET_NOT_INITIALIZED)
         return self._parameters
         
     ########################################################
@@ -353,7 +357,7 @@ class FlaxInterface(GeneralNet):
             self.init()
         return self._flax_module.apply({'params': self._parameters}, x)
         
-    def get_apply(self, use_jax = False) -> Tuple[Callable, dict]:
+    def get_apply(self, use_jax = True) -> Tuple[Callable, dict]:
         """
         Return the apply function and current parameters.
         Params:
@@ -363,11 +367,15 @@ class FlaxInterface(GeneralNet):
             Tuple[Callable, dict]
                 The apply function and the current parameters.
         """
-        if not self._use_jax:
+        if not use_jax:
             raise ValueError(self._ERR_JAX_NECESSARY)
+        if not self._initialized or self._compiled_apply_fn is None:
+            raise RuntimeError("Network or compiled apply function not initialized.")
+        
+        # Return the *compiled* apply function handle
         return self._compiled_apply_fn, self.get_params()
     
-    def get_gradient(self, use_jax = False):
+    def get_gradient(self, use_jax = True):
         '''
         Get the gradient of the network.
         Params:
@@ -441,62 +449,162 @@ class FlaxInterface(GeneralNet):
         return params_recon
     
     def check_holomorphic(self) -> bool:
-        """
-        Check if the network is holomorphic.
-        This is done by checking if the gradients of the real
-        and imaginary parts of the output are equal.
-        If they are, the network is holomorphic.
-        Returns:
-            bool: True if the network is holomorphic, False otherwise.
+        r"""
+        Checks if the network output is approximately holomorphic w.r.t. complex parameters.
+
+        Uses Wirtinger calculus and `jax.grad` to numerically verify the Cauchy-Riemann
+        equations, which are necessary and sufficient conditions for holomorphicity.
+
+        Theory
+        ------
+        Let the complex network parameters be represented by a PyTree :math:`p`, where each
+        leaf can be viewed as a collection of complex variables :math:`p_k = p_{k,R} + i p_{k,I}`.
+        Let the complex output of the network for a fixed input :math:`x` be :math:`f(p) = u(p) + i v(p)`,
+        where :math:`u` and :math:`v` are the real and imaginary parts of the output, respectively,
+        viewed as functions of the real components :math:`p_{k,R}, p_{k,I}`.
+
+        A function :math:`f` is **holomorphic** (or complex differentiable) with respect to
+        its complex parameters :math:`p` if it satisfies the Cauchy-Riemann equations.
+        In terms of Wirtinger derivatives, this is equivalent to the condition [1]:
+
+        .. math::
+            \frac{\partial f}{\partial p^*} = 0
+
+        where :math:`\frac{\partial}{\partial p^*} = \frac{1}{2} \left( \frac{\partial}{\partial p_R} + i \frac{\partial}{\partial p_I} \right)`
+        is the Wirtinger derivative with respect to the complex conjugate :math:`p^*`.
+
+        Alternatively, using the standard gradient operator :math:`\nabla_p` which treats
+        :math:`p` as a vector in a higher-dimensional real space (mapping :math:`p_k` to :math:`(p_{k,R}, p_{k,I})`),
+        and defining the complex gradient [2] as:
+
+        .. math::
+            \nabla_p h = \frac{\partial h}{\partial p_R} + i \frac{\partial h}{\partial p_I}
+
+        The Wirtinger derivatives relate to this complex gradient as:
+        :math:`\frac{\partial f}{\partial p} = \frac{1}{2} (\nabla_p f)^*` and
+        :math:`\frac{\partial f}{\partial p^*} = \frac{1}{2} (\nabla_p \bar{f})^* = \frac{1}{2} (\nabla_p (u-iv))^*`
+
+        The condition :math:`\frac{\partial f}{\partial p^*} = 0` is also equivalent to the
+        standard Cauchy-Riemann equations:
+        1. :math:`\frac{\partial u}{\partial p_R} = \frac{\partial v}{\partial p_I}`
+        2. :math:`\frac{\partial u}{\partial p_I} = - \frac{\partial v}{\partial p_R}`
+
+        These two equations can be compactly written using the complex gradients:
+
+        .. math::
+            \nabla_p u = i \nabla_p v
+
+        Implementation Check
+        --------------------
+        This function numerically verifies the condition :math:`\nabla_p u \approx i \nabla_p v`.
+        It computes:
+        - :math:`\text{grad}_u = \nabla_p u = \nabla_p (\text{Re}[f(p)])`
+        - :math:`\text{grad}_v = \nabla_p v = \nabla_p (\text{Im}[f(p)])`
+            using `jax.grad`. Note that `jax.grad` applied to a real-valued function
+            of complex variables computes exactly this complex gradient :math:`\nabla_p h`.
+        It then checks if the norm of the difference is relatively small:
+
+        .. math::
+            \frac{\| \text{grad}_u - i \cdot \text{grad}_v \|}{\| \text{grad}_u \| + \epsilon} \approx 0
+
+        where the norms and subtraction are calculated element-wise across the flattened parameter PyTrees.
+
+        References
+        ----------
+        [1] Wirtinger, W. "Zur formalen Theorie der Funktionen von mehr komplexen Veränderlichen."
+            Mathematische Annalen 97.1 (1927): 357-375.
+        [2] Sorber, L., Barel, M. V., & Lathauwer, L. D. "Unconstrained optimization of real functions
+            in complex variables." SIAM Journal on Optimization 22.3 (2012): 879-898. (Section 2)
+
+        Returns
+        -------
+            bool: True if the check indicates holomorphicity within tolerance `_TOL_HOLOMORPHIC`, False otherwise.
         """
         
         # Check if the network is initialized.
-        if not self._initialized:
-            self.init()
+        if not self.initialized:
+            
+            # Attempt initialization if not done yet
+            print("Warning: check_holomorphic called before explicit init(). Attempting initialization.")
+            try:
+                self.init()
+            except Exception as e:
+                print(f"Initialization failed in check_holomorphic: {e}")
+                self._holomorphic = False
+                return False
         
         # Check if the network is already checked.
         if self._holomorphic is not None:
             return self._holomorphic
         
-        if not jnp.issubdtype(self._dtype, jnp.complexfloating):
-            print("Holomorphic check requires complex dtype.")
+        if not self.is_complex:
+            print("Holomorphic check skipped: Parameters are real.")
             self._holomorphic = False
             return False
         
         # Ensure parameters are complex too
-        param_leaves, _     = tree_flatten(self._parameters)
+        param_leaves, _ = tree_flatten(self._parameters)
         if not all(jnp.issubdtype(p.dtype, jnp.complexfloating) for p in param_leaves):
             print("Holomorphic check requires complex parameters.")
             self._holomorphic = False
             return False
         
         # Check if the network is holomorphic.
-        dummy_input             = jnp.ones((1, self.input_dim), dtype=self._dtype)
+        dummy_input             = jnp.ones((1, self.input_dim), dtype=self.dtype)
+        current_params          = self.get_params()
 
         try:
-            grad_real_tree      = jax.grad(lambda p: jnp.real(self._apply_jax({'params': p}, dummy_input)).sum())(self._parameters)
-            grad_imag_tree      = jax.grad(lambda p: jnp.imag(self._apply_jax({'params': p}, dummy_input)).sum())(self._parameters)
+            # Define the function Re[f(p)] for differentiation
+            apply_handle = self._apply_jax_handle
+            if apply_handle is None: raise RuntimeError("Internal apply handle not set.")
 
-            flat_real, _        = tree_flatten(grad_real_tree)
-            flat_imag, _        = tree_flatten(grad_imag_tree)
-            flat_real_vec       = jnp.concatenate([p.ravel() for p in flat_real])
-            flat_imag_vec       = jnp.concatenate([p.ravel() for p in flat_imag])
+            def real_part_of_output(p_tree):
+                output = apply_handle({'params': p_tree}, dummy_input)
+                return jnp.real(output).sum() # Sum for scalar output needed by grad
+
+            def imag_part_of_output(p_tree):
+                output = apply_handle({'params': p_tree}, dummy_input)
+                return jnp.imag(output).sum() # Sum for scalar output needed by grad
+            
+            # grad_u_tree = ∇p(Re[f]) = (∂u/∂pR) + i(∂u/∂pI)
+            grad_u_tree         = jax.grad(real_part_of_output)(current_params)
+            # grad_v_tree = ∇p(Im[f]) = (∂v/∂pR) + i(∂v/∂pI)
+            grad_v_tree         = jax.grad(imag_part_of_output)(current_params)
+
+            #! Check CR Condition: grad_u ≈ i * grad_v
+            # Calculate the difference: diff = grad_u - i * grad_v
+            # This should be close to zero if CR equations hold.
+            diff_tree           = tree_map(lambda u, v: u - 1j * v, grad_u_tree, grad_v_tree)
 
             # Check Cauchy-Riemann: dRe/dx = dIm/dy, dRe/dy = -dIm/dx
             # Here, x, y are real/imag parts of params. Check d(Re(f))/dp_real vs d(Im(f))/dp_imag, etc.
             # A simpler proxy: check if grad(Re(f)) approx equals i * grad(Im(f)) for complex params
             # This requires careful handling of complex gradients.
+            # Flatten the difference and one of the gradients (e.g., grad_u) for norm comparison
+            diff_leaves, _      = tree_flatten(diff_tree)
+            grad_u_leaves, _    = tree_flatten(grad_u_tree)
 
-            # Using the proxy norm || grad(Re) - i*grad(Im) || / ||grad(Re)|| ~= 0
-            # This assumes parameters 'p' are complex.
-            norm_diff           = jnp.linalg.norm(flat_real_vec - 1j * flat_imag_vec)
-            norm_real           = jnp.linalg.norm(flat_real_vec)
-            self._holomorphic   = jnp.isclose(norm_diff / (norm_real + 1e-12), 0.0, atol=self._TOL_HOLOMORPHIC)
+            if not grad_u_leaves: # Handle empty parameters/gradients
+                print("Warning: Holomorphic check encountered empty gradient trees.")
+                self._holomorphic   = True
+            else:
+                # Concatenate leaves into flat vectors
+                flat_diff_vec       = jnp.concatenate([leaf.ravel() for leaf in diff_leaves])
+                flat_grad_u_vec     = jnp.concatenate([leaf.ravel() for leaf in grad_u_leaves])
 
+                # Calculate norms
+                norm_diff           = jnp.linalg.norm(flat_diff_vec)
+                norm_grad_u         = jnp.linalg.norm(flat_grad_u_vec)
+
+                # Check if the relative difference is small
+                # Avoid division by zero if norm_grad_u is zero
+                relative_diff       = norm_diff / (norm_grad_u + 1e-12) # Add epsilon for stability
+                self._holomorphic   = jnp.allclose(relative_diff, 0.0, atol=self._TOL_HOLOMORPHIC)
         except Exception as e:
-            print(f"Error during simplified holomorphic check: {e}")
-            self._holomorphic = False
-        print(f"Holomorphic check result: {self._holomorphic}")
+            print(f"Error during Cauchy-Riemann check: {e}")
+            self._holomorphic = False # Default to False on error
+    
+        print(f"Holomorphic check result (||∇Re[f] - i*∇Im[f]|| / ||∇Re[f]|| ≈ 0): {self._holomorphic}")
         return self._holomorphic
 
     #########################################################
@@ -509,6 +617,51 @@ class FlaxInterface(GeneralNet):
             tuple: A tuple of activation functions for each layer.
         """
         return self._initialized_act_funs
+    
+    @property
+    def is_holomorphic(self):
+        """
+        Check if the network is holomorphic.
+        Returns:
+            bool: True if the network is holomorphic, False otherwise.
+        """
+        return self._holomorphic
+    
+    @property
+    def is_complex(self):
+        """
+        Check if the network is complex.
+        Returns:
+            bool: True if the network is complex, False otherwise.
+        """
+        return self._iscpx
+    
+    @property
+    def backend(self):
+        """
+        Get the backend used by the network.
+        Returns:
+            str: The backend used by the network.
+        """
+        return self._backend_str
+    
+    @property
+    def dtype(self):
+        """
+        Get the data type of the network parameters.
+        Returns:
+            jnp.dtype: The data type of the network parameters.
+        """
+        return self._dtype
+    
+    @property
+    def input_dim(self):
+        """
+        Get the input dimension of the network.
+        Returns:
+            int: The input dimension of the network.
+        """
+        return self._input_dim
     
     #########################################################
     

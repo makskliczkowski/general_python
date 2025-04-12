@@ -7,7 +7,7 @@ date    : 2025-03-01
 
 # from general python utils
 from typing import Any, Callable, Dict, List, Tuple
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 from functools import partial
 
 if JAX_AVAILABLE:
@@ -704,7 +704,7 @@ if JAX_AVAILABLE:
                 return _ensure_real_repr_vector_batch(vectors)
             else:
                 # If the whole batch is real, just ensure float type
-                return vectors.astype(DEFAULT_JP_FLOAT_TYPE)
+                return vectors.astype
         else:
             raise ValueError(f"Input must be 1D or 2D, got ndim={vectors.ndim}")
 

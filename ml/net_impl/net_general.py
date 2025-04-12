@@ -7,7 +7,7 @@ date    : 2025-03-10
 
 import numpy as np
 import numba
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple, Callable, List
 from abc import ABC, abstractmethod
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 
@@ -63,13 +63,15 @@ class GeneralNet(ABC):
         
         # helper functions
         self._holomorphic	    = None
-        self._has_analitic_grad = True
+        self._has_analytic_grad = True
         
         # initialization
         self._initialized       = False
         
         self._compiled_grad_fn  = None
-        self._compiled_apply_fn     = None
+        self._compiled_apply_fn = None
+
+        self._shapes_for_update : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
 
         
     # ---------------------------------------------------
@@ -242,14 +244,44 @@ class GeneralNet(ABC):
         return self._initialized
     
     @property
-    def has_analitic_grad(self) -> bool:
+    def has_analytic_grad(self) -> bool:
         """
         Check if the network has analytic gradients.
         
         Returns:
             bool: True if the network has analytic gradients, False otherwise.
         """
-        return self._has_analitic_grad
+        return self._has_analytic_grad
+    
+    @property
+    def compiled_grad_fn(self):
+        """
+        Get the compiled gradient function.
+        
+        Returns:
+            Callable: Compiled gradient function.
+        """
+        return self._compiled_grad_fn
+    
+    @property
+    def compiled_apply_fn(self):
+        """
+        Get the compiled apply function.
+        
+        Returns:
+            Callable: Compiled apply function.
+        """
+        return self._compiled_apply_fn
+    
+    @property
+    def shapes_for_update(self) -> Optional[List[Tuple[int, tuple]]]:
+        """
+        Get the shapes for update.
+        
+        Returns:
+            Optional[List[Tuple[int, tuple]]]: Shapes for update.
+        """
+        return self._shapes_for_update
 
     # ---------------------------------------------------
     #! SETTERS

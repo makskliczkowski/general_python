@@ -403,7 +403,7 @@ else:
 
 #! JAX CG Logic
 _cg_logic_jax_compiled                  = None
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     # Define the core JAX logic function (can include preconditioning logic)
     def _cg_logic_jax_core(
