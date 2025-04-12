@@ -1,4 +1,4 @@
-'''
+r'''
 file:       general_python/algebra/solvers/pseudo_inverse.py
 author:     Maksymilian Kliczkowski
 
@@ -169,7 +169,7 @@ if JAX_AVAILABLE:
 # -----------------------------------------------------------------------------
 
 class PseudoInverseSolver(Solver):
-    '''
+    r'''
     Solves $ Ax = b $ using the Moore-Penrose pseudoinverse $ x = A^+ b $.
     Provides the minimum norm least-squares solution.
     Supports regularization $ x = (A + \sigma I)^+ b $.
@@ -184,14 +184,14 @@ class PseudoInverseSolver(Solver):
                 default_precond : Optional[Preconditioner]        = None, # Not used
                 a               : Optional[Array]                 = None, # Matrix A needed
                 s               : Optional[Array]                 = None, # Not used directly
-                sp              : Optional[Array]                 = None, # Not used directly
+                s_p             : Optional[Array]                 = None, # Not used directly
                 matvec_func     : Optional[MatVecFunc]            = None, # Not used
                 sigma           : Optional[float]                 = None, # Regularization
                 is_gram         : bool                            = False # To form A
                 ):
         # Store pinv tolerance in self._default_eps for consistency
         super().__init__(backend=backend, dtype=dtype, eps=eps, maxiter=maxiter,
-                        default_precond=default_precond, a=a, s=s, sp=sp,
+                        default_precond=default_precond, a=a, s=s, s_p=s_p,
                         matvec_func=matvec_func, sigma=sigma, is_gram=is_gram)
         self._symmetric = False # Works for non-symmetric
 
@@ -232,9 +232,13 @@ class PseudoInverseSolver(Solver):
             if _pinv_solve_logic_jax_compiled is None:
                 raise ImportError("JAX pinv function not available/compiled.")
             # Return a lambda adapting the compiled core logic to the StaticSolverFunc signature
-            return lambda matvec, b, x0, tol, maxiter, precond_apply, backend_mod, **kwargs: \
-                SolverResult(*_pinv_solve_logic_jax_compiled(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol),
-                    converged=True, iterations=1)
+            
+            # @jax.jit
+            def tmp_fun(matvec = None, b = None, x0 = None, tol = None, maxiter = None, precond_apply = None, backend_mod = None, **kwargs):
+                # JAX pinv logic
+                inverse_solution = _pinv_solve_logic_jax_compiled(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol)
+                return inverse_solution
+            return tmp_fun
         elif backend_module is np:
             if _pinv_solve_logic_numba_compiled is None: # Should point to wrapper or python func
                 print("Warning: Numba pinv function not available, using plain Python logic.")
@@ -243,7 +247,7 @@ class PseudoInverseSolver(Solver):
                 core_func = _pinv_solve_logic_numba_compiled
 
             # Return lambda adapting the NumPy logic
-            return lambda matvec, b, x0, tol, maxiter, precond_apply, backend_mod, **kwargs: \
+            return lambda matvec, b, x0, tol, maxiter = None, precond_apply = None, backend_mod = None, **kwargs: \
                 SolverResult(*core_func(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol, backend_mod=np), converged=True, iterations=1)
         else:
             raise ValueError(f"Unsupported backend module for PseudoInverseSolver: {backend_module}")
@@ -323,7 +327,7 @@ class PseudoInverseSolver(Solver):
                     precond         : Union[Preconditioner, Callable[[Array], Array], None] = None, # Ignored
                     sigma           : Optional[float]   = None,
                     **kwargs) -> SolverResult:
-        """
+        r"""
         Instance: Solves $ x = (A + \sigma I)^+ b $ using `linalg.pinv`.
 
         Uses matrix `A` and default `sigma` from init, overridden by args.

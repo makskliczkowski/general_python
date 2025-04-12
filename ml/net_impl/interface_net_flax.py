@@ -153,7 +153,7 @@ class FlaxInterface(GeneralNet):
         
         # Create the internal Flax module.
         try:
-            self._flax_module = self._net_module_class(*self._net_args, **net_kwargs)
+            self._flax_module: nn.Module = self._net_module_class(*self._net_args, **net_kwargs)
         except Exception as e:
             raise ValueError(f"Failed to instantiate Flax module {self._net_module_class.__name__} "
                             f"with args={self._net_args}, kwargs={net_kwargs}: {e}") from e
@@ -322,8 +322,10 @@ class FlaxInterface(GeneralNet):
         Set the network parameters. Now the parameters are
         unfrozen and set to the network.
         """
-        self._parameters    = params
-        self._initialized   = True
+        new_flat, new_tree = tree_flatten(params)
+        if new_tree != self._param_tree_def:
+            raise ValueError("New parameters have different tree structure.")
+        self._params = params
     
     def get_params(self):
         """

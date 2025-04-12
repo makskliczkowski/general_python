@@ -259,19 +259,22 @@ def decide_grads(iscpx, isjax, isanalitic, isholomorphic):
         if iscpx:  # Complex functions
             if isholomorphic:  # Holomorphic
                 if isanalitic:
-                    return jaxpy.flat_gradient_holo_analytical_jax, jaxpy.dict_gradient_analytical_jax
+                    # return jaxpy.flat_gradient_holo_analytical_jax, jaxpy.dict_gradient_analytical_jax
+                    pass
                 else:
-                    return jaxpy.flat_gradient_holo_numerical_jax, jaxpy.dict_gradient_numerical_jax
+                    return jaxpy.flat_gradient_holo_numerical_jax, jaxpy.pytree_gradient_holo_numerical_jax
             else:  # Non-holomorphic
                 if isanalitic:
-                    return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.dict_gradient_analytical_jax
+                    # return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.dict_gradient_analytical_jax
+                    pass
                 else:
-                    return jaxpy.flat_gradient_cpx_nonholo_numerical_jax, jaxpy.dict_gradient_numerical_jax
+                    return jaxpy.flat_gradient_cpx_nonholo_numerical_jax, jaxpy.pytree_gradient_cpx_nonholo_numerical_jax
         else:  # Real functions
             if isanalitic:
-                return jaxpy.flat_gradient_real_analytical_jax, jaxpy.dict_gradient_real_analytical_jax
+                # return jaxpy.flat_gradient_real_analytical_jax, jaxpy.dict_gradient_real_analytical_jax
+                pass
             else:
-                return jaxpy.flat_gradient_real_numerical_jax, jaxpy.dict_gradient_real_numerical_jax
+                return jaxpy.flat_gradient_real_numerical_jax, jaxpy.pytree_gradient_real_numerical_jax
     return 1
 
 # ==============================================================================

@@ -3,7 +3,7 @@ file:       general_python/algebra/solvers/cg_solver.py
 author:     Maksymilian Kliczkowski
 
 Implements the Conjugate Gradient (CG) iterative algorithm for solving linear systems
-of equations $ Ax = b $, where the matrix A is symmetric and positive-definite (SPD).
+of equations :math:`Ax = b`, where the matrix :math:`A` is symmetric and positive-definite (SPD).
 This file provides:
     1. A concrete `CgSolver` class inheriting from the base `Solver`, utilizing
         backend-specific implementations (NumPy/Numba or JAX JIT).
@@ -12,28 +12,28 @@ This file provides:
 
 Mathematical Formulation (Preconditioned CG):
 -------------------------------------------
-Given an SPD matrix $ A $, a right-hand side vector $ b $, an initial guess $ x_0 $,
-and an SPD preconditioner $ M \\approx A $:
+Given an SPD matrix :math:`A`, a right-hand side vector :math:`b`, an initial guess
+:math:`x_0`, and an SPD preconditioner :math:`M \approx A`:
 
 1.  Initialize:
-    *   $ r_0 = b - Ax_0 $ (initial residual)
-    *   $ z_0 = M^{-1}r_0 $ (apply preconditioner)
-    *   $ p_0 = z_0 $ (initial search direction)
-    *   $ \\rho_0 = r_0^T z_0 $
+    *   :math:`r_0 = b - Ax_0` (initial residual)
+    *   :math:`z_0 = M^{-1}r_0` (apply preconditioner)
+    *   :math:`p_0 = z_0` (initial search direction)
+    *   :math:`\rho_0 = r_0^T z_0`
 
-2.  Iterate $ k = 0, 1, 2, \dots $ until convergence:
-    *   $ \\mathbf{v}_k = A p_k $
-    *   $ \\alpha_k = \\rho_k / (p_k^T \\mathbf{v}_k) $ (step length)
-    *   $ x_{k+1} = x_k + \\alpha_k p_k $               (update solution)
-    *   $ r_{k+1} = r_k - \\alpha_k \\mathbf{v}_k $     (update residual)
-    *   Check convergence: e.g., $ ||r_{k+1}||_2 < \\epsilon ||b||_2 $
-    *   $ z_{k+1} = M^{-1} r_{k+1} $                    (apply preconditioner)
-    *   $ \\rho_{k+1} = r_{k+1}^T z_{k+1} $
-    *   $ \\beta_k = \\rho_{k+1} / \\rho_k $            (update coefficient)
-    *   $ p_{k+1} = z_{k+1} + \\beta_k p_k $            (update search direction)
-    *   $ \\rho_k = \\rho_{k+1} $
+2.  Iterate :math:`k = 0, 1, 2, \dots` until convergence:
+    *   :math:`\mathbf{v}_k = A p_k`
+    *   :math:`\alpha_k = \rho_k / (p_k^T \mathbf{v}_k)` (step length)
+    *   :math:`x_{k+1} = x_k + \alpha_k p_k`               (update solution)
+    *   :math:`r_{k+1} = r_k - \alpha_k \mathbf{v}_k`     (update residual)
+    *   Check convergence: e.g., :math:`\|r_{k+1}\|_2 < \epsilon \|b\|_2`
+    *   :math:`z_{k+1} = M^{-1} r_{k+1}`                    (apply preconditioner)
+    *   :math:`\rho_{k+1} = r_{k+1}^T z_{k+1}`
+    *   :math:`\beta_k = \rho_{k+1} / \rho_k`            (update coefficient)
+    *   :math:`p_{k+1} = z_{k+1} + \beta_k p_k`            (update search direction)
+    *   :math:`\rho_k = \rho_{k+1}`
 
-If no preconditioner is used ($ M = I $), then $ z_k = r_k $.
+If no preconditioner is used (:math:`M = I`), then :math:`z_k = r_k`.
 
 References:
 -----------
@@ -53,14 +53,20 @@ from general_python.algebra.preconditioners import Preconditioner, Preconitioner
 
 # Import backend specifics and compilation tools
 from general_python.algebra.utils import JAX_AVAILABLE
-try:
-    import jax
-    import jax.numpy as jnp
-    import jax.lax as lax
-except ImportError:
+
+if JAX_AVAILABLE:
+    try:
+        import jax
+        import jax.numpy as jnp
+        import jax.lax as lax
+    except ImportError:
+        pass
+else:
     jax = None
     jnp = None
     lax = None
+
+# --- 
 
 try:
     import numba
@@ -397,11 +403,7 @@ else:
 
 #! JAX CG Logic
 _cg_logic_jax_compiled                  = None
-if JAX_AVAILABLE:
-    import jax
-    import jax.numpy as jnp
-    import jax.lax as lax
-    from jax import jit
+if _JAX_AVAILABLE:
     
     # Define the core JAX logic function (can include preconditioning logic)
     def _cg_logic_jax_core(
@@ -441,12 +443,10 @@ if JAX_AVAILABLE:
 
         # Use lax.cond for conditional preconditioning application
         # Define identity function for the 'else' branch
-        no_precond  = lambda vec: vec
-        precond_app = lambda vec: lax.cond(precond_apply is not None,
-                                precond_apply,   # Function if True
-                                no_precond,      # Function if False
-                                vec)             # Argument to the chosen function
-        z           = precond_app(r)            # Argument to the chosen function
+        def no_precond(vec):
+            return vec
+        precond_app = no_precond if precond_apply is None else precond_apply
+        z           = precond_app(r)# Argument to the chosen function
         p           = z             # p_0 = z_0
         rs_old      = jnp.dot(r, z) # rho_0
         res_norm_sq = jnp.dot(r, r) # ||r_k||^2
@@ -497,10 +497,10 @@ if JAX_AVAILABLE:
         final_res   = jnp.sqrt(final_res_norm_sq)
         return SolverResult(x=x_final, converged=conv, iterations=iter_run, residual_norm=final_res)
 
-    # JIT compile the core logic function
-    # Note: JITting handles the Optional Callable via lax.cond
+    # ---
+
     # JIT matvec and precond_apply statically if they dont change
-    _cg_logic_jax_compiled = jax.jit(_cg_logic_jax_core, static_argnums=(0, 5)) 
+    _cg_logic_jax_compiled = jax.jit(_cg_logic_jax_core, static_argnums=(0, 5))
     
 # -----------------------------------------------------------------------------
 #! Concrete CgSolver Implementation
@@ -518,6 +518,9 @@ class CgSolver(Solver):
     _solver_type = SolverType.CG
 
     def __init__(self, *args, **kwargs):
+        '''
+        Initializes...
+        '''
         super().__init__(*args, **kwargs)
 
     # --------------------------------------------------
@@ -525,7 +528,11 @@ class CgSolver(Solver):
     # --------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
         Returns the backend-specific compiled/optimized CG function.
 
@@ -537,18 +544,23 @@ class CgSolver(Solver):
             StaticSolverFunc:
                 The core CG function for the backend.
         """
+        
+        func: Callable = None
         if backend_module is jnp:
             if _cg_logic_jax_compiled is None:
-                raise ImportError("JAX function not available/compiled.")
-            return _cg_logic_jax_compiled
+                print("Warning: Jax compiled function not available, returning Plain jax")
+                func = _cg_logic_jax_core
+            func = _cg_logic_jax_compiled
         elif backend_module is np:
             if _cg_logic_numpy_compiled is None:
                 print("Warning: Numba CG function not available, returning plain Python version.")
-                return _cg_logic_numpy
-            return _cg_logic_numpy_compiled
+                func = _cg_logic_numpy
+            func = _cg_logic_numpy_compiled
         else:
             raise ValueError(f"Unsupported backend module for CG: {backend_module}")
-
+        return Solver._solver_wrap_compiled(backend_module, func,
+                                use_matvec, use_fisher, use_matrix, sigma)
+        
     @staticmethod
     def solve(
             matvec          : MatVecFunc,
@@ -557,36 +569,65 @@ class CgSolver(Solver):
             *,
             tol             : float,
             maxiter         : int,
-            precond_apply   : Optional[Callable[[Array], Array]] = None,
-            backend_module  : Any,
+            precond_apply   : Optional[Callable[[Array], Array]]    = None,
+            backend_module  : Any                                   = np,
+            a               : Optional[Array]                       = None,
+            s               : Optional[Array]                       = None,
+            s_p             : Optional[Array]                       = None,
             **kwargs        : Any) -> SolverResult:
         """
-        Static CG execution: Gets the appropriate backend function and calls it.
+        Static CG execution: Determines the appropriate backend function and executes it.
 
         Args:
-            matvec (MatVecFunc):
-                Function $ v \\mapsto Av $.
-            b (Array):
-                RHS vector $ b $.
-            x0 (Array):
+            matvec          (MatVecFunc): 
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b               (Array): 
+                Right-hand side vector $ b $.
+            x0              (Array): 
                 Initial guess $ x_0 $.
-            tol (float):
+            tol             (float): 
                 Relative tolerance $ \\epsilon_{rel} $.
-            maxiter (int):
+            maxiter         (int): 
                 Maximum number of iterations.
-            precond_apply (Optional[Callable[[Array], Array]]):
-                Function $ r \\mapsto M^{-1}r $.
-            backend_module (Any):
+            precond_apply   (Optional[Callable[[Array], Array]]): 
+                Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+            backend_module  (Any): 
                 Backend module (`numpy` or `jax.numpy`).
-            **kwargs (Any):
-                Ignored.
+            a               (Optional[Array]): 
+                            Optional array for matrix solution...
+            s               (Optional[Array]): 
+                Optional array for Fisher-based matvec construction. If it 
+                is provided alone, it is assumed to be matrix A already...
+            s_p             (Optional[Array]): 
+                Optional array for Fisher-based matvec construction.
+            **kwargs        (Any): 
+                Additional arguments (e.g., `sigma`).
 
         Returns:
-            SolverResult: Result tuple.
+            SolverResult: 
+            A named tuple containing the solution, convergence status, iteration count, and residual norm.
         """
-        solver_func = CgSolver.get_solver_func(backend_module)
         try:
-            return solver_func(matvec, b, x0, tol, maxiter, precond_apply)
+            # Decide the appropriate solver function based on the backend and inputs
+            solver_func = CgSolver.decide_solver_func(
+                backend_module = backend_module,
+                matvec         = matvec,
+                a              = a,
+                s              = s,
+                s_p            = s_p,
+                sigma          = kwargs.get('sigma', None)
+            )
+            # Execute the solver function
+            return Solver.run_solver_func(  bck     = backend_module,
+                                            func    = solver_func,
+                                            a       = a,
+                                            s       = s,
+                                            s_p     = s_p,
+                                            b       = b, 
+                                            x0      = x0,
+                                            tol     = tol,
+                                            maxiter = maxiter,
+                                            precond_apply = precond_apply)
         except Exception as e:
             raise SolverError(SolverErrorMsg.CONV_FAILED, f"CG execution failed: {e}") from e
 
