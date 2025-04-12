@@ -2,9 +2,9 @@ from abc import ABC, abstractmethod
 import numpy as np
 import scipy as sp
 
-from .utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
+from .utils import JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     import jax.scipy as jsp
@@ -13,7 +13,7 @@ if _JAX_AVAILABLE:
     
 ####################################################################################################
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     def _sparse_kron_jax(A, B):
         """
@@ -100,7 +100,7 @@ def kron(A, B, backend="default"):
         The Kronecker product of the two matrices.
     """
     backend = __backend(backend)
-    if backend == np or not _JAX_AVAILABLE:
+    if backend == np or not JAX_AVAILABLE:
         return _sparse_kron_np(A, B)
     return _sparse_kron_jax(A, B)
 
@@ -110,7 +110,7 @@ def _identity_np(n, dtype=np.float64):
     '''Returns the identity matrix of size n.'''
     return sp.sparse.eye(n, dtype=dtype)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     def _identity_jax(n, dtype=jnp.float64):
         '''Returns the identity matrix of size n.'''
@@ -123,7 +123,7 @@ def identity(n, dtype=None, backend="default"):
     backend = __backend(backend)
     dtype   = dtype if dtype is not None else backend.float64
     
-    if backend == np or not _JAX_AVAILABLE:
+    if backend == np or not JAX_AVAILABLE:
         return _identity_np(n, dtype=dtype)
     return _identity_jax(n, dtype=dtype)
 

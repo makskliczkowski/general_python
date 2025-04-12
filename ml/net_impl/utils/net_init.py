@@ -9,9 +9,9 @@ date        : 2025-03-10
 import numpy as np
 import general_python.ml.net_impl.utils.net_init_np as numpy
 import general_python.algebra.utils as alg_utils
-from general_python.algebra.utils import _JAX_AVAILABLE
+from general_python.algebra.utils import JAX_AVAILABLE
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     import general_python.ml.net_impl.utils.net_init_jax as jaxpy
@@ -53,7 +53,7 @@ def get_initializer(name: str, backend: Optional[str] = None, dtype: Optional = 
     # Default to JAX if backend is not provided.
     if isinstance(backend, str):
         backend = backend.lower()
-        if backend in ["jax", "jnp"] and _JAX_AVAILABLE:
+        if backend in ["jax", "jnp"] and JAX_AVAILABLE:
             backend = "jax"
         else:
             backend = "numpy"
@@ -68,7 +68,7 @@ def get_initializer(name: str, backend: Optional[str] = None, dtype: Optional = 
         dtype = jnp.float32 if backend == "jax" else np.float32
 
     # Determine if dtype is complex based on backend.
-    if backend == "jax" and _JAX_AVAILABLE:
+    if backend == "jax" and JAX_AVAILABLE:
         is_complex = jnp.issubdtype(dtype, jnp.complexfloating)
         mapping = {
             "he":       { "real": jaxpy.real_he_init,           "complex": jaxpy.complex_he_init        },

@@ -1,429 +1,826 @@
+# file        :   general_python/algebra/utils.py
+# author      :   Maksymilian Kliczkowski
+# copyright   :   (c) 2025, Maksymilian Kliczkowski
+
 '''
-file:
-This module provides linear algebra functions and utilities.
+This module provides utilities for importing the linear algebra backend,
+including NumPy and JAX, and managing their configurations.
+
+- It includes functions for checking backend availability, setting random seeds,
+and handling JIT compilation.
+
+- It also provides a BackendManager class for managing the backend state,
+including the random module and SciPy functionalities.
+
+- It is designed to be used in a flexible and extensible manner,
+allowing for easy switching between backends.
+
+- The module also includes functions for padding arrays and checking if an array is JAX-traced.
+
+- The module is designed to be used in a flexible and extensible manner,
+allowing for easy switching between backends.
+
+Provides:
+- BackendManager: 
+    Class to detect and manage the active backend (NumPy/JAX),
+    including linear algebra, random number generation, and SciPy modules.
+- Functions to retrieve backend components (`get_backend`, `get_global_backend`).
+- Global access to the active backend via the `backend_mgr` instance.
+- Utilities for JIT compilation (`maybe_jit`), hardware info (`get_hardware_info`),
+    and array padding (`pad_array`).
+- Clear version reporting and backend status printing.
+
 '''
 
 # Import the required modules
-import numpy as np
-import numpy.random as nrn
-import scipy as sp
+import os
+import sys
+import warnings
+import importlib
 import inspect
-from typing import Union, Optional
+import multiprocessing
+import logging
+from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List
+from tabulate import tabulate
 
 # ---------------------------------------------------------------------
+
+logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(lineno)d: %(message)s')
+log = logging.getLogger(__name__)
 
 def _log_message(msg, lvl = 0):
     """
     Logs a message using the global logger.
     This function ensures the logger is only imported when needed.
+    
+    Parameters:
+        msg (str):
+            The message to log.
+        lvl (int):
+            The indentation level for the message.
     """
-    while lvl > 0:
-        print("\t", end="")
-        lvl -= 1
-    print(msg)
+    text = "\t" * lvl + msg
+    log.info(text)
 
 # ---------------------------------------------------------------------
 
-_JAX_AVAILABLE              = False
-_KEY                        = None
-DEFAULT_NP_INT_TYPE         = np.int64
-DEFAULT_NP_FLOAT_TYPE       = np.float64
-DEFAULT_NP_CPX_TYPE         = np.complex128
-DEFAULT_JP_INT_TYPE         = None
-DEFAULT_JP_FLOAT_TYPE       = None
-DEFAULT_JP_CPX_TYPE         = None
-DEFAULT_INT_TYPE            = np.int64
-DEFAULT_FLOAT_TYPE          = np.float64
-DEFAULT_CPX_TYPE            = np.complex128
-DEFAULT_BACKEND             = np
-DEFAULT_BACKEND_NAME        = "numpy"
-DEFAULT_BACKEND_RANDOM      = nrn
-DEFAULT_BACKEND_SCIPY       = sp
-DEFAULT_BACKEND_KEY         = None
-_DEFAULT_SEED               = 12345
-JIT                         = lambda x: x
+import numpy as np
+import numpy.random as np_random
+import scipy as sp
+
+num_cores                           = os.cpu_count()
+os.environ['NUMEXPR_MAX_THREADS']   = str(num_cores)
+
+# ---------------------------------------------------------------------
+
+JIT                     : Callable          = lambda x: x # Default JIT function (identity)
+DEFAULT_SEED            : int               = 42
+DEFAULT_BACKEND         : str               = "numpy"
+DEFAULT_BACKEND_KEY     : Optional[str]     = None
+DEFAULT_NP_INT_TYPE     : Type              = np.int64
+DEFAULT_NP_FLOAT_TYPE   : Type              = np.float64
+DEFAULT_NP_CPX_TYPE     : Type              = np.complex128
+
+DEFAULT_JP_INT_TYPE     : Optional[Type]    = None
+DEFAULT_JP_FLOAT_TYPE   : Optional[Type]    = None
+DEFAULT_JP_CPX_TYPE     : Optional[Type]    = None
+
+#! Backend Detection
+JAX_AVAILABLE           = False
+jax                     = None
+jnp                     = None
+jsp                     = None
+jrn                     = None
+jax_jit                 = lambda x: x
+jcfg                    = None
+
+try:
+    import jax
+    import jax.numpy as jnp
+    import jax.scipy as jsp
+    import jax.random as jrn
+    from jax import config as jax_config
+    
+    try:
+        logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
+        logging.getLogger('jax').setLevel(logging.WARNING)
+    except Exception as e:
+        log.debug(f"Could not configure JAX logger levels: {e}")
+    
+    JAX_AVAILABLE           = True
+    jit                     = jax.jit # Use real JIT if JAX is available
+    jcfg                    = jax_config
+    _log_message("JAX backend available and successfully imported", 0)
+
+    # Set JAX specific default types *after* successful import
+    DEFAULT_JP_INT_TYPE     = getattr(jnp, 'int64', getattr(jnp, 'int32'))          # Prefer 64bit if available
+    DEFAULT_JP_FLOAT_TYPE   = getattr(jnp, 'float64', getattr(jnp, 'float32'))      # Prefer 64bit if available
+    DEFAULT_JP_CPX_TYPE     = getattr(jnp, 'complex128', getattr(jnp, 'complex64')) # Prefer 128bit if available
+
+    # Set JAX global configuration by enabling 64-bit precision if available
+    try:
+        jcfg.update("jax_enable_x64", True)
+        _log_message("JAX 64-bit precision enabled.", 1)
+    except Exception as e:
+        _log_message(f"Could not enable JAX 64-bit precision: {e}", 1)
+except ImportError:
+    _log_message("JAX backend not available. Falling back to NumPy.", 0)
+    pass
+
+#! Type Aliases
+if JAX_AVAILABLE and jnp:
+    Array       : TypeAlias = Union[np.ndarray, jnp.ndarray]
+    PRNGKey     : TypeAlias = Any # jax.random.PRNGKeyArray
+    JaxDevice   : TypeAlias = Any # Placeholder for jax device type
+else:
+    Array       : TypeAlias = np.ndarray
+    PRNGKey     : TypeAlias = None
+    JaxDevice   : TypeAlias = None
+
+# ---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
+
+def get_hardware_info() -> Tuple[int, int]:
+    """
+    Get the number of available JAX devices and CPU cores.
+
+    Returns:
+        n_devices :
+            Number of JAX devices (e.g., GPUs/TPUs) if JAX is available, else 0.
+        n_threads :
+            Number of CPU cores available to the system.
+    """
+    n_devices   = 0
+    if backend_mgr.is_jax_available and jax:
+        try:
+            n_devices = jax.device_count()
+        except Exception as e:
+            log.warning(f"Could not get JAX device count: {e}")
+            n_devices = 0 # Fallback if detection fails
+
+    n_threads   = multiprocessing.cpu_count()
+    _log_message(f"Detected CPU cores: {n_threads}", 1)
+    if n_devices > 0:
+        _log_message(f"Detected devices: {n_devices}", 1)
+    else:
+        _log_message("No device detected.", 1)
+    return n_devices, n_threads
+
+# try:
+#     N_DEVICES, N_THREADS    = get_hardware_info()
+# except Exception as e:
+#     log.warning(f"Could not get hardware info: {e}")
+#     N_DEVICES               = 0
+#     N_THREADS               = multiprocessing.cpu_count()
 
 # ---------------------------------------------------------------------
 
 class BackendManager:
     """
-    BackendManager is a utility class for managing numerical backends used in the application.
-    It provides methods for initializing and selecting between NumPy and JAX (if available) backends,
-    including support for randomness and SciPy functionalities.
+    Manages the numerical backend (NumPy or JAX) state.
+
+    Provides access to the appropriate linear algebra module (np/jnp),
+    random number generator, SciPy module, JIT compiler, and backend info.
+
     Attributes:
-        _jax_available (bool): Indicates whether JAX is available.
-        np: Reference to the numerical backend module (NumPy or jax.numpy).
-        random: Random module associated with the backend (NumPy's default_rng or jax.random).
-        scipy: Reference to the backend's SciPy module (SciPy or jax.scipy).
-        name (str): The name of the currently active backend ("numpy" or "jax").
-        key: Random seed or key used by the backend if applicable (e.g., JAX PRNGKey).
-    Methods:
-        __init__():
-            Attempts to initialize the JAX backend by importing jax.numpy, jax.scipy, and jax.random.
-            If successful, updates the backend configuration to use JAX and sets a default PRNG key.
-            If JAX is not available, falls back to NumPy as the backend.
-        print_info():
-            Logs information about the initialized backend, including versions of NumPy, SciPy,
-            and JAX (if available), as well as the current backend name and other state details.
-        get_backend_modules(backend_spec, random=False, seed=None, scipy=False):
-            Returns the backend modules based on the provided specification, which may be a module
-            (NumPy/jax.numpy) or a string ("default", "numpy", or "jax"). The method considers additional
-            flags for including random functionality and SciPy modules, and it handles seeding appropriately.
-        _numpy_backend_modules(random=False, seed=None, scipy=False):
-            Internal helper method that returns a tuple containing the NumPy module. Optionally includes:
-            - a random module (either np.random or np.random.default_rng) depending on the NumPy version and seed.
-            - the SciPy module if requested.
-        _jax_backend_modules(random=False, seed=None, scipy=False):
-            Internal helper method that returns a tuple containing the JAX numerical module.
-            If random functionality is requested, also returns the JAX random module along with an appropriate
-            PRNGKey generated from the provided seed (or the default key if no seed is provided).
-            Optionally includes the JAX SciPy module if requested.
-        get_global_backend_modules(random=False, seed=None, scipy=False):
-            Retrieves the global backend modules based on the current default backend in use by the manager,
-            delegating to get_backend_modules with the manager's current configuration.
-    Usage:
-        # Instantiate the BackendManager.
-        backend_manager = BackendManager()
-        # Print backend information.
-        backend_manager.print_info()
-        # Retrieve backend modules with randomness and SciPy capabilities.
-        modules = backend_manager.get_backend_modules("jax", random=True, seed=42, scipy=True)
+        is_jax_available (bool): 
+            True if JAX was successfully imported.
+        name (str): 
+            Name of the active backend ("numpy" or "jax").
+        np (module): 
+            The active array module (numpy or jax.numpy).
+        random (module): 
+            The active random module (numpy.random or jax.random).
+        scipy (module): 
+            The active SciPy module (scipy or jax.scipy).
+        key (Optional[PRNGKey]): 
+            The default JAX PRNG key (if JAX is active).
+        jit (Callable): 
+            The JIT compiler function (jax.jit or identity).
+        default_seed (int): 
+            The seed used for default RNG initialization.
+        default_rng (np.random.Generator | np_random): 
+            Default NumPy RNG instance.
+        default_jax_key (Optional[PRNGKey]): 
+            Default JAX key instance.
+        int_dtype (Type): 
+            Default integer type for the *active* backend.
+        float_dtype (Type): 
+            Default float type for the *active* backend.
+        complex_dtype (Type): 
+            Default complex type for the *active* backend.
     """
     
-    def __init__(self, seed = _DEFAULT_SEED):
-        '''
-        Initializes the backend manager by attempting to import JAX modules.
-        If JAX is available, sets the backend to JAX and configures the default PRNG key.
-        If JAX is not available, falls back to NumPy as the backend.
-        '''
-        self._jax_available     = False
-        self.np                 = np
-        self.seed               = seed
-        # numpy
-        self.random_np          = nrn.default_rng(self.seed) if np.__version__ >= "1.17" else nrn
-        if not np.__version__ >= "1.17":
-            _log_message(f"NumPy version is {np.__version__}. Using legacy random module.", 1)
-        np.random.seed(self.seed)
-        self.scipy_np           = sp
-        self.random             = self.random_np
-        self.scipy              = self.scipy_np
-        self.name               = "numpy"
-        self.key                = None
-        self.jit                = lambda x: x # Dummy JIT function
+    def __init__(self, default_seed: int = DEFAULT_SEED, prefer_jax: bool = True):
+        """
+        Initializes the manager, detects JAX, and sets the active backend.
 
-        try:
-            import jax
-            import jax.numpy as jnp
-            import jax.scipy as jsp
-            import jax.random as jrn
-            from jax import jit, config as jcfg
-            self._jax_available = True
-            self.jax            = jnp
-            self.np             = self.jax
-            self.random         = jrn
-            self.scipy          = jsp
-            self.name           = "jax"
-            self.key            = jrn.PRNGKey(self.seed)
-            self.jit            = jit
-            
-            DEFAULT_JP_INT_TYPE     = jnp.int32
-            DEFAULT_JP_FLOAT_TYPE   = jnp.float64
-            DEFAULT_JP_CPX_TYPE     = jnp.complex128
-            
-            # Set JAX global configuration by enabling 64-bit precision
-            jcfg.update("jax_enable_x64", True)
-            
-        except ImportError as e:
-            # _log_message(f"JAX not available: {e}. Using NumPy as backend.", lvl=1)
-            pass
+        Args:
+            default_seed:
+                The seed for initializing default random generators.
+            prefer_jax:
+                If True and JAX is available, use JAX as the default.
+                Otherwise, use NumPy.
+        """
+        self.default_seed           : int   = default_seed
+        self.is_jax_available       : bool  = JAX_AVAILABLE
+
+        #! Initialize NumPy components first as fallback
+        self._np_module             = np
+        self._sp_module             = sp
+        self._np_random_module      = np_random # Store the base module
+        self.default_rng            = self._create_numpy_rng(self.default_seed) # Default instance
+        np.random.seed(self.default_seed)                                   # Also seed legacy global state if needed
+
+        #! Active backend defaults (start with NumPy)
+        self.name                   : str               = "numpy"
+        self.np                     : Any               = self._np_module
+        self.random                 : Any               = self.default_rng  # Use the Generator instance by default
+        self.scipy                  : Any               = self._sp_module   # SciPy module
+        self.key                    : Optional[PRNGKey] = None              # Key for the random module
+        self.jit                    : Callable          = lambda x: x       # Identity function
+
+        #! JAX specific components (if available)
+        self._jax_module            = None
+        self._jnp_module            = None
+        self._jsp_module            = None
+        self._jrn_module            = None
+        self._jax_jit               = None
+        self.default_jax_key        : Optional[PRNGKey] = None
+
+        if self.is_jax_available and jax and jnp and jsp and jrn and jit and jcfg:
+            self._jax_module        = jax
+            self._jnp_module        = jnp
+            self._jsp_module        = jsp
+            self._jrn_module        = jrn
+            self._jax_jit           = jit # The imported jax.jit
+            self.default_jax_key    = self._create_jax_key(self.default_seed)
+            self._update_device()
+
+            if prefer_jax:
+                log.info("Setting JAX as the active backend.")
+                self.name           = "jax"
+                self.np             = self._jnp_module
+                self.random         = self._jrn_module # JAX random module
+                self.scipy          = self._jsp_module
+                self.key            = self.default_jax_key # Default JAX key
+                self.jit            = self._jax_jit
+            else:
+                _log_message("JAX is available but not set as the active backend.", 1)
+        else:
+            log.info("JAX is not available. Using NumPy as the active backend.")
+
+        self.detected_jax_backend   : Optional[str] = None
+        self.detected_jax_devices   : Optional[List[JaxDevice]] = None
+    
+        #! Set active dtypes based on the chosen backend
+        self._update_dtypes()
+    
     # ---------------------------------------------------------------------
     
-    @property
-    def jax_available(self):
-        """Returns the availability of JAX as a backend."""
-        return self._jax_available
+    def _update_device(self):
+        '''
+        Detects the JAX backend and devices after import.
+        Checks if JAX is available and lists the available devices plus number of threads.
+        Otherwise, sets the backend to NumPy.
+        '''
+        
+        # Reset state before detection
+        self.detected_jax_backend = None
+        self.detected_jax_devices = None
+        self._jax_functional      = False
+
+        if not self.is_jax_available or not jax or not jax.lib: # Extra safety check
+            log.warning("Attempted _update_device without JAX being available/imported.")
+            return
+
+        try:
+            # Use xla_bridge from the imported jax module
+            self.detected_jax_backend   = jax.lib.xla_bridge.get_backend().platform
+            # Use preferred jax.local_devices()
+            self.detected_jax_devices   = jax.local_devices()
+
+            if not self.detected_jax_devices:
+                log.warning("JAX backend detected, but no devices found!")
+                self._jax_functional    = False # No devices = not functional for most purposes
+            else:
+                # Found backend AND devices
+                self._jax_functional    = True
+                # Logging moved to __init__ after this call returns
+
+        except AttributeError as ae:
+            # Handle cases where xla_bridge might be missing parts (unlikely with full install)
+            log.error(f"AttributeError during JAX backend/device detection: {ae}. JAX likely not fully functional.", exc_info=True)
+            self.detected_jax_backend   = "Detection Error (Attribute)"
+            self.detected_jax_devices   = []
+            self._jax_functional        = False
+        except Exception as e:
+            log.error(f"An unexpected error occurred during JAX backend/device detection: {e}. "
+                        f"JAX backend might not be functional.", exc_info=True)
+            self.detected_jax_backend   = "Detection Error (Exception)"
+            self.detected_jax_devices   = []
+            self._jax_functional        = False
+
+    # ---------------------------------------------------------------------
+    
+    def _update_dtypes(self):
+        """
+        Updates active dtype attributes based on the active backend.
+        Sets int_dtype, float_dtype, and complex_dtype to the default types
+        for the active backend (NumPy or JAX).
+        """
+        if self.name == "jax" and self.is_jax_available:
+            # Use the JAX defaults stored globally if JAX is active
+            self.int_dtype      = DEFAULT_JP_INT_TYPE if DEFAULT_JP_INT_TYPE else DEFAULT_NP_INT_TYPE # Fallback
+            self.float_dtype    = DEFAULT_JP_FLOAT_TYPE if DEFAULT_JP_FLOAT_TYPE else DEFAULT_NP_FLOAT_TYPE
+            self.complex_dtype  = DEFAULT_JP_CPX_TYPE if DEFAULT_JP_CPX_TYPE else DEFAULT_NP_CPX_TYPE
+        else:
+            # Use NumPy defaults otherwise
+            self.int_dtype      = DEFAULT_NP_INT_TYPE
+            self.float_dtype    = DEFAULT_NP_FLOAT_TYPE
+            self.complex_dtype  = DEFAULT_NP_CPX_TYPE
+            
+        log.debug(f"Active dtypes set for backend '{self.name}': "
+                    f"int={getattr(self.int_dtype, '__name__', 'N/A')}, "
+                    f"float={getattr(self.float_dtype, '__name__', 'N/A')}, "
+                    f"complex={getattr(self.complex_dtype, '__name__', 'N/A')}")
+    
+    # ----------------------------------------------------------------------
+    #! Active Backend Management
+    # ----------------------------------------------------------------------    
+    
+    def set_active_backend(self, name: str):
+        """
+        Explicitly sets the active backend globally managed by this instance.
+
+        Args:
+            name :
+                "numpy, npy, np" or "jax".
+
+        Raises:
+            ValueError:
+                If 'jax' is requested but not available, or invalid name.
+        """
+        name = name.lower()
+        if name == "numpy" or name == "npy" or name == "np":
+            self.name       = "numpy"
+            self.np         = self._np_module
+            self.random     = self.default_rng # Use the numpy generator instance
+            self.scipy      = self._sp_module
+            self.key        = None
+            self.jit        = lambda x: x
+            log.info("Switched active backend to NumPy.")
+        elif name == "jax":
+            if not self.is_jax_available or not self._jnp_module or not self._jrn_module or not self._jsp_module or not self._jax_jit:
+                raise ValueError("Cannot set 'jax' backend: JAX components not fully available.")
+            self.name       = "jax"
+            self.np         = self._jnp_module
+            self.random     = self._jrn_module # Use the jax random module
+            self.scipy      = self._jsp_module
+            self.key        = self.default_jax_key # Use the default stored key
+            self.jit        = self._jax_jit
+            log.info("Switched active backend to JAX.")
+        else:
+            raise ValueError(f"Invalid backend name: {name}. Choose 'numpy' or 'jax'.")
+        self._update_dtypes() # Update dtypes after switching
+
+    # ---------------------------------------------------------------------
+    #! Random Number Generation Initialization
+    # ---------------------------------------------------------------------
+
+    @staticmethod
+    def _create_numpy_rng(seed: Optional[int]) -> Union[np_random.Generator, np_random.RandomState]:
+        """
+        Creates a NumPy random number generator instance.
+        If NumPy >= 1.17, uses the Generator API.
+        Otherwise, falls back to the legacy RandomState API.
+        
+        Parameters:
+            seed (int or None):
+                Seed for the random number generator. If None, uses the default seed.
+                
+        Returns:
+            Union[np_random.Generator, np_random.RandomState]:
+                A NumPy random number generator instance.
+        """
+        
+        if hasattr(np_random, 'default_rng'):
+            if seed is not None:
+                # Seed legacy global state only if a specific seed is given
+                # Avoids potentially unwanted side effects if seed is None
+                try:
+                    np.random.seed(seed)
+                except ValueError: # Handle potential large seed issues for legacy
+                    log.warning(f"Could not seed legacy np.random with seed {seed}. Using default.")
+                    np.random.seed(DEFAULT_SEED)
+            return np_random.default_rng(seed)
+        else:
+            #! Legacy RandomState API for NumPy < 1.17
+            log.warning(f"NumPy version {np.__version__} < 1.17. Using legacy np.random state.")
+            rng_instance = np_random.RandomState(seed)
+            # Monkey patch default_rng onto the instance if it doesn't exist, for potential API consistency attempts
+            # This is somewhat fragile and mainly for internal consistency here.
+            if not hasattr(rng_instance, 'default_rng'):
+                rng_instance.default_rng = lambda s=seed: np_random.RandomState(s)
+            return rng_instance
+
+    @staticmethod
+    def _create_jax_key(seed: int) -> Optional[PRNGKey]:
+        """
+        Creates a JAX PRNG key.
+        If JAX is available, uses the PRNGKey function.
+        Otherwise, returns None.
+        
+        Parameters:
+            seed (int):
+                Seed for the PRNG key.
+        
+        Returns:
+            Optional[PRNGKey]:
+                A JAX PRNG key if JAX is available, otherwise None.
+        """
+        if JAX_AVAILABLE and jrn:
+            return jrn.PRNGKey(seed)
+        return None
 
     # ---------------------------------------------------------------------
     
     def print_info(self):
         """
-        Prints detailed backend initialization and configuration information.
+        Prints backend configuration and library versions in a table.
+        Displays the active backend, available libraries, and their versions.
+        Also shows the active integer, float, and complex types.
+        
+        The output is formatted for better readability.
         """
+
         # Collect version information for each library.
         backend_versions = {
             "NumPy": np.__version__,
             "SciPy": sp.__version__,
             "JAX": "Not Available"
         }
-        
+
         # If JAX is available, get its actual version
-        if self._jax_available:
-            try:
-                if hasattr(self.np, "__version__"):
-                    backend_versions["JAX"] = self.np.__version__
-                elif hasattr(self.np, "version"):
-                    backend_versions["JAX"] = self.np.version
-                elif hasattr(self.np, 'array_api'):
-                    backend_versions["JAX"] = self.np.array_api.__version__
-            except (ImportError, AttributeError):
-                pass
-        
+        if self.is_jax_available and self._jax_module:
+            backend_versions["JAX"] = self._jax_module.__version__
+
         # Print header.
-        _log_message("=== Backend Initialization ===", 0)
-        
+        _log_message("*"*50, 0)
+        _log_message("Backend Configuration:", 0)
+
         # Log version info.
         for lib, version in backend_versions.items():
-            _log_message(f"{lib} Version: {version}", 1)
-        
+            _log_message(f"{lib} Version: {version}", 2)
+
         # Log active backend details.
-        _log_message(f"\tActive Backend: {self.name}", 1)
-        _log_message(f"\tJAX Available: {self._jax_available}", 1)
-        _log_message(f"\tDefault Random Key: {self.key}", 1)
-        
+        _log_message(f"Active Backend: {self.name}", 2)
+        _log_message(f"JAX Available: {self.is_jax_available}", 3)
+        _log_message(f"Default Seed: {self.default_seed}", 3)
+
         # Log current backend modules.
-        _log_message("Active Backend Modules:", 1)
-        _log_message(f"\tMain Module: {self.np}", 2)
-        _log_message(f"\tRandom Module: {self.random}", 2)
-        _log_message(f"\tSciPy Module: {self.scipy}", 2)
-        
-        # Footer.
-        _log_message("=== End of Backend Info ===", 0)
+        if self.name == "jax":
+            _log_message("JAX Backend Details:", 2)
+            _log_message(f"\tMain Module: {self.np.__name__}", 3)
+            _log_message(f"\tRandom Module: {self.random.__name__} (+ PRNGKey)", 3)
+            _log_message(f"\tSciPy Module: {self.scipy.__name__}", 3)
+            _log_message(f"\tDefault JAX Key: PRNGKey({self.default_seed})", 3)
+        elif self.name == "numpy":
+            _log_message("NumPy Backend Details:", 2)
+            _log_message(f"\tMain Module: {self.np.__name__}", 3)
+            _log_message(f"\tRandom Module: {self.random.__class__.__name__}", 3)
+            _log_message(f"\tSciPy Module: {self.scipy.__name__}", 3)
 
-    # ---------------------------------------------------------------------
-    
-    def get_backend_modules(self, backend_spec, random=False, seed=None, scipy=False):
-        """
-        Returns backend modules based on specifier, now using BackendManager's state.
-        Parameters:
-        
-            backend_spec    : The specification for the backend, can be a module or string.
-            random          : A boolean indicating if random functionality should be included.
-            seed            : The random seed to use with the backend.
-            scipy           : A boolean indicating if the SciPy module should be included.
-        Returns:
-            module or tuple : The backend module(s) based on the specifier. If random or scipy is requested,
-                            it returns the corresponding modules along with their settings. 
-        """
-        if isinstance(backend_spec, str):
-            b_str = backend_spec.lower()
-        else:
-            b_str = "default"
+        # Log active data types.
+        _log_message("Active Data Types:", 2)
+        _log_message(f"\tInteger Type: {self.int_dtype.__name__}", 3)
+        _log_message(f"\tFloat Type: {self.float_dtype.__name__}", 3)
+        _log_message(f"\tComplex Type: {self.complex_dtype.__name__}", 3)
 
-        seed = _DEFAULT_SEED if seed is None else seed
-        
-        if backend_spec == np: # Direct module comparison
-            if DEFAULT_BACKEND == np:
-                return self.get_global_backend_modules(random=random, seed=seed, scipy=scipy)
-            return self._numpy_backend_modules(random, seed, scipy) # Use NumPy specifically
-        elif backend_spec == self.np:
-            if DEFAULT_BACKEND == self.np: # Use global default if it's the manager's current numpy (jax.numpy or numpy)
-                return self.get_global_backend_modules(random=random, seed=seed, scipy=scipy)
-            if not self._jax_available and backend_spec == self.np and self.name == "numpy": # Handle numpy specifically if jax is not available
-                return self._numpy_backend_modules(random, seed, scipy)
-            elif self._jax_available and backend_spec == self.np and self.name == "jax": # Handle jax.numpy specifically if jax is available and manager is jax
-                return self._jax_backend_modules(random, seed, scipy)
+        #! Format device detection results
+        _log_message("Hardware & Device Detection:", 2)
+        # Use manager's stored info
+        n_threads = multiprocessing.cpu_count()
+        _log_message(f"CPU Cores: {n_threads}", 3)
+
+        if self.is_jax_available:
+            detected_backend_str = (self.detected_jax_backend or "Detection Failed").upper()
+            _log_message(f"Detected JAX Platform: {detected_backend_str}", 3)
+
+            device_summary = "N/A"
+            if self.detected_jax_devices is not None: # Check if detection was attempted
+                if self.detected_jax_devices: # Check if list is not empty
+                    try:
+                        platforms       = [d.platform.upper() for d in self.detected_jax_devices if hasattr(d, 'platform')]
+                        # Get client kind for more detail if available
+                        kinds           = [d.client.platform if hasattr(d, 'client') and hasattr(d.client,'platform') else platforms[i] for i, d in enumerate(self.detected_jax_devices)]
+                        device_summary  = f"{len(self.detected_jax_devices)} devices ({', '.join(kinds)})"
+                    except Exception:
+                        device_summary  = f"{len(self.detected_jax_devices)} devices (Details Error)"
+                else:
+                    device_summary = "No JAX devices found!"
             else:
-                raise ValueError(f"Backend module mismatch or unsupported scenario.")
-
-
-        if b_str == "default":
-            b_str = self.name # Use the manager's current default backend name
-
-        if b_str in ("np", "numpy"):
-            return self._numpy_backend_modules(random, seed, scipy)
-        elif b_str in ("jnp", "jax"):
-            if not self._jax_available:
-                raise ValueError("JAX backend requested but JAX is not available.")
-            return self._jax_backend_modules(random, seed, scipy)
-        elif b_str == 'int':
-            return None
+                device_summary = "Detection Failed or Not Run"
+            _log_message(f"JAX Devices Found: {device_summary}", 2)
         else:
-            raise ValueError(f"Unsupported backend string: {backend_spec}")
+            _log_message(f"JAX Platform: Not Applicable", 2)
+            _log_message(f"JAX Devices Found: Not Applicable", 2)
+
+
+        # Footer.
+        _log_message("*" * 50 + "\n\n\n", 0)
 
     # ---------------------------------------------------------------------
-
-    def _numpy_backend_modules(self, random=False, seed=_DEFAULT_SEED, scipy=False):
-        """Returns NumPy backend modules."""
-        
-        # reset seed if needed
-        if seed != self.seed:
-            self.seed       = seed
-            self.random_np  = nrn.default_rng(self.seed) if np.__version__ >= "1.17" else nrn
-        
-        main_module     = np
-        rnd_module      = self.random_np
-        scipy_module    = self.scipy_np
-        ret             = [main_module]
-        if random:
-            ret.append((rnd_module, None))
-        if scipy:
-            ret.append(scipy_module)
-        return tuple(ret) if len(ret) > 1 else main_module
-
+    #! Backend Module Retrieval
     # ---------------------------------------------------------------------
-
-    def _jax_backend_modules(self, random=False, seed=None, scipy=False):
+    
+    def _get_numpy_modules(self, use_random: bool = False, seed: Optional[int] = None, use_scipy: bool = False) -> Union[Any, Tuple[Any, ...]]:
         """
-        Returns JAX backend modules, handling PRNG key.
+        Returns NumPy backend modules.
         
-        For JAX backend, ensure you split and manage the returned PRNG key for each random operation to maintain reproducibility.
+        - If use_random is True, returns the random module and a key (rng, key=None).
+        
+        - If use_scipy is True, returns the SciPy module.
+        
+        Args:
+            use_random (bool):
+                If True, include the random module/state.
+            seed (int or None):
+                Seed for the random number generator.
+                If None, uses the manager's default seed.
+            use_scipy (bool):
+                If True, include the SciPy module.
         """
-        from jax import random as jrn
         
-        if seed != self.seed:
-            self.seed       = seed
-            if self._jax_available:
-                self.key    = jrn.PRNGKey(self.seed)
-        
-        if not self._jax_available:
-            raise ValueError("JAX backend requested but JAX is not available.")
-        main_module     = self.np
-        rnd_module      = self.random if random else None
-        scipy_module    = self.scipy if scipy else None
-        key             = self.key if random else None
-        
-        ret = [main_module]
-        if random:
-            ret.append((rnd_module, key)) # Return random module AND key
-        if scipy:
-            ret.append(scipy_module)
-        return tuple(ret) if len(ret) > 1 else main_module
+        # get the main NumPy-like module
+        main_module         = self._np_module
+        results: list[Any]  = [main_module]
 
-    # ---------------------------------------------------------------------
+        if use_random:
+            # If a specific seed is requested, create a new RNG for that seed.
+            # Otherwise, use the manager's default RNG instance.
+            current_seed    = seed if seed is not None else self.default_seed
+            # Always create a new RNG instance when requested via get_backend,
+            # even if seed matches default, to ensure independence.
+            rng_instance    = self._create_numpy_rng(current_seed)
+            #! Tuple format (rng, key=None)
+            results.append((rng_instance, None)) 
 
-    def get_global_backend_modules(self, random=False, seed=None, scipy=False):
+        if use_scipy:
+            results.append(self._sp_module)
+            
+        return tuple(results) if len(results) > 1 else main_module
+
+    def _get_jax_modules(self, use_random: bool = False, seed: Optional[int] = None, use_scipy: bool = False) -> Union[Any, Tuple[Any, ...]]:
         """
-        Returns global default backend modules from the manager.
-        Parameters:
-            random          : A boolean indicating if random functionality should be included.
-            seed            : The random seed to use with the backend.
-            scipy           : A boolean indicating if the SciPy module should be included.
+        Returns JAX backend modules.
+        
+        - If use_random is True, returns the random module and a key (jax.random, key).
+        
+        - If use_scipy is True, returns the SciPy module.
+        
+        - If JAX is not available, raises a ValueError.
+        
+        Args:
+            use_random (bool):
+                If True, include the random module/state.
+            seed (int or None):
+                Seed for the random number generator.
+                If None, uses the manager's default seed.
+            use_scipy (bool):
+                If True, include the SciPy module.
+        Raises:
+            ValueError:
+                If JAX is not available or if required JAX components are missing.
         Returns:
-            module or tuple : The global default backend module(s) based on the manager's current configuration.
-                    
+            Union[Any, Tuple[Any, ...]]:
+                The requested module(s) as a single module or a tuple.
+                Format: (main_module) or (main_module, random_part, scipy_module)
+                where random_part is (jax.random, key) for JAX.
         """
-        return self.get_backend_modules(self.name, random=random, seed=seed, scipy=scipy) 
+        if not self.is_jax_available or not self._jnp_module or not self._jrn_module or not self._jsp_module:
+            raise ValueError("JAX backend requested but required JAX components are not available.")
+
+        main_module         = self._jnp_module
+        results: list[Any]  = [main_module]
+
+        if use_random:
+            # If a specific seed is requested, create a new key.
+            # Otherwise, use the manager's default key.
+            current_seed    = seed if seed is not None else self.default_seed
+            # Always create a new key when requested via get_backend.
+            current_key     = self._create_jax_key(current_seed)
+            # Tuple format (module, key)
+            results.append((self._jrn_module, current_key))
+
+        if use_scipy:
+            results.append(self._jsp_module)
+
+        return tuple(results) if len(results) > 1 else main_module
 
     # ---------------------------------------------------------------------
+    
+    def get_backend_modules(self, 
+                            backend_spec    : Union[str, Any, None],
+                            use_random      : bool          = False,
+                            seed            : Optional[int] = None,
+                            use_scipy       : bool          = False) -> Union[Any, Tuple[Any, ...]]:
+        """
+        Returns backend modules based on the specifier.
+
+        Args:
+            backend_spec :
+                Backend identifier. Can be:
+                - String: "numpy", "np", "jax", "jnp", "default".
+                - Module: `numpy` or `jax.numpy`.
+                - None: Uses the manager's active backend.
+            use_random :
+                If True, include the random module/state. For JAX,
+                returns (jax.random, key). For NumPy, returns
+                (rng_instance, None).
+            seed :
+                Seed for the random number generator. If None, uses
+                the manager's default seed. If provided, creates a
+                *new* RNG/Key for this request, independent of the
+                manager's default state.
+            use_scipy       : If True, include the SciPy module.
+
+        Returns:
+            The requested module(s) as a single module or a tuple.
+            Format:
+                (main_module) or (main_module, random_part, scipy_module)
+                where random_part is (rng_instance, None) for numpy or (jrn_module, key) for jax.
+        """
+        if backend_spec is None or backend_spec == "default":
+            backend_name = self.name
+        elif isinstance(backend_spec, str):
+            backend_name = backend_spec.lower()
+        elif backend_spec is np or backend_spec is self._np_module:
+            backend_name = "numpy"
+        elif self.is_jax_available and self._jnp_module and (backend_spec is jnp or backend_spec is self._jnp_module):
+            backend_name = "jax"
+        else:
+            raise ValueError(f"Unsupported backend specification: {backend_spec}")
+
+        #! Dispatch based on name
+        if backend_name in ("numpy", "np", "npy"):
+            return self._get_numpy_modules(use_random=use_random, seed=seed, use_scipy=use_scipy)
+        elif backend_name in ("jax", "jnp", "jaxpy"):
+            # _get_jax_modules performs its own availability check
+            return self._get_jax_modules(use_random=use_random, seed=seed, use_scipy=use_scipy)
+        else:
+            raise ValueError(f"Unknown backend name derived: {backend_name}")
+
+    # ---------------------------------------------------------------------
+    
+    def get_global_backend_modules(self,
+                                use_random  : bool          = False,
+                                seed        : Optional[int] = None,
+                                use_scipy   : bool          = False) -> Union[Any, Tuple[Any, ...]]:
+        """
+        Returns the globally configured default backend modules from the manager.
+
+        Uses the manager's current active backend (`self.name`). If a specific `seed`
+        is provided, it generates a random component based on that seed for this
+        request, otherwise uses the manager's default seed/key framework.
+
+        Args:
+            use_random :
+                If True, include the random module/state.
+            seed :
+                Optional seed for this specific request's random component.
+            use_scipy :
+                If True, include the SciPy module.
+
+        Returns:
+            The global default backend module(s). See `get_backend_modules` for format.
+        """
+        # Pass the current name and arguments to the main getter
+        return self.get_backend_modules(self.name, use_random=use_random, seed=seed, use_scipy=use_scipy)
+
+    # ---------------------------------------------------------------------
+    
+# -------------------------------------------------------------------------
+
+try:
+    # Instantiate the BackendManager globally.
+    backend_mgr             = BackendManager(default_seed=DEFAULT_SEED, prefer_jax=True)
+    
+    # Expose core ACTIVE components globally for convenience, derived from the manager.
+    ACTIVE_BACKEND_NAME     = backend_mgr.name          # Active backend name ("numpy" or "jax")
+    ACTIVE_NP_MODULE        = backend_mgr.np            # Active NumPy-like module (numpy or jax.numpy)
+    ACTIVE_RANDOM           = backend_mgr.random        # Active random module (rng instance for numpy, module for jax)
+    ACTIVE_SCIPY_MODULE     = backend_mgr.scipy         # Active SciPy module (scipy or jax.scipy)
+    ACTIVE_JIT              = backend_mgr.jit           # Active JIT function (identity for numpy, jax.jit for jax)
+    ACTIVE_JAX_KEY          = backend_mgr.key           # Default JAX PRNG key (if JAX is active)
+    ACTIVE_INT_TYPE         = backend_mgr.int_dtype     # Active integer type for the backend
+    ACTIVE_FLOAT_TYPE       = backend_mgr.float_dtype   # Active float type for the backend
+    ACTIVE_COMPLEX_TYPE     = backend_mgr.complex_dtype # Active complex type for the backend
+    DEFAULT_BACKEND         = backend_mgr._np_module    # Default NumPy module (numpy or jax.numpy)
+    JIT                     = backend_mgr.jit           # JIT function (identity for numpy, jax.jit for jax)
+    DEFAULT_BACKEND_KEY     = backend_mgr.key           # Default JAX key (if JAX is active)
+    backend_mgr.print_info() # Print backend info
+except ImportError as e:
+    log.error(f"Error importing backend modules: {e}", exc_info=True)
+except AttributeError as e:
+    log.error(f"Error accessing backend attributes: {e}", exc_info=True)
+except Exception as e:
+    log.error(f"Error printing backend info: {e}", exc_info=True)
 
 # ---------------------------------------------------------------------
 
-# Instantiate the BackendManager as a global object
-backend_mgr = BackendManager()
-
-# Initialize global defaults using BackendManager - for backward compatibility mainly
-try:
-    # Set the global defaults based on the backend manager's current state
-    DEFAULT_BACKEND         = backend_mgr.np
-    DEFAULT_BACKEND_NAME    = backend_mgr.name
-    DEFAULT_BACKEND_RANDOM  = backend_mgr.random
-    DEFAULT_BACKEND_SCIPY   = backend_mgr.scipy
-    DEFAULT_BACKEND_KEY     = backend_mgr.key
-    DEFAULT_INT_TYPE        = backend_mgr.np.int64
-    DEFAULT_FLOAT_TYPE      = backend_mgr.np.float64
-    DEFAULT_CPX_TYPE        = backend_mgr.np.complex128
-    JIT                     = backend_mgr.jit
-    _JAX_AVAILABLE          = backend_mgr.jax_available
-    
-    try:
-        import jax.numpy as jnp
-        Array = Union[np.ndarray, jnp.ndarray]
-    except ImportError:
-        Array = np.ndarray
-    
-except Exception as e:
-    _log_message(f"Error initializing global defaults: {e}")
-    
-# Short aliases for convenience - these now point to the BackendManager's current backend
-d_bcknd     = DEFAULT_BACKEND
-d_bcknd_rnd = DEFAULT_BACKEND_RANDOM
-d_bcknd_sp  = DEFAULT_BACKEND_SCIPY
-d_bcknd_key = DEFAULT_BACKEND_KEY
-
-# Print backend info *after* BackendManager is initialized, to reflect the *actual* backend in use.
-try:
-    backend_mgr.print_info()
-except Exception as e:
-    _log_message(f"Error printing backend info: {e}")
-
-# ---------------------------------------------------------------------
+def is_jax_array(n: Any):
+    """
+    Checks if an object is likely a JAX array (including traced).
+    Parameters:
+    ----------
+    n : Any
+        The object to check.
+    Returns:
+    -------
+    bool
+        True if n is a JAX array (including traced), False otherwise.
+    """
+    if not backend_mgr.is_jax_available or not backend_mgr._jnp_module:
+        return False
+    # Check if it originates from jax.numpy or is a Tracer
+    # isinstance check handles concrete arrays, hasattr handles tracers/abstract values
+    return isinstance(n, backend_mgr._jnp_module.ndarray) or hasattr(n, 'aval')
 
 def is_traced_jax(n):
     """
     Internal helper function to check if an array-like n is JAX-traced integer.
     """
-    if _JAX_AVAILABLE:
-        return hasattr(n, 'shape') and not hasattr(n, 'len')
-    return False
+    return is_jax_array(n)
 
 # ---------------------------------------------------------------------
 
-def get_backend(backend, random=False, seed=None, scipy=False) -> tuple:
+def get_backend(backend_spec    : Union[str, Any, None] = None,
+                random          : bool = False,
+                seed            : Optional[int] = None,
+                scipy           : bool = False) -> Union[Any, Tuple[Any, ...]]:
     """
     Return backend modules based on the provided specifier.
-    Delegates to BackendManager's get_backend_modules for actual logic.
+
+    Delegates to the global `backend_mgr.get_backend_modules`.
 
     Parameters
     ----------
-    backend : str or module or None
-        Backend specifier. If a string:
-            - "default"         : Uses DEFAULT_BACKEND (JAX if available, else NumPy).
-            - "np" or "numpy"   : Returns the NumPy backend.
-            - "jnp" or "jax"    : Returns the JAX backend (if available).
-        If None or not a string, "default" is assumed.
+    backend_spec : str or module or None, optional
+        Backend specifier ("numpy", "jax", `np`, `jnp`, "default", None).
+        Defaults to the globally active backend.
     random : bool, optional
-        If True, include the random module. For JAX, also return a PRNG key (if seed is provided).
-        **For JAX backend, ensure you split and manage the returned PRNG key for each random operation to maintain reproducibility.**
+        If True, include the random module/state. For JAX, also return a PRNG key.
+        For NumPy, returns a seeded RNG instance. Default is False.
+        **For JAX backend, ensure you split the returned PRNG key before use.**
     seed : int, optional
-        If provided, sets the seed for the random module.
+        Seed for the random component. If None, uses the global default seed
+        to generate the component for this call. Providing a seed here creates
+        a *new* RNG/Key for this call based on that specific seed.
     scipy : bool, optional
-        If True, also return the associated SciPy module.
+        If True, also return the associated SciPy module. Default is False.
 
     Returns
     -------
     module or tuple
-        If neither random nor scipy is requested, returns the main backend module.
-        Otherwise, returns a tuple containing:
-            (main_module, random_module, scipy_module)
-        For the JAX backend with random=True, the "random_module" entry is itself a tuple: (jax.random, key),
-        where key is the initial PRNGKey (or a seeded one if seed is provided). **Remember to split this key before use in JAX.**
+        Requested backend components. See `BackendManager.get_backend_modules` docs.
 
     **Example for using JAX backend with random number generation:**
 
-    >>> import algebra_utils as alg_utils
-    >>> jax_np, (jax_rnd, key), jax_sp = alg_utils.get_backend("jax", random=True, scipy=True)
-    >>> key, subkey = jax_rnd.split(key) # Split the key!
-    >>> random_vector = jax_rnd.uniform(subkey, shape=(5,)) # Use subkey for random op
-    >>> print(random_vector)
+    >>> import general_python.algebra.utils as abu
+    >>> import numpy as np
+    >>> if abu.JAX_AVAILABLE:
+    ...     jax_np, (jax_rnd, key), jax_sp = abu.get_backend("jax", random=True, scipy=True, seed=42)
+    ...     key, subkey = jax_rnd.split(key) # Split the key!
+    ...     random_vector = jax_rnd.uniform(subkey, shape=(5,)) # Use subkey
+    ...     print(random_vector)
     """
-    return backend_mgr.get_backend_modules(backend, random=random, seed=seed, scipy=scipy)
+    return backend_mgr.get_backend_modules(backend_spec, use_random=random, seed=seed, use_scipy=scipy)
 
 # ---------------------------------------------------------------------
 
-def get_global_backend(random=False, seed=None, scipy=False):
+def get_global_backend(random: bool = False, seed: Optional[int] = None, scipy: bool = False) -> Union[Any, Tuple[Any, ...]]:
     """
-    Return the global default backend modules.
-    Delegates to BackendManager's get_global_backend_modules.
+    Return the globally configured default backend modules.
+
+    Delegates to `backend_mgr.get_global_backend_modules`.
 
     Parameters
     ----------
     random : bool, optional
-        If True, include the random module. For JAX, also return a PRNG key (if seed is provided).
+        If True, include the random module/state and potentially a key/RNG.
     seed : int, optional
-        If provided, sets the seed for the random module.
+        Optional seed for this specific request's random component.
     scipy : bool, optional
         If True, also return the associated SciPy module.
 
     Returns
     -------
     module or tuple
-        If neither random nor scipy is requested, returns the main backend module.
-        Otherwise, returns a tuple containing:
-            (main_module, random_module, scipy_module)
-        For the JAX backend, the "random_module" entry is itself a tuple: (jax.random, key) else (numpy.random, None).
-        where key is a PRNGKey (or None if seed is not provided).
+        The global default backend module(s). See `BackendManager.get_backend_modules`.
     """
-    return backend_mgr.get_global_backend_modules(random=random, seed=seed, scipy=scipy)
+    return backend_mgr.get_global_backend_modules(use_random=random, seed=seed, use_scipy=scipy)
 
 # ---------------------------------------------------------------------
 
@@ -439,7 +836,7 @@ def maybe_jit(func):
     """
     
     
-    if not _JAX_AVAILABLE:
+    if not JAX_AVAILABLE:
         return func
 
     from jax import jit
@@ -469,34 +866,10 @@ def maybe_jit(func):
     return wrapper
 
 # ---------------------------------------------------------------------
-
-import multiprocessing
-
-if _JAX_AVAILABLE:
-    def _get_gpu_info():
-        from jax.lib import xla_bridge
-        return xla_bridge.device_count()
-
-def get_hardware_info():
-    """
-    Get the number of available devices and CPU threads.
-    Returns:
-        n_devices : int
-            The number of available devices (GPUs) if JAX is available, otherwise 0.
-        n_threads : int
-            The number of CPU threads available.
-    """
-    n_devices       = 0
-    if _JAX_AVAILABLE:
-        n_devices   = _get_gpu_info()
-    n_threads       = multiprocessing.cpu_count()
-    return n_devices, n_threads
-
-# ---------------------------------------------------------------------
 #! PADDING AND OTHER UTILITIES
 # ---------------------------------------------------------------------
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax.numpy as jnp
     
     def pad_array_jax(x, target_size: int, pad_value):

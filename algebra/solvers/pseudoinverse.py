@@ -45,7 +45,7 @@ from general_python.algebra.solver import (
 from general_python.algebra.preconditioners import Preconditioner
 
 # Backend/Compilation tools
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 try:
     import jax
     import jax.numpy as jnp
@@ -134,7 +134,7 @@ if _NUMBA_AVAILABLE:
     _pinv_solve_logic_numba_compiled = _pinv_solve_logic_numba_wrapper
 
 _pinv_solve_logic_jax_compiled = None
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     import jax
     from jax import lax
@@ -436,7 +436,7 @@ def test_pseudo_inverse_solver():
         print(f"NumPy test failed: {e}")
 
     # --- JAX Test ---
-    if _JAX_AVAILABLE:
+    if JAX_AVAILABLE:
         print("\n--- JAX Backend Test ---")
         try:
             A_well_jax = jnp.array(A_well)

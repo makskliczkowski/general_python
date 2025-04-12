@@ -3,10 +3,10 @@ import numpy as np
 import scipy as sp
 from numba import njit
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend, JIT
+from general_python.algebra.utils import JAX_AVAILABLE, maybe_jit, get_backend, JIT
 import general_python.algebra.linalg_sparse as sparse 
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     import jax.scipy as jsp
@@ -212,7 +212,7 @@ def act(mat, x, backend="default"):
         The transformed state(s), computed via standard matrix multiplication.
     """
     backend = get_backend(backend)
-    if backend == np or not _JAX_AVAILABLE:
+    if backend == np or not JAX_AVAILABLE:
         return act_dense_or_sparse_np(mat, x)
     return mat @ x
 
@@ -279,7 +279,7 @@ def overlap(a, b, mat, backend="default"):
         If both are matrices: a matrix with the overlap for each bra/ket combination.
     """
     backend         = get_backend(backend)
-    if backend == np or not _JAX_AVAILABLE:
+    if backend == np or not JAX_AVAILABLE:
         if sp.sparse.issparse(mat):
             b = act(mat, b, backend=backend)
             return overlap_np(a, b)
@@ -439,7 +439,7 @@ def transform_backend(x, is_sparse: bool = False, backend="default"):
     """
     target_backend = get_backend(backend)
     
-    if target_backend == np or not _JAX_AVAILABLE:
+    if target_backend == np or not JAX_AVAILABLE:
         if is_sparse:
             if not sp.sparse.isspmatrix(x):
                 return sp.sparse.csr_matrix(x) # Convert to CSR if sparse is requested and not already sparse
@@ -468,7 +468,7 @@ def transform_backend(x, is_sparse: bool = False, backend="default"):
 
 # -----------------------------------------------------------------
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
 
     @JIT
     def _eig_jax(matrix):
@@ -532,7 +532,7 @@ def eigh(matrix, backend="default"):
     """
     backend = get_backend(backend)
     
-    if backend == np or not _JAX_AVAILABLE:
+    if backend == np or not JAX_AVAILABLE:
         return _eig_np(matrix)
     return _eig_jax(matrix)
 
@@ -554,7 +554,7 @@ def eigsh(matrix, method, backend="default", **kwargs):
     if method == "lanczos":
         k       = kwargs.get("k", 6)
         which   = kwargs.get("which", "SA")
-        if backend == np or not _JAX_AVAILABLE:
+        if backend == np or not JAX_AVAILABLE:
             return _eig_lanczos_np(matrix, k=k, which=which)
         return _eig_lanczos_jax(matrix, k=k, which=which)
     elif method == "shift-invert":
@@ -562,10 +562,10 @@ def eigsh(matrix, method, backend="default", **kwargs):
         sigma   = kwargs.get("sigma", 0.0)
         which   = kwargs.get("which", "LM")
         mode    = kwargs.get("mode", "normal")
-        if backend == np or not _JAX_AVAILABLE:
+        if backend == np or not JAX_AVAILABLE:
             return _eig_shift_inv_np(matrix, k=k, sigma=sigma, which=which, mode=mode)
         return _eig_shift_inv_jax(matrix, k=k, sigma=sigma, which=which, mode=mode)
-    if backend == np or not _JAX_AVAILABLE:
+    if backend == np or not JAX_AVAILABLE:
         return _eig_np(matrix.todense())
     return _eig_jax(matrix.todense())
     

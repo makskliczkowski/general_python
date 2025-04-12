@@ -79,12 +79,12 @@ from general_python.algebra.solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc, _sym_ortho)
 # Utilities and Preconditioners
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 # JAX imports
 try:
-    if _JAX_AVAILABLE:
+    if JAX_AVAILABLE:
         import jax
         import jax.numpy as jnp
         import jax.lax as lax
@@ -354,7 +354,7 @@ def _minres_qlp_init(
 
 # --- JAX implementation using lax.while_loop ---
 _minres_qlp_logic_jax_compiled = None
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
 
     def _minres_qlp_body_fun_jax(state: _MinresQLPState,
                                 matvec          : MatVecFunc,

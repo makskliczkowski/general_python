@@ -33,7 +33,7 @@ from general_python.algebra.preconditioners import choose_precond, Preconditione
 from general_python.common.plot import MatrixPrinter
 from general_python.common.flog import get_global_logger as get_logger
 
-from general_python.algebra.utils import _JAX_AVAILABLE, _KEY, DEFAULT_BACKEND, get_backend as __backend, maybe_jit
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend, maybe_jit
 
 # ##################################################################################################
 # Test the algebra module
@@ -90,7 +90,7 @@ class AlgebraTests:
         Returns:
             None
         """
-        backend = __backend(self.backend)
+        backend = get_backend(self.backend)
         
         self._log("Starting change_basis", test_number, color = "blue")
 
@@ -133,7 +133,7 @@ class AlgebraTests:
         Tests the change of basis for matrices.
         '''
         self._log("Starting change_basis_matrix", test_number, color="blue")
-        backend = __backend(self.backend)
+        backend = get_backend(self.backend)
 
         # Test change_basis_matrix function: reverse a symmetric matrix.
         if U is None and A is None and At is None:
@@ -168,7 +168,7 @@ class AlgebraTests:
         Tests the outer product of vectors.
         '''
         self._log("Starting outer", test_number, color="blue")
-        backend = __backend(self.backend)
+        backend = get_backend(self.backend)
 
         # Test outer function for simple 2D vectors
         if A is None and B is None and expAB is None:
@@ -219,7 +219,7 @@ class AlgebraTests:
         Tests the Kronecker product of matrices.
         '''
         self._log("Starting kron", test_number, color="blue")
-        backend = __backend(self.backend)
+        backend = get_backend(self.backend)
 
         # Test kron function for simple 2D matrices
         if A is None and B is None and expAB is None:

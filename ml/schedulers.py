@@ -1182,14 +1182,14 @@ def _resolve_scheduler_class(scheduler_type : Union[str, SchedulerType],
     """
     factory_prefix = "[choose_scheduler]"
     if isinstance(scheduler_type, str):
-        lookup_key = scheduler_type.lower()
+        lookupJAX_RND_DEFAULT_KEY = scheduler_type.lower()
     elif isinstance(scheduler_type, SchedulerType):
-        lookup_key = scheduler_type
+        lookupJAX_RND_DEFAULT_KEY = scheduler_type
     else:
         err_msg = f"scheduler_type must be string, Enum, or Parameters, got {type(scheduler_type)}"
         temp_logger.say(f"{factory_prefix} {err_msg}", log='error', color='red'); raise TypeError(err_msg)
 
-    scheduler_class = SCHEDULER_CLASS_MAP.get(lookup_key)
+    scheduler_class = SCHEDULER_CLASS_MAP.get(lookupJAX_RND_DEFAULT_KEY)
     if scheduler_class is None:
         temp_logger.say(f"{factory_prefix} Unknown type '{scheduler_type}'. Using default: {DEFAULT_SCHEDULER_TYPE.name}", 'warning', color='yellow')
         scheduler_class = SCHEDULER_CLASS_MAP.get(DEFAULT_SCHEDULER_TYPE)

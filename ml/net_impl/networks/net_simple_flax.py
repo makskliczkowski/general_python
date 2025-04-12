@@ -10,9 +10,9 @@ import general_python.ml.net_impl.net_general as _net_general
 from typing import Optional, Tuple, Callable, Any
 
 # import from general python module
-from general_python.algebra.utils import _JAX_AVAILABLE
+from general_python.algebra.utils import JAX_AVAILABLE
 
-if not _JAX_AVAILABLE:
+if not JAX_AVAILABLE:
     raise ImportError("JAX is not available. Please install JAX to use this module.")
 
 # jax imports

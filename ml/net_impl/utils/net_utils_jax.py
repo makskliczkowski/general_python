@@ -7,10 +7,10 @@ date    : 2025-03-01
 
 # from general python utils
 from typing import Any, Callable, Dict, List, Tuple
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 from functools import partial
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     from jax import grad
     from jax import numpy as jnp
@@ -26,7 +26,7 @@ if _JAX_AVAILABLE:
 #! BATCHES
 #########################################################################
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     @partial(jax.jit, static_argnums=(1,))
     def create_batches_jax( data        : jnp.ndarray,
@@ -52,7 +52,7 @@ if _JAX_AVAILABLE:
 #! EVALUATE BATCHED
 ##########################################################################
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     @partial(jax.jit, static_argnums=(0,1))
     def eval_batched_jax(batch_size : int,
@@ -88,7 +88,7 @@ if _JAX_AVAILABLE:
 
 _ERR_JAX_GRADIENTS_CALLABLE = "The function must be callable."
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
 
     def flat_gradient_analytical_jax(func_analitical: Any, params, arg) -> jnp.ndarray:
         """
@@ -385,7 +385,7 @@ if _JAX_AVAILABLE:
 #! APPLY CALLABLE
 # -------------------------------------------------------------------------
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     @partial(jax.jit, static_argnums=(0,4))
     def apply_callable_jax(func,

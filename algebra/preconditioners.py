@@ -32,12 +32,12 @@ import numpy as np
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsla
 
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend as get_backend, maybe_jit
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend as get_backend, maybe_jit
 
 # ---------------------------------------------------------------------
 
 try:
-    if _JAX_AVAILABLE:
+    if JAX_AVAILABLE:
         import jax
         import jax.numpy as jnp
         Array = Union[np.ndarray, jnp.ndarray]
@@ -187,7 +187,7 @@ class Preconditioner(ABC):
             print(f"({self._name}) Resetting backend to: {new_backend_str}")
             self._backend_str               = new_backend_str
             self._backend, self._backends   = get_backend(self._backend_str, scipy=True)
-            self._isjax                     = _JAX_AVAILABLE and self._backend is not np
+            self._isjax                     = JAX_AVAILABLE and self._backend is not np
             # Re-create the wrapped/compiled apply function for the new backend
             self._update_apply_func()
         

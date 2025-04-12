@@ -16,15 +16,15 @@ try:
     from general_python.ml.net_impl.interface_net_flax import FlaxInterface
     from general_python.ml.net_impl.activation_functions import log_cosh_jnp
     from general_python.ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 except ImportError as e:
     print(f"Error importing QES base modules: {e}")
     class FlaxInterface:
         pass
-    _JAX_AVAILABLE = False
+    JAX_AVAILABLE = False
 
 # --- JAX / Flax Imports ---
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     from jax import random
@@ -98,7 +98,7 @@ class _FlaxRBM(nn.Module):
         Returns:
             jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,).
         """
-        if not _JAX_AVAILABLE:
+        if not JAX_AVAILABLE:
             raise ImportError("Flax module requires JAX.")
 
         # Apply input activation (e.g., map {0,1} to {-1,1})
@@ -184,7 +184,7 @@ class RBM(FlaxInterface):
                 seed           : int     = 0,
                 is_complex     : bool    = False):
 
-        if not _JAX_AVAILABLE:
+        if not JAX_AVAILABLE:
             raise ImportError("RBM requires JAX.")
 
         # Determine dtypes

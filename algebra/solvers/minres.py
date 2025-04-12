@@ -7,7 +7,7 @@ from typing import Optional, Callable
 import numpy as np
 
 from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 from general_python.algebra.preconditioners import Preconditioner
 
 # -----------------------------------------------------------------------------
@@ -15,7 +15,7 @@ from general_python.algebra.preconditioners import Preconditioner
 try:
     import scipy.sparse.linalg as sp_la
     # Check if JAX has minres (it might in newer versions or separate libraries)
-    if _JAX_AVAILABLE:
+    if JAX_AVAILABLE:
         import jax.scipy.sparse.linalg as jsp_la
     else:
         jsp_la  = None

@@ -22,16 +22,14 @@ from tenpy.linalg.random_matrix import COE, GUE, GOE, CRE, CUE
 from typing import Union, Tuple, Optional, Callable
 from functools import partial
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
-from general_python.algebra.utils import DEFAULT_NP_INT_TYPE, DEFAULT_NP_FLOAT_TYPE, DEFAULT_NP_CPX_TYPE
+from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     from jax import random as jrand
     from jax import numpy as jnp
     from jax import random as random_jp
-    from general_python.algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, _KEY
 
 ###############################################################################
 #! Random number generator initialization
@@ -53,8 +51,8 @@ def initialize(backend  : str           = "default",
     '''
     module = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = module if isinstance(module, tuple) else (module, (None, None))
-    if key is None and _JAX_AVAILABLE:
-        key = _KEY
+    if key is None and JAX_AVAILABLE:
+        key = JAX_RND_DEFAULT_KEY
     
     # goon
     if rnd_module is None:
@@ -72,7 +70,7 @@ def set_global_seed(seed: int, backend: str = "default"):
     Reinitialize the global random state.
     
     For NumPy, sets the seed using np.random.seed(seed).
-    For JAX, updates the module-level _KEY.
+    For JAX, updates the module-level JAX_RND_DEFAULT_KEY.
     
     Parameters
     ----------
@@ -82,14 +80,14 @@ def set_global_seed(seed: int, backend: str = "default"):
         Backend specifier (default is "default").
     """
     
-    global _KEY
+    global JAX_RND_DEFAULT_KEY
     modules                         = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key)  = modules if isinstance(modules, tuple) else (modules, (None, None))
     if backend_mod is np:
         np.random.seed(seed)
     else:
         from jax import random as rnd_module
-        _KEY = rnd_module.PRNGKey(seed)
+        JAX_RND_DEFAULT_KEY = rnd_module.PRNGKey(seed)
 
 # -----------------------------------------------------------------------------
 
@@ -162,7 +160,7 @@ def __uniform_np(rng, low, high, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.uniform(low=low, high=high, size=size)
 
-# if _JAX_AVAILABLE:
+# if JAX_AVAILABLE:
 
 @partial(jax.jit, static_argnames=('minval', 'maxval', 'shape'))
 def _uniform_jax(key, shape, minval, maxval):
@@ -208,7 +206,7 @@ def uniform(shape   : Union[tuple, int] =   (1,),
     if backend is np or backend == 'np' or backend == 'numpy':
         return __uniform_np(rng, minval, maxval, shape).astype(dtype)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return _uniform_jax(rng_k, shape, minval, maxval).astype(dtype)
 
 ###############################################################################
@@ -235,7 +233,7 @@ def __normal_np(rng, shape, mean=0.0, std=1.0):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.normal(loc=mean, scale=std, size=shape)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     @jax.jit
     def __normal_jax(key, shape, dtype, mean, std):
         ''' 
@@ -297,7 +295,7 @@ def normal(shape,
     if backend is np or backend == 'np' or backend == 'numpy':
         return __normal_np(rng, shape, mean, std).astype(dtype)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return __normal_jax(rng_k, shape, dtype, mean, std)
 
 ###############################################################################
@@ -309,7 +307,7 @@ def __exponential_np(rng, scale, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.exponential(scale=scale, size=size)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     @jax.jit
     def __exponential_jax(key, shape, scale, dtype):
         return jrand.exponential(key, shape=shape, dtype=dtype) * scale
@@ -329,7 +327,7 @@ def exponential(shape,
     if backend is np or backend == 'np' or backend == 'numpy':
         return __exponential_np(rng, scale, shape).astype(dtype)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return __exponential_jax(rng, rng_k, shape, scale, dtype)
 
 ###############################################################################
@@ -341,7 +339,7 @@ def __poisson_np(rng, lam, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.poisson(lam=lam, size=size)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     @jax.jit
     def __poisson_jax(key, shape, lam, dtype):
         return jrand.poisson(key, lam=lam, shape=shape, dtype=dtype)
@@ -358,7 +356,7 @@ def poisson(shape, backend="default",
     if backend is np or backend == 'np' or backend == 'numpy':
         return __poisson_np(rng, lam, shape).astype(dtype)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return __poisson_jax(rng, rng_k, shape, lam, dtype)
 
 ###############################################################################
@@ -370,7 +368,7 @@ def __gamma_np(rng, a, scale, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.gamma(shape=a, scale=scale, size=size)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     @jax.jit
     def __gamma_jax(key, shape, a, scale, dtype):
         return jrand.gamma(key, a, shape=shape, dtype=dtype) * scale
@@ -387,7 +385,7 @@ def gamma(shape, backend="default",
     if backend is np or backend == 'np' or backend == 'numpy':
         return __gamma_np(rng, a, scale, shape).astype(dtype)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return __gamma_jax(rng, rng_k, shape, a, scale, dtype)
     
 ###############################################################################
@@ -399,7 +397,7 @@ def __beta_np(rng, a, b, size):
         rng = npr.default_rng(None)
     return rng.beta(a, b, size=size)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     @jax.jit
     def __beta_jax(key, shape, a, b, dtype):
         try:
@@ -422,7 +420,7 @@ def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dty
     if backend_mod is np:
         return __beta_np(rnd_module, a, b, shape).astype(dtype)
     if key is None:
-        key = _KEY
+        key = JAX_RND_DEFAULT_KEY
     return __beta_jax(key, shape, a, b, dtype)
 
 ###############################################################################
@@ -440,7 +438,7 @@ def randint_np(low, high, size):
     # return rng.randint(low=low, high=high, size=size)
     return np.random.randint(low=low, high=high, size=size)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
 	@partial(jax.jit, static_argnames=('low', 'high', 'shape'))
 	def randint_jax(key,
 					shape,
@@ -479,7 +477,7 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
     if backend is np or backend == 'np' or backend == 'numpy':
         return randint_np(low, high, shape).astype(dtype)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return randint_jax(rng_k, shape, low, high).astype(dtype)
 
 ###############################################################################
@@ -491,7 +489,7 @@ def choice_np(rng, a, size, replace=True, p=None):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.choice(a, size=size, replace=replace, p=p)
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
 
     @partial(jax.jit, static_argnames=('shape'))
     def choice_jax(key, a, shape):
@@ -556,7 +554,7 @@ def choice(a    :   'array-like',
     if backend == 'np' or backend == 'numpy' or backend is np:
         return choice_np(rng, a, shape, replace=replace, p=p)
     if rng_k is None:
-        rng_k = _KEY
+        rng_k = JAX_RND_DEFAULT_KEY
     return choice_jax(rng_k, a, shape)
 
 ###############################################################################
@@ -594,7 +592,7 @@ def shuffle(a, backend="default", seed: Optional[int] = None):
     else:
         # JAX: use jax.random.permutation.
         if key is None:
-            key = _KEY
+            key = JAX_RND_DEFAULT_KEY
         return rnd_module.permutation(key, a)
 
 # -----------------------------------------------------------------------------
@@ -624,7 +622,7 @@ def shuffle_indices(n, backend="default", seed: Optional[int] = None):
         return rnd_module.permutation(n)
     else:
         if key is None:
-            key = _KEY
+            key = JAX_RND_DEFAULT_KEY
         return rnd_module.permutation(key, n)
 
 ###############################################################################

@@ -12,19 +12,19 @@ def allbottomkeys(group):
     """
     Recursively collect all dataset keys in an HDF5 group.
     """
-    dataset_keys = []
+    datasetJAX_RND_DEFAULT_KEYs = []
 
-    def collect_keys(obj):
+    def collectJAX_RND_DEFAULT_KEYs(obj):
         if isinstance(obj, h5py.Group):
             for key, value in obj.items():
-                collect_keys(value)
+                collectJAX_RND_DEFAULT_KEYs(value)
         else:
-            dataset_keys.append(obj.name)
+            datasetJAX_RND_DEFAULT_KEYs.append(obj.name)
     
     # Start the recursive key collection
-    collect_keys(group)
+    collectJAX_RND_DEFAULT_KEYs(group)
     
-    return dataset_keys
+    return datasetJAX_RND_DEFAULT_KEYs
 
 ####################################################### READ HDF5 FILE #######################################################
 
@@ -690,17 +690,17 @@ class HDF5Handler:
         Returns:
             list: A list of dataset keys (names) found within the group.
         """
-        dataset_keys = []
+        datasetJAX_RND_DEFAULT_KEYs = []
 
-        def collect_keys(obj):
+        def collectJAX_RND_DEFAULT_KEYs(obj):
             if isinstance(obj, h5py.Group):
                 for key, value in obj.items():
-                    collect_keys(value)
+                    collectJAX_RND_DEFAULT_KEYs(value)
             else:
-                dataset_keys.append(obj.name)
+                datasetJAX_RND_DEFAULT_KEYs.append(obj.name)
 
-        collect_keys(group)
-        return dataset_keys
+        collectJAX_RND_DEFAULT_KEYs(group)
+        return datasetJAX_RND_DEFAULT_KEYs
 
     ############### PUBLIC METHODS ################
     

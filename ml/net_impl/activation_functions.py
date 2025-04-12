@@ -15,8 +15,8 @@ based on the specified backend.
 import numpy as np
 from typing import Optional, Tuple, Callable
 
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
-if _JAX_AVAILABLE:
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
+if JAX_AVAILABLE:
     import jax.numpy as jnp
     from jax import random
     import flax.linen as nn
@@ -65,7 +65,7 @@ def poly5(x):
     xsq = x ** 2
     return ((0.133333333 * xsq - 0.333333333) * xsq + 1.) * x
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     
     @jax.jit

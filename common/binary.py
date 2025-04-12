@@ -26,8 +26,8 @@ from typing import List, Optional
 import numpy as np
 import numba
 
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_INT_TYPE, DEFAULT_NP_FLOAT_TYPE
-from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE, JIT
+from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_NP_FLOAT_TYPE
+from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
 from general_python.common.tests import GeneralAlgebraicTest
 from general_python.common.binary_jax import *
 

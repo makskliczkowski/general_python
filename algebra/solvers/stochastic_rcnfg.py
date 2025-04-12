@@ -142,13 +142,13 @@ from functools import partial
 
 from abc import ABC, abstractmethod
 
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 import general_python.algebra.solver as solver_utils
 
 #####################################
 
 # jax specific
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     import jax.scipy as jsp

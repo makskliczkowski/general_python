@@ -22,12 +22,12 @@ from general_python.algebra.preconditioners import (Preconditioner,
                                                     PreconditionersTypeNoSym,
                                                     choose_precond,
                                                     Array,
-                                                    _JAX_AVAILABLE,
+                                                    JAX_AVAILABLE,
                                                     get_backend)
 from general_python.algebra.solver import Solver, SolverResult
 
 # Conditionally import JAX
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     try:
         import jax
         import jax.numpy as jnp
@@ -46,7 +46,7 @@ if _JAX_AVAILABLE:
             return x + z + matvec(x)
 
     except ImportError:
-        _JAX_AVAILABLE          = False
+        JAX_AVAILABLE          = False
         jax                     = None
         jnp                     = None
         _dummy_jax_solver_step  = None
@@ -57,7 +57,7 @@ else:
 
 # Determine available backends for testing
 _available_backends = ['numpy']
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     _available_backends.append('jax')
 
 # Tolerances for numerical comparisons
@@ -439,7 +439,7 @@ class TestPreconditioners:
         """ 
         Tests switching backend after instantiation and re-setting.
         """
-        if not _JAX_AVAILABLE:
+        if not JAX_AVAILABLE:
             pytest.skip("Backend switching test requires JAX.")
 
         # Need data for both backends
@@ -500,7 +500,7 @@ class TestPreconditioners:
     #! JIT Interaction Tests
     # -----------------------------------------------------------------
 
-    @pytest.mark.skipif(not _JAX_AVAILABLE, reason="Requires JAX for JIT testing")
+    @pytest.mark.skipif(not JAX_AVAILABLE, reason="Requires JAX for JIT testing")
     def test_preconditioner_with_jit_solver(self, fixture_matrix_data):
         """
         Tests using a JAX-JITted preconditioner apply func within a JITted step.

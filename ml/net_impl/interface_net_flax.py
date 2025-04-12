@@ -62,7 +62,7 @@ from jax.tree_util import tree_flatten, tree_unflatten, tree_map
 # from general_python utilities
 from general_python.ml.net_impl.net_general import GeneralNet
 from general_python.ml.net_impl.activation_functions import get_activation
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 
 ########################################################################
 #! GENERIC FLAX NETWORK INTERFACE
@@ -134,7 +134,7 @@ class FlaxInterface(GeneralNet):
         #! Set the backend to JAX.
         if self._backend != jnp and self._backend != 'jax':
             raise ValueError(self._ERR_JAX_NECESSARY)
-        if not _JAX_AVAILABLE:
+        if not JAX_AVAILABLE:
             raise ImportError(self._ERR_JAX_NECESSARY + " JAX not installed.")
         
         

@@ -32,10 +32,10 @@ import general_python.ml.net_impl.net_general as _net_general
 from typing import Optional, Tuple, Callable
 
 # import from general python module
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 from general_python.ml.net_impl.activation_functions import get_activation
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     from jax import random
@@ -63,7 +63,7 @@ def apply(params, x: 'array-like', activations) -> np.ndarray:
         s = act(s)
     return s
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     
     @partial(jax.jit, static_argnums=(2,))
     def apply_jax(params, x: 'array-like', activations) -> jnp.ndarray:
@@ -91,7 +91,7 @@ def apply_wrapper(activations, use_jax: bool):
     Wrapper function to apply the network using either NumPy or JAX.
     '''
     
-    if use_jax and _JAX_AVAILABLE:
+    if use_jax and JAX_AVAILABLE:
         @jax.jit
         def apply_jax_in(params, x):
             """

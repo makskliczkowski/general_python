@@ -2,12 +2,12 @@
 
 import time
 from typing import List, Optional
-from general_python.algebra.utils import _JAX_AVAILABLE, DEFAULT_INT_TYPE, DEFAULT_NP_FLOAT_TYPE
+from general_python.algebra.utils import JAX_AVAILABLE
 
 BACKEND_REPR       = 0.5
 BACKEND_DEF_SPIN   = True
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax
     from general_python.algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE

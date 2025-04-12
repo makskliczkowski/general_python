@@ -33,22 +33,19 @@ from enum import Enum, auto, unique                 # for enumerations
 
 # -----------------------------------------------------------------------------
 
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend, maybe_jit
-from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun, preconditioner_idn
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend, maybe_jit, Array
+from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 try:
-    if _JAX_AVAILABLE:
+    if JAX_AVAILABLE:
         import jax
         import jax.numpy as jnp
-        Array   = Union[np.ndarray, jnp.ndarray]
     else:
-        jax     = None
-        jnp     = None
-        Array   = np.ndarray
+        jax                 = None
+        jnp                 = None
 except ImportError:
-    jax     = None
-    jnp     = None
-    Array   = np.ndarray
+    jax                     = None
+    jnp                     = None
 
 # -----------------------------------------------------------------------------
 #! Type hints
@@ -250,13 +247,13 @@ class Solver(ABC):
         Internal method to set backend attributes.
         """
         new_backend_str                 = backend
-        if new_backend_str == 'default' and _JAX_AVAILABLE:
+        if new_backend_str == 'default' and JAX_AVAILABLE:
             new_backend_str = 'jax'
         else:
             new_backend_str = 'numpy'
         self._backend_str               = new_backend_str
         self._backend, self._backend_sp = get_backend(self._backend_str, scipy=True)
-        self._isjax                     = _JAX_AVAILABLE and self._backend is not np
+        self._isjax                     = JAX_AVAILABLE and self._backend is not np
 
     # -------------------------------------------------------------------------
     #! Static Solve Interface (Core Requirement)
@@ -367,7 +364,7 @@ class Solver(ABC):
         # get the function name for convenience
         func_name = getattr(func, '__name__', '<anonymous_lambda>')
         
-        if _JAX_AVAILABLE and backend_module is jnp:
+        if JAX_AVAILABLE and backend_module is jnp:
             if jax is None:
                 raise SolverError(SolverErrorMsg.COMPILATION_NA, "JAX not available for JIT.")
             print(f"(Solver) JIT compiling function {func_name}...")

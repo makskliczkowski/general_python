@@ -18,7 +18,7 @@ from general_python.algebra.solver import (
 )
 from general_python.algebra.preconditioners import Preconditioner
 
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 try:
     import jax
     import jax.numpy as jnp
@@ -493,7 +493,7 @@ class DirectJaxScipy(Solver):
                 sigma           : Optional[float]                 = None,
                 is_gram         : bool                            = False
                 ):
-        if not _JAX_AVAILABLE:
+        if not JAX_AVAILABLE:
             raise ImportError("JAX is required for DirectJaxScipy.")
         if backend != 'jax': 
             print(f"Warning: {self.__class__.__name__} uses JAX SciPy, forcing backend to 'jax'.")

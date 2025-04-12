@@ -9,9 +9,9 @@ import numpy as np
 import numba
 from typing import Optional, Tuple, Callable
 from abc import ABC, abstractmethod
-from general_python.algebra.utils import _JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     from jax import random
@@ -320,7 +320,7 @@ class GeneralNet(ABC):
         if params is not None:
             self.set_params(params)
             
-        if self._use_jax or (use_jax and _JAX_AVAILABLE):
+        if self._use_jax or (use_jax and JAX_AVAILABLE):
             return self.apply_jax(x)
         return self.apply_np(x)
     
@@ -333,7 +333,7 @@ class GeneralNet(ABC):
         Returns:
             Callable: Apply function of the network.
         """
-        if self._use_jax or (use_jax and _JAX_AVAILABLE):
+        if self._use_jax or (use_jax and JAX_AVAILABLE):
             return self._apply_jax, self.get_params()
         return self._apply_np, self.get_params()
     
@@ -341,7 +341,7 @@ class GeneralNet(ABC):
         '''
         For the networks that may have an analytic gradient obtainable via 
         '''
-        if self._use_jax or (use_jax and _JAX_AVAILABLE):
+        if self._use_jax or (use_jax and JAX_AVAILABLE):
             return None
         return None
     

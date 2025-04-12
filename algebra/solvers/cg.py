@@ -52,7 +52,7 @@ from general_python.algebra.solver import (Solver, SolverResult, SolverError, So
 from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 # Import backend specifics and compilation tools
-from general_python.algebra.utils import _JAX_AVAILABLE
+from general_python.algebra.utils import JAX_AVAILABLE
 try:
     import jax
     import jax.numpy as jnp
@@ -397,7 +397,7 @@ else:
 
 #! JAX CG Logic
 _cg_logic_jax_compiled                  = None
-if _JAX_AVAILABLE:
+if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     import jax.lax as lax

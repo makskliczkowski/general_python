@@ -20,7 +20,7 @@ from general_python.algebra.solvers.pseudoinverse import PseudoInverseSolver
 from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
 
 # Import utility and preconditioner chooser
-from general_python.algebra.utils import get_backend, _JAX_AVAILABLE
+from general_python.algebra.utils import get_backend, JAX_AVAILABLE
 from general_python.algebra.preconditioners import Preconditioner, choose_precond
 
 # -----------------------------------------------------------------------------
