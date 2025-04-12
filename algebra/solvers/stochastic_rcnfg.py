@@ -197,7 +197,7 @@ if _JAX_AVAILABLE:
         return derivatives - derivatives_m
     
     @jax.jit
-    def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, num_samples: int) -> jnp.ndarray:
+    def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray) -> jnp.ndarray:
         '''
         Calculates the covariance matrix for stochastic reconfiguration from
         the variational derivatives.
@@ -208,15 +208,13 @@ if _JAX_AVAILABLE:
             derivatives_c_h:
                 centered variational derivatives hermitian conjugate
                 O_k^* - <O_k^*>_{samples}
-            num_samples:
-                number of samples used to calculate the covariance matrix
         Returns:
             covariance matrix S_{kk'} = (<O_k^*O_k'> - <O_k^*><O_k>) / n_samples
         '''
-        return jnp.matmul(derivatives_c, derivatives_c_h) / num_samples
+        return jnp.matmul(derivatives_c, derivatives_c_h) / derivatives_c.shape[1]
     
     @jax.jit
-    def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, num_samples: int) -> jnp.ndarray:
+    def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         '''
         Calculates the covariance matrix for stochastic reconfiguration from
         the variational derivatives.
@@ -226,15 +224,13 @@ if _JAX_AVAILABLE:
             derivatives_c_h:
                 centered variational derivatives hermitian conjugate
                 O_k^* - <O_k^*>_{samples}
-            num_samples:
-                number of samples used to calculate the covariance matrix
         Returns:
             covariance matrix S_{kk'} = (<O_k^*O_k'> - <O_k^*><O_k>) / n_samples
         '''
-        return jnp.matmul(derivatives_c_h, derivatives_c) / num_samples
+        return jnp.matmul(derivatives_c_h, derivatives_c) / n_samples
     
     @jax.jit
-    def gradient_jax(derivatives_c_h: jnp.ndarray,  loss_c: jnp.ndarray, num_samples: int) -> jnp.ndarray:
+    def gradient_jax(derivatives_c_h: jnp.ndarray,  loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         '''
         Calculates the gradient of the loss function with respect to the
         variational parameters.
@@ -249,7 +245,7 @@ if _JAX_AVAILABLE:
         Returns:
             gradient of the loss function with respect to the variational parameters
         '''
-        return jnp.matmul(derivatives_c_h, loss_c) / num_samples
+        return jnp.matmul(derivatives_c_h, loss_c) / n_samples
 
     @jax.jit
     def solve_jax_prepare(loss, var_deriv):
@@ -283,24 +279,27 @@ if _JAX_AVAILABLE:
         """
         n_samples       = loss.shape[0]
         loss_m          = jnp.mean(loss, axis=0)
-        loss_c          = loss_centered(loss, loss_m)       # Assume loss_centered is defined elsewhere.
-        
+        # Use the jitted versions explicitly if needed for clarity
+        loss_c          = loss_centered_jax(loss, loss_m)
+
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
-        var_deriv_c     = derivatives_centered(var_deriv, var_deriv_m)  # Assume derivatives_centered is defined.
-        var_deriv_c_h   = jnp.conj(var_deriv_c).T
+        var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
+        var_deriv_c_h   = jnp.conj(var_deriv_c.T)
         return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
 
-    @jax.jit
-    def solve_jax_cov_in(solver,
+    @partial(jax.jit, static_argnames=('solve_func', 'min_sr', 'precond_apply', 'maxiter', 'tol'))
+    def solve_jax_cov_in(solve_func,
                         loss_c          :   jnp.ndarray,
                         var_deriv_c     :   jnp.ndarray,
                         var_deriv_c_h   :   jnp.ndarray,
                         n_samples       :   int,
                         min_sr          :   bool,
                         x0              =   None,
-                        precond         =   None,
-                        s               : Optional[jnp.ndarray] = None):
+                        precond_apply         =   None,
+                        s               :   Optional[jnp.ndarray] = None,
+                        maxiter         :   int   = 500,
+                        tol             :   float = 1e-8):
         """
         Solves the covariance problem using the specified solver with precomputed parameters.
         
@@ -319,8 +318,8 @@ if _JAX_AVAILABLE:
                 Boolean flag indicating whether to use the MinSR method.
             x0:
                 Optional initial guess for the solution.
-            precond:
-                Optional preconditioner for the solver.
+            precond_apply:
+                Optional precond_applyitioner for the solver.
             s:
                 Optional covariance matrix; if None, it will be computed.
         
@@ -334,32 +333,32 @@ if _JAX_AVAILABLE:
         if min_sr:
             if s is None:
                 s = covariance_jax_minsr(var_deriv_c, var_deriv_c_h, n_samples)
-                solver.init_from_matrix(s, loss_c, x0=x0)
             
             # Solve the linear equation using the solver.
-            solution = solver.solve(loss_c, x0=x0, precond=precond)
+            solution = solve_func(s, loss_c, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
             return jnp.matmul(var_deriv_c_h, solution), s
         
         # Compute forces using a gradient function; assume gradient_jax is defined.
-        f = gradient_jax(var_deriv_c_h, loss_c, n_samples)
+        f = gradient_jax(var_deriv_c_h, loss_c)
         
         if s is None:
             # Compute the covariance matrix if not provided.
             s = covariance_jax(var_deriv_c, var_deriv_c_h, n_samples)
-            solver.init_from_matrix(s, f, x0=x0)
             
         # Solve the linear equation using the solver.
-        solution = solver.solve(f, x0=x0, precond=precond)
+        solution = solve_func(s, f, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
         return solution, s
 
-    @jax.jit
-    def solve_jax_cov(solver,
+    @partial(jax.jit, static_argnames=('solve_func', 'min_sr', 'precond_apply', 'maxiter', 'tol'))
+    def solve_jax_cov(solve_func,
                     loss,
                     var_deriv,
                     min_sr,
                     x0          = None,
-                    precond     = None,
-                    s           : Optional[jnp.ndarray] = None):
+                    precond_apply     = None,
+                    s           : Optional[jnp.ndarray] = None,
+                    maxiter     : int = 500,
+                    tol         : float = 1e-8):
         """
         Solves the covariance problem from scratch using the specified solver.
         
@@ -376,21 +375,30 @@ if _JAX_AVAILABLE:
                 Boolean flag indicating whether to use the MinSR method.
             x0:
                 Optional initial guess for the solution.
-            precond:
-                Optional preconditioner for the solver.
+            precond_apply:
+                Optional precond_applyitioner for the solver.
             s:
                 Optional covariance matrix.
-        
+            maxiter:
+                Maximum number of iterations for the solver.
+            tol:
+                Tolerance for convergence of the solver.
         Returns:
             A tuple (solution, s) with the computed solution and the covariance matrix.
         """
         loss_c, var_deriv_c, var_deriv_c_h, n_samples, _ = solve_jax_prepare(loss, var_deriv)
-        return solve_jax_cov_in(solver, loss_c, var_deriv_c, var_deriv_c_h, n_samples,
-                                min_sr, x0=x0, precond=precond, s=s)
+        # Pass solve_func correctly
+        return solve_jax_cov_in(solve_func, loss_c, var_deriv_c, var_deriv_c_h, n_samples,
+                                min_sr, x0=x0, precond_apply=precond_apply, s=s, maxiter=maxiter, tol=tol)
 
-    @jax.jit
-    def solve_jax_in(solver_func, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
-                    x0=None, precond=None):
+    @partial(jax.jit, static_argnames=('solve_func', 'min_sr', 'precond_apply', 'maxiter', 'tol'))
+    def solve_jax_in(solve_func,
+                    loss_c,
+                    var_deriv_c,
+                    var_deriv_c_h,
+                    min_sr,
+                    n_samples,
+                    x0=None, precond_apply=None, maxiter=500, tol=1e-8):
         """
         Solves for the parameter update using the Fisher formulation without explicitly creating a covariance matrix.
         
@@ -415,32 +423,22 @@ if _JAX_AVAILABLE:
                 Boolean flag indicating whether to use the MinSR approach.
             x0:
                 Optional initial guess for the solution.
-            precond:
-                Optional preconditioner.
+            precond_apply:
+                Optional precond_applyitioner.
         
         Returns:
             The computed update vector.
         """
         if min_sr:
-            
-            # matvec = solver_utils.Solver.create_matvec_from_fisher(
-            #     s = var_deriv_c_h,
-            #     s_p = var_deriv_c,
-            #     n = n_samples,
-            #     sigma = None,
-            #     backend_module = 'jax'
-            # )
-            solver_func.init_from_fisher(var_deriv_c_h, var_deriv_c, loss_c, x0=x0)
-            solution = solver_func.solve(loss_c, x0=x0, precond=precond)
+            solution = solve_func(s=var_deriv_c_h, s_p=var_deriv_c, b=loss_c, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
             return jnp.matmul(var_deriv_c_h, solution)
 
-        f = gradient_jax(var_deriv_c_h, loss_c, n_samples)  # Assume gradient_jax is defined.
-        solver.init_from_fisher(var_deriv_c, var_deriv_c_h, f, x0=x0)
-        solution = solver.solve(f, x0=x0, precond=precond)
+        f = gradient_jax(var_deriv_c_h, loss_c, n_samples)
+        solution = solve_func(s=var_deriv_c, s_p=var_deriv_c_h, b=f, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
         return solution
 
-    @jax.jit
-    def solve_jax(solver_func, loss, var_deriv, min_sr, x0=None, precond=None):
+    @partial(jax.jit, static_argnames=('solve_func', 'min_sr', 'precond_apply', 'maxiter', 'tol'))
+    def solve_jax(solve_func, loss, var_deriv, min_sr, x0=None, precond_apply=None, maxiter=500, tol=1e-8):
         """
         Solves the stochastic reconfiguration problem using the specified solver without creating the
         covariance matrix explicitly.
@@ -456,15 +454,15 @@ if _JAX_AVAILABLE:
                 Boolean flag indicating whether to use the MinSR method.
             x0:
                 Optional initial guess for the solution.
-            precond:
-                Optional preconditioner.
+            precond_apply:
+                Optional precond_applyitioner.
         
         Returns:
             The computed update vector.
         """
         loss_c, var_deriv_c, var_deriv_c_h, n_samples, _ = solve_jax_prepare(loss, var_deriv)
-        return solve_jax_in(solver_func, loss_c, var_deriv_c, var_deriv_c_h, n_samples, min_sr,
-                            x0=x0, precond=precond)
+        return solve_jax_in(solve_func, loss_c, var_deriv_c, var_deriv_c_h, min_sr, n_samples,
+                            x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
 
 # numpy specific
 if True:
@@ -606,7 +604,7 @@ if True:
         n_samples       : int,
         min_sr          : bool,
         x0              : Optional[np.ndarray] = None,
-        precond         = None,
+        precond_apply         = None,
         s               : Optional[np.ndarray] = None):
         '''
         Solves the covariance problem using the specified solver.
@@ -626,8 +624,8 @@ if True:
                 Boolean flag indicating whether to use MinSR.
             x0:
                 Initial guess for the solution (optional).
-            precond:
-                Preconditioner for the solver (optional).
+            precond_apply:
+                precond_applyitioner for the solver (optional).
             s:
                 Covariance matrix (optional).
         Returns:
@@ -640,7 +638,7 @@ if True:
                 s = covariance_np_minsr(var_deriv_c, var_deriv_c_h, n_samples)
                 solver.init_from_matrix(s, loss_c, x0 = x0)
                 
-            solution = solver.solve(loss_c, x0, precond = precond)
+            solution = solver.solve(loss_c, x0, precond_apply = precond_apply)
             return np.matmul(var_deriv_c_h, solution), s
         
         # calculate forces
@@ -648,7 +646,7 @@ if True:
         if s is None:
             s = covariance_np(var_deriv_c, var_deriv_c_h, n_samples)
             solver.init_from_matrix(s, f, x0 = x0)
-        solution = solver.solve(f, x0 = x0, precond = precond)
+        solution = solver.solve(f, x0 = x0, precond_apply = precond_apply)
         return solution, s
     
     @numba.njit
@@ -658,7 +656,7 @@ if True:
         var_deriv   : np.ndarray,
         min_sr      : bool,
         x0          : Optional[np.ndarray] = None,
-        precond     : Optional[np.ndarray] = None,
+        precond_apply     : Optional[np.ndarray] = None,
         s           : Optional[np.ndarray] = None):
         '''
         Solves the covariance problem using the specified solver.
@@ -675,8 +673,8 @@ if True:
                 Boolean flag indicating whether to use MinSR.
             x0:
                 Initial guess for the solution (optional).
-            precond:
-                Preconditioner for the solver (optional).
+            precond_apply:
+                precond_applyitioner for the solver (optional).
         Returns:
             Solution to the covariance problem.
             
@@ -697,7 +695,7 @@ if True:
                                 n_samples,
                                 min_sr,
                                 x0      = x0,
-                                precond = precond,
+                                precond_apply = precond_apply,
                                 s       = s)
     
     @numba.njit
@@ -708,7 +706,9 @@ if True:
                         n_samples       : int,
                         min_sr          : bool,
                         x0              : Optional[np.ndarray] = None,
-                        precond         = None):
+                        precond_apply         = None,
+                        maxiter         : int   = 500,
+                        tol             : float = 1e-8):
         """
         Solves for the parameter update by applying a linear solver configured using input covariance
         and derivative matrices, optionally following a minimal sampling residual (min_sr) procedure.
@@ -737,9 +737,13 @@ if True:
                 is post-multiplied by var_deriv_c_h. Otherwise, the forces are computed from a gradient of loss.
             x0 (Optional[np.ndarray], optional):
                 An optional initial guess for the solver. Defaults to None.
-            precond (optional):
-                A preconditioner to be used by the solver. The type and required format
+            precond_apply (optional):
+                A precond_applyitioner to be used by the solver. The type and required format
                 depend on the specific solver implementation. Defaults to None.
+            maxiter (int, optional):
+            
+            tol (float, optional)
+        
         Returns:
             np.ndarray:
                 The computed update vector. If min_sr is True, the solution is transformed by
@@ -747,13 +751,13 @@ if True:
         """
         if min_sr:
             solver.init_from_fisher(var_deriv_c_h, var_deriv_c, loss_c, x0 = x0)
-            solution = solver.solve(loss_c, x0, precond = precond)
+            solution = solver.solve(loss_c, x0, precond_apply = precond_apply)
             return np.matmul(var_deriv_c_h, solution)
         
         # calculate forces
         f           = gradient_np(var_deriv_c_h, loss_c, n_samples)
         solver.init_from_fisher(var_deriv_c, var_deriv_c_h, f, x0 = x0)
-        solution = solver.solve(f, x0 = x0, precond = precond)
+        solution = solver.solve(f, x0 = x0, precond_apply = precond_apply, maxiter = maxiter, tol = tol)
         return solution
     
     @numba.njit
@@ -762,7 +766,9 @@ if True:
                     var_deriv   : np.ndarray,
                     min_sr      : bool,
                     x0          : Optional[np.ndarray] = None,
-                    precond     : Optional[np.ndarray] = None):
+                    precond_apply     : Optional[np.ndarray] = None,
+                    maxiter     : int   = 500,
+                    tol         : float = 1e-8):        
         '''
         Solves the stochastic reconfiguration problem using the specified solver.
         Parameters:
@@ -776,8 +782,8 @@ if True:
                 Boolean flag indicating whether to use MinSR.
             x0:
                 Initial guess for the solution (optional).
-            precond:
-                Preconditioner for the solver (optional).
+            precond_apply:
+                precond_applyitioner for the solver (optional).
         Returns:
             Solution to the stochastic reconfiguration problem.
         Notes:
@@ -792,7 +798,9 @@ if True:
                             n_samples,
                             min_sr,
                             x0      = x0,
-                            precond = precond)
+                            precond_apply = precond_apply,
+                            maxiter = maxiter,
+                            tol     = tol)
 
 #####################################
 
@@ -1069,7 +1077,7 @@ class StochasticReconfiguration(ABC):
         ''' 
         Returns the centered derivatives of the ansatz -> conjugate transpose
         '''
-        return self.derivatives_c_h
+        return self._derivatives_c_h
     
     @property
     def solution(self):

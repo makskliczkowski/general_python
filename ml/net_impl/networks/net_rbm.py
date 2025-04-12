@@ -242,7 +242,7 @@ class RBM(FlaxInterface):
     def __repr__(self) -> str:
         init_status = "initialized" if self.initialized else "uninitialized"
         rbm_type    = "Complex" if self.is_complex else "Real"
-        n_hidden    =   self._net_kwargs_in.get('n_hidden', '?')
-        bias        =   "on" if self._net_kwargs_in.get('bias', False) else "off"
+        n_hidden    = self._net_kwargs_in.get('n_hidden', '?')
+        bias        = "on" if self._net_kwargs_in.get('bias', False) else "off"
         return (f"{rbm_type}RBM(shape={self.input_shape}, hidden={n_hidden}, "
             f"bias={bias}, dtype={self.dtype}, params={self.num_parameters}, {init_status})")
