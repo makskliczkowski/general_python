@@ -6,7 +6,7 @@ date    : 2025-03-01
 '''
 
 # from general python utils
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple, NamedTuple
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 from functools import partial
 
@@ -373,7 +373,7 @@ if JAX_AVAILABLE:
         **Can be JIT-compiled** if `apply_fun` is static.
         """
         gr_tree, gi_tree    = _compute_numerical_grad_parts(apply_fun, params, arg)
-
+        jax.debug.print("gr_tree: {}", gr_tree)
         # Combine into complex conjugate PyTree
         is_complex_params   = any(jnp.iscomplexobj(leaf) for leaf in tree_leaves(params))
         def combine_conj(gr, gi):
@@ -381,7 +381,9 @@ if JAX_AVAILABLE:
                 return gr.astype(DEFAULT_JP_CPX_TYPE) - 1.j * gi.astype(DEFAULT_JP_CPX_TYPE)
             else:
                 return gr.astype(DEFAULT_JP_FLOAT_TYPE)
-        return tree_map(combine_conj, gr_tree, gi_tree)
+        combined = tree_map(combine_conj, gr_tree, gi_tree)
+        jax.debug.print("combined: {}", combined)
+        return combined
 
     @partial(jax.jit, static_argnums=(0,))
     def pytree_gradient_real_numerical_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
@@ -585,88 +587,33 @@ if JAX_AVAILABLE:
         return gradients
     
     # ----------------------------------------------------------------------------
+    #! Transform the vector from the original representation to the real representation [Re..., Im...]
+    # ----------------------------------------------------------------------------
+    
     @jax.jit
     def _ensure_real_repr_vector_single(vector: jnp.ndarray) -> jnp.ndarray:
         """
-        Internal JIT function: Ensures a single vector is the real representation.
+        Internal JIT function:
+        
+        Ensures a single vector is the real representation.
         See ensure_real_repr_vector docstring.
+        
+        Parameters
+        ----------
+        vector : jnp.ndarray
+            A 1D JAX array, real or complex.
         """
         if jnp.iscomplexobj(vector):
             real_parts = jnp.real(vector)
             imag_parts = jnp.imag(vector)
             return jnp.concatenate([real_parts, imag_parts]).astype(DEFAULT_JP_FLOAT_TYPE)
         else:
-            return vector.astype(DEFAULT_JP_FLOAT_TYPE)
-
-    @partial(jax.jit, static_argnames=('params_template_is_complex',))
-    def _vector_from_real_repr_single_impl(
-        real_repr_vector: jnp.ndarray,
-        params_template_is_complex: bool,
-        expected_size_if_real: int
-        ) -> jnp.ndarray:
-        """
-        Internal JIT function: Converts a single real vector based on template complexity.
-        See vector_from_real_repr docstring.
-        """
-        if jnp.iscomplexobj(real_repr_vector):
-            raise ValueError("Input vector must be real for _vector_from_real_repr_single_impl.")
-
-        if params_template_is_complex:
-            if real_repr_vector.size % 2 != 0:
-                raise ValueError("Input vector size must be even for complex params template.")
-            N = real_repr_vector.size // 2
-            real_repr_vector = real_repr_vector.astype(DEFAULT_JP_FLOAT_TYPE) # Ensure float
-            real_parts = real_repr_vector[:N]
-            imag_parts = real_repr_vector[N:]
-            return (real_parts + 1.j * imag_parts).astype(DEFAULT_JP_CPX_TYPE)
-        else:
-            # Optional: Validate size against template
-            if real_repr_vector.size != expected_size_if_real:
-                raise ValueError(f"Input vector size ({real_repr_vector.size}) does not match "
-                                f"expected size ({expected_size_if_real}) for real params template.")
-            return real_repr_vector.astype(DEFAULT_JP_FLOAT_TYPE)
-
-    def _vector_from_real_repr_single(
-        real_repr_vector: jnp.ndarray,
-        params_template: Any
-        ) -> jnp.ndarray:
-        """
-        Internal non-JIT function: Determines complexity from template and calls impl.
-        See vector_from_real_repr docstring.
-        """
-        template_leaves = tree_leaves(params_template)
-        if not template_leaves:
-            params_template_is_complex = False
-            expected_size_if_real = 0
-            if real_repr_vector.size == 0: return jnp.array([], dtype=DEFAULT_JP_FLOAT_TYPE)
-            else: raise ValueError("Non-empty input vector provided with an empty parameter template.")
-        else:
-            params_template_is_complex = any(jnp.iscomplexobj(leaf) for leaf in template_leaves)
-            if not params_template_is_complex:
-                expected_size_if_real = sum(leaf.size for leaf in template_leaves)
-            else:
-                # Size check happens inside impl based on evenness
-                expected_size_if_real = -1 # Not used for complex case check here
-
-        return _vector_from_real_repr_single_impl(
-            real_repr_vector,
-            params_template_is_complex,
-            expected_size_if_real
-        )
-
-    # --- Batched (Public) Functions ---
-
-    # Use vmap to create batched versions
-    # map the single-vector function over the first axis (axis 0)
-    _ensure_real_repr_vector_batch = jax.vmap(
-        _ensure_real_repr_vector_single, in_axes=0, out_axes=0
-    )
-
+            return vector
+    
     # map the single-vector function over the first axis (vectors), keep template fixed (None)
-    _vector_from_real_repr_batch = jax.vmap(
-        _vector_from_real_repr_single, in_axes=(0, None), out_axes=0
-    )
+    _ensure_real_repr_vector_batch = jax.vmap(_ensure_real_repr_vector_single, in_axes=0, out_axes=0)
 
+    @jax.jit
     def ensure_real_repr_vector(vectors: jnp.ndarray) -> jnp.ndarray:
         """
         Ensures the output vector(s) are the real representation [Re..., Im...] if complex,
@@ -704,14 +651,130 @@ if JAX_AVAILABLE:
                 return _ensure_real_repr_vector_batch(vectors)
             else:
                 # If the whole batch is real, just ensure float type
-                return vectors.astype
+                return vectors.astype(DEFAULT_JP_FLOAT_TYPE)
         else:
             raise ValueError(f"Input must be 1D or 2D, got ndim={vectors.ndim}")
 
-    def vector_from_real_repr(
-        real_repr_vectors: jnp.ndarray,
-        params_template: Any
-        ) -> jnp.ndarray:
+    # ----------------------------------------------------------------------------
+    #! Transform the vector from the real representation [Re..., Im...] to the original representation
+    # ----------------------------------------------------------------------------
+
+    @partial(jax.jit, static_argnames=('params_template_is_complex',))
+    def _vector_from_real_repr_single_impl(
+        real_repr_vector            : jnp.ndarray,
+        params_template_is_complex  : bool,
+        expected_size_if_real       : int) -> jnp.ndarray:
+        """
+        Internal JIT function
+        
+        Converts a single real vector based on template complexity.
+        See vector_from_real_repr docstring.
+        
+        Note:
+        ----------
+        The real representation is assumed to be in the form [Re..., Im...]
+        
+        Parameters
+        ----------
+        real_repr_vector : jnp.ndarray
+            A 1D JAX array, real representation of the vector.
+        params_template_is_complex : bool
+            Indicates if the parameter template is complex.
+        expected_size_if_real : int
+            Expected size of the vector if it is real.
+        Returns
+        -------
+        jnp.ndarray
+            A 1D JAX array, converted to the appropriate type (complex or real).
+            
+            If `params_template_is_complex` is True, the output will be complex.
+            -> The output will be of size `(N,)` where `N = 2 * original_dim`.
+            If `params_template_is_complex` is False, the output will be real.
+            -> The output will be of size `(M,)` where `M = original_dim`.
+        
+        Example
+        -------
+        
+        >>> real_repr_vector = jnp.array([1.0, 2.0, 3.0, 4.0])
+        >>> params_template_is_complex = True
+        >>> expected_size_if_real = 4
+        >>> result = _vector_from_real_repr_single_impl(real_repr_vector, params_template_is_complex, expected_size_if_real)
+        >>> print(result)
+        [1.0 + 2.0j, 3.0 + 4.0j]
+        """
+        if jnp.iscomplexobj(real_repr_vector):
+            raise ValueError("Input vector must be real for _vector_from_real_repr_single_impl.")
+
+        # Check if the input vector is complex
+        if params_template_is_complex:
+            
+            # safe check: ensure even size for complex params as [Re..., Im...]
+            if real_repr_vector.size % 2 != 0:
+                raise ValueError("Input vector size must be even for complex params template.")
+            
+            n                   = real_repr_vector.size // 2
+            real_repr_vector    = real_repr_vector.astype(DEFAULT_JP_FLOAT_TYPE)
+            real_parts          = real_repr_vector[:n]
+            imag_parts          = real_repr_vector[n:]
+            return (real_parts + 1.j * imag_parts).astype(DEFAULT_JP_CPX_TYPE)
+        else:
+            # Optional: Validate size against template
+            if real_repr_vector.size != expected_size_if_real:
+                raise ValueError(f"Input vector size ({real_repr_vector.size}) does not match "
+                                f"expected size ({expected_size_if_real}) for real params template.")
+            return real_repr_vector.astype(DEFAULT_JP_FLOAT_TYPE)
+
+    def _vector_from_real_repr_single(
+        real_repr_vector    : jnp.ndarray,
+        params_template     : Any) -> jnp.ndarray:
+        """
+        Internal non-JIT function:
+        
+        Determines complexity from template and calls impl.
+        See vector_from_real_repr docstring.
+        
+        Parameters
+        ----------
+        real_repr_vector : jnp.ndarray
+            A 1D JAX array, real representation of the vector.
+        params_template : Any
+            A PyTree defining the target structure and complexity.
+        Returns
+        -------
+        jnp.ndarray
+            A 1D JAX array, converted to the appropriate type (complex or real).
+        """
+        
+        # Determine if the parameter template is complex or real
+        # tree_leaves returns a list of leaves (arrays) in the PyTree
+        # If the PyTree is empty, we assume it's a real template
+        template_leaves = tree_leaves(params_template)
+        if not template_leaves:
+            params_template_is_complex  = False
+            expected_size_if_real       = 0
+            if real_repr_vector.size == 0:
+                return jnp.array([], dtype=DEFAULT_JP_FLOAT_TYPE)
+            else: 
+                raise ValueError("Non-empty input vector provided with an empty parameter template.")
+        else:
+            params_template_is_complex  = any(jnp.iscomplexobj(leaf) for leaf in template_leaves)
+            if not params_template_is_complex:
+                expected_size_if_real   = sum(leaf.size for leaf in template_leaves)
+            else:
+                # Size check happens inside impl based on evenness
+                expected_size_if_real   = -1
+        return _vector_from_real_repr_single_impl(
+            real_repr_vector,
+            params_template_is_complex,
+            expected_size_if_real
+        )
+
+    # map the single-vector function over the first axis (vectors), keep template fixed (None)
+    _vector_from_real_repr_batch = jax.vmap(_vector_from_real_repr_single, in_axes=(0, None), out_axes=0)
+
+    @jax.jit
+    def vector_from_real_repr(real_repr_vectors : jnp.ndarray,
+                            params_template     : Any) -> jnp.ndarray:
         """
         Converts real representation vector(s) back to original form (complex/real)
         based on a parameter template. Handles single vectors (1D) or batches (2D).
@@ -740,271 +803,7 @@ if JAX_AVAILABLE:
             return _vector_from_real_repr_batch(real_repr_vectors, params_template)
         else:
             raise ValueError(f"Input must be 1D or 2D, got ndim={real_repr_vectors.ndim}")
-
-    # ----------------------------------------------------------------------------
-    
-    # def flat_gradient_analytical_jax(func_analitical: Any, params, arg) -> jnp.ndarray:
-    #     """
-    #     Compute a flattened complex gradient using an analytical method (JAX version).
         
-    #     This function assumes that 'fun' provides an attribute 'analytical_gradient' that 
-    #     returns a pytree of gradients.
-        
-    #     Parameters
-    #     ----------
-    #     fun : object
-    #         The network/function object. Must provide an analytical_gradient method.
-    #     params : Any
-    #         The network parameters (pytree).
-    #     arg : Any
-    #         The input state.
-        
-    #     Returns
-    #     -------
-    #     jnp.ndarray
-    #         A single flattened complex gradient.
-        
-    #     Example
-    #     -------
-    #     >>> # Assume fun.analytical_gradient exists.
-    #     >>> flat_grad = flat_gradient_analytical_jax(fun, params, state)
-    #     """
-                
-    #     # Call the analytical gradient function.
-    #     grad_val    = func_analitical(params, arg)
-    #     # Flatten the gradient pytree: each leaf is reshaped to 1D.
-    #     flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
-    #     # Concatenate all flattened arrays into one vector.
-    #     return jnp.concatenate(flat_grad)
-
-    # def flat_gradient_numerical_jax(func: Any, params, arg) -> jnp.ndarray:
-    #     """
-    #     Compute a flattened complex gradient using numerical differentiation (JAX version).
-        
-    #     Uses jax.grad on both the real and imaginary parts of fun.apply.
-        
-    #     Parameters
-    #     ----------
-    #     fun : object
-    #         The network/function object with an apply method.
-    #     params : Any
-    #         The network parameters (pytree).
-    #     arg : Any
-    #         The input state.
-        
-    #     Returns
-    #     -------
-    #     jnp.ndarray
-    #         A flattened complex gradient.
-        
-    #     Example
-    #     -------
-    #     >>> flat_grad = flat_gradient_numerical_jax(fun, params, state)
-    #     """
-    #     # Compute gradient of the real part.
-    #     gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
-    #     gr  = tree_flatten(tree_map(lambda x: x.ravel(), gr))[0]
-    #     # Compute gradient of the imaginary part.
-    #     gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)
-    #     gi  = tree_flatten(tree_map(lambda x: x.ravel(), gi))[0]
-    #     # Concatenate and combine into a single complex vector.
-    #     return jnp.concatenate(gr) + 1.j * jnp.concatenate(gi)
-
-    # def flat_gradient_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
-    #     """
-    #     Wrapper for computing a flattened complex gradient using JAX.
-        
-    #     If analytical=True and an analytical gradient method exists, it is used;
-    #     otherwise numerical differentiation is applied.
-        
-    #     Parameters
-    #     ----------
-    #     fun : object
-    #         The network/function object.
-    #     params : Any
-    #         The network parameters.
-    #     arg : Any
-    #         The input state.
-    #     analytical : bool, optional
-    #         Whether to use the analytical gradient if available (default: False).
-        
-    #     Returns
-    #     -------
-    #     jnp.ndarray
-    #         The flattened complex gradient.
-        
-    #     Example
-    #     -------
-    #     >>> grad_vec = flat_gradient_jax(fun, params, state, analytical=True)
-    #     """
-    #     if not callable(func):
-    #         raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
-    #     if analytical:
-    #         return flat_gradient_analytical_jax(func, params, arg)
-    #     return flat_gradient_numerical_jax(func, params, arg)
-
-    # # -----------------------------------------------------------------------------
-    # #! Non-holomorphic Gradients: JAX
-    # # -----------------------------------------------------------------------------
-
-    # def flat_gradient_cpx_nonholo_analytical_jax(func_analitical: Any, params: Any, arg: Any) -> jnp.ndarray:
-    #     """
-    #     Compute an analytical flattened complex gradient for non-holomorphic networks (JAX).
-
-    #     Assumes fun returns the analytical gradient as a pytree.
-    #     """
-    #     if not callable(func_analitical):
-    #         raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
-    #     grad_val    = func_analitical(params, arg)
-    #     flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
-    #     return jnp.concatenate(flat_grad)
-
-    # def flat_gradient_cpx_nonholo_numerical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
-    #     """
-    #     Compute a flattened complex gradient for non-holomorphic networks using numerical differentiation (JAX).
-
-    #     Adjusts the sign of the imaginary part.
-    #     """
-    #     gr  = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
-    #     gr  = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gr))[0]
-    #     gi  = grad(lambda p, y: jnp.sum(jnp.imag(func(p, y))))(params, arg)
-    #     gi  = tree_flatten(tree_map(lambda x: [jnp.real(x.ravel()), -jnp.imag(x.ravel())], gi))[0]
-    #     return jnp.concatenate(gr) + 1.j * jnp.concatenate(gi)
-
-    # def flat_gradient_cpx_nonholo_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
-    #     """
-    #     Wrapper for computing a flattened complex gradient for non-holomorphic networks using JAX.
-    #     Parameters
-    #     ----------
-    #     fun : object
-    #         The network/function object.
-    #     params : Any
-    #         The network parameters.
-    #     arg : Any
-    #         The input state.
-    #     analytical : bool, optional
-    #         If True, use the analytical gradient if available.
-    #     Returns
-    #     -------
-    #     jnp.ndarray
-    #         The flattened complex gradient.
-    #     Example
-    #     -------        
-    #     """
-    #     if analytical:
-    #         return flat_gradient_cpx_nonholo_analytical_jax(func, params, arg)
-    #     return flat_gradient_cpx_nonholo_numerical_jax(func, params, arg)
-
-    # # -----------------------------------------------------------------------------
-    # #! Real Gradients: JAX
-    # # -----------------------------------------------------------------------------
-
-    # def flat_gradient_real_analytical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
-    #     """
-    #     Compute an analytical flattened real gradient (JAX).
-
-    #     Assumes func provides an 'analytical_gradient_real' method.
-    #     """
-    #     if not callable(func):
-    #         raise ValueError(_ERR_JAX_GRADIENTS_CALLABLE)
-    #     grad_val    = func(params, arg).astype(jnp.float32)
-    #     flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
-    #     return jnp.concatenate(flat_grad).astype(jnp.float32)
-
-    # def flat_gradient_real_numerical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
-    #     """
-    #     Compute a flattened real gradient using numerical differentiation (JAX).
-    #     """
-    #     g = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
-    #     g = tree_flatten(tree_map(lambda x: x.ravel(), g))[0]
-    #     return jnp.concatenate(g).astype(jnp.float32)
-
-    # def flat_gradient_real_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
-    #     """
-    #     Wrapper for computing a flattened real gradient using JAX.
-    #     Parameters
-    #     ----------
-    #     fun : object
-    #         The network/function object.        
-    #     params : Any
-    #         The network parameters.
-    #     arg : Any
-    #         The input state.
-    #     analytical : bool, optional
-    #         If True, use the analytical gradient if available.
-    #     Returns
-    #     ------- 
-    #     jnp.ndarray
-    #         The flattened real gradient.
-    #     Example
-    #     -------
-    #     >>> grad_vec = flat_gradient_real_jax(fun, params, state, analytical=True)        
-    #     """
-    #     if analytical:
-    #         return flat_gradient_real_analytical_jax(func, params, arg)
-    #     return flat_gradient_real_numerical_jax(func, params, arg)
-
-    # # -----------------------------------------------------------------------------
-    # #! Holomorphic Gradients: JAX
-    # # -----------------------------------------------------------------------------
-
-    # def flat_gradient_holo_analytical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
-    #     """
-    #     Compute an analytical flattened gradient for holomorphic networks (JAX).
-
-    #     Assumes func provides an 'analytical_gradient_holo' method.
-    #     """
-    #     if not callable(func):
-    #         raise ValueError("func must be callable.")
-    #     grad_val    = func(params, arg)
-    #     flat_grad   = tree_flatten(tree_map(lambda x: x.ravel(), grad_val))[0]
-    #     return jnp.concatenate(flat_grad)
-
-    # def flat_gradient_holo_numerical_jax(func: Any, params: Any, arg: Any) -> jnp.ndarray:
-    #     """
-    #     Compute a flattened gradient for holomorphic networks using numerical differentiation (JAX),
-    #     represented as a real vector [real_part, imag_part].
-
-    #     Args:
-    #         func: The complex-valued function (e.g., log_psi) to differentiate.
-    #     Signature func(params, arg) -> complex scalar or array.
-    #     Params:
-    #         The PyTree of complex parameters.
-    #     arg:
-    #         The input to the function.
-
-    #     ---
-    #     Returns:
-    #         A flat jnp.ndarray representing the complex gradient ∂f/∂params*
-    #         as [real(∂f/∂p1*), imag(∂f/∂p1*), real(∂f/∂p2*), imag(∂f/∂p2*), ...].
-    #     """
-    #     # Calculate the complex conjugate gradient d(real(f))/d(params) = (df/dparams)*
-    #     # Note:
-    #     #   Ensure func output is summed if it's an array before taking real part,
-    #     # or handle potential batch dimensions appropriately depending on use case.
-    #     # Here, assuming func outputs a scalar or we sum appropriately.
-    #     # If func output is already summed, remove jnp.sum here.
-    #     complex_grads_tree = grad(lambda p, y: jnp.sum(jnp.real(func(p, y))))(params, arg)
-
-    #     # Extract real and imaginary parts and flatten them
-    #     real_parts_flat = tree_leaves(tree_map(lambda x: jnp.real(x).ravel(), complex_grads_tree))
-    #     imag_parts_flat = tree_leaves(tree_map(lambda x: jnp.imag(x).ravel(), complex_grads_tree))
-
-    #     # Concatenate real and imaginary parts for all parameters
-    #     # The structure is [real_p1, real_p2, ..., imag_p1, imag_p2, ...]
-    #     # which matches the expectation of _update_unflatten
-    #     flat_real_grad = jnp.concatenate(real_parts_flat + imag_parts_flat)
-
-    #     return flat_real_grad
-
-    # def flat_gradient_holo_jax(func: Any, params: Any, arg: Any, analytical: bool = False) -> jnp.ndarray:
-    #     """
-    #     Wrapper for computing a flattened gradient for holomorphic networks using JAX.
-    #     """
-    #     if analytical:
-    #         return flat_gradient_holo_analytical_jax(func, params, arg)
-    #     return flat_gradient_holo_numerical_jax(func, params, arg)
-
     # -----------------------------------------------------------------------------
     #! Dictionary of Gradients: JAX
     # -----------------------------------------------------------------------------
@@ -1113,7 +912,7 @@ if JAX_AVAILABLE:
             weighted_sum            = jnp.sum(new_vals * weights, axis=0)
             
             # Return the weighted sum.
-            return jnp.sum(weighted_sum * sample_p, axis=0)
+            return weighted_sum * sample_p
         
         applied = jax.vmap(compute_estimate, in_axes=(0, 0, 0))(states, logprobas_in, sample_probas)
         return applied, jnp.mean(applied, axis = 0), jnp.std(applied, axis = 0)
@@ -1154,7 +953,7 @@ if JAX_AVAILABLE:
             new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = jnp.exp((new_logprobas - logp))
             weighted_sum            = jnp.sum(new_vals * weights, axis=0)
-            return jnp.sum(weighted_sum, axis=0)
+            return weighted_sum
         
         applied = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
         return applied, jnp.mean(applied, axis = 0), jnp.std(applied, axis = 0)
@@ -1280,5 +1079,80 @@ if JAX_AVAILABLE:
         batch_estimates = jax.vmap(compute_batch, in_axes=(0, 0))(batches, log_batches)
         estimates       = batch_estimates.reshape(-1)[:states.shape[0]]
         return estimates, jnp.mean(estimates, axis=0), jnp.std(estimates, axis=0)
+    
+    # -------------------------------------------------------------------------
+    #! ADD
+    # -------------------------------------------------------------------------
+
+    class SliceInfo(NamedTuple):
+        start       : int
+        size        : int
+        shape       : Tuple[int, ...]
+        is_complex  : bool
+    
+    def prepare_unflatten_metadata(
+        shapes  : List[Tuple[int, Tuple[int, ...]]],
+        iscpx   : bool,
+        params  : Any) -> Tuple[SliceInfo, ...]:
+        """
+        Extracts slicing metadata for unflattening flat vectors into parameter trees.
+
+        Parameters
+        ----------
+        shapes : List[Tuple[int, Tuple[int, ...]]]
+            A list of (num_real_components, shape) for each parameter leaf.
+        iscpx : bool
+            Whether the network stores complex-valued parameters.
+        params : Any
+            Current parameter PyTree (used to infer if leaves are complex).
+        
+        Returns
+        -------
+        Tuple[SliceInfo, ...]
+            Metadata for use in fast_unflatten.
+        """
+        flat_template, _ = tree_flatten(params)
+
+        slice_indices   = []
+        start           = 0
+
+        for i, (num_real, shape) in enumerate(shapes):
+            is_leaf_complex = bool(jnp.iscomplexobj(flat_template[i]) and iscpx)
+            shape_py        = tuple(int(s) for s in shape)
+            num_elements    = int(jnp.prod(jnp.array(shape_py)))
+
+            # Sanity check: does num_real match shape and type?
+            expected_real   = 2 * num_elements if is_leaf_complex else num_elements
+            if int(num_real) != expected_real:
+                raise ValueError(
+                    f"Mismatch in leaf {i}: shape {shape_py}, complex={is_leaf_complex} -> "
+                    f"expected {expected_real} real values, got {num_real}"
+                )
+
+            slice_indices.append(SliceInfo(start=int(start), size=int(num_real), shape=shape_py, is_complex=is_leaf_complex))
+            start += int(num_real)
+
+        return tuple(slice_indices)
+    
+    @partial(jax.jit, static_argnums=(1,))
+    def fast_unflatten(d_par: jnp.ndarray, slice_info: List[Tuple[int, int, Tuple[int], bool]]):
+        """
+        JIT-compiled unflattening of a real flat vector into parameter leaves.
+        """
+        leaves = []
+        for start, size, shape, is_cpx in slice_info:
+            segment = d_par[start:start + size]
+            if is_cpx:
+                re, im = jnp.split(segment, 2)
+                leaf = (re + 1j * im).reshape(shape)
+            else:
+                leaf = segment.reshape(shape).astype(DEFAULT_JP_FLOAT_TYPE)
+            leaves.append(leaf)
+        return leaves
+    
+    @jax.jit
+    def add_tree(p1, p2):
+        """JIT-compiled tree addition."""
+        return tree_map(jax.lax.add, p1, p2)
     
 # -------------------------------------------------------------------------

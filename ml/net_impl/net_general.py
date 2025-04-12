@@ -7,14 +7,17 @@ date    : 2025-03-10
 
 import numpy as np
 import numba
-from typing import Optional, Tuple, Callable, List
+from typing import Optional, Tuple, Callable, List, Union
 from abc import ABC, abstractmethod
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend, Array
+from general_python.common.flog import get_global_logger, Logger
 
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
-    from jax import random
+else:
+    jax     = None
+    jnp     = None
     
 #########################################################
 
@@ -27,11 +30,15 @@ class GeneralNet(ABC):
     backends, depending on the provided backend argument.
     """
 
+    _dcol   = 'blue'            # Default color for the logger 
+
     def __init__(self,
                 input_shape     : tuple,
                 backend		    : str		        = 'default',
                 dtype           : Optional[np.dtype]= np.float64):
 
+        self._name              = "GeneralNet"
+        self._logger            = get_global_logger()
         # Get the backend.
         if isinstance(backend, str):
             self._backend_str	= backend
@@ -72,7 +79,6 @@ class GeneralNet(ABC):
         self._compiled_apply_fn = None
 
         self._shapes_for_update : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
-
         
     # ---------------------------------------------------
     #! INFO
@@ -86,6 +92,30 @@ class GeneralNet(ABC):
             str: Network architecture and parameters.
         """
         return self.__repr__()
+
+    def log(self, msg : str, log : Union[int, str] = Logger.LEVELS_R['info'],
+        lvl : int = 0, color : str = "white", append_msg = True):
+        """
+        Log the message.
+        
+        Args:
+            msg (str) :
+                The message to log.
+            log (Union[int, str]) :
+                The flag to log the message (default is 'info').
+            lvl (int) :
+                The level of the message.
+            color (str) :
+                The color of the message.
+            append_msg (bool) :
+                Flag to append the message.
+        """
+        if isinstance(log, str):
+            log = Logger.LEVELS_R[log]
+        if append_msg:
+            msg = f"[{self._name}] {msg}"
+        msg = self._logger.colorize(msg, color)
+        self._logger.say(msg, log=log, lvl=lvl)
 
     # ---------------------------------------------------
     #! INIT 

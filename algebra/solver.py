@@ -377,8 +377,9 @@ class Solver(ABC):
                 # @np.njit !TODO: should apply?
                 def wrapper_np_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     # Create the matvec function (or matrix if use_matrix=True implies that)
-                    matvec = Solver.create_matvec_from_fisher_np(s, s_p, sigma=sigma, create_full=use_matrix)
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                    matvec  = Solver.create_matvec_from_fisher_np(s, s_p, sigma=sigma, create_full=use_matrix)
+                    precond = lambda r, **kwargs: precond_apply(r=r, s=s, sp=s_p, **kwargs) if precond_apply else None
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 
                 # Numba requires default for optional function args
                 wrapper_np_fisher.__defaults__  = (None,) # For precond_apply
@@ -388,24 +389,27 @@ class Solver(ABC):
                 @partial(jax.jit, static_argnames=static_argnames_tuple)
                 def wrapper_jax_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     # Create the matvec function (or matrix)
-                    matvec = Solver.create_matvec_from_fisher_jax(s, s_p, sigma=sigma, create_full=use_matrix)
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                    matvec  = Solver.create_matvec_from_fisher_jax(s, s_p, sigma=sigma, create_full=use_matrix)
+                    precond = lambda r, **kwargs: precond_apply(r=r, s=s, sp=s_p, **kwargs) if precond_apply else None
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 _the_wrapper = wrapper_jax_fisher
                 
         else:
             if backend_module == np:
                 # @np.njit
                 def wrapper_np_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
-                    matvec = Solver.create_matvec_from_matrix_np(a, sigma=sigma)
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                    matvec  = Solver.create_matvec_from_matrix_np(a, sigma=sigma)
+                    precond = lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs) if precond_apply else None
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 wrapper_np_matrix.__defaults__ = (None,)
                 _the_wrapper = wrapper_np_matrix
             else:
                 # JAX version
                 @partial(jax.jit, static_argnames=static_argnames_tuple)
                 def wrapper_jax_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
-                    matvec = Solver.create_matvec_from_matrix_jax(a, sigma=sigma)
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+                    matvec  = Solver.create_matvec_from_matrix_jax(a, sigma=sigma)
+                    precond = lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs) if precond_apply else None
+                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 _the_wrapper = wrapper_jax_matrix
 
         # Add a default for precond_apply=None in the signature for clarity

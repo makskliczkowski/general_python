@@ -23,7 +23,7 @@ operation M^{-1}r should be computationally inexpensive.
 
 # Import the required modules
 from abc import ABC, abstractmethod
-from typing import Union, Callable, Optional, Any, Type, Tuple
+from typing import Union, Callable, Optional, Any, Type, Tuple, Dict
 from enum import Enum, auto, unique
 import inspect
 import numpy as np
@@ -32,7 +32,8 @@ import numpy as np
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsla
 
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend as get_backend, maybe_jit
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend, Array
+from general_python.common.flog import get_global_logger, Logger
 
 # ---------------------------------------------------------------------
 
@@ -40,24 +41,32 @@ try:
     if JAX_AVAILABLE:
         import jax
         import jax.numpy as jnp
-        Array = Union[np.ndarray, jnp.ndarray]
     else:
         jnp   = None
         jax   = None # Define jax as None if not available
-        Array = np.ndarray
 except ImportError:
     jnp   = None
     jax   = None
-    Array = np.ndarray
 
 # ---------------------------------------------------------------------
 
 # Interface for Preconditioner Apply Function (Static version)
-# Takes residual, sigma, backend module, and precomputed data
-PreconitionerApplyFun = Callable[[Array, float], Array]
+# Takes residual, and precomputed data...
+PreconitionerApplyFun   = Callable[[Array], Array]
+# Setup returns a dictionary of precomputed data
+StaticSetupKernel       = Callable[..., Dict[str, Any]]
+# can be:
+#   - r, backend_mod, sigma, precomputed_data
+#   - r, a, sigma, backend_mod, precomputed_data
+#   - r, s, sp, sigma, backend_mod, precomputed_data
+# Apply uses the precomputed data dictionary
+StaticApplyKernel       = Callable[[Array, Any, float, Dict[str, Any]], Array] # r, backend_mod, sigma, precomputed_data
+
+_TOLERANCE_SMALL        = 1e-13
+_TOLERANCE_BIG          = 1e13
 
 # just the example
-def preconditioner_idn(r: Array, sigma: Optional[float] = None) -> Array:
+def preconditioner_idn(r: Array) -> Array:
     """
     Identity function for preconditioner apply.
     
@@ -87,6 +96,7 @@ class PreconditionersTypeSym(Enum):
     INCOMPLETE_CHOLESKY = auto()
     COMPLETE_CHOLESKY   = auto()
     SSOR                = auto()
+
 @unique
 class PreconditionersTypeNoSym(Enum):
     """
@@ -126,6 +136,9 @@ class Preconditioner(ABC):
     
     _type : Optional[Union[PreconditionersTypeNoSym, PreconditionersTypeSym]] = None
     _name : str = "General Preconditioner"
+    _dcol : str = "yellow"
+    
+    # -----------------------------------------------------------------
     
     def __init__(self,
                 is_positive_semidefinite                        = False,
@@ -149,10 +162,12 @@ class Preconditioner(ABC):
         self._backend                    : Any  # The numpy-like module (np or jnp)
         self._backends                   : Any  # The scipy-like module (sp or jax.scipy)
         self._isjax                      : bool # True if using JAX backend
+        self._logger: Logger             = get_global_logger()
+        self._TOLERANCE_SMALL                  = _TOLERANCE_SMALL
+        self._TOLERANCE_BIG                    = _TOLERANCE_BIG
+        self._zero                       = _TOLERANCE_BIG
+        self._sigma                      = 0.0                          # Regularization parameter
         self.reset_backend(backend) # Sets backend attributes
-        self._tol_small                  = 1e-10
-        self._tol_big                    = 1e10
-        self._zero                       = 1e10
 
         self._is_positive_semidefinite   = is_positive_semidefinite     # Positive semidefinite flag
         self._is_gram                    = is_gram                      # Gram matrix flag
@@ -160,19 +175,49 @@ class Preconditioner(ABC):
         if self._is_positive_semidefinite:
             self._stype                  = PreconditionersType.SYMMETRIC
         else:
-            # May still be symmetric, but we don't assume based on this flag alone
+            #! May still be symmetric, but we don't assume based on this flag alone
             self._stype                  = PreconditionersType.NONSYMMETRIC
 
-        self._sigma                      = 0.0                          # Regularization parameter
-
         # Store reference to the static apply logic of the concrete class
-        self._base_apply_logic : Callable[..., Array] = self.__class__.apply if not apply_func else apply_func
-
-        # Compiled/wrapped apply function for instance usage
-        self._apply_func : PreconitionerApplyFun = None
+        self._base_apply_logic : Callable[..., Array] = self.__class__._apply_kernel if not apply_func else apply_func
         
-        # Trigger initial creation of the wrapped/compiled function
-        self._update_apply_func()
+        # Preconditioner setup
+        self._precomputed_data_instance  : Optional[Dict[str, Any]] = None
+        
+        # Compiled/wrapped apply function for instance usage
+        self._apply_func_instance        : Optional[Callable[[Array], Array]] = None
+        self._update_instance_apply_func() # Create initial apply(r)
+        
+    # -----------------------------------------------------------------
+    #! Logging
+    # -----------------------------------------------------------------
+    
+    def log(self, msg : str, log : Union[int, str] = Logger.LEVELS_R['info'],
+        lvl : int = 0, color : str = "white", append_msg = True):
+        """
+        Log the message.
+        
+        Args:
+            msg (str) :
+                The message to log.
+            log (Union[int, str]) :
+                The flag to log the message (default is 'info').
+            lvl (int) :
+                The level of the message.
+            color (str) :
+                The color of the message.
+            append_msg (bool) :
+                Flag to append the message.
+        """
+        if isinstance(log, str):
+            log = Logger.LEVELS_R[log]
+        if append_msg:
+            msg = f"[{self._name}] {msg}"
+        msg = self._logger.colorize(msg, color)
+        self._logger.say(msg, log=log, lvl=lvl)
+    
+    # -----------------------------------------------------------------
+    #! Backend Management
     # -----------------------------------------------------------------
     
     def reset_backend(self, backend: str):
@@ -184,90 +229,175 @@ class Preconditioner(ABC):
         '''
         new_backend_str = backend if backend != 'default' else 'numpy' # Resolve default
         if not hasattr(self, '_backend_str') or self._backend_str != new_backend_str:
-            print(f"({self._name}) Resetting backend to: {new_backend_str}")
+            self.log(f"Resetting backend to: {new_backend_str}",
+                    log=Logger.LEVELS_R['info'], lvl=1, color=self._dcol)
             self._backend_str               = new_backend_str
             self._backend, self._backends   = get_backend(self._backend_str, scipy=True)
             self._isjax                     = JAX_AVAILABLE and self._backend is not np
             # Re-create the wrapped/compiled apply function for the new backend
-            self._update_apply_func()
+            self._update_instance_apply_func()
         
     # -----------------------------------------------------------------
     #! Closure for the apply function
     # -----------------------------------------------------------------
     
-    def _update_apply_func(self):
+    def _update_instance_apply_func(self):
         """
-        Creates the instance's apply function, potentially JIT-compiled.
-
-        This internal method wraps the static `apply` logic of the concrete class,
-        injecting `self` (for precomputed data) and `self._sigma`, and handles
-        JIT compilation if the backend is JAX.
+        Creates/updates the instance's `apply(r)` func using stored data.
         """
-        if not hasattr(self, '_base_apply_logic'):
-            # Should not happen if __init__ runs correctly
-            print("Warning: _base_apply_logic not set during _update_apply_func. Setting to None.")
-            self._apply_func = self.__class__.apply
-            return
-
-        base_apply      = self._base_apply_logic
+        static_apply    = self.__class__._apply_kernel
         backend_mod     = self._backend
+        # Capture current sigma for the closure
+        current_sigma   = self._sigma
+        instance_self   = self
 
-        # Define the function to be potentially compiled.
-        # It calls the static method, passing necessary instance data.
-        def wrapped_apply_instance(r: Array, sig: float) -> Array:
-            # Get data computed during set() specific to the instance
-            precomputed_data    = self._get_precomputed_data()
-            # Call the static apply logic of the concrete class
-            # Pass instance data as well
-            return base_apply(  r               =   r,
-                                sigma           =   sig,
-                                backend_mod     =   backend_mod,
+        def wrapped_apply_instance(r: Array) -> Array:
+            precomputed_data = instance_self._get_precomputed_data_instance()
+            return static_apply(r               = r,
+                                backend_mod     = backend_mod,
+                                sigma           = current_sigma,
                                 **precomputed_data)
 
-        # Apply JIT compilation if using JAX backend
         if self._isjax and jax is not None:
-            print(f"({self._name}) JIT compiling apply function...")
-            self._apply_func = jax.jit(wrapped_apply_instance)
+            self._apply_func_instance = jax.jit(wrapped_apply_instance)
         else:
-            # !TODO: Add numba?
-            self._apply_func = wrapped_apply_instance
+            self._apply_func_instance = wrapped_apply_instance
     
+    # -----------------------------------------------------------------
+    #! Getters for apply functions
     # -----------------------------------------------------------------
     
     def get_apply(self) -> Callable[[Array], Array]:
         '''
-        Returns the compiled/wrapped version of the apply function for this instance.
-
-        The returned function takes only the residual vector `r` as input.
+        Returns the potentially JIT-compiled function `apply(r)`.
+        Uses precomputed data stored by the last call to `set()`.
         '''
-        if self._apply_func is None:
-            # Should be created by __init__ or reset_backend
-            raise RuntimeError("Preconditioner apply function not initialized.")
-        return self._apply_func
+        if self._apply_func_instance is None:
+            self._update_instance_apply_func()
+            if self._apply_func_instance is None: # If still None, raise error
+                raise RuntimeError("Preconditioner apply(r) function failed to initialize.")
+        return self._apply_func_instance
+    
+    def get_apply_mat(self, **default_setup_kwargs) -> Callable[[Array, Array, float], Array]:
+        '''
+        Returns a potentially JIT-compiled function `apply_mat(r, A, sigma, **override_kwargs)`
+        that computes preconditioner data from `A` and applies it on the fly.
+
+        Params:
+            **default_setup_kwargs:
+                Default keyword arguments for the setup kernel
+                (e.g., tol_small for Jacobi). These are fixed
+                at compile time if using JIT.
+
+        Returns:
+            Callable:
+                The compiled function.
+        '''
+        static_setup        = self.__class__._setup_standard_kernel
+        static_apply        = self.__class__._apply_kernel
+        backend_mod         = self._backend
+        instance_defaults   = default_setup_kwargs
+        sigma               = self._sigma # Capture current sigma for the closure
+
+        # Define the function that performs setup + apply
+        def wrapped_apply_mat(r: Array, a: Array, **call_time_kwargs) -> Array:
+            # Merge default setup kwargs with call-time kwargs (call-time overrides)
+            setup_kwargs        = {**instance_defaults, **call_time_kwargs}
+            # Perform setup on the fly
+            precomputed_data    = static_setup(a, sigma, backend_mod, **setup_kwargs)
+            # Apply using the computed data
+            return static_apply(r, backend_mod, sigma, **precomputed_data)
+
+        if self._isjax and jax is not None:
+            # JIT the wrapper. A, sigma, r are dynamic. Backend is fixed.
+            # We can make setup_kwargs static *if needed* by requiring them
+            # to be passed to get_apply_mat instead of the returned function.
+            # For simplicity now, assume setup_kwargs are dynamic unless performance dictates otherwise.
+            self.log("JIT compiling apply_mat(r, A, sigma, ...) function...", log='info', lvl=2, color=self._dcol)
+            return jax.jit(wrapped_apply_mat)
+        else:
+            self.log("Using numpy backend for apply_mat(r, A, sigma, ...), no JIT.", log='info', lvl=2, color=self._dcol)
+            return wrapped_apply_mat
+
+    def get_apply_gram(self, **default_setup_kwargs) -> Callable[[Array, Array, Array, float], Array]:
+        '''
+        Returns a potentially JIT-compiled function `apply_gram(r, S, Sp, sigma, **override_kwargs)`
+        that computes preconditioner data from `S`, `Sp` and applies it on the fly.
+
+        Params:
+            **default_setup_kwargs: Default keyword arguments for the setup kernel.
+
+        Returns:
+            Callable: The compiled function.
+        '''
+        static_setup        = self.__class__._setup_gram_kernel
+        static_apply        = self.__class__._apply_kernel
+        backend_mod         = self._backend
+        instance_defaults   = default_setup_kwargs
+        sigma               = self._sigma # Capture current sigma for the closure
+
+        def wrapped_apply_gram(r: Array, s: Array, sp: Array, **call_time_kwargs) -> Array:
+            setup_kwargs        = {**instance_defaults, **call_time_kwargs}
+            # Perform setup on the fly
+            precomputed_data    = static_setup(s, sp, sigma, backend_mod, **setup_kwargs)
+            # Apply using the computed data
+            return static_apply(r, backend_mod, sigma, **precomputed_data)
+
+        if self._isjax and jax is not None:
+            self.log("JIT compiling apply_gram(r, S, Sp, ...) function...", log='info', lvl=2, color=self._dcol)
+            return jax.jit(wrapped_apply_gram)
+        else:
+            self.log("Using numpy backend for apply_gram(r, S, Sp, sigma, ...), no JIT.", log='info', lvl=2, color=self._dcol)
+            return wrapped_apply_gram
     
     # -----------------------------------------------------------------
+    #! Properties
+    # -----------------------------------------------------------------
     
-    @property
-    def is_positive_semidefinite(self) -> bool:
-        '''True if the matrix A (and potentially M) is positive semidefinite.'''
-        return self._is_positive_semidefinite
+    # -----------------------------------------------------------------
+    #! Properties: General Attributes
+    # -----------------------------------------------------------------
 
     @property
-    def stype(self) -> PreconditionersType:
-        '''Symmetry type (SYMMETRIC/NONSYMMETRIC).'''
-        return self._stype
+    def name(self) -> str:
+        """Name of the preconditioner."""
+        return self._name
 
     @property
-    def is_gram(self) -> bool:
-        '''True if the preconditioner is set up from Gram matrix factors S, Sp.'''
-        return self._is_gram
+    def dcol(self) -> str:
+        """Color for logging messages."""
+        return self._dcol
 
-    @is_gram.setter
-    def is_gram(self, value: bool):
-        '''Set the is_gram flag. Requires re-running set().'''
-        if self._is_gram != value:
-            print(f"({self._name}) Changed is_gram to {value}. Remember to call set() again.")
-            self._is_gram = value
+    @property
+    def backend_str(self) -> str:
+        """Name of the current backend ('numpy', 'jax')."""
+        return self._backend_str
+
+    @property
+    def backend(self) -> Any:
+        """The backend module (e.g., np, jnp)."""
+        return self._backend
+
+    @property
+    def backends(self) -> Any:
+        """The backend module for scipy-like operations."""
+        return self._backends
+
+    @property
+    def isjax(self) -> bool:
+        """True if using JAX backend."""
+        return self._isjax
+
+    @property
+    def precomputed_data(self) -> dict:
+        """
+        Returns empty dict as no precomputed data is needed. 
+        """
+        return self._get_precomputed_data()
+
+    # -----------------------------------------------------------------
+    #! Properties: Preconditioner Type and Symmetry
+    # -----------------------------------------------------------------
 
     @property
     def type(self) -> Optional[Union[PreconditionersTypeNoSym, PreconditionersTypeSym]]:
@@ -275,12 +405,34 @@ class Preconditioner(ABC):
         return self._type
 
     @property
-    def backend_str(self) -> str:
-        """Name of the current backend ('numpy', 'jax')."""
-        return self._backend_str
+    def stype(self) -> PreconditionersType:
+        """Symmetry type (SYMMETRIC/NONSYMMETRIC)."""
+        return self._stype
+
+    @property
+    def is_positive_semidefinite(self) -> bool:
+        """True if the matrix A (and potentially M) is positive semidefinite."""
+        return self._is_positive_semidefinite
+
+    # -----------------------------------------------------------------
+    #! Properties: Gram Matrix Setup
+    # -----------------------------------------------------------------
+
+    @property
+    def is_gram(self) -> bool:
+        """True if the preconditioner is set up from Gram matrix factors S, Sp."""
+        return self._is_gram
+
+    @is_gram.setter
+    def is_gram(self, value: bool):
+        """Set the is_gram flag. Requires re-running set()."""
+        if self._is_gram != value:
+            self.log(f"({self._name}) Changed is_gram to {value}. Remember to call set() again.",
+                    log=Logger.LEVELS_R['warning'], lvl=1, color=self._dcol)
+            self._is_gram = value
     
     # -----------------------------------------------------------------
-    #! Reg
+    #! Regularization parameter
     # -----------------------------------------------------------------
     
     @property
@@ -291,6 +443,7 @@ class Preconditioner(ABC):
     @sigma.setter
     def sigma(self, value):
         self._sigma = value
+        self._update_instance_apply_func() # Recompile apply(r) if data changes
     
     # -----------------------------------------------------------------
     #! Tolerances
@@ -299,20 +452,20 @@ class Preconditioner(ABC):
     @property
     def tol_big(self):
         '''Tolerance for big values.'''
-        return self._tol_big
+        return self._TOLERANCE_BIG
 
     @tol_big.setter
     def tol_big(self, value):
-        self._tol_big = value
+        self._TOLERANCE_BIG = value
         
     @property
     def tol_small(self):
         '''Tolerance for small values.'''
-        return self._tol_small
+        return self._TOLERANCE_SMALL
     
     @tol_small.setter
     def tol_small(self, value):
-        self._tol_small = value
+        self._TOLERANCE_SMALL = value
     
     @property
     def zero(self):
@@ -324,159 +477,111 @@ class Preconditioner(ABC):
         self._zero = value
     
     # -----------------------------------------------------------------
-    
-
-    @abstractmethod
-    def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """
-        Abstract method to set up the preconditioner using Gram matrix factors S, Sp.
-        Stores necessary precomputed data within the instance.
-
-        Effectively based on A = (1/N) Sp @ S + sigma * I (N often inferred or provided).
-
-        Args:
-            s (Array)      : Matrix S.
-            sp (Array)     : Matrix Sp (transpose or conjugate transpose of S).
-            sigma (float)  : Regularization parameter.
-        """
-        # Implementation in subclass extracts/computes necessary data (e.g., diagonal)
-        # and stores it in instance attributes (e.g., self._inv_diag).
-        # This method should use self._backend for array operations.
-        raise NotImplementedError
-
-    @abstractmethod
-    def _set_standard(self, a: Array, sigma: float):
-        """
-        Abstract method to set up the preconditioner using the standard matrix A.
-        Stores necessary precomputed data within the instance.
-
-        Effectively based on A + sigma * I.
-
-        Args:
-            a (Array)     : The matrix A.
-            sigma (float) : Regularization parameter.
-        """
-        # Implementation in subclass extracts/computes necessary data (e.g., diagonal, ILU factors)
-        # and stores it in instance attributes (e.g., self._inv_diag, self._L, self._U).
-        # This method should use self._backend and self._backends (for scipy functions).
-        raise NotImplementedError
-    
-    @abstractmethod
-    def _get_precomputed_data(self) -> dict:
-        """
-        Abstract method to retrieve the precomputed data needed by the static apply method.
-
-        Returns:
-            dict: A dictionary containing necessary data (e.g., {'inv_diag': self._inv_diag}).
-                  Keys must match the expected **kwargs in the static apply method.
-        """
-        # Example: return {'inv_diag': self._inv_diag} for Jacobi
-        raise NotImplementedError
-    
-    @property
-    def precomputed_data(self) -> dict:
-        """
-        Returns empty dict as no precomputed data is needed. 
-        """
-        return self._get_precomputed_data()
-
+    #! KERNELS
     # -----------------------------------------------------------------
     
-    def set(self, a: Array, sigma: float = 0.0, ap: Optional[Array] = None, backend: Optional[str] = None):
-        """
-        Set up the preconditioner from matrix A or factors S (a) and Sp (ap).
-
-        Determines whether to use standard (A) or Gram (S, Sp) setup based on
-        `self.is_gram` and provided arguments. Resets backend if specified.
-
-        Args:
-            a (Array):
-                Matrix A, or matrix S if `is_gram` is True.
-            sigma (float):
-                Regularization parameter.
-            ap (Optional[Array]):
-                Matrix Sp if `is_gram` is True. If None and `is_gram`,
-                Sp is computed as conjugate(a).T.
-            backend (Optional[str]):
-                Backend ('numpy', 'jax') to switch to before setting up.
-        """
-        if backend is not None and backend != self.backend_str:
-            self.reset_backend(backend)
-        else:
-            a       = self._backend.asarray(a)
-            if ap is not None:
-                ap  = self._backend.asarray(ap)
-
-        actual_sigma    = sigma if sigma is not None else self._sigma
-        self._sigma     = actual_sigma
-        
-        # set it all up
-        print(f"({self._name}) Setting up preconditioner with sigma={self.sigma} using backend='{self.backend_str}'...")
-
-        # is a Gram matrix
-        if self.is_gram:
-            s_mat           = a
-            sp_mat: Array   = ap
-            if sp_mat is None:
-                print(f"({self._name}) Computing Sp = conjugate(S).T")
-                sp_mat      = self._backend.conjugate(s_mat).T
-                
-            # Validate shapes
-            if s_mat.shape[1] != sp_mat.shape[0] or s_mat.shape[0] != sp_mat.shape[1]:
-                raise ValueError(f"Shape mismatch for Gram setup: S={s_mat.shape}, Sp={sp_mat.shape}")
-            self._set_gram(s_mat, sp_mat, self.sigma)
-        else:
-            if a.ndim != 2 or a.shape[0] != a.shape[1]:
-                raise ValueError(f"Standard setup requires a square 2D matrix A, got shape {a.shape}")
-            self._set_standard(a, self.sigma)
+    @staticmethod
+    @abstractmethod
+    def _setup_standard_kernel(a: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """Static Kernel: Computes precond data dict from matrix A."""
+        raise NotImplementedError
 
     @staticmethod
     @abstractmethod
-    def apply(r: Array, sigma: float, backend_mod: Any, **precomputed_data: Any) -> Array:
-        '''
-        Applies the core preconditioner logic M^{-1}r statically.
+    def _setup_gram_kernel(s: Array, sp: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """Static Kernel: Computes precond data dict from factors S, Sp."""
+        raise NotImplementedError
 
-        This method contains the mathematical algorithm using the provided backend
-        and precomputed data.
-
-        Args:
-            r (Array):
-                    The residual vector to precondition.
-            sigma (float):
-                    The regularization parameter used in M.
-            backend_mod (Any):
-                    The backend module (e.g., np, jnp) to use for computations.
-            **precomputed_data (Any):
-                    Precomputed data stored by the instance during set()
-                    (e.g., inv_diag for Jacobi, L/U factors for ILU).
-                    Keys must match what the specific implementation expects.
-
-        Returns:
-            wrapper that accepts an array and sigma and returns the array after preconditioning
-
-        Raises:
-            NotImplementedError: Must be implemented by concrete subclasses.
-        '''
-        raise NotImplementedError("Static apply method must be implemented by subclasses.")
+    @staticmethod
+    @abstractmethod
+    def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
+        """Static Kernel: Applies M^{-1}r using precomputed data."""
+        raise NotImplementedError
     
+    # -----------------------------------------------------------------
+    #! Instance Setup Methods
+    # -----------------------------------------------------------------
+        
+    def _set_standard(self, a: Array, sigma: float, **kwargs):
+        """Instance: Calls static setup kernel and stores result."""
+        self._precomputed_data_instance = self.__class__._setup_standard_kernel(
+            a, sigma, self._backend, **kwargs
+        )
+        self._update_instance_apply_func() # Recompile apply(r) if data changes
+
+    def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
+        """Instance: Calls static setup kernel and stores result."""
+        self._precomputed_data_instance = self.__class__._setup_gram_kernel(
+            s, sp, sigma, self._backend, **kwargs
+        )
+        self._update_instance_apply_func() # Recompile apply(r) if data changes
+
+    def _get_precomputed_data_instance(self) -> Dict[str, Any]:
+        """Instance: Returns the stored precomputed data."""
+        if self._precomputed_data_instance is None:
+            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
+        return self._precomputed_data_instance
+    
+    # -----------------------------------------------------------------
+    #! General Setup Method
+    # -----------------------------------------------------------------
+    
+    def set(self, a: Array, sigma: float = 0.0, ap: Optional[Array] = None, backend: Optional[str] = None, **kwargs):
+        '''
+        Sets up the preconditioner using the provided matrix A and optional parameters.
+        This method computes the preconditioner data and prepares the apply function.
+        
+        Params:
+            a (Array):
+                The matrix to be used for setting up the preconditioner.
+            sigma (float, optional):
+                The regularization parameter. Defaults to 0.0.
+            ap (Optional[Array], optional):
+                An optional second matrix for Gram setup. Defaults to None.
+            backend (Optional[str], optional):
+                The backend to use for computations. Defaults to None.
+            **kwargs:
+                Additional keyword arguments for specific implementations.
+        '''
+        
+        if backend is not None and backend != self.backend_str:
+            self.reset_backend(backend) # Will trigger _update_instance_apply_func
+
+        # Ensure backend consistency for inputs
+        a_be        = self._backend.asarray(a)
+        ap_be       = self._backend.asarray(ap) if ap is not None else None
+
+        # Use provided sigma or instance sigma, update instance sigma via setter
+        self.sigma  = sigma if sigma is not None else self._sigma
+
+        self.log(f"Setting up preconditioner state with sigma={self.sigma} using backend='{self.backend_str}'...", log='info', lvl=1, color=self._dcol)
+
+        if self.is_gram:
+            s_mat, sp_mat = a_be, ap_be
+            if sp_mat is None:
+                sp_mat = self._backend.conjugate(s_mat).T
+            # Shape checks...
+            if s_mat.shape[1] != sp_mat.shape[0] or s_mat.shape[0] != sp_mat.shape[1]: 
+                raise ValueError("Shape mismatch")
+            self._set_gram(s_mat, sp_mat, self.sigma, **kwargs) # Pass kwargs
+        else:
+            if a_be.ndim != 2 or a_be.shape[0] != a_be.shape[1]: 
+                raise ValueError("Needs square matrix")
+            self._set_standard(a_be, self.sigma, **kwargs)
+
+    # -----------------------------------------------------------------
+    #! Apply Method
+    # -----------------------------------------------------------------
+
     def __call__(self, r: Array) -> Array:
         """
-        Apply the configured preconditioner instance M^{-1} to a vector r.
-
-        Uses the internally wrapped and potentially compiled apply function.
-
-        Args:
-            r (Array): The vector to precondition.
-
-        Returns:
-            Array: The preconditioned vector M^{-1}r.
+        Apply the configured preconditioner instance M^{-1} to vector r using precomputed data.
         """
-        if self._apply_func is None:
-            raise RuntimeError(f"({self._name}) Preconditioner apply function not available. Was set() called?")
-        # Ensure input array matches backend
-        r_backend = self._backend.asarray(r)
-        return self._apply_func(r_backend)
+        apply_func = self.get_apply()
+        return apply_func(r)
 
+    # -----------------------------------------------------------------
+    #! String Representation
     # -----------------------------------------------------------------
     
     def __repr__(self) -> str:
@@ -520,44 +625,38 @@ class IdentityPreconditioner(Preconditioner):
         # Identity is always symmetric
         self._stype = PreconditionersType.SYMMETRIC
 
-    # -----------------------------------------------------------------
-    #! Setup Methods (Do Nothing)
-    # -----------------------------------------------------------------
-
-    def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """ Setup for Gram matrix (no-op for Identity). """
-        # No data needs to be computed or stored.
-        pass
-
-    def _set_standard(self, a: Array, sigma: float):
-        """ Setup for standard matrix (no-op for Identity). """
-        # No data needs to be computed or stored.
-        pass
-
-    def _get_precomputed_data(self) -> dict:
-        """ Returns empty dict as no precomputed data is needed. """
-        return {}
-    
-    # -----------------------------------------------------------------
-    #! Static Apply Method
-    # -----------------------------------------------------------------
+    @staticmethod
+    def _setup_standard_kernel(a: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """Static Setup Kernel for Identity (no-op)."""
+        return {} # No data needed
 
     @staticmethod
-    def apply(r: Array, sigma: float, backend_mod: Any, **precomputed_data: Any) -> Array:
-        '''
-        Static apply method for the Identity preconditioner. Returns the input vector `r`.
+    def _setup_gram_kernel(s: Array, sp: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """Static Setup Kernel for Identity (no-op)."""
+        return {} # No data needed
 
-        Args:
-            r (Array)             : The residual vector.
-            sigma (float)         : Regularization (ignored).
-            backend_mod (Any)     : The backend module (ignored).
-            **precomputed_data (Any): Ignored.
+    @staticmethod
+    def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
+        """Static Apply Kernel for Identity."""
+        return backend_mod.asarray(r) # Ensure correct backend type
 
-        Returns:
-            Array: The input vector `r`.
+    def _set_standard(self, a: Array, sigma: float, **kwargs):
+        self._precomputed_data_instance = self.__class__._setup_standard_kernel(a, sigma, self._backend, **kwargs)
+        self._update_instance_apply_func()
+
+    def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
+        self._precomputed_data_instance = self.__class__._setup_gram_kernel(s, sp, sigma, self._backend, **kwargs)
+        self._update_instance_apply_func()
+
+    def _get_precomputed_data(self) -> dict:
+        return self._get_precomputed_data_instance()
+    
+    def __repr__(self) -> str:
+        ''' 
+        Returns the name and configuration of the Identity preconditioner. 
         '''
-        # Ensure output has same type as input for consistency if needed by backend
-        return backend_mod.asarray(r) if backend_mod is not None else r
+        base_repr = super().__repr__()
+        return f"{base_repr[:-1]}, type={self.type})"
 
 # =====================================================================
 #! Jacobi preconditioner
@@ -582,12 +681,12 @@ class JacobiPreconditioner(Preconditioner):
     _type = PreconditionersTypeSym.JACOBI
 
     def __init__(self,
-                is_positive_semidefinite: bool = False,
-                is_gram                 : bool = False,
-                backend                 : str  = 'default',
+                is_positive_semidefinite: bool  = False,
+                is_gram                 : bool  = False,
+                backend                 : str   = 'default',
                 # Tolerances specific to Jacobi
-                tol_small               : float = 1e-10,
-                zero_replacement        : float = 1e10):
+                tol_small               : float = _TOLERANCE_SMALL,
+                zero_replacement        : float = _TOLERANCE_BIG):
         """
         Initialize the Jacobi preconditioner.
 
@@ -610,118 +709,132 @@ class JacobiPreconditioner(Preconditioner):
                         is_gram                     =   is_gram,
                         backend                     =   backend)
         # Tolerances / constants for safe division
-        self._tol_small         = tol_small
+        self._TOLERANCE_SMALL         = tol_small
         self._zero              = zero_replacement
         # Precomputed data storage
         self._inv_diag : Optional[Array] = None # Stores 1 / (diag(A) + sigma)
 
     # -----------------------------------------------------------------
 
-    def _compute_inv_diag(self, diag_a: Array, sigma: float):
+    @staticmethod
+    def _static_compute_inv_diag(diag_a         : Array,
+                                sigma           : float,
+                                backend_mod     : Any, 
+                                tol_small       : float, 
+                                zero_replacement: float) -> Array:
         """
-        Internal helper to compute the inverse diagonal safely.
+        Static helper to compute inverse diagonal safely.
+        Handles small values and avoids division by zero.
         
-        Math:
-            M = diag(A) + sigma*I
-            M^{-1} = diag(1 / (A_ii + sigma))
-        
-        Sets self._inv_diag to the computed inverse diagonal of diagonal matrix A + sigma*I.
-        """
-        be              = self._backend
-        if sigma is not None and sigma >= 0.0:
-            reg_diag    = diag_a + sigma
-        else:
-            reg_diag    = diag_a
-        # Clamp the diagonal values to avoid division by zero or very small values
-        big_values      = reg_diag > self._zero
-        small_values    = be.abs(reg_diag) < self._tol_small
-        
-        # replace the small values with the big ones
-        # self._zero is of order 10^10, therefore 1 / self._zero is of order 10^-10 - minimal number
-        # and the small values are replaced to avoid division by zero
-        reg_diag        = be.where(small_values, 1.0 / self._zero, reg_diag)
-        reg_diag        = be.where(big_values, self._zero, reg_diag)
-        self._inv_diag  = 1.0 / reg_diag
-        print(f"({self._name}) Computed inverse diagonal using clamping.")
-
-    # -----------------------------------------------------------------
-
-    def _set_standard(self, a: Array, sigma: float):
-        """
-        Sets up Jacobi from matrix A.
-        
-        Computes diag(A + sigma*I) and stores the inverse diagonal.
-        """
-        diag_a      = self._backend.diag(a)
-        self._compute_inv_diag(diag_a, sigma)
-
-    def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """
-        Sets up Jacobi from factors S, Sp. Computes diag(Sp @ S / N).
-        
-        This is especially usefull when one does not want to compute the full
-        Gram matrix A = Sp @ S / N explicitly.
+        ':math:`M^{-1}r = [1 / (A_ii + sigma)] * r_i`
+        This function computes the inverse diagonal of the matrix A.
         
         Parameters:
-            s (Array):
-                Matrix S.
-            sp (Array):
-                Matrix Sp (conjugate transpose of S).
+            diag_a (Array):
+                Diagonal of the matrix A.
             sigma (float):
                 Regularization parameter.
+            backend_mod (Any):
+                The backend module (e.g., np, jnp).
+            tol_small (float):
+                Tolerance for small values.
+            zero_replacement (float):
+                Value to replace small values with.
+        Returns:
+            Array:
+                The inverse diagonal (1 / (A_ii + sigma)).
         """
-        be          = self._backend
-        # Estimate N if not provided? Assume N = s.shape[0] (num outputs)
-        n           = float(s.shape[0])
-        if n <= 0.0:
-            n = 1.0
-        
-        # Efficiently compute diagonal of Sp @ S without forming the full matrix
-        # diag(Sp @ S)_i = sum_k Sp_{ik} S_{ki} = sum_k (S^T)_{ik} S_{ki}
-        # = sum_k S_{ki} * S_{ki} (if real)
-        # = sum_k conjugate(S_{ki}) * S_{ki} (if complex) = sum_k |S_{ki}|^2
-        # This uses element-wise multiplication and sum along axis 0 of Sp^T (or axis 1 of S)
-        # diag_SpS = be.sum(be.conjugate(sp.T) * s, axis=1)
-        diag_s_dag_s    = be.einsum('ij,ji->i', sp, s)
-        diag_a_approx   = diag_s_dag_s / n
-        self._compute_inv_diag(diag_a_approx, sigma)
-
-    # -----------------------------------------------------------------
-
-    def _get_precomputed_data(self) -> dict:
-        """ Returns the computed inverse diagonal. """
-        if self._inv_diag is None:
-            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
-        return {'inv_diag': self._inv_diag}
+        be              = backend_mod
+        reg_diag        = diag_a + sigma
+        abs_reg_diag    = be.abs(reg_diag)
+        is_small        = abs_reg_diag < tol_small
+        # Use where for conditional assignment (JAX compatible)
+        # Assign large magnitude for small values before inversion
+        safe_diag       = be.where(is_small, be.sign(reg_diag) * zero_replacement, reg_diag)
+        # Avoid division by exact zero if somehow it occurred after clamping
+        safe_diag       = be.where(safe_diag == 0.0, zero_replacement, safe_diag)
+        inv_diag        = 1.0 / safe_diag
+        # Ensure inverse is zero where original was small
+        inv_diag        = be.where(is_small, 0.0, inv_diag)
+        return inv_diag
 
     # -----------------------------------------------------------------
 
     @staticmethod
-    def apply(r: Array, sigma: float, backend_mod: Any, inv_diag: Array) -> Array:
-        '''
-        Static apply method for Jacobi: element-wise multiplication by inverse diagonal.
+    def _setup_standard_kernel(a: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup Kernel for Jacobi from matrix A.
+        """
+        tol_small           = kwargs.get('tol_small', _TOLERANCE_SMALL)        # Get tolerances from kwargs or default
+        zero_replacement    = kwargs.get('zero_replacement', _TOLERANCE_BIG)  # Replacement for small values inverse
+        diag_a              = backend_mod.diag(a)
+        inv_diag            = JacobiPreconditioner._static_compute_inv_diag(
+            diag_a, sigma, backend_mod, tol_small, zero_replacement
+        )
+        return {'inv_diag': inv_diag}
 
-        Args:
+    @staticmethod
+    def _setup_gram_kernel(s: Array, sp: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup Kernel for Jacobi from Gram factors S, Sp.
+        """
+        tol_small           = kwargs.get('tol_small', _TOLERANCE_SMALL)
+        zero_replacement    = kwargs.get('zero_replacement', _TOLERANCE_BIG)
+        be                  = backend_mod
+        n                   = float(s.shape[0]) if s.shape[0] > 0 else 1.0
+        diag_s_dag_s        = be.einsum('ij,ji->i', sp, s)
+        diag_a_approx       = diag_s_dag_s / n
+        inv_diag            = JacobiPreconditioner._static_compute_inv_diag(
+            diag_a_approx, sigma, backend_mod, tol_small, zero_replacement
+        )
+        return {'inv_diag': inv_diag}
+
+    @staticmethod
+    def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
+        '''
+        Static Apply Kernel for Jacobi using precomputed data.
+        Applies the preconditioner M^{-1}r using the inverse diagonal.
+        
+        Parameters:
             r (Array):
-                The residual vector.
-            sigma (float):
-                Regularization (already included in inv_diag).
+                The residual vector to precondition.
             backend_mod (Any):
                 The backend module (e.g., np, jnp).
-            inv_diag (Array):
-                The precomputed inverse diagonal (1 / (A_ii + sigma)).
-
+            sigma (float):
+                Regularization parameter (ignored here).
+            **precomputed_data (Any):
+                Precomputed data from setup_kernel().
+                Must include 'inv_diag' key.
         Returns:
             Array:
-                The preconditioned vector inv_diag * r.
+                The preconditioned vector M^{-1}r.
         '''
+        inv_diag    = precomputed_data.get('inv_diag', None)
         if inv_diag is None:
-            raise ValueError("Jacobi 'inv_diag' data not provided to static apply.")
-        if r.shape != inv_diag.shape or r.ndim != 1:
+            raise ValueError("Jacobi apply kernel requires 'inv_diag' in precomputed_data.")
+        if r.ndim != 1 or inv_diag.ndim != 1 or r.shape[0] != inv_diag.shape[0]:
             raise ValueError(f"Shape mismatch in Jacobi apply: r={r.shape}, inv_diag={inv_diag.shape}")
-        
-        # Element-wise multiplication
         return inv_diag * r
+
+    # -----------------------------------------------------------------
+    #! Instance Setup Methods
+    # -----------------------------------------------------------------
+    
+    def _set_standard(self, a: Array, sigma: float, **kwargs):
+        # Pass instance tolerances to static kernel via kwargs
+        kwargs.setdefault('tol_small', self._TOLERANCE_SMALL)
+        kwargs.setdefault('zero_replacement', self._zero)
+        self._precomputed_data_instance = self.__class__._setup_standard_kernel(a, sigma, self._backend, **kwargs)
+        self._update_instance_apply_func()
+
+    def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
+        kwargs.setdefault('tol_small', self._TOLERANCE_SMALL)
+        kwargs.setdefault('zero_replacement', self._zero)
+        self._precomputed_data_instance = self.__class__._setup_gram_kernel(s, sp, sigma, self._backend, **kwargs)
+        self._update_instance_apply_func()
+
+    def _get_precomputed_data(self) -> dict:
+        return self._get_precomputed_data_instance()
 
     # -----------------------------------------------------------------
 
@@ -730,7 +843,7 @@ class JacobiPreconditioner(Preconditioner):
         Returns the name and configuration of the Jacobi preconditioner. 
         '''
         base_repr = super().__repr__()
-        return f"{base_repr[:-1]}, tol_small={self._tol_small})"
+        return f"{base_repr[:-1]}, tol_small={self._TOLERANCE_SMALL})"
     
     # -----------------------------------------------------------------
 
@@ -779,139 +892,163 @@ class CholeskyPreconditioner(Preconditioner):
         self._stype                 = PreconditionersType.SYMMETRIC
         self._l: Optional[Array]    = None # Stores the lower Cholesky factor        
 
-    # -----------------------------------------------------------------
-    #! Properties
-    # -----------------------------------------------------------------
-    
-    @property
-    def l(self) -> Optional[Array]:
-        '''The computed lower Cholesky factor L.'''
-        return self._l
-
-    # -----------------------------------------------------------------
-    #! Setup Methods
-    # -----------------------------------------------------------------
-
-    def _set_standard(self, a: Array, sigma: float):
-        """ 
-        Sets up Cholesky by factorizing A + sigma*I. 
-        Computes the lower Cholesky factor L.
-        Parameters:
-            a (Array):
-                The matrix A.
-            sigma (float):
-                Regularization parameter.
-        Raises:
-            ValueError: If the matrix is not square or not positive definite.
-        """
-        
-        be              = self._backend
-        print(f"({self._name}) Performing Cholesky decomposition...")
-        try:
-            # Regularize the matrix
-            a_reg       = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
-            
-            # Perform complete Cholesky decomposition
-            self._l     = be.linalg.cholesky(a_reg, lower=True)
-            print(f"({self._name}) Cholesky decomposition successful.")
-            
-        except Exception as e:
-            print(f"({self._name}) Cholesky decomposition failed: {e}")
-            print(f"({self._name}) Matrix might not be positive definite after regularization (sigma={sigma}).")
-            self._l = None
-
-    # -----------------------------------------------------------------
-
-    def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """
-        Sets up Cholesky by first forming A = Sp @ S / N and then factorizing.
-        
-        Warning:
-            Forming A explicitly can be computationally expensive for large S.
-        """
-        be      = self._backend
-        # Estimate N if not provided? Assume N = s.shape[0] (num outputs)
-        n       = float(s.shape[0])
-        if n <= 0.0:
-            n = 1.0
-        
-        print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for Cholesky setup (N={n}).")
-        a_gram  = (sp @ s) / n
-        
-        # Now call the standard setup
-        self._set_standard(a_gram, sigma)
-
-    # -----------------------------------------------------------------
-
-    def _get_precomputed_data(self) -> dict:
-        """ 
-        Returns the computed Cholesky factor L.
-        """
-        
-        # Do not raise error here, let apply handle None L
-        # if self._l is None:
-        #      raise RuntimeError(f"({self._name}) Preconditioner not set up or failed. Call set() first.")
-        return {'l': self._l}
-
-    # -----------------------------------------------------------------
-    #! Static Apply Method
-    # -----------------------------------------------------------------
-
     @staticmethod
-    def apply(r: Array, sigma: float, backend_mod: Optional[Any], l: Optional[Array]) -> Array:
-        '''
-        Static apply method for Cholesky: solves L y = r and L.T z = y.
+    def _setup_standard_kernel(a: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup Kernel: Computes the Cholesky factor L of the matrix A + sigma*I.
 
-        Args:
-            r (Array):
-                The residual vector.
-            sigma (float):
-                Regularization (used during factorization, ignored here).
-            backend_mod (Any):
-                The backend numpy-like module (e.g., numpy or jax.numpy).
-            l (Optional[Array]):
-                The precomputed lower Cholesky factor.
+        Parameters:
+            a (Array): 
+                The input matrix A.
+            sigma (float): 
+                Regularization parameter. Adds sigma*I to A.
+            backend_mod (Any): 
+                The computational backend (e.g., numpy, jax).
+            **kwargs: 
+                Additional keyword arguments (not used here).
 
         Returns:
-            Array:
-                The preconditioned vector M^{-1}r, or r if l is None.
-        '''
-        
-        # Factorization failed or not performed, return original vector
+            Dict[str, Any]: 
+                A dictionary containing the Cholesky factor 'l'. If decomposition fails, 'l' is set to None.
+        """
+        be = backend_mod
+        l_factor = None  # Default to None if decomposition fails
+        print(f"({CholeskyPreconditioner._name}) Performing Cholesky decomposition...")
+        try:
+            a_reg = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
+            l_factor = be.linalg.cholesky(a_reg, lower=True)
+            print(f"({CholeskyPreconditioner._name}) Cholesky decomposition successful.")
+        except Exception as e:
+            print(f"({CholeskyPreconditioner._name}) Cholesky decomposition failed: {e}")
+            print(f"({CholeskyPreconditioner._name}) Matrix might not be positive definite after regularization (sigma={sigma}).")
+        return {'l': l_factor}
+
+    @staticmethod
+    def _setup_gram_kernel(s: Array, sp: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup Kernel: Forms the Gram matrix A = Sp @ S / N and computes its Cholesky factor L.
+
+        Parameters:
+            s (Array): 
+                The matrix S (factor of the Gram matrix).
+            sp (Array): 
+                The matrix Sp (conjugate transpose of S or another factor).
+            sigma (float): 
+                Regularization parameter. Adds sigma*I to A.
+            backend_mod (Any): 
+                The computational backend (e.g., numpy, jax).
+            **kwargs: 
+                Additional keyword arguments (not used here).
+
+        Returns:
+            Dict[str, Any]: 
+                A dictionary containing the Cholesky factor 'l'. If decomposition fails, 'l' is set to None.
+        """
+        be = backend_mod
+        n = float(s.shape[0]) if s.shape[0] > 0 else 1.0
+        print(f"({CholeskyPreconditioner._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for Cholesky setup (N={n}).")
+        a_gram = (sp @ s) / n
+        # Call the standard setup kernel on the computed Gram matrix
+        return CholeskyPreconditioner._setup_standard_kernel(a_gram, sigma, backend_mod, **kwargs)
+
+    @staticmethod
+    def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
+        """
+        Static Apply Kernel: Solves the system M^{-1}r using the Cholesky factor L.
+
+        The system is solved in two steps:
+        1. Solve L y = r (forward substitution).
+        2. Solve L^H z = y (backward substitution).
+
+        Parameters:
+            r (Array): 
+                The input vector to precondition.
+            backend_mod (Any): 
+                The computational backend (e.g., numpy, jax).
+            sigma (float): 
+                Regularization parameter (not used here, as it is applied during setup).
+            **precomputed_data (Any): 
+                Precomputed data from the setup kernel. Must include the Cholesky factor 'l'.
+
+        Returns:
+            Array: 
+                The preconditioned vector M^{-1}r. If the Cholesky factor is missing, returns the input vector r.
+        """
+        l = precomputed_data.get('l')
         if l is None:
-            print("Warning: Cholesky factor l is None in apply, returning original vector.")
+            print(f"Warning: ({CholeskyPreconditioner._name}) Cholesky factor 'l' is None in apply, returning original vector.")
             return r
-        
-        if backend_mod is None:
-            raise ValueError(f"Which backend to use?")
-        
+        be = backend_mod
         if r.shape[0] != l.shape[0]:
             raise ValueError(f"Shape mismatch in Cholesky apply: r ({r.shape[0]}) vs L ({l.shape[0]})")
 
         try:
-            # Check if matrix is complex to use conjugate transpose
-            use_conj_transpose = backend_mod.iscomplexobj(l)
-            
-            lh                  = backend_mod.conjugate(l).T if use_conj_transpose else l.T
-
+            use_conj = be.iscomplexobj(l)
+            lh = be.conjugate(l).T if use_conj else l.T
             # Forward substitution: Solve L y = r
-            y                   = backend_mod.linalg.solve_triangular(l, r, lower=True, check_finite=False)
+            y = be.linalg.solve_triangular(l, r, lower=True, check_finite=False)
             # Backward substitution: Solve L^H z = y
-            z                   = backend_mod.linalg.solve_triangular(lh, y, lower=False, check_finite=False, trans='N')
+            z = be.linalg.solve_triangular(lh, y, lower=False, check_finite=False, trans='N')  # trans='N' assumes lh is already transposed correctly
             return z
         except Exception as e:
-            print(f"Cholesky triangular solve failed during apply: {e}")
-            return r            # Return original vector if solve fails
-
+            print(f"({CholeskyPreconditioner._name}) Cholesky triangular solve failed during apply: {e}")
+            return r  # Return the original vector if the solve fails
 
     # -----------------------------------------------------------------
     
+    def _set_standard(self, a: Array, sigma: float, **kwargs):
+        """
+        Instance method to set up the preconditioner using the matrix A.
+
+        Parameters:
+            a (Array): 
+                The input matrix A.
+            sigma (float): 
+                Regularization parameter. Adds sigma*I to A.
+            **kwargs: 
+                Additional keyword arguments for the setup kernel.
+        """
+        self._precomputed_data_instance = self.__class__._setup_standard_kernel(a, sigma, self._backend, **kwargs)
+        self._update_instance_apply_func()
+
+    def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
+        """
+        Instance method to set up the preconditioner using Gram matrix factors S and Sp.
+
+        Parameters:
+            s (Array): 
+                The matrix S (factor of the Gram matrix).
+            sp (Array): 
+                The matrix Sp (conjugate transpose of S or another factor).
+            sigma (float): 
+                Regularization parameter. Adds sigma*I to A.
+            **kwargs: 
+                Additional keyword arguments for the setup kernel.
+        """
+        self._precomputed_data_instance = self.__class__._setup_gram_kernel(s, sp, sigma, self._backend, **kwargs)
+        self._update_instance_apply_func()
+
+    def _get_precomputed_data(self) -> dict:
+        """
+        Retrieves the precomputed data for the preconditioner.
+
+        Returns:
+            dict: 
+                A dictionary containing the precomputed Cholesky factor 'l'.
+        """
+        return self._get_precomputed_data_instance()
+
     def __repr__(self) -> str:
-        status      = "Factorized" if self._l is not None else "Not Factorized/Failed"
-        base_repr   = super().__repr__()
+        """
+        Returns a string representation of the Cholesky preconditioner, including its status.
+
+        Returns:
+            str: 
+                A string indicating whether the preconditioner is factorized or not.
+        """
+        status = "Factorized" if self._precomputed_data_instance and self._precomputed_data_instance.get('l') is not None else "Not Factorized/Failed"
+        base_repr = super().__repr__()
         return f"{base_repr[:-1]}, status='{status}')"
-    
-    # -----------------------------------------------------------------
 
 # =====================================================================
 #! SSOR Preconditioner
@@ -952,8 +1089,8 @@ class SSORPreconditioner(Preconditioner):
                 is_positive_semidefinite: bool = False,     # User hint
                 is_gram                 : bool = False,     # Typically used with explicit A
                 backend                 : str  = 'default', # Backend for computations
-                tol_small               : float = 1e-10,    # For inverting diagonal
-                zero_replacement        : float = 1e10):
+                tol_small               : float = _TOLERANCE_SMALL,    # For inverting diagonal
+                zero_replacement        : float = _TOLERANCE_BIG):
         """
         Initialize the SSOR preconditioner.
 
@@ -981,7 +1118,7 @@ class SSORPreconditioner(Preconditioner):
         self._stype             = PreconditionersType.SYMMETRIC
 
         self._omega             = omega
-        self._tol_small         = tol_small
+        self._TOLERANCE_SMALL         = tol_small
         self._zero              = zero_replacement  
 
         # Precomputed data storage
@@ -1034,7 +1171,7 @@ class SSORPreconditioner(Preconditioner):
 
         # Compute scaled inverse diagonal safely
         diag_scaled             = diag_a_reg / self._omega # Use original omega
-        is_small                = be.abs(diag_scaled) < self._tol_small
+        is_small                = be.abs(diag_scaled) < self._TOLERANCE_SMALL
         safe_diag_scaled        = be.where(is_small, be.sign(diag_scaled) * self._zero, diag_scaled)
         safe_diag_scaled        = be.where(safe_diag_scaled == 0.0, self._zero, safe_diag_scaled)
         
@@ -1047,7 +1184,7 @@ class SSORPreconditioner(Preconditioner):
         self._U                 = U 
         
         # We need D for the backward step, store its inverse
-        is_small_d              = be.abs(diag_a_reg) < self._tol_small
+        is_small_d              = be.abs(diag_a_reg) < self._TOLERANCE_SMALL
         safe_d                  = be.where(is_small_d, be.sign(diag_a_reg) * self._zero, diag_a_reg)
         safe_d                  = be.where(safe_d == 0.0, self._zero, safe_d)
         self._inv_diag_unscaled = 1.0 / safe_d

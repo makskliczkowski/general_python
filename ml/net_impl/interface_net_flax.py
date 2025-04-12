@@ -107,7 +107,7 @@ class FlaxInterface(GeneralNet):
                 dtype         : Optional[jnp.dtype] = jnp.float32,
                 seed          : int = 42):
         
-        
+        self._name  = 'FlaxNetInterface'
         #! Check the dtype.
         self._dtype = self._dtype = self._resolve_dtype(dtype if dtype is not None else net_kwargs.get('dtype', DEFAULT_JP_FLOAT_TYPE))
         
@@ -175,7 +175,8 @@ class FlaxInterface(GeneralNet):
             # Attempt direct conversion for other cases (like strings 'float32')
             return jnp.dtype(dtype_spec)
         except TypeError:
-            print(f"Warning: Could not convert dtype spec {dtype_spec} to JAX dtype. Using default {DEFAULT_JP_FLOAT_TYPE}.")
+            self.log(f"Warning: Could not convert dtype spec {dtype_spec} to JAX dtype. Using default {DEFAULT_JP_FLOAT_TYPE}.",
+                    log = 'warning', lvl = 1, color = self._dcol)
             return DEFAULT_JP_FLOAT_TYPE
     
     def _compile_functions(self):
@@ -256,7 +257,8 @@ class FlaxInterface(GeneralNet):
         """
         
         if self._initialized:
-            print(f"Warning: Network {self.__class__} already initialized. Re-initializing.")
+            self.log(f"Warning: Network {self.__class__} already initialized. Re-initializing.",
+                    log = 'warning', lvl = 1, color = self._dcol)
 
         if key is None:
             key = random.PRNGKey(self._seed)
@@ -266,7 +268,8 @@ class FlaxInterface(GeneralNet):
             variables       = self._flax_module.init(key, dummy_input)
 
             if 'params' not in variables:
-                print(f"Warning: 'params' key not found in Flax variables: {variables.keys()}. Assuming variables ARE the params.")
+                self.log(f"Warning: 'params' key not found in Flax variables: {variables.keys()}. Assuming variables ARE the params.",
+                        log = 'warning', lvl = 1, color = self._dcol)
                 self._parameters = variables
             else:
                 self._parameters = variables['params']
@@ -312,7 +315,8 @@ class FlaxInterface(GeneralNet):
         self._holomorphic           = None # Reset holomorphic check status
         self.check_holomorphic()    # Perform check after init
 
-        print(f"FlaxInterface initialized: dtype={self.dtype}, is_complex={self._iscpx}, nparams={self._param_num}, is_holomorphic={self.is_holomorphic}")
+        self.log(f"FlaxInterface initialized: dtype={self.dtype}, is_complex={self._iscpx}, nparams={self._param_num}, is_holomorphic={self.is_holomorphic}",
+                log = 'info', lvl = 1, color = self._dcol)
         return self._parameters
     
     ########################################################
@@ -525,11 +529,12 @@ class FlaxInterface(GeneralNet):
         if not self.initialized:
             
             # Attempt initialization if not done yet
-            print("Warning: check_holomorphic called before explicit init(). Attempting initialization.")
+            self.log("Warning: check_holomorphic called before explicit init(). Attempting initialization.",
+                    log='warning', lvl=2, color=self._dcol)
             try:
                 self.init()
             except Exception as e:
-                print(f"Initialization failed in check_holomorphic: {e}")
+                self.log(f"Initialization failed in check_holomorphic: {e}", log='error', lvl=1, color='red')
                 self._holomorphic = False
                 return False
         
@@ -538,14 +543,15 @@ class FlaxInterface(GeneralNet):
             return self._holomorphic
         
         if not self.is_complex:
-            print("Holomorphic check skipped: Parameters are real.")
+            self.log("Holomorphic check skipped: Parameters are real.",
+                    log='warning', lvl=2, color=self._dcol)
             self._holomorphic = False
             return False
         
         # Ensure parameters are complex too
         param_leaves, _ = tree_flatten(self._parameters)
         if not all(jnp.issubdtype(p.dtype, jnp.complexfloating) for p in param_leaves):
-            print("Holomorphic check requires complex parameters.")
+            self.log("Holomorphic check requires complex parameters.", log='error', lvl=1, color='red')
             self._holomorphic = False
             return False
         
@@ -585,7 +591,8 @@ class FlaxInterface(GeneralNet):
             grad_u_leaves, _    = tree_flatten(grad_u_tree)
 
             if not grad_u_leaves: # Handle empty parameters/gradients
-                print("Warning: Holomorphic check encountered empty gradient trees.")
+                self.log("Warning: Holomorphic check encountered empty gradient trees.",
+                        log='warning', lvl=2, color=self._dcol)
                 self._holomorphic   = True
             else:
                 # Concatenate leaves into flat vectors
@@ -601,10 +608,11 @@ class FlaxInterface(GeneralNet):
                 relative_diff       = norm_diff / (norm_grad_u + 1e-12) # Add epsilon for stability
                 self._holomorphic   = jnp.allclose(relative_diff, 0.0, atol=self._TOL_HOLOMORPHIC)
         except Exception as e:
-            print(f"Error during Cauchy-Riemann check: {e}")
+            self.log(f"Error during Cauchy-Riemann check: {e}", lvl=0, log='error', color='red')
             self._holomorphic = False # Default to False on error
-    
-        print(f"Holomorphic check result (||∇Re[f] - i*∇Im[f]|| / ||∇Re[f]|| ≈ 0): {self._holomorphic}")
+
+        self.log(f"Holomorphic check result (||∇Re[f] - i*∇Im[f]|| / ||∇Re[f]|| ≈ 0): {self._holomorphic}",
+                log='info', lvl=1, color=self._dcol)
         return self._holomorphic
 
     #########################################################

@@ -53,6 +53,10 @@ else:
 #! INNER FLAX RBM MODULE DEFINITION
 ##########################################################
 
+@jax.jit
+def stable_logcosh(x):
+    return x + jnp.log1p(jnp.exp(-2.0 * x)) - jnp.log(2.0)
+
 class _FlaxRBM(nn.Module):
     """
     Inner Flax module for a Restricted Boltzmann Machine.
@@ -153,7 +157,7 @@ class _FlaxRBM(nn.Module):
         theta           = dense_layer(visible_state)        # Shape (batch, n_hidden)
 
         # Apply log(cosh) activation to hidden activations
-        log_cosh_theta  = jnp.log(jnp.cosh(theta))          # Shape (batch, n_hidden)
+        log_cosh_theta  = stable_logcosh(theta)             # Shape (batch, n_hidden)
         
         # Sum over hidden units to get log(psi) for each batch element
         log_psi         = jnp.sum(log_cosh_theta, axis=-1)  # Shape (batch,)
@@ -162,8 +166,8 @@ class _FlaxRBM(nn.Module):
             
         # Add visible bias if needed (not included in this implementation)
         return log_psi.reshape(-1)
-        # return log_psi.reshape(-1, 1)                   # Ensure output is 1D (batch, 1)
-        # return log_psi.reshape(-1)                     # Ensure output is 1D (batch,)
+        # return log_psi.reshape(-1, 1)                     # Ensure output is 1D (batch, 1)
+        # return log_psi.reshape(-1)                        # Ensure output is 1D (batch,)
 
 ##########################################################
 #! RBM WRAPPER CLASSES USING FlaxInterface
@@ -215,13 +219,13 @@ class RBM(FlaxInterface):
             raise ValueError("RBM: dtype and param_dtype must be the same floating (complex or real).")
         
         # Define input activation based on map_to_pm1 flag
-        input_activation        = (lambda x: 2 * x - 1) if map_to_pm1 else None
+        # input_activation        = (lambda x: 2 * x - 1) if map_to_pm1 else None
 
         # Prepare kwargs for _FlaxRBM
         net_kwargs = {
             'n_hidden'        : n_hidden,
             'bias'            : bias,
-            'input_activation': input_activation,
+            'input_activation': None,
             'param_dtype'     : final_param_dtype,
             'dtype'           : final_dtype
         }

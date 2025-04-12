@@ -45,6 +45,7 @@ References:
 '''
 
 from typing import Optional, Callable, Union, Any, Tuple, Type
+from functools import partial
 import numpy as np
 
 from general_python.algebra.solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
@@ -637,31 +638,15 @@ class CgSolver(Solver):
 
 class CgSolverScipy(Solver):
     '''
-    Wrapper for SciPy's Conjugate Gradient solver (`scipy.sparse.linalg.cg`).
-
-    Uses instance configuration but overrides `solve_instance` to call SciPy.
-    Does *not* implement the static `solve`/`get_solver_func` interface.
-    Requires NumPy backend.
+    Wrapper for SciPy's Conjugate Gradient solver (`scipy.sparse.linalg.cg` or jax.scipy.cg).
     '''
     _solver_type = SolverType.SCIPY_CG
 
-    def __init__(self,
-                backend         : str                             = 'numpy', # Force numpy
-                dtype           : Optional[Type]                  = None,
-                eps             : float                           = 1e-8,
-                maxiter         : int                             = 1000,
-                default_precond : Optional[Preconditioner]        = None,
-                a               : Optional[Array]                 = None,
-                s               : Optional[Array]                 = None,
-                sp              : Optional[Array]                 = None,
-                matvec_func     : Optional[MatVecFunc]            = None,
-                sigma           : Optional[float]                 = None,
-                is_gram         : bool                            = False):
-        
-        if backend != 'numpy': print(f"Warning: {self.__class__.__name__} uses SciPy, forcing backend to 'numpy'.")
-        super().__init__(backend='numpy', dtype=dtype, eps=eps, maxiter=maxiter,
-                        default_precond=default_precond, a=a, s=s, sp=sp,
-                        matvec_func=matvec_func, sigma=sigma, is_gram=is_gram)
+    def __init__(self, *args, **kwargs):
+        """
+        Initializes the CgSolverScipy instance.
+        """
+        super().__init__(*args, **kwargs)
         self._symmetric = True
 
     # --------------------------------------------------
@@ -669,165 +654,109 @@ class CgSolverScipy(Solver):
     # --------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
-        Returns a wrapper function that calls the static `CgSolverScipy.solve`.
+        Returns the backend-specific compiled/optimized CG function.
 
         Args:
-            backend_module (Any): Must be `numpy`.
+            backend_module (Any):
+                The numerical backend (`numpy` or `jax.numpy`).
 
         Returns:
-            StaticSolverFunc: A callable matching the required signature.
+            StaticSolverFunc:
+                The core CG function for the backend.
         """
-        if backend_module is not np:
-            raise SolverError(SolverErrorMsg.BACKEND_MISMATCH,
-                            f"{SolverType.SCIPY_CG.name} requires NumPy backend.")
-
-        # Return a lambda that captures the static solve method
-        return lambda matvec, b, x0, tol, maxiter, precond_apply, backend_mod, **kwargs: \
-                    CgSolverScipy.solve(matvec=matvec, b=b, x0=x0, tol=tol, maxiter=maxiter,
-                                          precond_apply=precond_apply, backend_module=backend_mod, **kwargs)
-
+        
+        func: Callable = None
+        if backend_module is jnp:
+            @partial(jax.jit, static_argnums=(0, 5))
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
+                sol = jax.scipy.sparse.linalg.cg(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
+                return SolverResult(x=sol[0], converged=sol[1], iterations=maxiter, residual_norm=None)
+            func = solver_func            
+        elif backend_module is np:
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
+                sol = spsla.cg(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
+                return SolverResult(x=sol[0], converged=sol[1], iterations=maxiter, residual_norm=None)
+            func = solver_func
+        else:
+            raise ValueError(f"Unsupported backend module for CG: {backend_module}")
+        return Solver._solver_wrap_compiled(backend_module, func,
+                                use_matvec, use_fisher, use_matrix, sigma)
+        
     @staticmethod
     def solve(
-            # === Core Problem Definition ===
             matvec          : MatVecFunc,
             b               : Array,
             x0              : Array,
-            # === Solver Parameters ===
             *,
             tol             : float,
             maxiter         : int,
-            # === Optional Preconditioner ===
-            precond_apply   : Optional[Callable[[Array], Array]] = None,
-            # === Backend Specification ===
-            backend_module  : Any,
-            # === Solver Specific Arguments ===
-            **kwargs        : Any # Pass SciPy specific args (atol, callback) here
-            ) -> SolverResult:
+            precond_apply   : Optional[Callable[[Array], Array]]    = None,
+            backend_module  : Any                                   = np,
+            a               : Optional[Array]                       = None,
+            s               : Optional[Array]                       = None,
+            s_p             : Optional[Array]                       = None,
+            **kwargs        : Any) -> SolverResult:
         """
-        Static solve implementation calling `scipy.sparse.linalg.cg`.
+        Static CG execution: Determines the appropriate backend function and executes it.
 
-        Args: See base class `solve` docstring.
+        Args:
+            matvec          (MatVecFunc): 
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b               (Array): 
+                Right-hand side vector $ b $.
+            x0              (Array): 
+                Initial guess $ x_0 $.
+            tol             (float): 
+                Relative tolerance $ \\epsilon_{rel} $.
+            maxiter         (int): 
+                Maximum number of iterations.
+            precond_apply   (Optional[Callable[[Array], Array]]): 
+                Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+            backend_module  (Any): 
+                Backend module (`numpy` or `jax.numpy`).
+            a               (Optional[Array]): 
+                            Optional array for matrix solution...
+            s               (Optional[Array]): 
+                Optional array for Fisher-based matvec construction. If it 
+                is provided alone, it is assumed to be matrix A already...
+            s_p             (Optional[Array]): 
+                Optional array for Fisher-based matvec construction.
+            **kwargs        (Any): 
+                Additional arguments (e.g., `sigma`).
 
-        Returns: SolverResult.
+        Returns:
+            SolverResult: 
+            A named tuple containing the solution, convergence status, iteration count, and residual norm.
         """
-        if backend_module is not np:
-            raise SolverError(SolverErrorMsg.BACKEND_MISMATCH,
-                    f"{SolverType.SCIPY_CG.name} requires NumPy backend.")
-
-        # Prepare Arguments for SciPy
-        M_op    = None
-        n_size  = b.shape[0]
-        if precond_apply is not None:
-            if not callable(precond_apply):
-                raise SolverError(SolverErrorMsg.PRECOND_INVALID,
-                        "precond_apply must be callable.")
-            M_op = spsla.LinearOperator((n_size, n_size), matvec=precond_apply)
-
-        # Ensure NumPy arrays (SciPy works best with NumPy arrays)
-        # Assume matvec is already NumPy compatible if backend_module is np
-        b_np    = np.asarray(b)
-        x0_np   = np.asarray(x0) # x0 is guaranteed not None by signature? No, x0 is required now.
-        # Add dimension checks? Assume caller provides correct shapes.
-        if x0_np.shape != b_np.shape:
-            raise SolverError(SolverErrorMsg.DIM_MISMATCH,
-                    f"Shape mismatch: b={b_np.shape}, x0={x0_np.shape}")
-
-
-        # Setup Callback for Iteration Count
-        iter_count = [0]
-        def scipy_callback(xk):
-            iter_count[0] += 1
-        
-        # User can override callback via kwargs
-        kwargs.setdefault('callback', scipy_callback)
-        # SciPy uses 'tol' (relative), ensure 'atol' is handled if needed
-        kwargs.setdefault('atol', 'legacy')
-
-        # Call SciPy CG
         try:
-            print(f"({CgSolverScipy.__name__}) Calling static scipy.sparse.linalg.cg...")
-            x_sol, exit_code = spsla.cg(
-                                        matvec,     # Pass the Python callable
-                                        b_np,       # RHS vector
-                                        x0=x0_np,   # Initial guess
-                                        tol=tol,
-                                        maxiter=maxiter,
-                                        M=M_op,
-                                        **kwargs    # Pass atol, callback etc.
-                                        )
-
-            converged       = (exit_code == 0)
-            iterations_run  = iter_count[0]
-            # Calculate final residual norm if needed
-            final_residual  = b_np - matvec(x_sol)
-            final_res_norm  = np.linalg.norm(final_residual)
-            return SolverResult(x=x_sol, converged=converged, iterations=iterations_run, residual_norm=final_res_norm)
+            # Decide the appropriate solver function based on the backend and inputs
+            solver_func = CgSolver.decide_solver_func(
+                backend_module = backend_module,
+                matvec         = matvec,
+                a              = a,
+                s              = s,
+                s_p            = s_p,
+                sigma          = kwargs.get('sigma', None)
+            )
+            # Execute the solver function
+            return Solver.run_solver_func(  bck     = backend_module,
+                                            func    = solver_func,
+                                            a       = a,
+                                            s       = s,
+                                            s_p     = s_p,
+                                            b       = b, 
+                                            x0      = x0,
+                                            tol     = tol,
+                                            maxiter = maxiter,
+                                            precond_apply = precond_apply)
         except Exception as e:
-            raise SolverError(SolverErrorMsg.CONV_FAILED,
-                    f"Static SciPy CG call failed: {e}") from e
-
-    # --------------------------------------------------
-    #! Instance Methods Override
-    # --------------------------------------------------
-    
-    def solve_instance(self,
-                    b               : Array,
-                    x0              : Optional[Array]   = None,
-                    *,
-                    tol             : Optional[float]   = None,
-                    maxiter         : Optional[int]     = None,
-                    precond         : Union[Preconditioner, Callable[[Array], Array], None] = 'default',
-                    sigma           : Optional[float]   = None,
-                    **kwargs) -> SolverResult:
-        """
-        Overrides base method to solve $ Ax = b $ using `scipy.sparse.linalg.cg`.
-        Uses instance configuration to set up defaults and call static solve.
-
-        Args: See previous docstring.
-
-        Returns: SolverResult.
-        """
-        if self._backend is not np:
-            raise SolverError(SolverErrorMsg.BACKEND_MISMATCH, f"{self.__class__.__name__} requires NumPy backend.")
-
-        current_tol                     = tol if tol is not None else self._default_eps
-        current_maxiter                 = maxiter if maxiter is not None else self._default_maxiter
-        current_sigma                   = sigma if sigma is not None else self._conf_sigma
-
-        # Get matvec func (compile=False)
-        matvec_func                     = self._check_matvec_solve(current_sigma, np, compile_matvec=False, **kwargs)
-        # Get precond apply func
-        precond_apply_func              = self._check_precond_solve(precond)
-
-        # Prepare b and x0 (handle optional x0)
-        b_np                            = np.asarray(b, dtype=self._dtype)
-        x0_np                           = np.zeros_like(b_np) if x0 is None else np.asarray(x0, dtype=self._dtype)
-        if x0_np.shape != b_np.shape:
-            raise SolverError(SolverErrorMsg.DIM_MISMATCH, f"Shape mismatch: b={b_np.shape}, x0={x0_np.shape}")
-
-        # Call the static solve method of this class
-        print(f"({self.__class__.__name__}) Calling static solve via instance method...")
-        result = CgSolverScipy.solve(
-            matvec          = matvec_func,
-            b               = b_np,
-            x0              = x0_np,
-            tol             = current_tol,
-            maxiter         = current_maxiter,
-            precond_apply   = precond_apply_func,
-            backend_module  = np, # Explicitly numpy
-            **kwargs
-        )
-
-        # Store results
-        self._last_solution             = result.x
-        self._last_converged            = result.converged
-        self._last_iterations           = result.iterations
-        self._last_residual_norm        = result.residual_norm
-
-        print(f"({self.__class__.__name__}) Instance solve finished. Converged: {result.converged}, Iter: {result.iterations}, ResNorm: {result.residual_norm:.4e}")
-        return result
+            raise SolverError(SolverErrorMsg.CONV_FAILED, f"CG execution failed: {e}") from e
 
     # --------------------------------------------------
 
