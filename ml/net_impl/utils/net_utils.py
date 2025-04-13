@@ -262,19 +262,20 @@ def decide_grads(iscpx, isjax, isanalytic, isholomorphic):
                     # return jaxpy.flat_gradient_holo_analytical_jax, jaxpy.dict_gradient_analytical_jax
                     pass
                 else:
-                    return jaxpy.flat_gradient_holo_numerical_jax, jaxpy.pytree_gradient_holo_numerical_jax
+                    return jaxpy.flat_gradient_cpx_holo_jax, jaxpy.pytree_gradient_cpx_holo_jax
             else:  # Non-holomorphic
                 if isanalytic:
                     # return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.dict_gradient_analytical_jax
                     pass
                 else:
+                    #! TODO: Fix this
                     return jaxpy.flat_gradient_cpx_nonholo_numerical_jax, jaxpy.pytree_gradient_cpx_nonholo_numerical_jax
         else:  # Real functions
             if isanalytic:
                 # return jaxpy.flat_gradient_real_analytical_jax, jaxpy.dict_gradient_real_analytical_jax
                 pass
             else:
-                return jaxpy.flat_gradient_real_numerical_jax, jaxpy.pytree_gradient_real_numerical_jax
+                return jaxpy.flat_gradient_real_jax, jaxpy.pytree_gradient_real_jax
     return None, None
 
 # ==============================================================================

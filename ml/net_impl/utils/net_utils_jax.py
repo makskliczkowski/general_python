@@ -386,9 +386,9 @@ if JAX_AVAILABLE:
         return combined
 
     @partial(jax.jit, static_argnums=(0,))
-    def pytree_gradient_real_numerical_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
-                                            params      : Any,
-                                            arg         : Any) -> Any:
+    def pytree_gradient_real_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
+                                params      : Any,
+                                arg         : Any) -> Any:
         """
         Compute PyTree of real gradient :math:`\\nabla_p Re[f]` numerically.
 
@@ -419,42 +419,16 @@ if JAX_AVAILABLE:
         return tree_map(lambda x: x.astype(DEFAULT_JP_FLOAT_TYPE), g_tree)
 
     @partial(jax.jit, static_argnums=(0,))
-    def pytree_gradient_holo_numerical_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
-                                            params      : Any,
-                                            arg         : Any) -> Any:
+    def pytree_gradient_cpx_holo_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
+                                    params      : Any,
+                                    arg         : Any) -> Any:
         r"""
-        Compute PyTree of holo gradient :math:`\\nabla_{p^*} f` numerically.
-
-        Math
-        ----
-        Computes :math:`h = \\nabla_p \\sum \\text{Re}[f(p, x)]`. For holomorphic `f`, :math:`h = (\\nabla_{p^*} f)^*`.
-        Returns the complex PyTree :math:`g = h^* = \\nabla_{p^*} f`.
-
-        Parameters
-        ----------
-        apply_fun : Callable[[Any, Any], jnp.ndarray]
-            Holomorphic apply function `f(p, x)`. Must be JAX traceable.
-        params : Any
-            Complex network parameters (pytree).
-        arg : Any
-            Input state `x`.
-
-        Returns
-        -------
-        Any
-            Complex gradient PyTree :math:`\\nabla_{p^*} f`, matching `params` structure.
-
-        Applicability & JIT
-        -------------------
-        Computes holomorphic gradient :math:`\\nabla_{\eta^*} \log \psi` numerically.
-        **Can be JIT-compiled** if `apply_fun` is static.
+        Compute PyTree of holomorphic gradient :math:`\\nabla_{p^*} f` numerically.
+        
         """
         
-        # h = ∇Re[f] (complex gradient w.r.t complex params)
-        complex_grads_tree_h = grad(lambda p, y: jnp.sum(jnp.real(apply_fun(p, y))))(params, arg)
-
-        # We want g = h*. Return the complex conjugate PyTree.
-        return tree_map(jnp.conjugate, complex_grads_tree_h)
+        complex_grads_tree_h = grad(lambda p, y: jnp.sum(apply_fun(p, y)), holomorphic=True)(params, arg)
+        return tree_map(lambda x: x.astype(DEFAULT_JP_CPX_TYPE), complex_grads_tree_h)
 
     # -----------------------------------------------------------------------------
     #! Flattened gradients
@@ -488,27 +462,24 @@ if JAX_AVAILABLE:
         return flatten_gradient_pytree(grad_pytree)
 
     @partial(jax.jit, static_argnames=('apply_fun',))
-    def flat_gradient_real_numerical_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
+    def flat_gradient_real_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
                                         params      : Any,
                                         arg         : Any) -> jnp.ndarray:
         """
-        Numerically compute flattened real gradient :math:`\\nabla_p Re[f]`.
-        Output is guaranteed real float.
+        Compute the flattened real gradient.
         """
-        grad_pytree = pytree_gradient_real_numerical_jax(apply_fun, params, arg)
+        grad_pytree = pytree_gradient_real_jax(apply_fun, params, arg)
         flat_grad   = flatten_gradient_pytree(grad_pytree)
-        # Ensure float32 output as it's the 'real' gradient function
         return flat_grad.astype(DEFAULT_JP_FLOAT_TYPE)
 
     @partial(jax.jit, static_argnames=('apply_fun',))
-    def flat_gradient_holo_numerical_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
-                                        params      : Any,
-                                        arg         : Any) -> jnp.ndarray:
+    def flat_gradient_cpx_holo_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
+                                params          : Any,
+                                arg             : Any) -> jnp.ndarray:
         """
-        Numerically compute flattened holomorphic gradient :math:`\\nabla_{p^*} f`
-        in real vector format `[Re(g)..., Im(g)...]`. Output is guaranteed real float.
+        Compute the flattened holomorphic gradient over the complex PyTree.
         """
-        grad_pytree = pytree_gradient_holo_numerical_jax(apply_fun, params, arg)
+        grad_pytree = pytree_gradient_cpx_holo_jax(apply_fun, params, arg)
         # This specific flattening function handles the [Re..., Im...] format
         return flatten_gradient_pytree_holo_real(grad_pytree)
 
@@ -554,10 +525,10 @@ if JAX_AVAILABLE:
             Dtype matches the output of `single_sample_flat_grad_fun`.
         '''
 
-        num_total_states = states.shape[0]
+        num_total_states    = states.shape[0]
         # Create batches, handles padding
         # Expected shape: (num_batches, batch_size, ...state_dims)
-        batched_states = create_batches_jax(states, batch_size)
+        batched_states      = create_batches_jax(states, batch_size)
 
         # Define the function to compute gradients for a single batch using vmap
         # Maps over the second dimension (states) of the input batch. Params are fixed.
@@ -648,7 +619,7 @@ if JAX_AVAILABLE:
             # OR the *entire input batch* is complex. Mixing is problematic for vmap here.
             if jnp.iscomplexobj(vectors):
                 # If the whole batch is complex, apply vmap safely
-                return _ensure_real_repr_vector_batch(vectors)
+                return _ensure_real_repr_vector_batch(vectors).astype(DEFAULT_JP_FLOAT_TYPE)
             else:
                 # If the whole batch is real, just ensure float type
                 return vectors.astype(DEFAULT_JP_FLOAT_TYPE)
