@@ -55,6 +55,8 @@ else:
 
 @jax.jit
 def stable_logcosh(x):
+    sgn_x   = -2 * jnp.signbit(x.real) + 1
+    x       = x * sgn_x
     return x + jnp.log1p(jnp.exp(-2.0 * x)) - jnp.log(2.0)
 
 class _FlaxRBM(nn.Module):
@@ -81,7 +83,7 @@ class _FlaxRBM(nn.Module):
     """
     n_hidden        : int
     bias            : bool                  = True                  # Bias for hidden units is common in RBMs
-    input_activation : Optional[Callable]   = None                  # e.g., lambda x: 2*x-1
+    input_activation: Optional[Callable]    = None                  # e.g., lambda x: 2*x-1
     visible_bias    : Optional[bool]        = True
     param_dtype     : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
     dtype           : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
@@ -126,10 +128,10 @@ class _FlaxRBM(nn.Module):
         #! Define Initializer based on parameter dtype
         if complex_dtype:
             kernel_init_fn  = cplx_variance_scaling(1.0, 'fan_in', 'normal', dtype=self.param_dtype)
-            bias_init_fn    = nn.initializers.normal(stddev=0.01)
+            bias_init_fn    = jax.nn.initializers.zeros
         else:
             kernel_init_fn  = lecun_normal(dtype=self.param_dtype)
-            bias_init_fn    = nn.initializers.normal(stddev=0.01)
+            bias_init_fn    = jax.nn.initializers.zeros
         
         #! Visible bias term
         n_visible           = visible_state.shape[-1]
@@ -154,7 +156,7 @@ class _FlaxRBM(nn.Module):
         )
 
         # Calculate hidden layer activations (theta_j = W_j * v + b_j)
-        theta           = dense_layer(visible_state)        # Shape (batch, n_hidden)
+        theta           = dense_layer(visible_state.ravel())# Shape (batch, n_hidden)
 
         # Apply log(cosh) activation to hidden activations
         log_cosh_theta  = stable_logcosh(theta)             # Shape (batch, n_hidden)
@@ -204,7 +206,8 @@ class RBM(FlaxInterface):
                 map_to_pm1     : bool           = False,                   # Flag to map {0,1} -> {-1,1}
                 dtype          : Any            = DEFAULT_JP_FLOAT_TYPE,   # Default float for real RBM
                 param_dtype    : Optional[Any]  = None,
-                seed           : int            = 0):
+                seed           : int            = 0,
+                **kwargs):
 
         if not JAX_AVAILABLE:
             raise ImportError("RBM requires JAX.")
@@ -227,7 +230,9 @@ class RBM(FlaxInterface):
             'bias'            : bias,
             'input_activation': None,
             'param_dtype'     : final_param_dtype,
-            'dtype'           : final_dtype
+            'dtype'           : final_dtype,
+            **kwargs
+            
         }
 
         # Initialize using FlaxInterface parent

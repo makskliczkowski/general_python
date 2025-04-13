@@ -48,7 +48,7 @@ separately and then combine them appropriately.
 
 import numpy as np
 import numba
-from typing import Union, Callable, Optional, Any
+from typing import Union, Callable, Optional, Any, Tuple
 
 # from general python utils
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend
@@ -218,64 +218,60 @@ def dict_gradient_real(fun: Any, params: Any, arg: Any,
 
 # ==============================================================================
 
-def decide_grads(iscpx, isjax, isanalytic, isholomorphic):
+def decide_grads(
+    iscpx         : bool,
+    isjax         : bool,
+    isanalytic    : bool,
+    isholomorphic : bool
+    ) -> Tuple[Callable, Callable]:
     """
-    Decide which gradient function to use based on the input flags.
+    Decide which gradient functions (flattened and PyTree) to use based on flags.
 
     Parameters
     ----------
-    iscpx : bool
-        Flag indicating if the function is complex.
-    isjax : bool
-        Flag indicating if JAX should be used.
-    isanalytic : bool
-        Flag indicating if the analytical gradient should be used.
+    iscpx         : bool
+        True if the function/parameters are complex.
+    isjax         : bool
+        True if JAX backend should be used.
+    isanalytic    : bool
+        True if analytical gradients should be used.
     isholomorphic : bool
-        Flag indicating if the function is holomorphic.
+        True if the function is holomorphic (if complex).
 
     Returns
     -------
-    Callable
-        The appropriate gradient function, the dictionary of the gradient function
+    Tuple[Callable, Callable]
+        (flat_gradient_func, pytree_gradient_func)
+        The appropriate functions for computing flattened gradients per sample
+        and PyTree gradients, respectively.
     """
-    if not isjax:  # NumPy backend
-        if iscpx:  # Complex functions
+    if not isjax:   # NumPy backend
+        raise NotImplementedError("NumPy backend gradient functions not provided.")
+    else:           # JAX backend
+        if iscpx:   # Complex functions
             if isholomorphic:  # Holomorphic
                 if isanalytic:
-                    return numpy.flat_gradient_holo_analytical_np, numpy.dict_gradient_analytical_np
+                    # return jaxpy.flat_gradient_cpx_holo_analytical_jax, jaxpy.pytree_gradient_cpx_holo_analytical_jax
+                    raise NotImplementedError("Analytical holomorphic JAX gradients not implemented.")
                 else:
-                    return numpy.flat_gradient_holo_numerical_np, numpy.dict_gradient_numerical_np
-            else:  # Non-holomorphic
-                if isanalytic:
-                    return numpy.flat_gradient_cpx_nonholo_analytical_np, numpy.dict_gradient_analytical_np
-                else:
-                    return numpy.flat_gradient_cpx_nonholo_numerical_np, numpy.dict_gradient_numerical_np
-        else:  # Real functions
-            if isanalytic:
-                return numpy.flat_gradient_real_analytical_np, numpy.dict_gradient_real_analytical_np
-            else:
-                return numpy.flat_gradient_real_numerical_np, numpy.dict_gradient_real_numerical_np
-    else:  # JAX backend
-        if iscpx:  # Complex functions
-            if isholomorphic:  # Holomorphic
-                if isanalytic:
-                    # return jaxpy.flat_gradient_holo_analytical_jax, jaxpy.dict_gradient_analytical_jax
-                    pass
-                else:
+                    # Numerical: ∇_{p*}f (flat outputs [Re,Im] float, pytree outputs complex)
                     return jaxpy.flat_gradient_cpx_holo_jax, jaxpy.pytree_gradient_cpx_holo_jax
-            else:  # Non-holomorphic
+            else:   # Non-holomorphic
                 if isanalytic:
-                    # return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.dict_gradient_analytical_jax
-                    pass
+                    # return jaxpy.flat_gradient_cpx_nonholo_analytical_jax, jaxpy.pytree_gradient_cpx_nonholo_analytical_jax
+                    raise NotImplementedError("Analytical non-holomorphic JAX gradients not implemented.")
                 else:
-                    #! TODO: Fix this
-                    return jaxpy.flat_gradient_cpx_nonholo_numerical_jax, jaxpy.pytree_gradient_cpx_nonholo_numerical_jax
-        else:  # Real functions
+                    # Numerical: (∇_p f)* (flat outputs complex, pytree outputs complex)
+                    return jaxpy.flat_gradient_cpx_nonholo_jax, jaxpy.pytree_gradient_cpx_nonholo_jax
+        else:       # Real functions
             if isanalytic:
-                # return jaxpy.flat_gradient_real_analytical_jax, jaxpy.dict_gradient_real_analytical_jax
-                pass
+                # return jaxpy.flat_gradient_real_analytical_jax, jaxpy.pytree_gradient_real_analytical_jax
+                raise NotImplementedError("Analytical real JAX gradients not implemented.")
             else:
+                # Numerical: ∇_p Re[f] (flat outputs float, pytree outputs float)
                 return jaxpy.flat_gradient_real_jax, jaxpy.pytree_gradient_real_jax
-    return None, None
+
+    # Should not be reached if logic is correct
+    raise ValueError("Invalid combination of gradient flags for JAX backend.")
 
 # ==============================================================================
