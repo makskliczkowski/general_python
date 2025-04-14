@@ -65,7 +65,8 @@ class _FlaxRBM(nn.Module):
     visible_bias    : Optional[bool]        = True
     param_dtype     : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
     dtype           : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
-
+    islog           : bool                  = True                  # Logarithmic form of the wavefunction
+    
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         r"""
@@ -119,7 +120,6 @@ class _FlaxRBM(nn.Module):
         else:
             visible_bias    = None
 
-
         # Define the Dense layer (Visible to Hidden weights W and hidden bias b_h)
         # Input features    = number of visible units (s.shape[-1])
         # Output features   = number of hidden units
@@ -145,9 +145,9 @@ class _FlaxRBM(nn.Module):
             log_psi     += jnp.sum(visible_state * visible_bias, axis=-1)
             
         # Add visible bias if needed (not included in this implementation)
-        return log_psi.reshape(-1)
-        # return log_psi.reshape(-1, 1)                     # Ensure output is 1D (batch, 1)
-        # return log_psi.reshape(-1)                        # Ensure output is 1D (batch,)
+        if self.islog:
+            return log_psi.reshape(-1)
+        return jnp.exp(log_psi).reshape(-1)                 # Ensure output is 1D (batch,)
 
 ##########################################################
 #! RBM WRAPPER CLASSES USING FlaxInterface
