@@ -172,7 +172,7 @@ class SimpleNet(_net_general.GeneralNet):
 
         # Define architecture: hidden layers plus final layer of size 1.
         self._dims              = [self.input_dim] + list(layers) + [self._output_dim]
-        self._parameters        = { "layers" : [] }
+        self._parameters        = { "layers" : [], "params" : {} }
         self.act_fun            = act_fun
         self.init()
         

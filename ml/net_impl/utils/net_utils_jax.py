@@ -65,6 +65,9 @@ if JAX_AVAILABLE:
         
         """
         
+        # if batch_size < 2:
+        #     return data
+        
         # For example, if data.shape[0] is 5 and batch_size is 3, then:
         #   ((5 + 3 - 1) // 3) =  (7 // 3) = 2 batches needed, so 2*3 = 6 samples in total.
         #   Then append_data = 6 - 5 = 1 extra sample needed.
@@ -139,8 +142,6 @@ if JAX_AVAILABLE:
 ###########################################################################
 #! GRADIENTS
 ###########################################################################
-
-_ERR_JAX_GRADIENTS_CALLABLE = "The function must be callable."
 
 if JAX_AVAILABLE:
 
@@ -475,12 +476,13 @@ if JAX_AVAILABLE:
     #! Compute the gradient
     # ----------------------------------------------------------------------------
     
-    @partial(jax.jit, static_argnums=(0, 3))                                        # apply_fun and single_sample_flat_grad_fun are static
+    @partial(jax.jit, static_argnums=(0, 3, 4))                                     # apply_fun and single_sample_flat_grad_fun are static
     def compute_gradients_batched(
         net_apply                   : Callable[[Any, Any], jnp.ndarray],            # Network apply function f(p, s).
         params                      : Any,                                          # Network parameters `p` (PyTree).
         states                      : jnp.ndarray,                                  # Expects shape (n_samples, ...)
-        single_sample_flat_grad_fun : Callable[[Callable, Any, Any], jnp.ndarray]
+        single_sample_flat_grad_fun : Callable[[Callable, Any, Any], jnp.ndarray],
+        batch_size                  : int = 1,                                      # Batch size for gradient computation.
         ) -> jnp.ndarray:
         """
         Compute flattened gradients per sample over a batch of states using jax.vmap.
@@ -503,6 +505,8 @@ if JAX_AVAILABLE:
             `flat_gradient_real_jax`, `flat_gradient_cpx_nonholo_jax`, `flat_gradient_cpx_holo_jax`.
             It takes `(net_apply, params, single_state)` and returns a 1D gradient vector.
             *Must be static* for JIT.
+        batch_size : int, optional
+            Batch size for gradient computation. Default is 1 (no batching).
 
         Returns
         -------
@@ -517,6 +521,8 @@ if JAX_AVAILABLE:
         # net_apply and single_sample_flat_grad_fun are closed over or passed statically.
         def compute_grad_for_one_state(p, s):
             return single_sample_flat_grad_fun(net_apply, p, s)
+        
+        # batches         = create_batches_jax(states, batch_size)
 
         # vmap this function.
         # - `in_axes=(None, 0)` means:
@@ -526,6 +532,7 @@ if JAX_AVAILABLE:
         batch_grads_fun = jax.vmap(compute_grad_for_one_state, in_axes=(None, 0), out_axes=0)
 
         # Apply the vmapped function to the parameters and the batch of states
+        # gradients       = batch_grads_fun(params, batches)
         gradients       = batch_grads_fun(params, states)
         # gradients shape: (num_samples, num_flat_params)
         return gradients

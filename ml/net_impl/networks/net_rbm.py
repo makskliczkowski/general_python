@@ -156,7 +156,7 @@ class _FlaxRBM(nn.Module):
         )
 
         # Calculate hidden layer activations (theta_j = W_j * v + b_j)
-        theta           = dense_layer(visible_state.ravel())# Shape (batch, n_hidden)
+        theta           = dense_layer(visible_state)        # Shape (batch, n_hidden)
 
         # Apply log(cosh) activation to hidden activations
         log_cosh_theta  = stable_logcosh(theta)             # Shape (batch, n_hidden)

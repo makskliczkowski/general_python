@@ -137,16 +137,49 @@ For detailed derivations and benchmarks, refer to:
 
 import numpy as np
 import numba 
-from typing import Union, Tuple, Union, Callable, Optional
+from typing import Union, Tuple, Union, Callable, Optional, NamedTuple
 from functools import partial
 
 from abc import ABC, abstractmethod
 
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend, Array
 import general_python.algebra.solver as solver_utils
 
 #####################################
 
+class SRParams(NamedTuple):
+    """
+    Parameters for stochastic reconfiguration.
+    Attributes:
+        loss (Array):
+            Loss function values. (e.g., energies)
+        var_deriv (Array):
+            Variational derivatives. (e.g., gradients of the variational wave function)
+        min_sr (bool):
+            Flag for minimum-step stochastic reconfiguration.
+        x0 (Optional[Array]):
+            Initial guess for the solution.
+        precond_apply (Optional[Callable]):
+            Preconditioner application function.
+        maxiter (int):
+            Maximum number of iterations for the solver.
+        tol (float):
+            Tolerance for convergence of the solver.
+        reg (float):
+            Regularization parameter.
+        solver (solver_utils.Solver):
+            Solver object for linear systems.
+        solver_form_s (bool):
+            Flag indicating if the solver is in the form of S.
+    """
+    min_sr          : bool                  = False
+    maxiter         : int                   = 500
+    tol             : float                 = 1e-8
+    # regularization
+    reg             : float                 = 1e-12
+    # solver
+    solver_form_s   : bool                  = False
+    
 # jax specific
 if JAX_AVAILABLE:
     import jax
