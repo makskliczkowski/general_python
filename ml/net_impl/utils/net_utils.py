@@ -252,7 +252,7 @@ def decide_grads(
             if isholomorphic:  # Holomorphic
                 if isanalytic:
                     # return jaxpy.flat_gradient_cpx_holo_analytical_jax, jaxpy.pytree_gradient_cpx_holo_analytical_jax
-                    raise NotImplementedError("Analytical holomorphic JAX gradients not implemented.")
+                    return jaxpy.flat_gradient_analytic_jax, jaxpy.pytree_gradient_analytic_jax
                 else:
                     # Numerical: ∇_{p*}f (flat outputs [Re,Im] float, pytree outputs complex)
                     return jaxpy.flat_gradient_cpx_holo_jax, jaxpy.pytree_gradient_cpx_holo_jax

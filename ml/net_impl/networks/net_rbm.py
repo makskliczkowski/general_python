@@ -30,34 +30,12 @@ if JAX_AVAILABLE:
     from jax import random
     import flax.linen as nn
 else:
-    # Define dummy types/functions if JAX/Flax not available
-    class nn: 
-        class Module: 
-            pass
-    jnp                     = np
-    random                  = np.random
-    DEFAULT_JP_FLOAT_TYPE   = np.float32
-    DEFAULT_JP_CPX_TYPE     = np.complex64
-    # Dummy decorators/functions
-    partial                 = lambda fn, **kwargs: fn
-    jit                     = lambda fn: fn
-    # Dummy initializer functions
-    def cplx_variance_scaling(*args, **kwargs):
-        return lambda k, s, d: jnp.zeros(s, dtype=d)
-    def lecun_normal(*args, **kwargs):
-        return lambda k, s, d: jnp.zeros(s, dtype=d)
-    log_cosh                = jnp.log
+    raise ImportError("JAX is not available. Please install JAX to use this module.")
 
 
 ##########################################################
 #! INNER FLAX RBM MODULE DEFINITION
 ##########################################################
-
-@jax.jit
-def stable_logcosh(x):
-    sgn_x   = -2 * jnp.signbit(x.real) + 1
-    x       = x * sgn_x
-    return x + jnp.log1p(jnp.exp(-2.0 * x)) - jnp.log(2.0)
 
 class _FlaxRBM(nn.Module):
     """
@@ -159,7 +137,7 @@ class _FlaxRBM(nn.Module):
         theta           = dense_layer(visible_state)        # Shape (batch, n_hidden)
 
         # Apply log(cosh) activation to hidden activations
-        log_cosh_theta  = stable_logcosh(theta)             # Shape (batch, n_hidden)
+        log_cosh_theta  = log_cosh_jnp(theta)               # Shape (batch, n_hidden)
         
         # Sum over hidden units to get log(psi) for each batch element
         log_psi         = jnp.sum(log_cosh_theta, axis=-1)  # Shape (batch,)
@@ -203,7 +181,8 @@ class RBM(FlaxInterface):
                 input_shape    : tuple,
                 n_hidden       : int            = 2,
                 bias           : bool           = True,
-                map_to_pm1     : bool           = False,                   # Flag to map {0,1} -> {-1,1}
+                visible_bias   : bool           = True,
+                in_activation  : bool           = False,                   # Flag to map {0,1} -> {-1,1}
                 dtype          : Any            = DEFAULT_JP_FLOAT_TYPE,   # Default float for real RBM
                 param_dtype    : Optional[Any]  = None,
                 seed           : int            = 0,
@@ -215,19 +194,23 @@ class RBM(FlaxInterface):
         # Determine dtypes
         final_dtype             = jnp.dtype(dtype)
         final_param_dtype       = jnp.dtype(param_dtype) if param_dtype is not None else final_dtype
+        self._is_cpx            = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
 
-        # if the types are not the same, raise an error
-        if final_dtype == jnp.complexfloating and final_param_dtype == jnp.float_ or \
-            final_dtype == jnp.float_ and final_param_dtype == jnp.complexfloating:
-            raise ValueError("RBM: dtype and param_dtype must be the same floating (complex or real).")
-        
+        # Basic type compatibility check
+        is_final_cpx = jnp.issubdtype(final_dtype, jnp.complexfloating)
+        self._is_cpx = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
+        if is_final_cpx != self._is_cpx:
+            self.log(f"Warning: RBM dtype ({final_dtype}) and param_dtype ({final_param_dtype}) differ in complexity. "
+                    "Ensure this is intended.", log='warning', lvl=1, color='yellow')
+    
         # Define input activation based on map_to_pm1 flag
         # input_activation        = (lambda x: 2 * x - 1) if map_to_pm1 else None
-
+        self._in_activation     = in_activation
         # Prepare kwargs for _FlaxRBM
         net_kwargs = {
             'n_hidden'        : n_hidden,
             'bias'            : bias,
+            'visible_bias'    : visible_bias,
             'input_activation': None,
             'param_dtype'     : final_param_dtype,
             'dtype'           : final_dtype,
@@ -246,12 +229,110 @@ class RBM(FlaxInterface):
             seed        = seed
         )
 
-        self._is_cpx = final_param_dtype == jnp.complexfloating
+        #! For the analytic gradient, we need to compile the function
+        self._compiled_grad_fn  = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
+        # self._has_analytic_grad = True
+
+    # ------------------------------------------------------------
+    #! Analytic Gradient
+    # ------------------------------------------------------------
+    
+    @staticmethod
+    @partial(jax.jit, static_argnames=("input_activation",))
+    def analytic_grad_jax(params: Any, x: jax.Array, input_activation: Optional[Callable] = None) -> Any:
+        r"""
+        Computes the analytical gradient of log(psi(s)) for the RBM.
+
+        Calculates the derivatives d log(psi)/dp averaged over the batch,
+        where p are the parameters (visible_bias, hidden_bias, weights).
+
+        Gradient Formulas:
+            d log(psi) / d a_i  = s_i
+            d log(psi) / d b_j  = tanh(theta_j)
+            d log(psi) / d W_ij = s_i * tanh(theta_j)
+        where theta_j           = sum_i W_ij * s_i + b_j
+
+        Args:
+            params (Any):   
+                PyTree of network parameters (matching _FlaxRBM structure).
+                Expected keys: 'visible_bias', 'VisibleToHidden' {'kernel', 'bias'}.
+            x (jax.Array):
+                Input batch of configurations, shape (batch, n_visible) or (batch, *input_shape).
+            input_activation (Optional[Callable]):
+                The same activation function used in the forward pass.
+
+        Returns:
+            Any:
+                A PyTree with the same structure as `params`, containing the
+                batch-averaged gradients for each parameter.
+        """
+        
+        #! Parameter Extraction
+        has_visible_bias    = 'visible_bias' in params
+        has_hidden_bias     = 'bias' in params.get('VisibleToHidden', {})
+
+        W = params['VisibleToHidden']['kernel']                             # Shape (n_visible, n_hidden)
+        b = params['VisibleToHidden']['bias'] if has_hidden_bias else None  # Shape (n_hidden,)
+        a = params['visible_bias'] if has_visible_bias else None            # Shape (n_visible,)
+
+        #! Input Preprocessing 
+        # Ensure input has batch dimension and is flattened
+        if x.ndim == 1:
+            x = x.reshape(1, -1)
+        elif x.ndim > 2:
+            x = x.reshape(x.shape[0], -1)
+
+        # Apply the same input activation as the forward pass
+        # Determine compute dtype from weights/biases if possible, fallback needed
+        compute_dtype = W.dtype
+        visible_state = x.astype(compute_dtype)
+        if input_activation is not None:
+            visible_state = input_activation(visible_state) # Shape (batch, n_visible)
+
+        #! Intermediate Calculations
+        # theta = s * W + b (using einsum for clarity, handles batching)
+        # W: (n_vis, n_hid), visible_state: (batch, n_vis) -> theta: (batch, n_hid)
+        theta = jnp.einsum('bi,ih->bh', visible_state, W)
+        if b is not None:
+            theta = theta + b
+
+        tanh_theta = jnp.tanh(theta)                                        # Shape (batch, n_hid)
+
+        #! Gradient Calculations (per batch element)
+        # grad_a_batch = visible_state                                      # Shape (batch, n_visible)
+        # grad_b_batch = tanh_theta                                         # Shape (batch, n_hidden)
+        # grad_W_batch: Need outer product s_i * tanh(theta_j) for each batch item
+        # visible_state: (b, i), tanh_theta: (b, j) -> grad_W: (b, i, j)
+        grad_W_batch = jnp.einsum('bi,bj->bij', visible_state, tanh_theta)
+
+        # --- Averaging over Batch ---
+        # Use tree_map to average only the leaves that correspond to gradients
+        batch_grads = {}
+        if a is not None:
+            batch_grads['visible_bias'] = visible_state # grad_a_batch
+        if W is not None: # Should always exist
+            # Need to nest W and b correctly
+            hidden_grads = {'kernel': grad_W_batch}
+            if b is not None:
+                hidden_grads['bias'] = tanh_theta # grad_b_batch
+            batch_grads['VisibleToHidden'] = hidden_grads
+
+        #! Return Gradient Tree
+        # Ensure the structure matches the original params tree.
+        # If a bias was missing in params, it shouldn't be in the grad tree.
+        # The construction above handles this.
+        return batch_grads
+
+    # ------------------------------------------------------------
+    #! Public Methods
+    # ------------------------------------------------------------
 
     def __repr__(self) -> str:
         init_status = "initialized" if self.initialized else "uninitialized"
         rbm_type    = "Complex" if self._is_cpx else "Real"
-        n_hidden    = self._net_kwargs_in.get('n_hidden', '?')
-        bias        = "on" if self._net_kwargs_in.get('bias', False) else "off"
+        n_hidden    = self._flax_module.n_hidden if self.initialized else self._net_kwargs.get('n_hidden', '?')
+        bias        = "on" if (self._flax_module.bias if self.initialized else self._net_kwargs.get('bias', '?')) else "off"
+        vis_bias    = "on" if (self._flax_module.visible_bias if self.initialized else self._net_kwargs.get('visible_bias', '?')) else "off"
+        n_params = self.nparams if self.initialized else '?'
         return (f"{rbm_type}RBM(shape={self.input_shape}, hidden={n_hidden}, "
-            f"bias={bias}, dtype={self.dtype}, params={self.num_parameters}, {init_status})")
+            f"bias={bias}, visible_bias={vis_bias}, dtype={self.dtype}, params={n_params}, analytic_grad={self._has_analytic_grad}, {init_status})")

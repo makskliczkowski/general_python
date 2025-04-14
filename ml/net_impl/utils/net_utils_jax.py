@@ -6,7 +6,7 @@ date    : 2025-03-01
 '''
 
 # from general python utils
-from typing import Any, Callable, Dict, List, Tuple, NamedTuple
+from typing import Any, Callable, Dict, List, Tuple, NamedTuple, Optional
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 from functools import partial
 
@@ -217,6 +217,46 @@ if JAX_AVAILABLE:
     # -----------------------------------------------------------------------------
     
     @jax.jit
+    def flatten_gradient_pytree(grad_pytree: Any) -> jnp.ndarray:
+        """
+        Flattens a PyTree of gradients into a single 1D JAX array.
+        
+        Each leaf is flattened in C order (row-major), meaning that if a leaf is a vector it
+        remains as is, and if it is a matrix it is flattened as [row0, row1, ...].
+        
+        Parameters
+        ----------
+        grad_pytree : Any
+            A PyTree containing gradient arrays (leaves).
+        
+        Returns
+        -------
+        jnp.ndarray
+            A 1D array containing all gradient elements concatenated.
+        """
+        # Flatten the tree; tree_flatten returns leaves in a deterministic (depth-first) order.
+        leaves, tree = jax.tree_util.tree_flatten(grad_pytree)
+        if not leaves:
+            return jnp.array([], dtype=jnp.float32)  # or your DEFAULT_JP_FLOAT_TYPE
+
+        # For each leaf, reshape to 1D (C order is the default in JAX)
+        shapes      = [leaf.shape for leaf in leaves]
+        sizes       = [leaf.size for leaf in leaves]
+        flat_leaves = [leaf.ravel() for leaf in leaves]
+        complexity  = [jnp.iscomplexobj(leaf) for leaf in leaves]
+        
+        # jax.debug.print("jax flatten gradient pytree: {}", flat_leaves)
+        # jax.debug.print("jax flatten gradient pytree shapes: {}", shapes)
+        # jax.debug.print("jax flatten gradient pytree sizes: {}", sizes)
+        # jax.debug.print("jax flatten gradient pytree complexity: {}", complexity)
+        
+        # Concatenate all 1D arrays together.
+        return jnp.concatenate(flat_leaves), shapes, sizes, complexity
+
+
+    # ---
+    
+    @jax.jit
     def flatten_gradient_pytree_real(grad_pytree: Any) -> jnp.ndarray:
         """
         Flattens a PyTree of real gradients into a single 1D JAX array (float).
@@ -257,19 +297,30 @@ if JAX_AVAILABLE:
         jnp.ndarray
             A 1D complex array containing all gradient elements concatenated.
         """
-        leaves, _ = tree_flatten(grad_pytree)
-        if not leaves:
-            return jnp.array([], dtype=DEFAULT_JP_CPX_TYPE)
+        # leaves, _ = tree_flatten(grad_pytree)
+        # if not leaves:
+        #     return jnp.array([], dtype=DEFAULT_JP_CPX_TYPE)
 
-        # Ravel and ensure complex type for all leaves before concatenating
-        flat_leaves = [leaf.ravel().astype(DEFAULT_JP_CPX_TYPE) for leaf in leaves]
+        # # Ravel and ensure complex type for all leaves before concatenating
+        # flat_leaves = [leaf.ravel().astype(DEFAULT_JP_CPX_TYPE) for leaf in leaves]
 
-        return jnp.concatenate(flat_leaves)
+        # return jnp.concatenate(flat_leaves)
+
+        real_leaves = tree_leaves(tree_map(lambda x: jnp.real(x).ravel(), grad_pytree))
+        imag_leaves = tree_leaves(tree_map(lambda x: jnp.imag(x).ravel(), grad_pytree))
+
+        if not real_leaves and not imag_leaves: # Should have same structure
+            return jnp.array([], dtype=DEFAULT_JP_FLOAT_TYPE)
+
+        # Concatenate all real parts, then all imaginary parts
+        flat_real_grad = jnp.concatenate(real_leaves + imag_leaves)
+
+        return flat_real_grad.astype(DEFAULT_JP_FLOAT_TYPE)
 
     # ---
 
     @jax.jit
-    def flatten_gradient_pytree_holo_real(complex_grad_pytree: Any) -> jnp.ndarray:
+    def flatten_gradient_pytree_holo(complex_grad_pytree: Any) -> jnp.ndarray:
         """
         Flattens a complex PyTree (like ∇_{p*} f) into `[Re(g)..., Im(g)...]`.
 
@@ -435,6 +486,34 @@ if JAX_AVAILABLE:
         # Returns the complex PyTree structure
         return holo_grad_tree
 
+    # ---
+    
+    @partial(jax.jit, static_argnames=('a_grad_fun',))
+    def pytree_gradient_analytic_jax(a_grad_fun: Callable[[Any, Any], jnp.ndarray],
+                                    params      : Any,
+                                    state       : Any) -> Any:
+        """
+        Compute PyTree of the analytic gradient using the provided function.
+
+        Parameters
+        ----------
+        a_grad_fun : Callable[[Any, Any], jnp.ndarray]
+            The function to compute the gradient. Should return a PyTree.
+        params : Any
+            Network parameters `p` (PyTree).
+        state : Any
+            Input state `s`.
+
+        Returns
+        -------
+        Any
+            Gradient PyTree `g`, matching `params` structure.
+        """
+        # Compute the gradient using the provided function
+        grad_pytree = a_grad_fun(params, state)
+        # Returns the PyTree structure
+        return grad_pytree
+    
     # -----------------------------------------------------------------------------
     #! Flattened gradients
     # -----------------------------------------------------------------------------
@@ -447,7 +526,10 @@ if JAX_AVAILABLE:
         Compute flattened real gradient ∇_p Re[f]. Output is 1D float array.
         """
         grad_pytree = pytree_gradient_real_jax(apply_fun, params, state)
-        return flatten_gradient_pytree_real(grad_pytree)
+        flat, shapes, size, is_cpx = flatten_gradient_pytree(grad_pytree)
+        return flat, shapes, size, is_cpx
+    
+    # return flatten_gradient_pytree_real(grad_pytree)
 
     @partial(jax.jit, static_argnames=('apply_fun',))
     def flat_gradient_cpx_nonholo_jax(apply_fun : Callable[[Any, Any], jnp.ndarray],
@@ -458,7 +540,9 @@ if JAX_AVAILABLE:
         Output is 1D complex array.
         """
         grad_pytree = pytree_gradient_cpx_nonholo_jax(apply_fun, params, state)
-        return flatten_gradient_pytree_complex(grad_pytree)
+        flat, shapes, sizes, is_cpx = flatten_gradient_pytree(grad_pytree)
+        return flat, shapes, sizes, is_cpx
+        # return flatten_gradient_pytree_complex(grad_pytree)
 
     @partial(jax.jit, static_argnames=('apply_fun',))
     def flat_gradient_cpx_holo_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
@@ -470,8 +554,28 @@ if JAX_AVAILABLE:
         """
         grad_pytree = pytree_gradient_cpx_holo_jax(apply_fun, params, state)
         # This specific flattener handles the complex -> [Re, Im] real format
-        return flatten_gradient_pytree_holo_real(grad_pytree)
+        flat, shapes, sizes, is_cpx = flatten_gradient_pytree(grad_pytree)
+        return flat, shapes, sizes, is_cpx 
+        # return flatten_gradient_pytree_holo(grad_pytree)
 
+    @partial(jax.jit, static_argnames=('a_grad_fun',))
+    def flat_gradient_analytic_jax(a_grad_fun   : Callable[[Any, Any], jnp.ndarray],
+                                    params      : Any,
+                                    state       : Any) -> jnp.ndarray:
+        """
+        Compute flattened analytic gradient using provided function.
+        Output is 1D float array.
+        """
+        grad_pytree = a_grad_fun(params, state)
+        # # jax.debug.print("jax pytree: {}", grad_pytree)
+        flat, shapes, sizes, is_cpx = flatten_gradient_pytree(grad_pytree)
+        return flat, shapes, sizes, is_cpx
+        # if any(jnp.iscomplexobj(leaf) for leaf in tree_leaves(grad_pytree)):
+            # out = flatten_gradient_pytree_complex(grad_pytree)
+            # # jax.debug.print("jax flattened complex: {}", out)
+            # return out
+        # return flatten_gradient_pytree_real(grad_pytree)
+    
     # ----------------------------------------------------------------------------
     #! Compute the gradient
     # ----------------------------------------------------------------------------
@@ -517,12 +621,16 @@ if JAX_AVAILABLE:
         if states.ndim == 0 or states.shape[0] == 0:
             raise ValueError("Input states must have at least one sample.")
 
+        # get full info from the first state
+        gradients, shapes, sizes, is_cpx = single_sample_flat_grad_fun(net_apply, params, states[0])
+
         # Define the function to be vmapped. It takes params and a single state.
         # net_apply and single_sample_flat_grad_fun are closed over or passed statically.
         def compute_grad_for_one_state(p, s):
-            return single_sample_flat_grad_fun(net_apply, p, s)
-        
-        # batches         = create_batches_jax(states, batch_size)
+            return single_sample_flat_grad_fun(net_apply, p, s)[0]
+
+        # Create batches of states
+        batches = create_batches_jax(states, batch_size)
 
         # vmap this function.
         # - `in_axes=(None, 0)` means:
@@ -532,10 +640,12 @@ if JAX_AVAILABLE:
         batch_grads_fun = jax.vmap(compute_grad_for_one_state, in_axes=(None, 0), out_axes=0)
 
         # Apply the vmapped function to the parameters and the batch of states
-        # gradients       = batch_grads_fun(params, batches)
-        gradients       = batch_grads_fun(params, states)
+        gradients = jax.vmap(batch_grads_fun, in_axes=(None, 0), out_axes=0)(params, batches)
+        # # jax.debug.print("jax compute gradients: {}", gradients[0])
+        # Reshape gradients to match the original number of samples
+        gradients = gradients.reshape(states.shape[0], -1)
         # gradients shape: (num_samples, num_flat_params)
-        return gradients
+        return gradients, shapes, sizes, is_cpx
     
     # ----------------------------------------------------------------------------
     #! Transform the vector from the original representation to the real representation [Re..., Im...]
@@ -543,14 +653,19 @@ if JAX_AVAILABLE:
     
     @partial(jax.jit, static_argnames=('force_complex',))
     def _to_real_repr_single(vector: jnp.ndarray, force_complex: bool) -> jnp.ndarray:
-        if force_complex:
+        if jnp.iscomplexobj(vector):
+            real_parts      = jnp.real(vector)
+            imag_parts      = jnp.imag(vector)
+            # # jax.debug.print("jax to real repr complex: {}", vector)
+            # # jax.debug.print("jax to real repr real: {}", real_parts)
+            # # jax.debug.print("jax to real repr imag: {}", imag_parts)
+            out             = jnp.concatenate([real_parts, imag_parts])
+            # # jax.debug.print("jax to real repr out: {}", out)
+            return out
+        elif force_complex:
             complex_vector  = vector.astype(DEFAULT_JP_CPX_TYPE)
             real_parts      = jnp.real(complex_vector)
             imag_parts      = jnp.imag(complex_vector)
-            return jnp.concatenate([real_parts, imag_parts]).astype(DEFAULT_JP_FLOAT_TYPE)
-        elif jnp.iscomplexobj(vector):
-            real_parts      = jnp.real(vector)
-            imag_parts      = jnp.imag(vector)
             return jnp.concatenate([real_parts, imag_parts]).astype(DEFAULT_JP_FLOAT_TYPE)
         else:
             return vector.astype(DEFAULT_JP_FLOAT_TYPE)
@@ -618,7 +733,9 @@ if JAX_AVAILABLE:
                 raise ValueError("Input vector size must be even if target is complex.")
             n           = vector_size // 2
             real_vector = real_repr_vector.astype(DEFAULT_JP_FLOAT_TYPE)
-            return (real_vector[:n] + 1.j * real_vector[n:]).astype(DEFAULT_JP_CPX_TYPE)
+            out         = (real_vector[:n] + 1.j * real_vector[n:]).astype(DEFAULT_JP_CPX_TYPE)
+            # # jax.debug.print("jax from real repr complex: {}", out)
+            return out
         else:
             if real_repr_vector.size == 0:
                 return jnp.array([], dtype=DEFAULT_JP_FLOAT_TYPE)
@@ -641,9 +758,15 @@ if JAX_AVAILABLE:
         return is_complex, total_real_elements
 
     def _from_real_repr_single(real_repr_vector: jnp.ndarray, params_template: Any) -> jnp.ndarray:
+        
+        # check the target
         target_is_complex, expected_real_repr_size = _get_template_info(params_template)
 
         if real_repr_vector.size != expected_real_repr_size and not (real_repr_vector.size == 0 and expected_real_repr_size == 0):
+            if real_repr_vector.size == expected_real_repr_size // 2 and target_is_complex:
+                # If the real_repr_vector is half the expected size and the target is complex,
+                # it might be already in the correct format.
+                return _from_real_repr_single_impl(real_repr_vector, target_is_complex)
             raise ValueError(f"Input vector size ({real_repr_vector.size}) != expected ({expected_real_repr_size}) from template.")
         return _from_real_repr_single_impl(real_repr_vector, target_is_complex)
 
@@ -804,9 +927,9 @@ if JAX_AVAILABLE:
         log_batches     = create_batches_jax(logprobas_in, batch_size)
         sample_batches  = create_batches_jax(sample_probas, batch_size)
         
-        # jax.debug.print("batches.shape {}", batches.shape)
-        # jax.debug.print("log_batches.shape {}", log_batches.shape)
-        # jax.debug.print("sample_batches.shape {}", sample_batches.shape)
+        # # jax.debug.print("batches.shape {}", batches.shape)
+        # # jax.debug.print("log_batches.shape {}", log_batches.shape)
+        # # jax.debug.print("sample_batches.shape {}", sample_batches.shape)
         nstates         = states.shape[0]
 
         # Evaluate each batch using vmap.
@@ -911,13 +1034,14 @@ if JAX_AVAILABLE:
         Tuple[LeafInfo, ...]
             A tuple containing LeafInfo for each parameter leaf.
         """
-        flat_leaves, _      = tree_flatten(params)
-        leaf_info_list = []
-        for leaf in flat_leaves:
-            shape = tuple(leaf.shape)
+        flat_leaves, l_tree = tree_flatten(params)
+        
+        # Check if any leaves are complex
+        leaf_info_list      = []
+        for i, leaf in enumerate(flat_leaves):
+            shape           = tuple(leaf.shape)
             is_complex      = jnp.iscomplexobj(leaf)
-            # Use numpy for potentially large products to avoid JAX overhead here
-            num_elements    = int(jnp.prod(jnp.array(shape))) # Or use math.prod in Python 3.8+
+            num_elements    = int(jnp.prod(jnp.array(shape)))
             leaf_info_list.append(LeafInfo(shape=shape, is_complex=is_complex, num_elements=num_elements))
         return tuple(leaf_info_list)
 
@@ -947,10 +1071,9 @@ if JAX_AVAILABLE:
                 start       =   current_start_index,
                 size        =   num_real_components,
                 shape       =   info.shape,
-                is_complex  =   info.is_complex
+                is_complex  =   info.is_complex                
             ))
             current_start_index += num_real_components
-
         # Check total size consistency (optional sanity check, assumes flat vec exists)
         # total_expected_size = current_start_index
         # if flat_vector is not None and flat_vector.size != total_expected_size:
@@ -958,10 +1081,45 @@ if JAX_AVAILABLE:
 
         return tuple(slice_metadata)
     
+    def prepare_slice_info(shapes, sizes, is_cpx):
+        """
+        Converts the shapes, sizes, and is_cpx lists into a list of SliceInfo objects.
+        This is a simple transformation for easier handling of the metadata.
+
+        Parameters
+        ----------
+        shapes : Tuple[Tuple[int, ...], ...]
+            Shapes of the parameter leaves.
+        sizes : Tuple[int, ...]
+            Sizes of the parameter leaves.
+        is_cpx : Tuple[bool, ...]
+            Complexity (real/complex) of the parameter leaves.
+
+        Returns
+        -------
+        List[SliceInfo]
+            A list of SliceInfo objects.
+        """
+        start               = 0
+        slice_metadata      = []
+        for i in range(len(shapes)):
+            # Force each element of the shape tuple to be a Python int.
+            py_shape        = tuple(int(x) for x in shapes[i])
+            py_size         = int(sizes[i])
+            py_is_cpx       = bool(is_cpx[i])
+            # If the leaf is complex, size is multiplied by 2.
+            effective_size  = py_size * (2 if py_is_cpx else 1)
+            slice_metadata.append(SliceInfo(start=start, size=effective_size, shape=py_shape, is_complex=py_is_cpx))
+            start           += effective_size
+        return tuple(slice_metadata)
+        
+    # --------------------------------------------------------------------------
+    
     @partial(jax.jit, static_argnums=(1,))
     def fast_unflatten(
         flat_real_vector    : jnp.ndarray,
         slice_metadata      : Tuple[SliceInfo, ...]) -> List[jnp.ndarray]:
+        
         """
         Optimized JIT-compiled unflattening of a real flat vector into parameter leaves.
 
@@ -978,23 +1136,92 @@ if JAX_AVAILABLE:
         List[jnp.ndarray]
             A list of parameter leaves (JAX arrays) in the correct order.
         """
-        leaves = []
+        leaves      = []
+        full_size   = sum(slice_info.size for slice_info in slice_metadata)
+        half_size   = full_size // 2
+        
+        # # jax.debug.print("jax fast unflatten full size: {}", full_size)
+        # # jax.debug.print("jax fast unflatten half size: {}", half_size)
+        # jax.debug.print("jax fast unflatten flat vector: {}", flat_real_vector)
+        
+        start_idx   = 0
         for slice_info in slice_metadata:
-            segment = jax.lax.dynamic_slice_in_dim(flat_real_vector, slice_info.start, slice_info.size, axis=0)
-            # segment = flat_real_vector[slice_info.start : slice_info.start + slice_info.size] # Static slice is also fine if JIT understands bounds
+            leaf        = None
+            size_in     = slice_info.size
+            shape_in    = slice_info.shape
+            is_cpx_in   = slice_info.is_complex
+            try:
+                if is_cpx_in:
+                    idx_re      = start_idx
+                    idx_im      = start_idx + half_size
+                    size_in     = size_in // 2
+                    reals       = jax.lax.dynamic_slice_in_dim(flat_real_vector, idx_re, size_in, axis=0)
+                    imags       = jax.lax.dynamic_slice_in_dim(flat_real_vector, idx_im, size_in, axis=0)
 
-            if slice_info.is_complex:
-                # Split into real and imaginary parts. Size is guaranteed to be even.
-                n_elements  = slice_info.size // 2
-                re          = jax.lax.dynamic_slice_in_dim(segment, 0, n_elements, axis=0)
-                im          = jax.lax.dynamic_slice_in_dim(segment, n_elements, n_elements, axis=0)
-                # re, im = jnp.split(segment, 2) # Alternative
-                leaf        = (re + 1j * im).astype(DEFAULT_JP_CPX_TYPE).reshape(slice_info.shape)
-            else:
-                leaf        = segment.astype(DEFAULT_JP_FLOAT_TYPE).reshape(slice_info.shape)
+                    # re, im = jnp.split(segment, 2) # Alternative
+                    leaf        = (reals + 1j * imags)
+                    leaf        = leaf.reshape(shape_in)
+                    # jax.debug.print(
+                    #     "jax fast unflatten complex leaf: {}, shape: {}, size: {}, idx_re: {}, idx_im: {}, after reshape: {}",
+                    #     leaf, leaf.shape, leaf.size, idx_re, idx_im, leaf
+                    # )
+                else:
+                    idx_start   = start_idx
+                    leaf        = jax.lax.dynamic_slice_in_dim(flat_real_vector, idx_start, shape_in, axis=0).reshape(shape_in)
+            except Exception as e:
+                return leaves
+            start_idx += size_in
             leaves.append(leaf)
         return leaves
 
+    # --------------------------------------------------------------------------
+
+    # @partial(jax.jit, static_argnames=('params_tree_def', 'params_slice_metadata', 'params_total_size'))
+    # def transform_flat_params_jit(d_par, params_tree_def, params_slice_metadata, params_total_size):
+    @partial(jax.jit, static_argnames=('params_tree_def', 'params_slice_metadata', 'params_total_size'))
+    def transform_flat_params_jit(d_par, params_tree_def, params_slice_metadata, params_total_size):
+        """
+        JIT-compiled helper to transform the flat parameter update vector
+        into the model's parameter structure.
+        
+        Args:
+            d_par (jnp.ndarray):
+                A 1D flat parameter update vector.
+            params_tree_def:
+                The tree definition that the update must be unflattened into.
+            params_slice_metadata:
+                Slicing information to rebuild the parameter tree.
+            params_total_size (int):
+                Expected total size of the flat parameters.
+            
+        Returns:
+            The parameter update tree reconstructed from d_par.
+            
+        Raises:
+            ValueError:
+                If the input vector does not have the correct shape/size.
+        """
+        if d_par.ndim != 1:
+            # Note: In a pure jitted function, raising exceptions is possible
+            # but may cause compilation if the condition is ever True.
+            raise ValueError(f"Flat parameter update `d_par` must be 1D, got shape {d_par.shape}.")
+
+        # Convert to the real representation vector.
+        # The call to to_real_representation should be pure.
+        flat_real_update_vector = to_real_representation(d_par)
+
+        if flat_real_update_vector.size != params_total_size:
+            raise ValueError(f"Flat update vector size ({flat_real_update_vector.size}) "
+                            f"does not match expected size ({params_total_size}) "
+                            f"based on model parameters.")
+
+        leaves      = fast_unflatten(flat_real_update_vector, params_slice_metadata)
+        update_tree = tree_unflatten(params_tree_def, leaves)
+        return update_tree
+        # return leaves
+    
+    # --------------------------------------------------------------------------
+    
     @jax.jit
     def add_tree(p1: Any, p2: Any) -> Any:
         """JIT-compiled tree addition."""
@@ -1004,5 +1231,15 @@ if JAX_AVAILABLE:
     def sub_tree(p1: Any, p2: Any) -> Any:
         """JIT-compiled tree subtraction."""
         return tree_map(jax.lax.sub, p1, p2)
+    
+    @jax.jit
+    def mul_tree(p1: Any, multipler: Any) -> Any:
+        """JIT-compiled tree multiplication."""
+        return tree_map(jax.lax.mul, p1, multipler)
+    
+    @jax.jit
+    def div_tree(p1: Any, divisor: Any) -> Any:
+        """JIT-compiled tree division."""
+        return tree_map(jax.lax.div, p1, divisor)
 
 # -------------------------------------------------------------------------

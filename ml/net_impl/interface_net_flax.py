@@ -53,7 +53,7 @@ Notes:
 """
 
 import numpy as np
-from typing import Tuple, Callable, Optional, Any, List
+from typing import Tuple, Callable, Optional, Any, List, Union
 
 import jax
 import jax.numpy as jnp
@@ -99,20 +99,22 @@ class FlaxInterface(GeneralNet):
     _ERR_NET_NOT_INITIALIZED = "Network not initialized. Call init() first."
     
     def __init__(self,
-                net_module    : nn.Module | Callable,
-                net_args      : tuple = (),
-                net_kwargs    : Optional[dict] = None,
-                input_shape   : tuple = (10,),
-                backend       : str   = 'jax',
-                dtype         : Optional[jnp.dtype] = jnp.float32,
-                seed          : int = 42):
+                net_module    : Union[nn.Module, Callable],
+                net_args      : tuple                           = (),
+                net_kwargs    : Optional[dict]                  = None,
+                input_shape   : tuple                           = (10,),
+                backend       : str                             = 'jax',
+                dtype         : Optional[jnp.dtype]             = jnp.float32,
+                seed          : int                             = 42,
+                in_activation : Optional[Union[str, Callable]]  = None,
+                **kwargs):  
         
         self._name  = 'FlaxNetInterface'
         #! Check the dtype.
         self._dtype = self._dtype = self._resolve_dtype(dtype if dtype is not None else net_kwargs.get('dtype', DEFAULT_JP_FLOAT_TYPE))
         
         #! Initialize the GeneralNet class.
-        super().__init__(input_shape, backend, self._dtype)
+        super().__init__(input_shape, backend, self._dtype, in_activation=in_activation, **kwargs)
 
         #! Set the backend to JAX.
         if self._backend != jnp and self._backend != 'jax':
@@ -148,13 +150,24 @@ class FlaxInterface(GeneralNet):
         self._param_shapes_orig     : Optional[List[Tuple[int, tuple]]] = None  # List of (size, shape)
         self._shapes_for_update     : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
         self._param_num             : Optional[int]     = None                  # Total number of parameters
+        #! Complexity and holomorphicity
         self._iscpx                 : Optional[bool]    = None                  # Is the model complex overall?
         self._holomorphic           : Optional[bool]    = None                  # Is the model holomorphic?
+        
+        #! Inicialization
         self._initialized           : bool              = False                 # Is the model initialized?
+        
+        #! JAX handles
         self._apply_jax_handle      : Optional[Callable]= None                  # Handle to module's apply
-        self._compiled_apply_fn     : Optional[Callable]= None                  # JITted apply
+        self._compiled_grad_fn      : Optional[Callable]= None                  # JITted gradient function - if it has analytic gradients
+        self._compiled_apply_fn     : Optional[Callable]= None                  # JITted apply function - if it is compilable
+        
         self._has_analytic_grad     : bool              = False                 # Does the model have analytic gradients?
         self.init()
+        
+        #! Other
+        self._apply_jax                                 = self._apply_jax_handle
+        self._apply_np                                  = None
         
     ########################################################
     #! INITIALIZATION
@@ -165,6 +178,13 @@ class FlaxInterface(GeneralNet):
         Converts various dtype specifications to a JAX dtype.
         This method handles common numpy dtypes and attempts
         to convert other types (like strings) to JAX dtypes.
+        
+        Params:
+            dtype_spec: Any
+                The dtype specification (e.g., np.float32, 'float32', etc.).
+        Returns:
+            jnp.dtype
+                The corresponding JAX dtype.
         """
         try:
             if dtype_spec is np.float32:            return jnp.float32
@@ -182,7 +202,7 @@ class FlaxInterface(GeneralNet):
     def _compile_functions(self):
         """
         Compiles JITted version of the apply function.
-        This method uses JAX's JIT compilation to optimize the apply function
+        This method uses JAX's JIT compilation to optimize the apply function.
         """
         if not self._initialized or self._apply_jax_handle is None:
             raise RuntimeError(self._ERR_NET_NOT_INITIALIZED + " Cannot compile functions.")
@@ -192,28 +212,6 @@ class FlaxInterface(GeneralNet):
         def compiled_apply(p, x):
             return apply_handle({'params': p}, x)
         self._compiled_apply_fn = compiled_apply
-    
-    def _handle_activations(self, net_kwargs: dict) -> None:
-        '''
-        Handle the activation functions for the network.
-        This method checks if the activation functions are provided'
-        in the kwargs. If they are, it initializes them.
-        If not, it sets the activation functions to identity.
-        Note:
-            - The activation functions are stored in a tuple.
-            - If there are not enough activation functions provided,
-        Params:
-            net_kwargs: dict
-                The keyword arguments for the network module.
-        '''
-
-        
-        self._act_fun_specs             = net_kwargs.get('act_fun', None)
-        if self._act_fun_specs:
-            self._initialized_act_funs  = self._initialize_activations(self._act_fun_specs)
-            net_kwargs['act_fun']       = self._initialized_act_funs
-        else:
-            self._initialized_act_funs  = () # No activations specified
     
     def _initialize_activations(self, act_fun_specs: Any) -> Tuple[Callable, ...]:
         """
@@ -247,6 +245,28 @@ class FlaxInterface(GeneralNet):
             else:
                 raise TypeError(f"Activation spec must be string or callable, got {type(spec)}")
         return tuple(initialized_funs)
+    
+    def _handle_activations(self, net_kwargs: dict) -> None:
+        '''
+        Handle the activation functions for the network.
+        This method checks if the activation functions are provided'
+        in the kwargs. If they are, it initializes them.
+        If not, it sets the activation functions to identity.
+        Note:
+            - The activation functions are stored in a tuple.
+            - If there are not enough activation functions provided,
+        Params:
+            net_kwargs: dict
+                The keyword arguments for the network module.
+        '''
+
+        
+        self._act_fun_specs             = net_kwargs.get('act_fun', None)
+        if self._act_fun_specs:
+            self._initialized_act_funs  = self._initialize_activations(self._act_fun_specs)
+            net_kwargs['act_fun']       = self._initialized_act_funs
+        else:
+            self._initialized_act_funs  = () # No activations specified
     
     def init(self, key: Optional[jax.random.PRNGKey] = None):
         """
@@ -333,7 +353,7 @@ class FlaxInterface(GeneralNet):
         new_flat, new_tree = tree_flatten(params)
         if new_tree != self._param_tree_def:
             raise ValueError("New parameters have different tree structure.")
-        self._parameters = params   # assume correct type is provided
+        self._parameters = params
     
     def get_params(self):
         """
@@ -359,7 +379,8 @@ class FlaxInterface(GeneralNet):
         """
         if not self.initialized:
             self.init()
-        return self._flax_module.apply({'params': self._parameters}, x)
+        return self._compiled_apply_fn(self._parameters, x)
+        # return self._flax_module.apply({'params': self._parameters}, x)
         
     def get_apply(self, use_jax = True) -> Tuple[Callable, dict]:
         """
@@ -390,7 +411,7 @@ class FlaxInterface(GeneralNet):
                 The apply function and the current parameters.
         '''
         if self._use_jax:
-            return self._compiled_grad_fn
+            return self._compiled_grad_fn, self.get_params()
         raise ValueError(self._ERR_JAX_NECESSARY)
     
     #########################################################
@@ -398,7 +419,7 @@ class FlaxInterface(GeneralNet):
     #########################################################
     
     def __repr__(self) -> str:
-        return (f"Intefrace[flax](input_dim={self.input_dim}, dtype={self._dtype}, "
+        return (f"Interface[flax](input_dim={self.input_dim}, dtype={self._dtype}, "
                 f"flax_module={self._flax_module.__class__.__name__})")
         
     def __str__(self) -> str:
@@ -409,7 +430,6 @@ class FlaxInterface(GeneralNet):
     #! CALL ME MAYBE
     #########################################################
     
-    # @jax.jit
     def __call__(self, x: 'array-like'):
         """
         Call the network on input x.

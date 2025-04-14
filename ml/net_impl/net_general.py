@@ -34,8 +34,10 @@ class GeneralNet(ABC):
 
     def __init__(self,
                 input_shape     : tuple,
-                backend		    : str		        = 'default',
-                dtype           : Optional[np.dtype]= np.float64):
+                backend		    : str		         = 'default',
+                dtype           : Optional[np.dtype] = np.float64,
+                in_activation   : Optional[Callable] = None,
+                **kwargs):
 
         self._name              = "GeneralNet"
         self._logger            = get_global_logger()
@@ -78,7 +80,11 @@ class GeneralNet(ABC):
         self._compiled_grad_fn  = None
         self._compiled_apply_fn = None
 
+        # shapes for update
         self._shapes_for_update : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
+        
+        # activation - modifies the input before the network
+        self._in_activation     = in_activation
         
     # ---------------------------------------------------
     #! INFO
@@ -163,6 +169,8 @@ class GeneralNet(ABC):
         """
         return self._backend_str
     
+    # ---
+    
     @property
     def input_shape(self) -> tuple:
         """
@@ -182,6 +190,8 @@ class GeneralNet(ABC):
             int: Input dimension.
         """
         return self._input_dim
+    
+    # ---
     
     @property
     def holomorphic(self) -> bool | None:
@@ -283,6 +293,8 @@ class GeneralNet(ABC):
         """
         return self._has_analytic_grad
     
+    # ---
+    
     @property
     def compiled_grad_fn(self):
         """
@@ -302,6 +314,28 @@ class GeneralNet(ABC):
             Callable: Compiled apply function.
         """
         return self._compiled_apply_fn
+    
+    @property
+    def apply_fn(self):
+        """
+        Get the apply function.
+        
+        Returns:
+            Callable: Apply function.
+        """
+        return self._compiled_apply_fn
+    
+    @property
+    def grad_fn(self):
+        """
+        Get the gradient function.
+        
+        Returns:
+            Callable: Gradient function.
+        """
+        return self._compiled_grad_fn
+    
+    # ---
     
     @property
     def shapes_for_update(self) -> Optional[List[Tuple[int, tuple]]]:
@@ -386,6 +420,10 @@ class GeneralNet(ABC):
             return self.apply_jax(x)
         return self.apply_np(x)
     
+    # ---------------------------------------------------
+    #! GETTERS
+    # ---------------------------------------------------
+    
     def get_apply(self, use_jax: bool = False) -> Callable:
         """
         Get the apply function of the network.
@@ -399,12 +437,12 @@ class GeneralNet(ABC):
             return self._apply_jax, self.get_params()
         return self._apply_np, self.get_params()
     
-    def get_gradient(self, use_jax: bool = False):
+    def get_gradient(self, use_jax: bool = False, analytic: bool = False) -> Callable:
         '''
         For the networks that may have an analytic gradient obtainable via 
         '''
         if self._use_jax or (use_jax and JAX_AVAILABLE):
-            return None
+            return self._compiled_grad_fn, self.get_params()
         return None
     
     # ---------------------------------------------------
@@ -450,6 +488,38 @@ class GeneralNet(ABC):
         return True
     
     # ---------------------------------------------------
+    #! ANALYTIC GRADIENT
+    # ---------------------------------------------------
+    
+    @staticmethod
+    def analytic_grad_np(params, x: 'array-like') -> 'array-like':
+        """
+        Compute the analytic gradient of the network.
+
+        Parameters:
+            params (dict)           : Network parameters.
+            x (array-like)          : Input data.
+
+        Returns:
+            array-like: Analytic gradient of the network.
+        """
+        pass
+    
+    @staticmethod
+    def analytic_grad_jax(params, x: 'array-like') -> 'array-like':
+        """
+        Compute the analytic gradient of the network using JAX.
+
+        Parameters:
+            params (dict)           : Network parameters.
+            x (array-like)          : Input data.
+
+        Returns:
+            array-like: Analytic gradient of the network.
+        """
+        pass
+    
+    
 
 #########################################################
 #! JUST FROM A CALLABLE - EASY FUNCTION
