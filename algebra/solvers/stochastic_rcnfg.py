@@ -137,7 +137,7 @@ For detailed derivations and benchmarks, refer to:
 
 import numpy as np
 import numba 
-from typing import Union, Tuple, Union, Callable, Optional, NamedTuple
+from typing import Union, Tuple, Callable, Optional, NamedTuple
 from functools import partial
 
 from abc import ABC, abstractmethod
