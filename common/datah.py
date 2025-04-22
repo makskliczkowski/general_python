@@ -13,10 +13,33 @@ Methods:
     concat_and_average(y_list, x_list, typical=False, use_interpolation=True, threshold=1.0) -> tuple:
     concat_and_fill(y_list, x_list, lengths, missing_val=np.nan) -> tuple:
 """
+
+####################################################################################################
+
 import numpy as np
+
+####################################################################################################
 
 class DataHandler:
     """
+    DataHandler class provides static methods for handling and processing data arrays, including filtering, 
+    interpolating, aggregating, concatenating, and cutting matrices based on specific criteria.
+    Methods:
+        _filter_typical_values(current_x, current_y, typical, threshold=1.0) -> tuple:
+        _initialize_combined_arrays(y_list, x_list, typical, threshold=1.0) -> tuple:
+            Initializes and combines arrays from given lists. If the `typical` flag is set to True, 
+            it filters the combined arrays to include only elements where the values in `y_combined` 
+            are less than the threshold.
+        _interpolate_and_update(x_combined, y_combined, current_x, current_y, divider) -> tuple:
+        _aggregate_and_update(x_combined, y_combined, current_x, current_y, divider) -> tuple:
+            Aggregates and updates combined x and y data arrays with current x and y data arrays 
+            by summing common bins and appending unique bins.
+        concat_and_average(y_list, x_list, typical=False, use_interpolation=True, threshold=1.0) -> tuple:
+        concat_and_fill(y_list, x_list, lengths, missing_val=np.nan) -> tuple:
+        cut_matrix_bad_vals_zero(M, axis=0, tol=1e-9, check_limit: float | None = 10) -> np.ndarray:
+            Cuts off the slices (along any specified axis) in matrix M where all elements are close to zero.
+        cut_matrix_bad_vals(M, axis=0, threshold=-1e4, check_limit=None) -> np.ndarray:
+            Cuts off the rows or columns in matrix M where the first `check_limit` elements are all below a threshold.
     """
 
     @staticmethod
@@ -84,6 +107,17 @@ class DataHandler:
 
     @staticmethod
     def _aggregate_and_update(x_combined, y_combined, current_x, current_y, divider):
+        """
+        Aggregates and updates combined x and y data arrays with current x and y data arrays.
+        
+        Args:
+            x_combined (np.ndarray): The combined x data array.
+            y_combined (np.ndarray): The combined y data array.
+            current_x (np.ndarray): The current x data array.
+            current_y (np.ndarray): The current y data array.
+            divider (np.ndarray): The divider array.
+        
+        """
         # Find common bins and separate unique bins
         common_bins         = np.intersect1d(x_combined, current_x, assume_unique=True) # Common bins in combined and current
         unique_x_combined   = np.setdiff1d(x_combined, common_bins, assume_unique=True) # Unique bins in combined - previous x's

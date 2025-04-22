@@ -10,6 +10,12 @@ from scipy.special import gamma
 import pandas as pd
 
 import math
+import numpy as np
+try:
+    import jax.numpy as jnp
+except ImportError as e:
+    print('JAX is not installed. Some functionalities will not work.')
+    pass
 
 TWOPI       = math.pi * 2
 PI          = math.pi
@@ -17,17 +23,21 @@ PIHALF      = math.pi / 2
 
 #################################### FINDERS ####################################
 
-def findMaximumIdx(x):
+def find_maximum_idx(x):
     ''' 
-    Find maximum index in a Dataframe
-    - x : Dataframe or numpy array
+    Find maximum index in a DataFrame, numpy array, or JAX array
+    - x : DataFrame, numpy array, or JAX array
     '''
     if isinstance(x, pd.DataFrame):
         return x.idxmax(axis=1)
+    elif isinstance(x, np.ndarray):
+        return np.argmax(x, axis=1)
+    elif isinstance(x, jnp.ndarray):
+        return jnp.argmax(x, axis=1)
     else:
-        return np.argmax(x, axis = 1)
+        raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
     
-def findNearestVal(x, val, col):
+def find_nearest_val(x, val, col):
     ''' 
     Find the nearest value to the value given 
     - x     : a DataFrame or numpy array
@@ -36,65 +46,110 @@ def findNearestVal(x, val, col):
     '''
     if isinstance(x, pd.DataFrame):
         return x.loc[(x[col]-val).abs().idxmin()]
-    else:
+    elif isinstance(x, np.ndarray):
         return np.array((np.abs(x - val)).argmin())
+    elif isinstance(x, jnp.ndarray):
+        return jnp.array((jnp.abs(x - val)).argmin())
+    else:
+        raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
 
-def findNearestIdx(x, val, col = ''):
+def find_nearest_idx(x, val : float, **kwargs):
     ''' 
     Find the nearest idx to the value given 
     - x     : a DataFrame or numpy array
     - val   : a scalar
     - col   : a string on which column to find the nearest
+    Returns the index of the nearest value to the given value
     '''
     if isinstance(x, pd.DataFrame):
+        col = kwargs.get('col', None)
+        if col is None:
+            raise ValueError("Column name must be provided for DataFrame.")
         return (x[col]-val).abs().idxmin()
-    else:
+    elif isinstance(x, np.ndarray):
         return (np.abs(x - val)).argmin()
+    elif isinstance(x, jnp.ndarray):
+        return jnp.array((jnp.abs(x - val)).argmin())
+    else:
+        raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
     
 ###################################### FITS ######################################
 
 class FitterParams(object):
     '''
     Class that stores only the parameters of the fit function
+    - popt  :   parameters of the fit
+    - pcov  :   covariance matrix of the fit
+    - funct :   function of the fit
     '''
     
-    def __init__(self, funct, popt, pcov) -> None:
-        self.popt   = popt
-        self.pcov   = pcov
-        self.funct  = funct
+    def __init__(self, funct, popt, pcov):
+        '''
+        Initialize the class
+        - funct :   function of the fit
+        - popt  :   parameters of the fit
+        - pcov  :   covariance matrix of the fit
+        '''
+        self._popt   = popt
+        self._pcov   = pcov
+        self._funct  = funct
     
     def get_popt(self):
-        return self.popt
+        return self._popt
     
     def get_pcov(self):
-        return self.pcov
+        return self._pcov
     
     def get_fun(self):
-        return self.funct
+        return self._funct
+    
+    @property
+    def popt(self):
+        return self._popt
+    
+    @property
+    def pcov(self):
+        return self._pcov
+
+    @property
+    def funct(self):
+        return self._funct
+    
+    def __call__(self, x):
+        return self._funct(x)
+    
+    def __str__(self):
+        return 'FitterParams: ' + str(self._popt) + ' ' + str(self._pcov)
     
 class Fitter:
     '''
     Class that contains the fit functions and their general usage.
+    - x     :   arguments
+    - y     :   values
+    - fitter:   FitterParams object
     '''
+    
     ###################################################
     
     def __init__(self, x : np.ndarray, y : np.ndarray):
-        self.x      = x
-        self.y      = y
-        self.fitter = FitterParams()
+        '''
+        Initialize the class
+        - x     : arguments
+        - y     : values
+        '''
+        self._x      = x
+        self._y      = y
+        self._fitter = FitterParams(None, None, None)
 
     ###################################################
     
     def apply(self, x : np.ndarray):
-        return self.fitter.funct(x) 
+        return self._fitter.funct(x) 
         
     ###################################################
     
     @staticmethod
-    def skip(x, 
-             y,
-             skipF = 0,
-             skipL = 0):
+    def skip(x, y, skipF = 0, skipL = 0):
         '''
         Skips a certain part of the values for the fit
         - x     :   arguments to trim
@@ -108,23 +163,22 @@ class Fitter:
     
     #################### F I T S ! #################### 
     
-    def fit_linear( self,
+    def fit_linear(self, skipF = 0, skipL = 0):
+        '''
+        Fits a linear function.
+        - skipF : skip first arguments
+        - skipL : skip last arguments
+        '''
+        xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
+        a, b            =       np.polyfit(xfit, yfit, 1)
+        self._fitter    =       FitterParams(lambda x: a * x + b, [a, b], [])
+
+    @staticmethod
+    def fitLinear(  x, y,
                     skipF = 0,
                     skipL = 0):
         '''
         Fits a linear function.
-        '''
-        xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
-        a, b            =       np.polyfit(xfit, yfit, 1)
-        self.fitter     =       FitterParams(lambda x: a * x + b, [a, b], [])
-
-    @staticmethod
-    def fitLinear(  x,
-                    y,
-                    skipF = 0,
-                    skipL = 0):
-        '''
-        Fits linear function (a * x + b)
         - x     : arguments
         - y     : values
         - skipF : skip first arguments
@@ -144,10 +198,10 @@ class Fitter:
         - skipF : skip first arguments
         - skipL : skip last arguments
         '''
-        xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
+        xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         funct           =       lambda x, a, b: a * np.exp(-b * x)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        self._fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
         
     @staticmethod
     def fitExp( x,
@@ -176,10 +230,10 @@ class Fitter:
         - skipF :   number of elements to skip on the left
         - skipR :   number of elements to skip on the right
         '''
-        xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
+        xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        self._fitter    =       FitterParams(lambda x: popt[0] * x + popt[1] * x ** 2, popt, pcov)
         
     @staticmethod
     def fitXPlusX2( x,
@@ -196,7 +250,7 @@ class Fitter:
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
-        return FitterParams(lambda x: popt[0] * np.exp(-popt[1] * x), popt, pcov)
+        return FitterParams(lambda x: popt[0] * x + popt[1] * x ** 2, popt, pcov)
     
     #############
     
@@ -205,13 +259,15 @@ class Fitter:
                   skipL = 0):
         '''
         Fits function [a*x**b]
+        - x     :   arguments to the fit
+        - y     :   values to the fit
         - skipF :   number of elements to skip on the left
         - skipR :   number of elements to skip on the right
         '''
-        xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
+        xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         funct           =       lambda x, a, b: a * x ** b
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       FitterParams(funct, popt, pcov)
+        self._fitter    =       FitterParams(funct, popt, pcov)
         
     @staticmethod
     def fitPower( x,
@@ -242,9 +298,9 @@ class Fitter:
         - skipF :   number of elements to skip on the left
         - skipR :   number of elements to skip on the right
         '''
-        xfit, yfit      =       Fitter.skip(self.x, self.y, skipF, skipL)
+        xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         popt, pcov      =       fit(funct, xfit, yfit)
-        self.fitter     =       FitterParams(funct, popt, pcov)
+        self._fitter     =       FitterParams(funct, popt, pcov)
     
     @staticmethod
     def fitAny( x,
@@ -266,7 +322,7 @@ class Fitter:
             popt, pcov  =       fit(funct, xfit, yfit)
             return FitterParams(lambda x: funct(x, *popt), popt, pcov)
         else:
-            popt, pcov      =       fit(funct, xfit, yfit, bounds = bounds)
+            popt, pcov  =       fit(funct, xfit, yfit, bounds = bounds)
             return FitterParams(lambda x: funct(x, *popt), popt, pcov)
     
     #################### H I S T O #################### 
@@ -302,8 +358,7 @@ class Fitter:
         - xm    :   xm parameter
         '''
         return v * np.power(1.0 + alpha * (np.abs(x - mu)), -1.0 / xm - 1.0)
-        return (alpha * xm ** alpha) / (np.abs(x) ** (alpha + 1))
-    
+
     @staticmethod
     def poisson(x, lambd = 1.0, v = 1.0):
         '''
@@ -390,7 +445,7 @@ class Fitter:
     @staticmethod
     def fit_histogram(edges,
                       counts, 
-                      typ       = 'gaussian',
+                      typek     = 'gaussian',
                       skipF     = 0,
                       skipL     = 0,
                       centers   = [],
@@ -402,54 +457,56 @@ class Fitter:
                 raise ValueError('Edges must have at least 2 elements')
             centers = ((edges[:-1] + edges[1:]) / 2)
             
-        funct   = Fitter.gaussian
-        if typ == 'gaussian':
-            funct = Fitter.gaussian
-        elif typ == 'poisson':
-            funct = Fitter.poisson
-        elif typ == 'laplace':
-            funct = Fitter.laplace
-        elif typ == 'exponential':
-            funct = Fitter.exponential
-        elif typ == 'pareto':
-            funct = Fitter.pareto
-        elif typ == 'cauchy':
-            funct = Fitter.cauchy
-        elif typ == 'gen_cauchy':
-            funct = Fitter.gen_cauchy
-        elif typ == 'chi2':
-            funct = Fitter.chi2
-        elif typ == 'lorenzian':
-            funct = Fitter.lorentzian
-        elif typ == 'two_lorenzian':
-            funct = Fitter.two_lorentzian
-        elif typ == 'lorenzian_system_size':
-            funct = Fitter.lorentzian_system_size(params)
-        else:
-            raise ValueError('Type not recognized: ' + typ)
+        match typek:
+            case 'gaussian':
+                funct = Fitter.gaussian
+            case 'poisson':
+                funct = Fitter.poisson
+            case 'laplace':
+                funct = Fitter.laplace
+            case 'exponential':
+                funct = Fitter.exponential
+            case 'pareto':
+                funct = Fitter.pareto
+            case 'cauchy':
+                funct = Fitter.cauchy
+            case 'gen_cauchy':
+                funct = Fitter.gen_cauchy
+            case 'chi2':
+                funct = Fitter.chi2
+            case 'lorentzian':
+                funct = Fitter.lorentzian
+            case 'two_lorentzian':
+                funct = Fitter.two_lorentzian
+            case 'lorentzian_system_size':
+                funct = Fitter.lorentzian_system_size(params)
+            case _:
+                raise ValueError('Type not recognized: ' + typek)
         
         centers, counts = Fitter.skip(centers, counts, skipF, skipL)
         popt, pcov      = fit(funct, centers, counts)
         return FitterParams(lambda x: funct(x, *popt), popt, pcov)
     
     @staticmethod
-    def get_histogram(typ = 'gaussian'):
-        funct = Fitter.gaussian
-        if typ == 'gaussian':
-            funct = Fitter.gaussian
-        elif typ == 'poisson':
-            funct = Fitter.poisson
-        elif typ == 'laplace':
-            funct = Fitter.laplace
-        elif typ == 'exponential':
-            funct = Fitter.exponential
-        elif typ == 'pareto':
-            funct = Fitter.pareto
-        elif typ == 'cauchy':
-            funct = Fitter.cauchy
+    def get_histogram(typek = 'gaussian'):
+        """
+        Get the histogram function based on the type of distribution
+        
+        """
+        if typek == 'gaussian':
+            return Fitter.gaussian
+        elif typek == 'poisson':
+            return Fitter.poisson
+        elif typek == 'laplace':
+            return Fitter.laplace
+        elif typek == 'exponential':
+            return Fitter.exponential
+        elif typek == 'pareto':
+            return Fitter.pareto
+        elif typek == 'cauchy':
+            return Fitter.cauchy
         else:
-            raise ValueError('Type not recognized: ' + typ)
-        return funct
+            raise ValueError('Type not recognized: ' + typek)
 
 ##############
 
@@ -468,3 +525,90 @@ def prev_power(x : float, base : int = 2):
     - base  : base of the power (default 2 for binary, can be 10 for decimal)
     '''
     return base ** math.floor(math.log(x) / math.log(base))
+
+#################################################################################
+
+def mod_euc(a: int, b: int) -> int:
+    '''
+    Compute the modified Euclidean remainder of a divided by b.
+    
+    This function ensures that the result has the same sign as b.
+    
+    - a : integer dividend
+    - b : integer divisor
+    '''
+    if b == 0:
+        raise ValueError("Divisor 'b' cannot be zero.")
+        
+    m = a % b
+    if m < 0:
+        m = m - b if b < 0 else m + b
+    return m
+
+def mod_floor(a: int, b: int) -> int:
+    '''
+    Compute the modified floor division of a divided by b.
+    
+    This function ensures that the result has the same sign as b.
+    
+    - a : integer dividend
+    - b : integer divisor
+    '''
+    if b == 0:
+        raise ValueError("Divisor 'b' cannot be zero.")
+        
+    m = a // b
+    if (a < 0) != (b < 0) and a % b != 0:
+        m -= 1
+    return m
+
+def mod_ceil(a: int, b: int) -> int:
+    '''
+    Compute the modified ceiling division of a divided by b.
+    
+    This function ensures that the result has the same sign as b.
+    
+    - a : integer dividend
+    - b : integer divisor
+    '''
+    if b == 0:
+        raise ValueError("Divisor 'b' cannot be zero.")
+        
+    m = a // b
+    if (a < 0) == (b < 0) and a % b != 0:
+        m += 1
+    return m
+
+def mod_trunc(a: int, b: int) -> int:
+    '''
+    Compute the modified truncation division of a divided by b.
+    
+    This function ensures that the result has the same sign as a.
+    
+    - a : integer dividend
+    - b : integer divisor
+    '''
+    if b == 0:
+        raise ValueError("Divisor 'b' cannot be zero.")
+        
+    return a // b
+
+def mod_round(a: int, b: int) -> int:
+    '''
+    Compute the modified rounding division of a divided by b.
+    
+    This function ensures that the result has the same sign as a.
+    
+    - a : integer dividend
+    - b : integer divisor
+    '''
+    if b == 0:
+        raise ValueError("Divisor 'b' cannot be zero.")
+        
+    m = a / b
+    if m < 0:
+        m = m - 1 if a % b < 0 else m + 1
+    return int(m)
+
+#################################################################################
+

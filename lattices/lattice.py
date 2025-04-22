@@ -4,29 +4,16 @@ Contains the general lattice class and its children for different lattice types.
 @Email: maksymilian.kliczkowski@pwr.edu.pl
 @Date: 2025-02-01
 """
-# import HDF5 handling
-import os
-import sys
-sys.path.append('..')
 
 # Import the necessary modules
-from common import HDF5Mod
-from common import DirectoriesMod
+from general_python.common import hdf5_lib as HDF5Mod
+from general_python.common import directories as DirectoriesMod
+# from general_python.algebra import utils as alg_utils
 
 # Import the necessary modules
 from abc import ABC, abstractmethod
 
 import numpy as np
-Backend = np
-# try out with JAX library
-try:
-    import jax.numpy as jnp
-    Backend = jnp
-    print("JAX library has been imported.")
-except ImportError:
-    print("JAX library has not been imported. Using NumPy as a backend.")
-
-# Import the necessary modules
 from enum import Enum, auto, unique                 # for enumerations
 from typing import Union, Callable, Tuple, List     # type hints for the functions and methods
 
@@ -63,6 +50,8 @@ class LatticeType(Enum):
 
 ############################################## GENERAL LATTICE ##############################################
 
+Backend         = np
+
 class Lattice(ABC):
     '''
     General Lattice class. This class contains the general lattice model.
@@ -84,13 +73,18 @@ class Lattice(ABC):
     This means that no matter of the lattice types, the sites are counted from the left
     to the right and from the bottom to the top. The nearest neighbors are calculated like a 
     snake (reversed in reality, bigger numbers are on the top)
-    - 1D: 0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
-    - 2D: 0 -> 1 -> 2
+    - 1D:   
+            0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
+    
+    - 2D:   
+            0 -> 1 -> 2
             |    |    |
             3 -> 4 -> 5
             |    |    |
             6 -> 7 -> 8
-    - 3D: 0 -> 1 -> 2 ---- 9  -> 10 -> 11
+            
+    - 3D:   
+            0 -> 1 -> 2 ---- 9  -> 10 -> 11
             |    |    |      |     |     |
             3 -> 4 -> 5 ---- 12 -> 13 -> 14
             |    |    |      |     |     |
@@ -98,6 +92,7 @@ class Lattice(ABC):
             
     Example: 
         1) Square lattice with 3x3 sites and PBC:
+        
             0 -> 1 -> 2
             |    |    |
             3 -> 4 -> 5
@@ -105,7 +100,7 @@ class Lattice(ABC):
             6 -> 7 -> 8
     '''
     
-    _BAD_LATTICE_SITE = -1
+    _BAD_LATTICE_SITE = None
     @property
     def bad_lattice_site(self):
         ''' Bad lattice site '''
@@ -264,6 +259,11 @@ class Lattice(ABC):
         ''' Number of sites '''
         return self._ns
     
+    @property
+    def sites(self):
+        ''' Number of sites '''
+        return self._ns
+    
     @ns.setter
     def ns(self, value):
         self._ns = value
@@ -413,11 +413,11 @@ class Lattice(ABC):
         self._bc = value
     
     @property
-    def type(self):
+    def typek(self):
         ''' Lattice type '''
         return self._type
     
-    @type.setter
+    @typek.setter
     def type(self, value):
         self._type = value
     
@@ -958,7 +958,7 @@ class Lattice(ABC):
     
 #############################################################################################################
 
-def save_bonds(lattice : Lattice, directory : Union[DirectoriesMod, str], filename : str):
+def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
     '''
     Saves the bonds of the lattice to a file
     Args:

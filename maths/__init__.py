@@ -2,9 +2,9 @@
 This module contains mathematical utilities and functions.
 """
 
-from . import __math__ as MathMod
+from . import math_utils as MathMod
 from . import __random__ as RandomMod
-from . import __statistics__ as StatisticsMod
+from . import statistics as StatisticsMod
 
 __all__ = ["MathMod", "RandomMod", "StatisticsMod"]
 

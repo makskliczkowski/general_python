@@ -1,0 +1,652 @@
+'''
+This module provides a logger class for handling console and file logging with verbosity control.
+It includes methods for printing messages with different log levels, formatting titles, and measuring execution time.
+and it is designed to be used in a quantum computing context, specifically for the Quantum EigenSolver package.
+
+file    :   general_python/common/flog.py
+author  :   Maksymilian Kliczkowski
+'''
+
+import os
+import functools
+import logging
+import numpy as np
+from datetime import datetime
+from typing import Optional, Dict, List
+
+# set the logging level to WARNING
+logging.getLogger("jax").setLevel(logging.WARNING)
+logging.getLogger("flax").setLevel(logging.WARNING)
+logging.getLogger("tensorflow").setLevel(logging.WARNING)
+
+try:
+    from colorama import init
+    init(autoreset=True)
+    __HAS_COLORAMA = True
+except ImportError:
+    __HAS_COLORAMA = False
+
+############################################### PRINT THE OUTPUT WITH A GIVEN COLOR ###############################################
+
+class Colors:
+    """
+    Class for defining ANSI colors for console output.
+    """
+    # Use normal string literals so escape sequences are interpreted
+    black   = "\033[30m"
+    red     = "\033[31m"
+    green   = "\033[32m"
+    yellow  = "\033[33m"
+    blue    = "\033[34m"
+    white   = "\033[0m"  # Reset / default color
+    
+    def __init__(self, color : str):
+        self.color = color
+
+
+    def __str__(self) -> str:
+        mapping = {
+            "black" : Colors.black,
+            "red"   : Colors.red,
+            "green" : Colors.green,
+            "yellow": Colors.yellow,
+            "blue"  : Colors.blue,
+            "white" : Colors.white
+        }
+        return mapping.get(self.color, Colors.white)
+        
+    def __repr__(self) -> str:
+        return str(self)
+
+############################################### PRINT THE OUTPUT WITH A GIVEN LEVEL ###############################################
+class Logger:
+    """
+    Logger class for handling console and file logging with verbosity control.
+    """
+    
+    LEVELS = {
+        logging.DEBUG   : 'debug',
+        logging.INFO    : 'info',
+        logging.WARNING : 'warning',
+        logging.ERROR   : 'error'
+    }
+    LEVELS_R = {v: k for k, v in LEVELS.items()}
+    
+    def __init__(self,
+                logfile     : Optional[str] = None,
+                lvl         : int = logging.INFO,
+                append_ts   : bool = False):
+        """
+        Initialize the logger instance.
+
+        Args:
+            logfile (str):
+                Name of the log file (without extension if empty, a timestamp will be used).
+            lvl (int):
+                Logging level (default: logging.INFO).
+            append_ts (bool):
+                Whether to append a timestamp to the log file name (default: False).
+        """
+        self.now            = datetime.now()
+        self.now_str        = self.now.strftime("%d_%m_%Y_%H-%M_%S")
+        self.lvl            = lvl
+        self.logger         = logging.getLogger(__name__)
+        self.handler_added  = False
+        logging.basicConfig(level=lvl, format='%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+        if logfile is not None:
+            self.logfile    = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
+            if append_ts:
+                self.logfile    += self.now_str
+            self.configure("./log")
+        else:
+            self.logfile    = self.now_str
+        
+    # --------------------------------------------------------------
+    
+    @staticmethod
+    def colorize(txt: str, color: str):
+        """
+        Apply color to the given text (for console output).
+
+        Args:
+            txt (str): Text to colorize.
+            color (str): Color name.
+
+        Returns:
+            str: Colorized text.
+        """
+        return str(Colors(color)) + str(txt) + Colors.white
+
+    # --------------------------------------------------------------
+    
+    def configure(self, directory: str):
+        """
+        Configure the logger to use a specific directory for log files.
+
+        Args:
+            directory (str): Path to the directory where log files will be stored.
+        """
+        
+        # If logfile name is empty, use the timestamp
+        base_name       = self.now_str if len(self.logfile) == 0 else self.logfile
+        self.logfile    = os.path.join(directory, f'{base_name}.log')
+        
+        # Create the directory if it does not exist
+        os.makedirs(directory, exist_ok=True)
+        # reset file handler
+        self.working    = False
+        
+        # Write initial log file header
+        with open(self.logfile, 'w+') as f:
+            f.write('This is the log file for the current session.\n')
+            f.write(f'Log file created on {self.now_str}.\n')
+            f.write(f'Log level set to: {self.LEVELS[self.lvl]}.\n')
+            f.write(f"Author: {os.getlogin()}\n")
+            f.write(f"Machine: {os.uname().nodename}\n")
+            f.write(f"OS: {os.uname().sysname} {os.uname().release} {os.uname().version}\n")
+            f.write('--------------------------------------------------\n')
+            
+        # Create a file handler only once
+
+        
+        # Write initial log file header if the log file is created
+        if not self.handler_added:
+            self._f_handler = logging.FileHandler(self.logfile, encoding='utf-8')
+            self._f_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
+            self._f_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+            self._f_handler.setFormatter(self._f_format)
+            self.logger.addHandler(self._f_handler)
+
+            # Add a stream handler for console output
+            # self._s_handler = logging.StreamHandler()
+            # self._s_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
+            # self._s_handler.setFormatter(self._f_format)  # Use the same formatter
+            # self.logger.addHandler(self._s_handler)
+
+            self.handler_added = True
+            self._log_message(logging.INFO, f"Log file created: {self.logfile}")
+            self._log_message(logging.INFO, f"Log level set to: {self.LEVELS[self.lvl]}")
+            
+        self.working = True
+
+    # --------------------------------------------------------------
+    
+    @staticmethod
+    def printTab(lvl=0):
+        """
+        Generate indentation for message formatting.
+
+        Args:
+            lvl (int): Number of tabulators.
+
+        Returns:
+            str: Indented string.
+        """
+        return '\t' * lvl + ('->' if lvl > 0 else '')
+
+    # --------------------------------------------------------------
+    
+    @staticmethod
+    def print(msg: str, lvl=0):
+        """
+        Format a message with a timestamp.
+
+        Args:
+            msg (str): Message to format.
+            lvl (int): Indentation level.
+
+        Returns:
+            str: Formatted message.
+        """
+        now             = datetime.now()
+        # nowStr          = now.strftime("%d/%m/%Y %H:%M:%S")
+        formatted_msg   = f"{Logger.printTab(lvl)}{msg}"
+        return formatted_msg
+
+    # --------------------------------------------------------------
+    
+    def say(self, *args, end=True, log=logging.INFO, lvl=0, verbose=True):
+        """
+        Print and log multiple messages if verbosity is enabled.
+
+        Args:
+            *args: Messages to log.
+            end (bool)      : Append newline (default: True).
+            log (int)       : Log level (10 : info, 20 : debug, 30 : warning, 40 : error) (default: 10).
+            lvl (int)       : Indentation level.
+            verbose (bool)  : Log if True (default: True).
+        """
+        if not verbose or log < self.lvl:
+            return
+        
+        messages = [str(arg) for arg in args]
+        
+        # if end is True, append newlin
+        # Log the combined message only once.
+        combined_message = ' '.join(messages) if not end else '\n'.join(messages)
+        self._log_message(log, combined_message, lvl)
+    
+    # --------------------------------------------------------------
+    
+    def _log_message(self, log_level, msg, lvl = 0):
+        """
+        Internal helper to log messages based on log level.
+
+        Args:
+            log_level (int): Log level (0: info, 1: debug, etc.).
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+        """
+        log_function = getattr(self.logger, self.LEVELS.get(log_level, 'info'))  # Get the appropriate log function
+        log_function(Logger.print(msg, lvl))
+
+    # --------------------------------------------------------------
+    
+    def info(self, msg: str, lvl=0, verbose=True):
+        """
+        Log an informational message if verbosity is enabled.
+
+        Args:
+            msg (str)       : Message to log.
+            lvl (int)       : Indentation level.
+            verbose (bool)  : Log if True (default: True).
+        """
+        if not verbose:
+            return
+        self.logger.info(Logger.print(msg, lvl))
+
+    # --------------------------------------------------------------
+    
+    def debug(self, msg: str, lvl=0, verbose=True):
+        """
+        Log a debug message if verbosity is enabled.
+
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        self.logger.debug(Logger.print(msg, lvl))
+
+    # --------------------------------------------------------------
+    
+    def warning(self, msg: str, lvl=0, verbose=True):
+        """
+        Log a warning message if verbosity is enabled.
+
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        self.logger.warning(Logger.print(msg, lvl))
+
+    # --------------------------------------------------------------
+
+    def error(self, msg: str, lvl=0, verbose=True):
+        """
+        Log an error message if verbosity is enabled.
+
+        Args:
+            msg (str): Message to log.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        self.logger.error(Logger.print(msg, lvl))
+        
+    # --------------------------------------------------------------
+    
+    @staticmethod
+    def breakline(n: int):
+        """
+        Print multiple break lines.
+
+        Args:
+            n (int): Number of break lines.
+        """
+        for _ in range(n):
+            print()
+            
+    def _breakline(self, n: int):
+        """
+        Log multiple break lines.
+
+        Args:
+            n (int): Number of break lines.
+        """
+        for _ in range(n):
+            self.logger.info('')
+            
+    # --------------------------------------------------------------
+
+    def title(self, tail: str, desiredSize: int, fill: str, lvl=0, verbose=True):
+        """
+        Create a formatted title with filler characters if verbosity is enabled.
+
+        Args:
+            tail (str): Text in the middle of the title.
+            desiredSize (int): Total width of the title.
+            fill (str): Character used for filling.
+            lvl (int): Indentation level.
+            verbose (bool): Log if True (default: True).
+        """
+        if not verbose:
+            return
+        tailLength  = len(tail)
+        lvlLen      = 2 + lvl * 3 * 2
+        if tailLength + lvlLen > desiredSize:
+            self.info(tail, lvl, verbose)
+            return
+        
+        fillSize    = (desiredSize - tailLength - 2) // (2 * len(fill))
+        out         = (fill * fillSize) + f" {tail} " + (fill * fillSize)
+        self.info(out, lvl, verbose)
+
+    # --------------------------------------------------------------
+    
+    def timing(self, func):
+        """
+        Decorator to measure and log the execution time of functions.
+        Parameters:
+            func : function to be timed
+        """
+        
+        @functools.wraps(func)  # Decorator to preserve the original function's metadata
+        
+        def wrapper(*args, **kwargs):
+            self.debug(f"Starting '{func.__name__}'...")
+            
+            # Measure the execution time
+            start_time  = datetime.now()
+            result      = func(*args, **kwargs)
+            end_time    = datetime.now()
+            # end of measuring
+            
+            # Calculate the duration in seconds
+            duration    = (end_time - start_time).total_seconds()
+            self.debug(f"Finished '{func.__name__}' in {duration:.4f} seconds.")
+            return result
+        return wrapper
+
+    # --------------------------------------------------------------
+    
+################################################ PRINT THE OUTPUT BASED ON CONDITION ###############################################
+
+def printV(what: str, v=True, tabulators=0):
+    '''
+    Prints the message only if verbosity is enabled.
+    '''
+    if v:
+        print("\t" * tabulators + "->" + what)
+
+######################################################## PRINT THE DICTIONARY ######################################################
+
+def printDictionary(d: dict) -> str:
+    '''
+    Returns a formatted string representation of a dictionary.
+    '''
+    return ', '.join(f'{key}: {value}' for key, value in d.items())
+
+###################################################### PRINT ELEMENTS WITH ADJUST ##################################################
+
+def printJust(file, 
+            sep           =   "\t",
+            elements      =   [],
+            width         =   8, 
+            endline       =   True, 
+            scientific    =   False):
+    """
+    [summary] 
+    Function that can print a list of elements creating indents
+    The separator also can be used to clean the indents.
+    
+    Arguments:
+    - width     :   governing the width of each column. 
+    - endline   :   if true, puts an endline after the last element of the list.
+    - scientific:   allows for scientific printing.
+    """
+    if not elements:
+        return
+    
+    for item in elements:
+        if not scientific:  
+            file.write((str(item) + sep).ljust(width))
+        else:
+            file.write(("{:e}".format(item) + sep).ljust(width))
+    if endline:
+        file.write("\n")
+
+######################################################
+
+# Global logger instance (starts as None)
+_G_LOGGER = None
+
+def get_global_logger():
+    """
+    Lazily initializes and returns the global logger instance.
+    
+    Returns:
+    - Logger instance.
+    """
+    global _G_LOGGER
+    if _G_LOGGER is None:
+        _G_LOGGER = Logger("global")
+        _G_LOGGER.title("Global logger initialized.", 50, '#', 0)
+    return _G_LOGGER
+
+######################################################
+
+# Example usage
+# logger = get_global_logger()
+# logger.info("This is an informational message.")
+# logger.debug("This is a debug message.")
+# logger.warning("This is a warning message.")
+# logger.error("This is an error message.")
+# logger.say("This is a message.", log=0, lvl=0, verbose=True)
+# logger.say("This is a message.", log=1, lvl=0, verbose=True)
+# logger.say("This is a message.", log=2, lvl=0, verbose=True)
+# logger.say("This is a message.", log=3, lvl=0, verbose=True)
+
+def get_example_usage():
+    """
+    Returns example usage of the global logger.
+
+    Returns:
+    - str: A string containing example usage of the logger.
+    """
+    return 'logger = get_global_logger()' + \
+    '\nlogger.info("This is an informational message.")' + \
+    '\nlogger.debug("This is a debug message.")' + \
+    '\nlogger.warning("This is a warning message.")' + \
+    '\nlogger.error("This is an error message.")' + \
+    '\nlogger.say("This is a message.", log=0, lvl=0, verbose=True)' + \
+    '\nlogger.say("This is a message.", log=1, lvl=0, verbose=True)' + \
+    '\nlogger.say("This is a message.", log=2, lvl=0, verbose=True)...'
+    
+######################################################
+#! Parsing helper
+######################################################
+
+def print_arguments(parser,
+                    logger      : Optional[Logger] = None,
+                    title       : str = "Options for the script",
+                    columnsize  : int = 30):
+    """
+    Prints the arguments of a parser in a formatted table using the provided logger.
+    Args:
+        parser (argparse.ArgumentParser):
+            The argument parser containing the script's options.
+        logger (Optional[Logger]):
+            The logger instance used to print the formatted output.
+        title (str, optional):
+            The title to display above the options table. Defaults to "Options for the script".
+        columnsize (int, optional):
+            The width of the "Option" column in the table. Defaults to 30.
+    Returns:
+        None
+    """
+    _default_size       = 15
+    _description_size   = 70
+    if logger is None:
+        # Use print instead of logger
+        print("\n")
+        print(f"Title: {title}")
+        
+        # table
+        print(
+            f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|"
+        )
+        print(
+            f"| {'Option':<{columnsize}} | {'Default':<{_default_size}} | {'Description':<{_description_size}} |"
+        )
+        print(
+            f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|"
+        )
+        # Print the options
+        for action in parser._actions:
+            option      = f"| {action.dest:<{columnsize}} | {str(action.default):<{_default_size}} |"
+            description = f" {action.help:<{_description_size}} |"
+            print(option + description)
+        print(f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|")
+    else:
+        # Print the options at the beginning
+        logger.breakline(1)
+        logger.title(title, 50, '#', 0)
+        
+        # table
+        logger.info(f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|", lvl=0)
+        logger.info(
+            f"| {'Option':<{columnsize}} | {'Default':<{_default_size}} | {'Description':<{_description_size}} |",
+            lvl=0
+        )
+        logger.info(
+            f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|",
+            lvl=0
+        )
+        
+        # Print the options
+        for action in parser._actions:
+            option      = f"| {action.dest:<{columnsize}} | {str(action.default):<{_default_size}} |"
+            description = f" {action.help:<{_description_size}} |"
+            logger.info(option + description, lvl=0)
+        logger.info(f"|{'-' * (columnsize + 2)}|{'-' * (_default_size + 2)}|{'-' * (_description_size + 2)}|", lvl=0)
+        logger.breakline(1)
+        
+######################################################
+
+def log_timing_summary(
+    logger              : Logger,
+    phase_durations     : Dict[str, float],
+    total_duration      : Optional[float] = None,
+    title               : str = "Timing Summary",
+    phase_col_width     : int = 18,      # Adjusted width for potentially longer names + "Total"
+    duration_col_width  : int = 14,      # Width for "Duration (s)" column header and values
+    duration_precision  : int = 4,       # Decimal places for duration
+    lvl                 : int = 0,
+    add_total_row       : bool = True,   # Flag to add a "Total" row if total_duration is provided
+    extra_info          : Optional[List[str]] = None
+):
+    """
+    Logs a timing summary in a tabular format using the provided logger.
+
+    Parameters:
+    logger:
+        Logger instance to log the timing summary.
+    phase_durations:
+        Dictionary mapping phase names (str) to their durations (float).
+    total_duration:
+        Total duration of the process (optional). If provided and
+        add_total_row is True, a "Total" row will be added.
+    title:
+        Title for the summary table.
+    phase_col_width:
+        Width for the 'Phase' column.
+    duration_col_width:
+        Width for the 'Duration (s)' column.
+    duration_precision:
+        Decimal precision for duration values.
+    lvl:
+        Base logging level for the summary.
+    add_total_row:
+        Whether to include a 'Total' row using total_duration.
+    extra_info:
+        Optional list of strings to log after the table (e.g., notes, performance).
+    """
+    if not logger:
+        print("Error: Logger instance is required for log_timing_summary.")
+        return
+
+    # Table Structure
+    phase_header        = "Phase"
+    duration_header     = "Duration (s)"
+    # Ensure columns are wide enough for headers
+    phase_col_width     = max(phase_col_width, len(phase_header))
+    duration_col_width  = max(duration_col_width, len(duration_header))
+
+    # Horizontal separator line
+    separator           = f"|{'-' * (phase_col_width + 2)}|{'-' * (duration_col_width + 2)}|"
+    # Header format string (Phase left-aligned, Duration right-aligned)
+    header_fmt          = f"| {phase_header:<{phase_col_width}} | {duration_header:>{duration_col_width}} |"
+    # Data row format string (Phase left-aligned, Duration right-aligned with precision)
+    row_fmt             = f"| {{phase_name:<{phase_col_width}}} | {{duration:>{duration_col_width}.{duration_precision}f}} |"
+
+    # Logging
+    logger.title(f"{title}", 50, '#', lvl)
+    
+    # Print extra info above the table if desired (e.g., JAX note)
+    perf_string         = None
+    if extra_info:
+        # Filter out performance string if present, handle it later
+        filtered_extra_info = []
+        for info in extra_info:
+            if "samples/sec" in info.lower() or "performance" in info.lower() :
+                perf_string = info
+            else:
+                filtered_extra_info.append(info)
+
+        for info in filtered_extra_info:
+            logger.info(info, lvl=lvl + 1)
+
+    # Print table header
+    logger.info(separator, lvl=lvl + 1)
+    logger.info(header_fmt, lvl=lvl + 1)
+    logger.info(separator, lvl=lvl + 1)
+
+    # Print phase durations
+    calculated_sum = 0.0
+    if phase_durations:
+        for name, duration in phase_durations.items():
+            logger.info(row_fmt.format(phase_name=name, duration=duration), lvl=lvl + 1)
+            calculated_sum += duration
+    else:
+        logger.info(f"| {'No phases timed':<{phase_col_width + duration_col_width + 3}} |", lvl=lvl+1) # Indicate if dict is empty
+
+
+    # Add Total row if requested and possible
+    if add_total_row:
+        logger.info(separator, lvl=lvl + 1)
+        actual_total = total_duration if total_duration is not None else calculated_sum
+        # Warn if provided total differs significantly from sum of phases
+        if total_duration is not None and not np.isclose(total_duration, calculated_sum, rtol=1e-3, atol=1e-4):
+            logger.warning(f"Provided total duration ({total_duration:.4f}s) differs from sum of phases ({calculated_sum:.4f}s). Using provided total.", lvl=lvl+2)
+
+        if actual_total is not None:
+            logger.info(row_fmt.format(phase_name="Total", duration=actual_total), lvl=lvl + 1)
+        else:
+            logger.info(f"| {'Total duration not available':<{phase_col_width + duration_col_width + 3}} |", lvl=lvl+1)
+
+
+    # Print final table separator
+    logger.info(separator, lvl=lvl + 1)
+
+    # Print performance string (if captured earlier) below the table
+    if perf_string:
+        logger.info(perf_string, lvl=lvl+1)
+        
+########################################################
