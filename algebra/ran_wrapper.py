@@ -666,7 +666,9 @@ def random_matrix(shape, typek : RMT, backend="default", dtype=None):
     elif typek == RMT.GUE:
         mat = GUE(shape)
     elif typek == RMT.GOE:
-        mat = GOE(shape)
+        a   = np.random.normal(0, 1, size=shape)
+        mat = (a + a.T) / np.sqrt(2)
+        # mat = GOE(shape)
     elif typek == RMT.CRE:
         mat = CRE(shape)
     elif typek == RMT.CUE:
