@@ -20,12 +20,10 @@ import sys
 
 ####################################################################################################
 
-# Lazily import submodules
-from . import binary
-from . import directories
-from . import plot
-from . import datah
-from . import hdf5_lib
+# # Lazily import submodules
+# from . import binary
+# from . import directories
+# from . import hdf5_lib
 from . import flog
 
 ####################################################################################################
