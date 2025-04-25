@@ -681,6 +681,27 @@ def random_matrix(shape, typek : RMT, backend="default", dtype=None):
         mat     = backend.array(mat, dtype=dtype)
     return mat
 
+
+def goe(shape, backend="default", dtype=None):
+    ''' Generate a Gaussian Orthogonal Ensemble (GOE) matrix. '''
+    return random_matrix(shape, typek=RMT.GOE, backend=backend, dtype=dtype)
+
+def gue(shape, backend="default", dtype=None):
+    ''' Generate a Gaussian Unitary Ensemble (GUE) matrix. '''
+    return random_matrix(shape, typek=RMT.GUE, backend=backend, dtype=dtype)
+
+def coe(shape, backend="default", dtype=None):
+    ''' Generate a Circular Orthogonal Ensemble (COE) matrix. '''
+    return random_matrix(shape, typek=RMT.COE, backend=backend, dtype=dtype)
+
+def cue(shape, backend="default", dtype=None):
+    ''' Generate a Circular Unitary Ensemble (CUE) matrix. '''
+    return random_matrix(shape, typek=RMT.CUE, backend=backend, dtype=dtype)
+
+def cre(shape, backend="default", dtype=None):
+    ''' Generate a Circular Real Ensemble (CRE) matrix. '''
+    return random_matrix(shape, typek=RMT.CRE, backend=backend, dtype=dtype)
+
 ###############################################################################
 #! Random vectors
 ###############################################################################
