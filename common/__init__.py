@@ -1,8 +1,9 @@
 # Importing modules from the common package
-from .__directories__ import Directories
-from .__plot__ import Plotter, PlotterSave, MatrixPrinter
-from .__datat__ import DataHandler
-from .__hdf5_read__ import HDF5Handler
+from .directories import Directories
+from .plot import Plotter, PlotterSave, MatrixPrinter
+from .datah import DataHandler
+from .hdf5_lib import HDF5Handler
+from . import flog
 # Description of the modules
 """
 Common Utilities Module
@@ -20,12 +21,10 @@ import sys
 
 ####################################################################################################
 
-# Lazily import submodules
-from . import binary
-from . import directories
-from . import plot
-from . import datah
-from . import hdf5_lib
+# # Lazily import submodules
+# from . import binary
+# from . import directories
+# from . import hdf5_lib
 from . import flog
 
 ####################################################################################################
