@@ -5,6 +5,8 @@ from numba import njit
 
 from general_python.algebra.utils import JAX_AVAILABLE, maybe_jit, get_backend, JIT
 import general_python.algebra.linalg_sparse as sparse 
+import general_python.algebra.linalg.utils as utils
+
 
 if JAX_AVAILABLE:
     import jax
@@ -416,9 +418,7 @@ def identity(n : int, dtype = None, backend = "default"):
     return __identity(n, backend, dtype)
 
 # -----------------------------------------------------------------
-
 #! Transformation
-
 # -----------------------------------------------------------------
 
 def transform_backend(x, is_sparse: bool = False, backend="default"):
@@ -463,9 +463,7 @@ def transform_backend(x, is_sparse: bool = False, backend="default"):
     return jnp.array(x)                         # Convert to dense JAX array if dense input and dense output requested
 
 # -----------------------------------------------------------------
-
 #! Diagonalization
-
 # -----------------------------------------------------------------
 
 if JAX_AVAILABLE:
@@ -570,3 +568,5 @@ def eigsh(matrix, method, backend="default", **kwargs):
     return _eig_jax(matrix.todense())
     
 # ------------------------------------------------------------------
+
+
