@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import scipy as sp
 
-from .utils import JAX_AVAILABLE, DEFAULT_BACKEND, maybe_jit, get_backend as __backend
+from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 
 if JAX_AVAILABLE:
     import jax
@@ -99,7 +99,7 @@ def kron(A, B, backend="default"):
     kron_product : array-like, shape (N * P, M * Q)
         The Kronecker product of the two matrices.
     """
-    backend = __backend(backend)
+    backend = get_backend(backend)
     if backend == np or not JAX_AVAILABLE:
         return _sparse_kron_np(A, B)
     return _sparse_kron_jax(A, B)
@@ -120,7 +120,7 @@ if JAX_AVAILABLE:
 
 def identity(n, dtype=None, backend="default"):
     '''Returns the identity matrix of size n.'''
-    backend = __backend(backend)
+    backend = get_backend(backend)
     dtype   = dtype if dtype is not None else backend.float64
     
     if backend == np or not JAX_AVAILABLE:

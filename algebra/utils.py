@@ -85,6 +85,9 @@ DEFAULT_JP_INT_TYPE     : Optional[Type]    = None
 DEFAULT_JP_FLOAT_TYPE   : Optional[Type]    = None
 DEFAULT_JP_CPX_TYPE     : Optional[Type]    = None
 
+PREFER_JAX              : bool              = os.environ.get("BACKEND", "jax").lower() != "numpy"
+
+
 #! Backend Detection
 JAX_AVAILABLE           = False
 jax                     = None
@@ -212,7 +215,7 @@ class BackendManager:
             Default complex type for the *active* backend.
     """
     
-    def __init__(self, default_seed: int = DEFAULT_SEED, prefer_jax: bool = True):
+    def __init__(self, default_seed: int = DEFAULT_SEED, prefer_jax: bool = PREFER_JAX):
         """
         Initializes the manager, detects JAX, and sets the active backend.
 
@@ -705,7 +708,7 @@ class BackendManager:
 
 try:
     # Instantiate the BackendManager globally.
-    backend_mgr             = BackendManager(default_seed=DEFAULT_SEED, prefer_jax=True)
+    backend_mgr             = BackendManager(default_seed=DEFAULT_SEED, prefer_jax=PREFER_JAX)
     
     # Expose core ACTIVE components globally for convenience, derived from the manager.
     ACTIVE_BACKEND_NAME     = backend_mgr.name          # Active backend name ("numpy" or "jax")

@@ -12,13 +12,13 @@ import numpy as np
 import scipy
 import warnings
 import numba
-from enum import Enum, unique, TypeVar
+from enum import Enum, unique
 
 from typing import Optional, Union, Tuple
 from general_python.algebra.utils import JAX_AVAILABLE
 
 #! jax
-import general_python.algebra.linalg.pfaffian_jax as jnp
+import general_python.algebra.utilities.pfaffian_jax as jnp
 
 ################################################################################################################
 
@@ -114,7 +114,7 @@ class Pfaffian:
                         A_minor[row_idx_minor, col_idx_minor] = A[row_idx_orig, col_idx_orig]
                 
                 # Recursive call for the minor matrix
-                pf_minor        =   PfaffianNumba._pfaffian_recursive_numba(A_minor, N_minor)
+                pf_minor        =   _pfaffian_recursive(A_minor, N_minor)
                 pf_sum          +=  sign * A[fixed_row_col, j] * pf_minor
             elif N_minor == 0:
                 # Base case for the subproblem Pf({}) = 1
@@ -352,7 +352,7 @@ class Pfaffian:
         return -_pffA * dot_product
 
     @staticmethod
-    @numba.jit("f8[:,:](f8[:,:], i8, f8[:])", nopython=True, cache=True)
+    @numba.jit(nopython=True, cache=True)
     def _scherman_morrison_skew(Ainv, updIdx, updRow):
         """
         Internal Numba implementation for Sherman-Morrison update for skew-symmetric matrices.

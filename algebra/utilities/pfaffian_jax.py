@@ -1,17 +1,14 @@
 from general_python.algebra.utils import JAX_AVAILABLE
-from enum import Enum, unique, TypeVar
 
 #! jax
 if JAX_AVAILABLE:
+    import jax
     import jax.numpy as jnp
     from jax import lax
-    from jax.experimental import loops
 else:
-    jax: TypeVar    = None
-    jnp: TypeVar    = None
-    lax: TypeVar    = None
-    loops: TypeVar  = None
-
+    jax = None
+    jnp = None
+    
 ################################################################################################################
 
 _ZERO_TOL       = 1e-11

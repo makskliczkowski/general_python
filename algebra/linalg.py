@@ -5,7 +5,7 @@ from numba import njit
 
 from general_python.algebra.utils import JAX_AVAILABLE, maybe_jit, get_backend, JIT
 import general_python.algebra.linalg_sparse as sparse 
-import general_python.algebra.linalg.utils as utils
+import general_python.algebra.utils as utils
 
 
 if JAX_AVAILABLE:
