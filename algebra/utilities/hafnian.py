@@ -34,7 +34,7 @@ class Hafnian:
     # ------------------------------------------------------------------
     
     @staticmethod
-    @numba.jit("complex128(float64[:,:])", nopython=True, cache=True)
+    @numba.jit(nopython=True, cache=True)
     def _hafnian_recursive(A):
         """
         Recursively computes the hafnian of a symmetric matrix A.
@@ -62,7 +62,7 @@ class Hafnian:
                     sj += 1
                 si += 1
             # Recursive call: multiply A[0, j] by hafnian of submatrix
-            res += A[0, j] * Hafnian._hafnian_recursive(sub)
+            res += A[0, j] * _hafnian_recursive(sub)
         return res
 
     # ------------------------------------------------------------------
