@@ -33,9 +33,9 @@ class Hafnian:
     #! a) naive recursion
     # ------------------------------------------------------------------
     
-    @staticmethod
-    @numba.jit("complex128(float64[:,:])", nopython=True, cache=True)
-    def _hafnian_recursive(A):
+    @classmethod
+    @numba.jit(nopython=True, cache=True)
+    def _hafnian_recursive(cls, A):
         """
         Recursively computes the hafnian of a symmetric matrix A.
         WARNING: Exponential complexity, practical only for small n (n < 12).
@@ -62,15 +62,15 @@ class Hafnian:
                     sj += 1
                 si += 1
             # Recursive call: multiply A[0, j] by hafnian of submatrix
-            res += A[0, j] * Hafnian._hafnian_recursive(sub)
+            res += A[0, j] * cls._hafnian_recursive(sub)
         return res
 
     # ------------------------------------------------------------------
     #! b) Gray-code loop (Clifford–Tonucci)  --  O(2^m m²)
     # ------------------------------------------------------------------
-    @staticmethod
-    @numba.jit("complex128(float64[:,:])", nopython=True, cache=True)
-    def _hafnian_gray(A):
+    @classmethod
+    @numba.jit(nopython=True, cache=True)
+    def _hafnian_gray(cls, A):
         """
         Computes the hafnian of a symmetric matrix A using the Gray code loop
         (Clifford–Tonucci algorithm). Complexity: O(2^m * m^2), where n=2m.
@@ -110,16 +110,16 @@ class Hafnian:
                 for j in range(i + 1, 2 * m):
                     if (mask >> j) & 1:
                         # If j-th bit is set, pair (i, j) and recurse
-                        h += A[i, j] * Hafnian._prod_cached(A, mask ^ (1 << j))
+                        h += A[i, j] * cls._prod_cached(A, mask ^ (1 << j))
             else:
                 # Even index: contribution already counted in previous iterations
                 pass
 
         return h
 
-    @staticmethod
-    @numba.jit("complex128(float64[:,:], i8)", nopython=True, cache=True, inline='always')
-    def _prod_cached(A, mask):
+    @classmethod
+    @numba.jit(nopython=True, cache=True, inline='always')
+    def _prod_cached(cls, A, mask):
         """
         Recursively computes the sum over all perfect matchings encoded by the bit-mask.
 
@@ -153,7 +153,7 @@ class Hafnian:
             j = lsb2.bit_length() - 1
             mask ^= lsb2  # Mark index j as used
             # Multiply A[i, j] by the result of pairing the rest
-            acc += A[i, j] * Hafnian._prod_cached(A, mask)
+            acc += A[i, j] * cls._prod_cached(A, mask)
         return acc
 
 # ----------------------------------------------------------------------

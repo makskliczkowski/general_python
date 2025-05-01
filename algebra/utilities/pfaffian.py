@@ -65,9 +65,9 @@ class Pfaffian:
     #! Recursive Pfaffian
     ############################################################################################################
     
-    @staticmethod
-    @numba.jit("f8(f8[:,:], i8)", nopython=True, cache=True)
-    def _pfaffian_recursive(A, N):
+    @classmethod
+    @numba.jit(nopython=True, cache=True)
+    def _pfaffian_recursive(cls, A, N):
         """
         Calculates the Pfaffian using the recursive definition (Numba JIT).
         WARNING: 
@@ -114,7 +114,7 @@ class Pfaffian:
                         A_minor[row_idx_minor, col_idx_minor] = A[row_idx_orig, col_idx_orig]
                 
                 # Recursive call for the minor matrix
-                pf_minor        =   _pfaffian_recursive(A_minor, N_minor)
+                pf_minor        =   cls._pfaffian_recursive(A_minor, N_minor)
                 pf_sum          +=  sign * A[fixed_row_col, j] * pf_minor
             elif N_minor == 0:
                 # Base case for the subproblem Pf({}) = 1

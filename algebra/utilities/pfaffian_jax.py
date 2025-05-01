@@ -52,8 +52,8 @@ if JAX_AVAILABLE:
         #! Recursive Pfaffian (JAX)
         ########################################################################
         
-        @staticmethod
-        def _pfaffian_recursive_jax(A, N):
+        @classmethod
+        def _pfaffian_recursive_jax(cls, A, N):
             """
             Calculates the Pfaffian using the recursive definition (JAX version).
             WARNING: O(N!) complexity. JIT compilation is problematic.
@@ -86,7 +86,7 @@ if JAX_AVAILABLE:
                     A_minor         = A[jnp.ix_(minor_indices, minor_indices)]
 
                     # Recursive call
-                    pf_minor        = PfaffianJAX._pfaffian_recursive_jax(A_minor, N_minor)
+                    pf_minor        = cls._pfaffian_recursive_jax(A_minor, N_minor)
                     pf_sum          += sign_j * A[fixed_row_col, j] * pf_minor
             return pf_sum
 
