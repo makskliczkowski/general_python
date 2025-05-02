@@ -1,0 +1,381 @@
+'''
+file    : general_python/common/embedded/bit_extract.py
+
+High-performance helpers for
+    * packing selected bits of an integer into a new integer
+    * building masks / shift tables
+Back-ends: pure Python, Numba, JAX.
+'''
+
+from typing import Iterable, Literal, Callable, Union, Optional
+import math, sys
+import numpy as np
+try:
+    import numba
+    from numba import njit as numba_njit
+except ImportError as e:
+    numba_njit = lambda x: x
+    
+from general_python.algebra.utils import (
+    DEFAULT_NP_INT_TYPE,
+    DEFAULT_NP_FLOAT_TYPE,
+    DEFAULT_JP_INT_TYPE,
+    DEFAULT_JP_FLOAT_TYPE, 
+    Array, JAX_AVAILABLE,
+)
+
+#################################
+#! Pure Python
+#################################
+
+def extract(n: int, mask: int) -> int:
+    """
+    Pure Python, *O(popcount(mask))*.
+    
+    Parameters
+    ---
+        n (int) :
+            integer number to mask
+        mask (int) : 
+            mask for the integer
+    
+    Returns
+    ---
+        The extracted integer.
+        
+    Example
+    >>> extract(0b101101, 0b001001)
+    >>> 3
+    """
+    res, out_pos = 0, 0
+    while mask:
+        lsb       = mask & -mask              # isolate lowest set bit
+        in_pos    = lsb.bit_length() - 1
+        res      |= ((n >>  in_pos) & 1) << out_pos
+        out_pos  += 1
+        mask     &= mask - 1                  # clear processed bit
+    return res
+
+#################################
+#! Helpers for mask / shift‑table creation
+#################################
+
+def prepare_mask(positions  : Iterable[int],
+                size        : int,
+                *,
+                msb0        : bool = True) -> int:
+    mask = 0
+    if msb0:
+        for p in positions:
+            mask |= 1 << (size - 1 - p)
+    else:   # positions from the right
+        for p in positions:
+            mask |= 1 << p
+    return mask
+
+def to_one_hot(positions    : Iterable[int],
+                size        : int) -> np.ndarray:
+    y               = np.zeros(shape=size, dtype = np.int32)
+    y[positions]    = 1
+    return y
+
+def shift_table_from_mask(mask: int, size: int | None = None) -> np.ndarray:
+    
+    if size is None:
+        size = mask.bit_length()
+        
+    shifts  : list[int] = []
+    pos                 = size - 1 # MSB index
+    m                   = mask
+    while m:
+        if m & (1 << pos):
+            shifts.append(size - 1 - pos)
+            m ^= 1 << pos
+        pos -= 1
+    return np.asarray(shifts, dtype=DEFAULT_NP_INT_TYPE)
+
+#################################
+#! Numba
+#################################
+
+if numba:
+    @numba.njit(cache=True)
+    def extract_nb(n: int, mask: int) -> int:
+        """
+        Extracts bits from an integer `n` at positions specified by the bitmask `mask` and packs them into a contiguous integer.
+
+        Args:
+            n (int):
+                The input integer from which bits are to be extracted.
+            mask (int):
+                A bitmask indicating which bits to extract from `n`.
+                Each set bit in `mask` specifies a position in `n` to extract.
+
+        Returns:
+            int: An integer composed of the extracted bits from `n`, packed contiguously starting from the least significant bit.
+
+        Example:
+            >>> extract_nb(0b110101, 0b10110)  # Extracts bits at positions 1, 2, and 4 (from LSB), returns 0b101
+        """
+        res, out_pos = 0, 0
+        while mask:
+            lsb       = mask & -mask
+            in_pos    = int(math.log2(lsb))   # faster than bit_length in Numba
+            res      |= ((n >>  in_pos) & 1) << out_pos
+            out_pos  += 1
+            mask     &= mask - 1
+        return res
+
+    @numba.njit(cache=True, inline='always')
+    def extract_vnb(state: int, shifts: np.ndarray) -> int:
+        """
+        Extracts bits from a given integer state at specified positions and packs them into a new integer.
+
+        Args:
+            state (int):
+                The integer from which bits will be extracted.
+            shifts (np.ndarray):
+                An array of integer positions indicating which bits to extract from `state`.
+
+        Returns:
+            int: An integer composed of the extracted bits, packed into the lower bits in the order specified by `shifts`.
+        """
+
+        res = 0
+        for k in range(shifts.size):
+            res |= ((state >> shifts[k]) & 1) << k
+        return res
+else:
+    extract_nb      = None
+    extract_vnb     = None
+
+#################################
+#! JAX
+#################################
+
+if JAX_AVAILABLE:
+    import jax
+    import jax.numpy as jnp
+    
+    def extract_jax(state: int, mask: int) -> int:
+        """JIT-compiled after first call; works on scalars or arrays."""
+        
+        bit_range = jnp.arange(mask.bit_length(), dtype=jnp.uint64)
+        pos       = bit_range[(mask >> bit_range) & 1]            # positions
+        weights   = 1 << jnp.arange(pos.size, dtype=jnp.uint64)
+        def body(x):
+            bits = ((x >> pos) & 1) * weights
+            return bits.sum(dtype=jnp.uint64)
+        return jax.jit(jnp.vectorize(body, signature="()->()"), static_argnums=1)(state) 
+    
+    def extract_vjax(state  : Union[int, jnp.array],
+                    masks   : np.ndarray) -> jnp.ndarray:
+        masks       = jnp.asarray(masks, dtype=jnp.uint64)
+        state       = jnp.asarray(state, dtype=jnp.uint64)
+
+        max_bits    = int(jnp.max(masks)).bit_length()
+        bit_axis    = jnp.arange(max_bits, dtype=jnp.uint64)
+
+        mask_bits   = (masks[:, None] >> bit_axis) & 1          # (m, b)
+        state_bits  = (state[..., None] >> bit_axis) & 1       # (..., b)
+
+        prefix      = jnp.cumsum(mask_bits, axis=1, dtype=jnp.uint64) - mask_bits
+        weights     = 1 << prefix
+
+        packed      = jnp.sum((mask_bits & state_bits) * weights,
+                            axis=1, dtype=jnp.uint64)
+        return packed
+else:
+    extract_jax     = None
+    extract_vjax    = None
+
+#################################
+#! Other
+#################################
+
+def extract_ord_left(n: int, size: int, size_l: int) -> int:
+    '''
+    Extract the leftmost bits of a number.
+    
+    Args:
+        n (int) :
+            The number to extract the bits from. 
+        size (int) :
+            The number of bits in the number.
+        size_l (int) :
+            The number of bits to extract.   
+    Example:
+        n = 0b101101, mask = 0b1011 will extract the bits at positions corresponding to left 4 bits.
+    '''
+    return n >> (size - size_l)
+
+def extract_ord_right(n: int, size_r: int) -> int:
+    '''
+    Extract the rightmost bits of a number.
+    
+    Args:
+        n (int) :
+            The number to extract the bits from. 
+        size (int) :
+            The number of bits in the number.
+        size_r (int) :
+            The number of bits to extract.   
+    Example:
+        n = 0b101101, mask = 0b1101 will extract the bits at positions corresponding to right 4 bits.
+    '''
+    return n & ((1 << size_r) - 1)
+
+#################################
+#! Factory: choose backend once, call many times
+#################################
+
+Backend = Literal["python", "numba", "numba_shifts", "jax_scalar", "jax_vector"]
+
+def make_extractor( mask    : Union[int, np.ndarray, jnp.array],
+                    size    : Optional[int] = None,
+                    *,
+                    backend : Backend = "python") -> Callable[[int], int] | Callable:
+
+    if backend == "python":
+        if not isinstance(mask, int):
+            raise TypeError("python backend expects a scalar mask.")
+        def f(state: int) -> int:
+            return extract(state, mask)
+        return f
+
+    elif backend == "numba":
+        if extract_nb is None:
+            raise RuntimeError("Numba not installed.")
+        if not isinstance(mask, int):
+            raise TypeError("numba backend expects a scalar mask.")
+        return lambda state: extract_nb(state, mask)
+
+    elif backend == "numba_shifts":
+        if extract_vnb is None:
+            raise RuntimeError("Numba not installed.")
+        if isinstance(mask, int):
+            mask_   = mask
+            shifts  = shift_table_from_mask(mask_, size)
+        else:
+            raise TypeError("numba_shifts backend expects scalar mask "
+                            "(use jax_vector for many masks).")
+        shifts_const = numba.typed.List(shifts.tolist())
+        def wrapped(state: int) -> int:
+            return extract_vnb(state, shifts_const)
+        return wrapped
+
+    elif backend == "jax_scalar":
+        if extract_jax is None:
+            raise RuntimeError("JAX not installed.")
+        if not isinstance(mask, int):
+            raise TypeError("jax_scalar backend expects scalar mask.")
+        return lambda state: extract_jax(state, mask)
+
+    elif backend == "jax_vector":
+        if extract_vjax is None:
+            raise RuntimeError("JAX not installed.")
+        if not isinstance(mask, np.ndarray):
+            raise TypeError("jax_vector backend expects mask array "
+                            "(one packed integer per row).")
+        # compile once, capture masks
+        jit_fn = jax.jit(lambda state: extract_vjax(state, mask))
+        return jit_fn
+
+    else:
+        raise ValueError(f"Unknown backend {backend!r}")
+
+####################################
+#! Test
+####################################
+
+def test(size           : int   = 12,
+        size_a          : int   = 5,
+        state_a_mask    : int   = 0x66 + 1,
+        nsamples        : int   = 1) -> None:
+    
+    from general_python.common.binary import int2binstr
+    from general_python.common.flog import Logger
+    import time 
+    logger = Logger(append_ts=True)
+
+    def join(chars) -> str:
+        return ''.join(chars)
+
+    rng             = np.random.default_rng()
+    size_b          = size - size_a
+    La, Lb, L       = size_a, size_b, size
+
+    all_bits_mask   = (1 << L) - 1
+    state_b_mask    = all_bits_mask ^ state_a_mask
+
+    logger.info(f"State A mask = ({state_a_mask}) {int2binstr(state_a_mask, L)}")
+    logger.info(f"State B mask = ({state_b_mask}) {int2binstr(state_b_mask, L)}")
+
+    # ---------------------------------------------------------------------
+    # Pre‑compute the *vector* form (list of bit positions, high→low order)
+    # that the vector extractor needs.  We cache them once per test‑run.
+    # ---------------------------------------------------------------------
+    pos_a = [i for i in range(L) if (state_a_mask >> (L - 1 - i)) & 1]
+    pos_b = [i for i in range(L) if (state_b_mask >> (L - 1 - i)) & 1]
+
+    pos_a.sort(reverse=True) # high → low  (requirement of extract_vnb)
+    pos_b.sort(reverse=True)
+
+    shifts_a = np.array([L - 1 - p for p in pos_a], dtype=np.uint64)
+    shifts_b = np.array([L - 1 - p for p in pos_b], dtype=np.uint64)
+
+    # ---------------------------------------------------------------------
+    # Actual test loop
+    # ---------------------------------------------------------------------
+    for _ in range(nsamples):
+        state      = int(rng.integers(0, 1 << L, dtype=np.uint64))
+        state_bin  = int2binstr(state, L)
+
+        # Colorize bits for subsystem A (e.g., green), B (e.g., cyan), rest (default)
+        colored_bits = []
+        for i, bit in enumerate(state_bin):
+            if i in pos_a:
+                colored_bits.append(logger.colorize(bit, "green"))
+            elif i in pos_b:
+                colored_bits.append(logger.colorize(bit, "cyan"))
+            else:
+                colored_bits.append(bit)
+        colored_state_bin = join(colored_bits)
+
+        state_A_bin = join(state_bin[i] for i in pos_a)
+        state_B_bin = join(state_bin[i] for i in pos_b)
+
+        logger.info(f"\nFull ({state})    = {colored_state_bin}")
+        logger.info(f"  State A bits      = {logger.colorize(state_A_bin, 'green')}")
+        logger.info(f"  State B bits      = {logger.colorize(state_B_bin, 'cyan')}")
+
+        # ---- scalar‑mask extractor --------------------------------------
+        t0              = time.perf_counter()
+        packed_A        = extract(state, state_a_mask)
+        dt              = (time.perf_counter() - t0) * 1e6
+        logger.info(f"  A scalar-mask : {int2binstr(packed_A, La)}   [{dt:.1f} µs]")
+
+        t0              = time.perf_counter()
+        packed_B        = extract(state, state_b_mask)
+        dt              = (time.perf_counter() - t0) * 1e6
+        logger.info(f"  B scalar‑mask : {int2binstr(packed_B, Lb)}   [{dt:.1f} µs]")
+
+        # ---- vector‑mask extractor --------------------------------------
+        t0              = time.perf_counter()
+        packed_A_vec    = extract_vnb(state, shifts_a)
+        dt              = (time.perf_counter() - t0) * 1e6
+        logger.info(f"  A vector‑mask : {int2binstr(packed_A_vec, La)}   [{dt:.1f} µs]")
+
+        t0              = time.perf_counter()
+        packed_B_vec    = extract_vnb(state, shifts_b)
+        dt              = (time.perf_counter() - t0) * 1e6
+        logger.info(f"  B vector‑mask : {int2binstr(packed_B_vec, Lb)}   [{dt:.1f} µs]")
+
+        # ---- sanity check -----------------------------------------------
+        assert packed_A == packed_A_vec, "Mismatch for subsystem A!"
+        assert packed_B == packed_B_vec, "Mismatch for subsystem B!"
+
+        logger.title('', desired_size=50, fill = '+')
+        logger.endl(1)
+        
+#! End file

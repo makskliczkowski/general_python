@@ -302,6 +302,10 @@ class Logger:
         
     # --------------------------------------------------------------
     
+    @classmethod
+    def endl(cls, n: int):
+        return cls.breakline(n)
+    
     @staticmethod
     def breakline(n: int):
         """
@@ -325,27 +329,32 @@ class Logger:
             
     # --------------------------------------------------------------
 
-    def title(self, tail: str, desiredSize: int, fill: str, lvl=0, verbose=True):
+    def title(self, tail: str, desired_size: int, fill: str, lvl=0, verbose=True):
         """
         Create a formatted title with filler characters if verbosity is enabled.
 
         Args:
-            tail (str): Text in the middle of the title.
-            desiredSize (int): Total width of the title.
-            fill (str): Character used for filling.
-            lvl (int): Indentation level.
-            verbose (bool): Log if True (default: True).
+            tail (str):
+                Text in the middle of the title.
+            desired_size (int):
+                Total width of the title.
+            fill (str):
+                Character used for filling.
+            lvl (int):
+                Indentation level.
+            verbose (bool):
+                Log if True (default: True).
         """
         if not verbose:
             return
         tailLength  = len(tail)
         lvlLen      = 2 + lvl * 3 * 2
-        if tailLength + lvlLen > desiredSize:
+        if tailLength + lvlLen > desired_size:
             self.info(tail, lvl, verbose)
             return
         
-        fillSize    = (desiredSize - tailLength - 2) // (2 * len(fill))
-        out         = (fill * fillSize) + f" {tail} " + (fill * fillSize)
+        fillSize    = (desired_size - tailLength) // (2 * len(fill))
+        out         = (fill * fillSize) + f"{tail}" + (fill * fillSize)
         self.info(out, lvl, verbose)
 
     # --------------------------------------------------------------

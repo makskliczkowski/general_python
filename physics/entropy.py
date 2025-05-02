@@ -10,6 +10,7 @@ It includes analytical and semi-analytical formulas for entanglement entropy, in
 '''
 
 # Adds higher directory to python modules path.
+from enum import Enum, unique
 from general_python.common.hdf5_lib import *
 from scipy.special import digamma, polygamma, binom, psi
 import numpy as np
@@ -170,9 +171,9 @@ class EntropyPredictions:
             L_tot = int(La + Lb)
             N = int(L_tot * n)
             for na in range(0, min(N, La) + 1):
-            d_a = binom(La, na)
-            d_b = binom(Lb, N - na)
-            d_N = binom(L_tot, N)
+                d_a = binom(La, na)
+                d_b = binom(Lb, N - na)
+                d_N = binom(L_tot, N)
             # page_result2 is not defined in the original code. Replace with appropriate function if needed.
             Sval += d_a * d_b / d_N * (digamma(d_a * d_b + 1) - digamma(d_b + 1) - (d_a - 1) / (2 * d_b) + digamma(d_N + 1) - digamma(d_a * d_b + 1))
             return Sval
@@ -323,7 +324,7 @@ class EntropyPredictions:
 
 @numba.njit(cache=True)
 def _eigvals_numba(rho: np.ndarray) -> np.ndarray:
-    return np.linalg.eigvalsh(rho)          # LAPACK inside
+    return np.linalg.eigvalsh(rho) # LAPACK inside
 
 @numba.njit(cache=True)
 def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
@@ -362,8 +363,6 @@ def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
         log /= np.log(base)
     return -np.dot(lam, log)
 
-# -----------------------------------
-
 @numba.njit(cache=True)
 def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e) -> float:
     """
@@ -401,10 +400,8 @@ def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e) -> float:
         log /= np.log(base)
     return log / (1.0 - q)
 
-# -----------------------------------
-
 @numba.njit(cache=True)
-def tsallis_entropy_np(lam: np.ndarray, q: float) -> float:
+def tsallis_entropy(lam: np.ndarray, q: float) -> float:
     """
     Compute the Tsallis entropy for a given probability distribution.
 
@@ -427,6 +424,102 @@ def tsallis_entropy_np(lam: np.ndarray, q: float) -> float:
         return vn_entropy(lam)
     lam = _clean_probs(lam)
     return (1.0 - (lam ** q).sum()) / (q - 1.0)
+
+@numba.njit(cache=True)
+def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):    
+    """
+    Compute the single-particle correlation entropy for a set of eigenvalues.
+    This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for generic q)
+    of a set of eigenvalues `lam` (typically from a correlation matrix), after mapping each eigenvalue
+    from the interval [-1, 1] to a probability in [0, 1].
+    Parameters
+    ----------
+    lam : np.ndarray
+        Array of eigenvalues (λ), each in the interval [-1, 1].
+    q : float
+        Entropy order parameter. If q == 1, computes the von Neumann entropy; otherwise, computes the Rényi entropy.
+    base : float, optional
+        The logarithm base to use (default is the natural logarithm, base e).
+    Returns
+    -------
+    float
+        The computed entropy value.
+    Notes
+    -----
+    - For q == 1, the function computes the von Neumann entropy:
+          S = -Σ [p * log(p) + (1-p) * log(1-p)]
+      where p = 0.5 * (1 + λ).
+    - For q ≠ 1, the function computes the Rényi entropy:
+          S_q = (1 / (1-q)) * Σ log(p^q + (1-p)^q)
+    - The entropy is normalized by the logarithm of the specified base.
+    """
+    
+    log_base = np.log(base)
+    
+    #! von‑Neumann entropy  (q == 1)
+    if np.abs(q - 1.0) < 1e-12:
+        s = 0.0
+        for l in lam:
+            p   = 1.0 + l
+            pm  = 1.0 - l
+            if l > -1.0:
+                s += p * np.log(p/2.0)
+            if l < 1.0:
+                s += pm * np.log(pm/2.0)
+        return -0.5 * np.real(s)
+
+    #! Rényi entropy  (generic q)
+    inv_1mq = 1.0 / (1.0 - q)
+    s = 0.0
+    for l in lam:
+        p  = 0.5 * (1.0 + l)
+        pm = 1.0 - p
+        s += np.log(p ** q + pm ** q)
+    return inv_1mq * s / log_base
+
+@unique
+class Entanglement(Enum):
+    VN      = 1
+    RENYI   = 2
+    TSALIS  = 3
+    SINGLE  = 4
+
+def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN):
+    """
+    Calculates the entropy of a probability distribution using the specified entanglement entropy type.
+
+    Parameters:
+        lam (np.ndarray):
+            The probability distribution (eigenvalues) for which to compute the entropy.
+        q (float, optional):
+            The order parameter for Rényi and Tsallis entropies. Default is 1.0.
+        base (float, optional):
+            The logarithm base to use in entropy calculations. Default is the natural logarithm (np.e).
+        typek (Entanglement, optional):
+            The type of entanglement entropy to compute. Must be one of:
+                - Entanglement.VN:
+                    Von Neumann entropy
+                - Entanglement.RENYI:
+                    Rényi entropy
+                - Entanglement.TSALIS:
+                    Tsallis entropy
+                - Entanglement.SINGLE:
+                    Single-particle correlation entropy
+
+    Returns:
+        float: The computed entropy value.
+
+    Raises:
+        ValueError: If an unsupported entanglement type is provided.
+    """
+    if typek == Entanglement.VN:
+        return vn_entropy(lam, base)
+    elif typek == Entanglement.RENYI:
+        return renyi_entropy(lam, q, base)
+    elif typek == Entanglement.TSALIS:
+        return tsallis_entropy(lam, q, base)
+    elif typek == Entanglement.SINGLE:
+        return sp_correlation_entropy(lam, q, base)
 
 ####################################
 

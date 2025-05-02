@@ -22,14 +22,18 @@ You can choose the backend (np or jnp) by passing the corresponding module.
 """
 
 import time
-from typing import List, Optional
+from typing import List, Optional, Union
 import numpy as np
 import numba
 
-from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_NP_FLOAT_TYPE
+from general_python.algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
 from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
 from general_python.common.tests import GeneralAlgebraicTest
-from general_python.common.binary_jax import *
+from general_python.common.embedded.binary_jax import *
+
+#! extraction
+import general_python.common.embedded.bit_extract as extract
+import general_python.common.embedded.binary_search as bin_search
 
 ####################################################################################################
 #! Global functions
@@ -46,118 +50,6 @@ def set_global_defaults(repr_value : float, spin : bool):
     global BACKEND_REPR, BACKEND_DEF_SPIN
     BACKEND_REPR       = repr_value
     BACKEND_DEF_SPIN   = spin
-
-####################################################################################################
-#! Searching functions
-####################################################################################################
-
-__BAD_BINARY_SEARCH_STATE = -1
-
-@maybe_jit
-def _binary_search_backend(arr, l_point, r_point, elem, backend: str = 'default') -> int:
-    '''
-    Perform a binary search for 'elem' in the sorted container 'arr'
-    between indices l_point and r_point (inclusive).
-    
-    If tol is provided (i.e. not None), equality is determined approximately
-    within the given tolerance (useful for floating point numbers).
-    
-    Works with Python lists, NumPy arrays, or JAX arrays (via the appropriate backend).
-    
-    Returns:
-        The index of 'elem' if found; otherwise, returns -1.
-    '''
-    # Try to use the backend's searchsorted if possible.
-    backend_mod = get_backend(backend)
-    
-    # If the left or right points are not the first or last indices, respectively,
-    subarr      = arr[l_point: r_point+1]
-        
-    # searchsorted returns the insertion index.
-    idx         = int(backend_mod.searchsorted(subarr, elem))
-    idx         = idx + l_point
-    return int(idx)
-
-@numba.njit
-def binary_search_numpy(arr, l_point, r_point, elem) -> int:
-    '''
-    Perform a binary search for 'elem' in the sorted NumPy array 'arr'.
-    '''
-    if l_point < 0 or r_point >= len(arr):
-        return __BAD_BINARY_SEARCH_STATE
-    if l_point > r_point:
-        return __BAD_BINARY_SEARCH_STATE
-    middle = l_point + (r_point - l_point) // 2
-    if arr[middle] == elem:
-        return middle
-    if arr[middle] < elem:
-        return binary_search_numpy(arr, middle + 1, r_point, elem)
-    return binary_search_numpy(arr, l_point, middle - 1, elem)
-
-def _binary_search_list_notol(arr, l_point, r_point, elem) -> int:
-    '''
-    Perform a binary search for 'elem' in the sorted list 'arr' (exact equality).
-    '''
-    if l_point < 0 or r_point >= len(arr):
-        return __BAD_BINARY_SEARCH_STATE
-    if l_point > r_point:
-        return __BAD_BINARY_SEARCH_STATE
-    middle = l_point + (r_point - l_point) // 2
-    if arr[middle] == elem:
-        return middle
-    if arr[middle] < elem:
-        return _binary_search_list(arr, middle + 1, r_point, elem)
-    return _binary_search_list(arr, l_point, middle - 1, elem)
-
-def _binary_search_list(arr, l_point, r_point, elem, tol: Optional[float] = None) -> int:
-    '''
-    Perform a binary search for 'elem' in the sorted list 'arr'.
-    If tol is provided, approximate equality is used.
-    '''
-    if l_point < 0 or r_point >= len(arr):
-        return __BAD_BINARY_SEARCH_STATE
-    if l_point > r_point:
-        return __BAD_BINARY_SEARCH_STATE
-    middle = l_point + (r_point - l_point) // 2
-    if tol is not None:
-        if abs(arr[middle] - elem) <= tol:
-            return middle
-        elif arr[middle] < elem:
-            return _binary_search_list(arr, middle + 1, r_point, elem, tol)
-        return _binary_search_list(arr, l_point, middle - 1, elem, tol)
-    return _binary_search_list_notol(arr, l_point, r_point, elem)
-
-def binary_search(arr, l_point, r_point, elem,
-                tol: Optional[float] = None, backend: str = 'default') -> int:
-    """
-    Perform a binary search for 'elem' in the sorted container 'arr'
-    between indices l_point and r_point (inclusive).
-    
-    If tol is provided, approximate equality is used (useful for floats).
-    
-    Works for Python lists as well as for NumPy/JAX arrays.
-    Parameters:
-        arr (array-like)        : The sorted array or list to search.
-        l_point (int)           : The left index of the search range.
-        r_point (int)           : The right index of the search range.
-        elem (float)            : The element to search for.
-        tol (float, optional)   : The tolerance for approximate equality (default is None).
-        backend (str)           : The backend to use ('default', 'numpy', or 'jax').
-    Returns:
-        The index of 'elem' if found; otherwise, returns -1.
-    """
-    if hasattr(arr, "shape"):
-        idx = _binary_search_backend(arr, l_point, r_point, elem, backend)
-        if idx < len(arr) and idx >= 0:
-            if tol is not None and abs(arr[idx] - elem) <= tol:
-                return idx
-            if arr[idx] == elem:
-                return idx
-        return __BAD_BINARY_SEARCH_STATE
-    else:
-        if tol is not None:
-            return _binary_search_list(arr, l_point, r_point, elem, tol)
-        return _binary_search_list_notol(arr, l_point, r_point, elem)
 
 ####################################################################################################
 #! Integer based functions
@@ -179,8 +71,6 @@ def reverse_byte(b : int):
             result |= 1 << (7 - i)      # Set the corresponding bit in the result. 
     return result
 
-# --------------------------------------------------------------------------------------------------
-
 def binary_power(n : int):
     """
     Computes the power of two by moving a single bit to the left.
@@ -193,108 +83,9 @@ def binary_power(n : int):
     """
     return 1 << n
 
-# --------------------------------------------------------------------------------------------------
-#! Mask based functions - for extracting bits from a number
-# --------------------------------------------------------------------------------------------------
-
-def extract_ord_left(n: int, size: int, size_l: int) -> int:
-    '''
-    Extract the leftmost bits of a number.
-    
-    Args:
-        n (int)     : The number to extract the bits from. 
-        size (int)  : The number of bits in the number.
-        size_l (int): The number of bits to extract.   
-    Example:
-        n = 0b101101, mask = 0b1011 will extract the bits at positions corresponding to left 4 bits.
-    '''
-    return n >> (size - size_l)
-
-# --------------------------------------------------------------------------------------------------
-
-def extract_ord_right(n: int, size_r: int) -> int:
-    '''
-    Extract the rightmost bits of a number.
-    
-    Args:
-        n (int)     : The number to extract the bits from. 
-        size (int)  : The number of bits in the number.
-        size_r (int): The number of bits to extract.   
-    Example:
-        n = 0b101101, mask = 0b1101 will extract the bits at positions corresponding to right 4 bits.
-    '''
-    return n & ((1 << size_r) - 1)
-
 # a global static variable to store the reversed bytes from 0 to 255
-lookup_binary_power = np.array([binary_power(i) for i in range(63)], dtype=DEFAULT_NP_INT_TYPE)
+lookup_binary_power = np.array([binary_power(i) for i in range(63)], dtype = DEFAULT_NP_INT_TYPE)
 lookup_reversal     = np.array([reverse_byte(i) for i in range(256)], dtype = DEFAULT_NP_INT_TYPE)
-
-# --------------------------------------------------------------------------------------------------
-#! Extract bits using a mask
-# --------------------------------------------------------------------------------------------------
-
-def extract(n : int, mask : int):
-    """
-    Extract bits from a number using a mask.
-    Extracts the bits from the number n according to the mask. Then it creates an integer out of it.
-	The mask gives the positions of the bits to be extracted. The bits are extracted from the right to the left.
-	This looks at the integer state and extracts the bits according to the mask. After that, it creates a new integer
-	out of the extracted bits (2^0 * bit_0 + 2^1 * bit_1 + ... + 2^(size - 1) * bit_(size - 1)).
-
-    ! The mask should be a number with 1s at the positions of the bits to be extracted.
-    Remember, it does not simply apply the mask to the number. It extracts the bits according to the mask.
-    This means that it treats the new bits in a correct, extracted order and then gives the result.
-    Example:
-        n = 0b101101, mask = 0b001001 will extract 0b11 from the number - exactly the 0th and 3rd bits and
-        then create a new integer out of it -> 0b11 = 3.
-    
-    Args:
-        n (int): The number to extract the bits from.
-        mask (int): The mask to use for extraction.
-
-    Returns:
-        int: The extracted bits.
-    """
-    res         = 0     # Initialize the result.
-    pos_mask    = 0     # Initialize the position in the mask.
-    pos_res     = 0     # Initialize the position in the result.
-    
-    while mask:
-        if mask & 1:
-            res     |= ((n >> pos_mask) & 1) << pos_res
-            pos_res += 1
-        mask        >>= 1   # Shift the mask to the right.
-        pos_mask    += 1    # Increment the position in the mask.
-    return res
-
-# --------------------------------------------------------------------------------------------------
-#! Prepare a mask from a list of positions
-# --------------------------------------------------------------------------------------------------
-
-def prepare_mask(positions : List[int], inv : bool = False, size : int = 0):
-    """
-    Prepare a bit mask from a list of positions.
-
-    Args:
-        positions (List[int])   : The positions of the bits to set in the mask. Counting 
-        from the left as 0, 1, 2, ..., n in binary - therefore the leftmost bit is 0.
-        inv (bool)              : A flag to indicate whether to invert the mask - changes
-                                the order of the bits in the mask.
-        size (int)              : The size of the mask.
-
-    Returns:
-        int: The mask with the bits set at the specified positions.
-    """
-    if not inv:
-        mask = 0    # Initialize the mask.
-        for pos in positions:
-            mask |= 1 << (size - 1 - pos)
-        return mask
-    # Invert the mask.
-    mask = 0
-    for pos in positions:
-        mask |= 1 << pos
-    return mask
 
 # --------------------------------------------------------------------------------------------------
 #! Check the power of two
@@ -414,7 +205,7 @@ def int2base(n          : int,
 
 # --------------------------------------------------------------------------------------------------
 
-def base2int_spin(vec : 'array-like', spin_value: float = BACKEND_REPR) -> int:
+def base2int_spin(vec : Array, spin_value: float = BACKEND_REPR) -> int:
     '''
     Convert a base representation (spin: ±value or binary 0/1) back to an integer.
     Args:
@@ -434,7 +225,7 @@ def base2int_spin(vec : 'array-like', spin_value: float = BACKEND_REPR) -> int:
         val         +=  bit_val * lookup_binary_power[k]
     return val
 
-def base2int(vec        : 'array-like',
+def base2int(vec        : Array,
             spin        : bool  = BACKEND_DEF_SPIN,
             spin_value  : float = BACKEND_REPR) -> int:
     '''
@@ -469,7 +260,7 @@ def base2int(vec        : 'array-like',
 # --------------------------------------------------------------------------------------------------
 
 @maybe_jit
-def flip_all_array_nspin(n : 'array-like', spin_value : float = BACKEND_REPR, backend = 'default'):
+def flip_all_array_nspin(n : Array, spin_value : float = BACKEND_REPR, backend = 'default'):
     """
     Flip all bits in a representation of a state.
     - This is a helper function for flip_all.
@@ -481,7 +272,7 @@ def flip_all_array_nspin(n : 'array-like', spin_value : float = BACKEND_REPR, ba
     backend = get_backend(backend)
     return backend.where(n == spin_value, 0, spin_value)
 
-def flip_all(n          : 'array-like',
+def flip_all(n          : Array,
             size        : int,
             spin        : bool  = BACKEND_DEF_SPIN,
             spin_value  : float = BACKEND_REPR,
@@ -518,7 +309,7 @@ def flip_all(n          : 'array-like',
 # --------------------------------------------------------------------------------------------------
 
 @numba.njit
-def flip_array_np_spin(n : 'array-like', k : int):
+def flip_array_np_spin(n : Array, k : int):
     """
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
@@ -527,7 +318,7 @@ def flip_array_np_spin(n : 'array-like', k : int):
     return n
 
 @numba.njit
-def flip_array_np_nspin(n           : 'array-like',
+def flip_array_np_nspin(n           : Array,
                         k           : int,
                         spin_value  : float = BACKEND_REPR):
     """
@@ -539,7 +330,7 @@ def flip_array_np_nspin(n           : 'array-like',
 
 # Multi-index versions for NumPy arrays.
 @numba.njit
-def flip_array_np_spin_multi(n: 'array-like', ks: 'array-like'):
+def flip_array_np_spin_multi(n: Array, ks: Array):
     """
     Flip multiple spins in a NumPy array using advanced indexing.
     Parameters:
@@ -550,7 +341,7 @@ def flip_array_np_spin_multi(n: 'array-like', ks: 'array-like'):
     return n
 
 @numba.njit
-def flip_array_np_nspin_multi(n: 'array-like', ks: 'array-like', spin_value: float = BACKEND_REPR):
+def flip_array_np_nspin_multi(n: Array, ks: Array, spin_value: float = BACKEND_REPR):
     """
     Flip multiple bits (binary representation) in a NumPy array.
     Since Numba does not support advanced indexing for this use-case, we use a loop.
@@ -563,7 +354,7 @@ def flip_array_np_nspin_multi(n: 'array-like', ks: 'array-like', spin_value: flo
         n[k] = 0 if n[k] == spin_value else spin_value
     return n
 
-def flip_array_np(n         : 'array-like',
+def flip_array_np(n         : Array,
                 k           : int,
                 spin        : bool = BACKEND_DEF_SPIN,
                 spin_value  : float = BACKEND_REPR):
@@ -576,8 +367,8 @@ def flip_array_np(n         : 'array-like',
     return flip_array_np_nspin(n, k, spin_value)
 
 @numba.njit
-def flip_array_np_multi(n           : 'array-like',
-                        ks          : 'array-like',
+def flip_array_np_multi(n           : Array,
+                        ks          : Array,
                         spin        : bool  = BACKEND_DEF_SPIN,
                         spin_value  : float = BACKEND_REPR):
     """
@@ -602,7 +393,7 @@ def flip_int(n : int, k : int):
     return n - lookup_binary_power[k] if check_int(n, k) else n + lookup_binary_power[k]
 
 @numba.njit
-def flip_int_multi(n: int, ks: 'array-like'):
+def flip_int_multi(n: int, ks: Array):
     """
     Flip multiple bits in an integer representation.
     The update is computed as the sum of the individual deltas.
@@ -662,7 +453,7 @@ def flip(n,
 # --------------------------------------------------------------------------------------------------
 
 @maybe_jit
-def rev_arr(n : 'array-like', backend = 'default'):
+def rev_arr(n : Array, backend = 'default'):
     """
     Reverse the bits of a 64-bit integer.
     - This is a helper function for rev.
@@ -679,7 +470,7 @@ def rev_arr(n : 'array-like', backend = 'default'):
     backend = get_backend(backend)
     return backend.flip(n)
 
-def rev(n : 'array-like', size : int, bitsize = 64, backend = 'default'):
+def rev(n : Array, size : int, bitsize = 64, backend = 'default'):
     """
     Reverse the bits of a 64-bit integer.
 
@@ -706,7 +497,7 @@ def rev(n : 'array-like', size : int, bitsize = 64, backend = 'default'):
 # --------------------------------------------------------------------------------------------------
 
 @maybe_jit
-def rotate_left_array(n : 'array-like', axis = None, backend = 'default'):
+def rotate_left_array(n : Array, axis = None, backend = 'default'):
     """
     Rotate the bits of an integer to the left.
     - This is a helper function for rotate_left.
@@ -721,7 +512,7 @@ def rotate_left_array(n : 'array-like', axis = None, backend = 'default'):
     backend = get_backend(backend)
     return backend.roll(n, -1, axis)
 
-def rotate_left(n : 'array-like', size : int, backend = 'default', axis : Optional[int] = None):
+def rotate_left(n : Array, size : int, backend = 'default', axis : Optional[int] = None):
     """
     Rotate the bits of an integer to the left.
 
@@ -772,7 +563,7 @@ def rotate_left_by_int(n: int, shift: int = 1, size: int = 64):
     mask    =   (1 << size) - 1
     return ((n << shift) | (n >> (size - shift))) & mask
 
-def rotate_left_by(n    : 'array-like',
+def rotate_left_by(n    : Array,
                 size    : int,
                 shift   : int           = 1,
                 backend                 = 'default',
@@ -843,7 +634,7 @@ def rotate_left_ax_int(n            : int,
             new_stat    |= row << (j * s + i * x)
     return new_stat
 
-def rotate_left_ax(n    : 'array-like',
+def rotate_left_ax(n    : Array,
                 x       : int,
                 row_mask: Optional[int] = None,
                 y       : Optional[int] = None,
@@ -872,7 +663,7 @@ def rotate_left_ax(n    : 'array-like',
 # --------------------------------------------------------------------------------------------------
 
 @maybe_jit
-def _rotate_right_array(n : 'array-like', axis = None, backend = 'default'):
+def _rotate_right_array(n : Array, axis = None, backend = 'default'):
     """
     Rotate the bits of an integer to the right.
     - This is a helper function for rotate_right.
@@ -887,7 +678,7 @@ def _rotate_right_array(n : 'array-like', axis = None, backend = 'default'):
     backend = get_backend(backend)
     return backend.roll(n, 1, axis)
 
-def rotate_right(n : 'array-like', size : int, backend = 'default', axis : Optional[int] = None):
+def rotate_right(n : Array, size : int, backend = 'default', axis : Optional[int] = None):
     """
     Rotate the bits of an integer to the right.
 
@@ -925,7 +716,7 @@ def int2binstr(n : int, bits : int):
 ####################################################################################################
 
 @maybe_jit
-def _popcount_spin(n : 'array-like', backend = 'default'):
+def _popcount_spin(n : Array, backend = 'default'):
     """
     Calculate the number of 1-bits in the binary representation of an integer.
     - This is a helper function for popcount.
@@ -936,7 +727,7 @@ def _popcount_spin(n : 'array-like', backend = 'default'):
                     
 
 @maybe_jit
-def _popcount_nspin(n : 'array-like', backend = 'default'):
+def _popcount_nspin(n : Array, backend = 'default'):
     """
     Calculate the number of 1-bits in the binary representation of an integer.
     - This is a helper function for popcount.

@@ -2,7 +2,7 @@
 
 import time
 from typing import List, Optional
-from general_python.algebra.utils import JAX_AVAILABLE
+from general_python.algebra.utils import JAX_AVAILABLE, Array
 
 BACKEND_REPR       = 0.5
 BACKEND_DEF_SPIN   = True
@@ -96,7 +96,7 @@ if JAX_AVAILABLE:
     # --------------------------------------------------------------------------------------------------
 
     @jax.jit
-    def flip_all_array_spin(n : 'array-like'):
+    def flip_all_array_spin(n : Array):
         """
         Flip all bits in a representation of a state.
         - This is a helper function for flip_all.
@@ -111,11 +111,11 @@ if JAX_AVAILABLE:
         return -n
 
     # --------------------------------------------------------------------------------------------------
-    #! SINGLE BIT FLIP
+    #! Single bit flip
     # --------------------------------------------------------------------------------------------------
 
     @jax.jit
-    def flip_array_jax_spin(n : 'array-like', k : int):
+    def flip_array_jax_spin(n : Array, k : int):
         """
         Flip a single bit in a representation of a state.
         - This is a helper function for flip.
@@ -129,7 +129,7 @@ if JAX_AVAILABLE:
         return n
 
     @jax.jit
-    def flip_array_jax_nspin(n : 'array-like', k : int):
+    def flip_array_jax_nspin(n : Array, k : int):
         """
         Flip a single bit in a representation of a state.
         - This is a helper function for flip.
@@ -143,7 +143,7 @@ if JAX_AVAILABLE:
         n       =   n.at[k].set(update)
         return n
     
-    def flip_array_jax(n : 'array-like', k : int,
+    def flip_array_jax(n : Array, k : int,
                     spin : bool = BACKEND_DEF_SPIN):
         """
         Flip a single bit in a JAX array.
@@ -160,7 +160,7 @@ if JAX_AVAILABLE:
     
     # Multi-index versions using vectorized operations
     @jax.jit
-    def flip_array_jax_spin_multi(n: 'array-like', ks: 'array-like'):
+    def flip_array_jax_spin_multi(n: Array, ks: Array):
         """
         Flip multiple spins in a JAX array (spin representation).
         Uses advanced indexing for vectorized updates.
@@ -173,7 +173,7 @@ if JAX_AVAILABLE:
         return n.at[ks].set(-n[ks])
 
     @jax.jit
-    def flip_array_jax_nspin_multi(n: 'array-like', ks: 'array-like'):
+    def flip_array_jax_nspin_multi(n: Array, ks: Array):
         """
         Flip multiple bits in a JAX array (binary representation).
         Uses advanced indexing for vectorized updates.
@@ -186,7 +186,7 @@ if JAX_AVAILABLE:
         updates = (n[ks] + 1) % 2
         return n.at[ks].set(updates)
     
-    def flip_array_jax_multi(n: 'array-like', ks: 'array-like',
+    def flip_array_jax_multi(n: Array, ks: Array,
                             spin: bool = BACKEND_DEF_SPIN):
         """
         Flip multiple bits in a JAX array.
@@ -214,7 +214,7 @@ if JAX_AVAILABLE:
         return jnp.where(check_int_traced_jax(n, k), n - lookup_binary_power_jax[k], n + lookup_binary_power_jax[k])
     
     @jax.jit
-    def flip_int_traced_jax_multi(n: int, ks: 'array-like'):
+    def flip_int_traced_jax_multi(n: int, ks: Array):
         """
         Flip multiple bits in an integer representation using JAX.
         The function uses vectorized operations via vmap.

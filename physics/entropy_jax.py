@@ -10,6 +10,8 @@ from general_python.algebra.utils import JAX_AVAILABLE, Array
 from typing import Optional, Union
 from functools import partial
 
+# ------------------------------------------------------------------------
+
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
@@ -59,3 +61,5 @@ if JAX_AVAILABLE:
         return (1.0 - jnp.sum(lam ** q)) / (q - 1.0)
     
     # --------------------------------------------------------------------
+
+# ------------------------------------------------------------------------
