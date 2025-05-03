@@ -76,19 +76,19 @@ def corr_single(
 
     # Use occupation vector directly for raw mode, otherwise map to ±1 for entanglement Hamiltonian
     if raw:
-        indices     =       occ.astype(bool)
+        indices     =       occ
         Wp          =       W_A[indices, :] 
         W_prime     =       W_A_CT[:, indices]
-        C           =       2.0 * np.matmul(W_prime, Wp)
+        # C           =       2.0 * np.matmul(W_prime, Wp)
+        C           =       2 * (W_prime @ Wp)  # (La, La)
     else:
-        prefactors  = 2 * occ - 1 # maps 0→-1, 1→+1
+        prefactors  =       2 * occ - 1 # maps 0→-1, 1→+1
         # Efficiently compute C = W_A† · diag(prefactors) · W_A without explicit diag
         # (La, Ls) * (Ls,) → (La, Ls), then @ (Ls, La) → (La, La)
-        C           = (W_A_CT * prefactors) @ W_A
+        C           =       (W_A_CT * prefactors) @ W_A
 
     if subtract_identity:
         np.fill_diagonal(C, C.diagonal() - 1.0)
-
     return C
 
 #################################### 
@@ -204,7 +204,7 @@ def corr_from_state_vector(psi: np.ndarray) -> np.ndarray:
     Build  C_ij  directly from the full wave‑function |ψ⟩ in the
     computational basis   {|n₀ … n_{L‑1}⟩}.
 
-    Complexity  O(L² 2ᴸ)  – use only for **small L** (≤ 16) or debugging.
+    Complexity  O(L² 2ᴸ) - use only for **small L** (≤ 16) or debugging.
 
     Parameters
     ----------

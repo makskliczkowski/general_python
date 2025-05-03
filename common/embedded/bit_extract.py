@@ -74,9 +74,13 @@ def prepare_mask(positions  : Iterable[int],
     return mask
 
 def to_one_hot(positions    : Iterable[int],
-                size        : int) -> np.ndarray:
+                size        : int,
+                *,
+                asbool      : bool = True) -> np.ndarray:
     y               = np.zeros(shape=size, dtype = np.int32)
     y[positions]    = 1
+    if asbool:
+        return y.astype(bool)
     return y
 
 def shift_table_from_mask(mask: int, size: int | None = None) -> np.ndarray:
@@ -140,14 +144,38 @@ if numba:
         Returns:
             int: An integer composed of the extracted bits, packed into the lower bits in the order specified by `shifts`.
         """
-
         res = 0
         for k in range(shifts.size):
             res |= ((state >> shifts[k]) & 1) << k
         return res
+    
+    @numba.njit(cache=True, inline='always')
+    def extract_vnb_v(state, mask_idx, ns):
+        """
+        Extract bits from `state` at positions in `mask_idx` (leftmost = highest bit index)
+        and pack them into a new integer, filling from the right (LSB) to left (MSB).
+
+        Args:
+            state (int): The integer to extract bits from.
+            mask_idx (np.ndarray): Indices (from left, MSB=0) of bits to extract.
+            ns (int): Total number of bits in the state.
+
+        Returns:
+            int: The packed integer, with extracted bits placed from right to left.
+        """
+        res     = 0
+        mask_s  = mask_idx.shape[0]
+        for k in range(mask_s):
+            # Extract the bit at position (ns - 1 - mask_idx[k]) from state
+            bit = (state >> (ns - 1 - mask_idx[k])) & 1
+            # Place it at position k in the result (right to left, LSB first)
+            res |= bit << (mask_s - 1 - k)
+        return res
+    
 else:
     extract_nb      = None
     extract_vnb     = None
+    extract_vnb_v   = None
 
 #################################
 #! JAX
@@ -229,7 +257,7 @@ def extract_ord_right(n: int, size_r: int) -> int:
 #! Factory: choose backend once, call many times
 #################################
 
-Backend = Literal["python", "numba", "numba_shifts", "jax_scalar", "jax_vector"]
+Backend = Literal["python", "numba", "numba_shifts", "jax_scalar", "jax_vector", "numba_vnb"]
 
 def make_extractor( mask    : Union[int, np.ndarray, jnp.array],
                     size    : Optional[int] = None,
@@ -248,21 +276,40 @@ def make_extractor( mask    : Union[int, np.ndarray, jnp.array],
             raise RuntimeError("Numba not installed.")
         if not isinstance(mask, int):
             raise TypeError("numba backend expects a scalar mask.")
-        return lambda state: extract_nb(state, mask)
+
+        @numba_njit(cache=True, inline='always')
+        def f(state: int) -> int:
+            return extract_nb(state, mask)
+        return f        
 
     elif backend == "numba_shifts":
-        if extract_vnb is None:
+        if extract_vnb_v is None:
             raise RuntimeError("Numba not installed.")
         if isinstance(mask, int):
             mask_   = mask
             shifts  = shift_table_from_mask(mask_, size)
         else:
-            raise TypeError("numba_shifts backend expects scalar mask "
-                            "(use jax_vector for many masks).")
-        shifts_const = numba.typed.List(shifts.tolist())
+            shifts  = np.asarray(mask, dtype=DEFAULT_NP_INT_TYPE)
+            shifts  = np.array([size - 1 - p for p in shifts], dtype=DEFAULT_NP_INT_TYPE)
+            
+        @numba_njit(cache=True, inline='always')
         def wrapped(state: int) -> int:
-            return extract_vnb(state, shifts_const)
+            return extract_vnb(state, shifts)
         return wrapped
+    
+    elif backend == "numba_vnb":
+        if extract_vnb is None:
+            raise RuntimeError("Numba not installed.")
+        
+        if not isinstance(mask, np.ndarray):
+            raise TypeError("numba_vnb backend expects mask array "
+                            "(one packed integer per row).")
+        # compile once, capture masks
+        
+        @numba_njit(cache=True, inline='always')
+        def jit_fn(state: int) -> int:
+            return extract_vnb_v(state, mask, size)
+        return jit_fn
 
     elif backend == "jax_scalar":
         if extract_jax is None:
@@ -285,6 +332,39 @@ def make_extractor( mask    : Union[int, np.ndarray, jnp.array],
         raise ValueError(f"Unknown backend {backend!r}")
 
 ####################################
+#! Colorize extractors
+####################################
+
+def _join(chars) -> str:
+    return ''.join(chars)
+
+def colorize_extractor(state_bin_str: str, mask_a_positions : np.ndarray, mask_b_positions : np.ndarray, logger : 'Logger') -> str:
+    """
+    Highlights specific bits in a binary string using colorization based on provided mask positions.
+    Args:
+        state_bin_str (str):
+            The binary string representing the state to be colorized.
+        mask_a_positions (np.ndarray):
+            Array of integer indices specifying positions to colorize in green.
+        mask_b_positions (np.ndarray):
+            Array of integer indices specifying positions to colorize in cyan.
+        logger (Logger):
+            Logger instance with a `colorize` method for applying color to string segments.
+    Returns:
+        str: The binary string with specified bits colorized according to the masks.
+    """
+    
+    colored_bits = []
+    for i, bit in enumerate(state_bin_str):
+        if i in mask_a_positions:
+            colored_bits.append(logger.colorize(bit, "green"))
+        elif i in mask_b_positions:
+            colored_bits.append(logger.colorize(bit, "cyan"))
+        else:
+            colored_bits.append(bit)
+    return _join(colored_bits)
+
+####################################
 #! Test
 ####################################
 
@@ -298,8 +378,7 @@ def test(size           : int   = 12,
     import time 
     logger = Logger(append_ts=True)
 
-    def join(chars) -> str:
-        return ''.join(chars)
+
 
     rng             = np.random.default_rng()
     size_b          = size - size_a
@@ -332,18 +411,10 @@ def test(size           : int   = 12,
         state_bin  = int2binstr(state, L)
 
         # Colorize bits for subsystem A (e.g., green), B (e.g., cyan), rest (default)
-        colored_bits = []
-        for i, bit in enumerate(state_bin):
-            if i in pos_a:
-                colored_bits.append(logger.colorize(bit, "green"))
-            elif i in pos_b:
-                colored_bits.append(logger.colorize(bit, "cyan"))
-            else:
-                colored_bits.append(bit)
-        colored_state_bin = join(colored_bits)
+        colored_state_bin = colorize_extractor(state_bin, pos_a, pos_b, logger)
 
-        state_A_bin = join(state_bin[i] for i in pos_a)
-        state_B_bin = join(state_bin[i] for i in pos_b)
+        state_A_bin = _join(state_bin[i] for i in pos_a)
+        state_B_bin = _join(state_bin[i] for i in pos_b)
 
         logger.info(f"\nFull ({state})    = {colored_state_bin}")
         logger.info(f"  State A bits      = {logger.colorize(state_A_bin, 'green')}")

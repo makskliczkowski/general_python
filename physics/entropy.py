@@ -15,6 +15,13 @@ from general_python.common.hdf5_lib import *
 from scipy.special import digamma, polygamma, binom, psi
 import numpy as np
 import numba
+
+from general_python.algebra.utils import JAX_AVAILABLE, Array
+if JAX_AVAILABLE:
+    from general_python.physics import entropy_jax as jnp
+else:
+    jnp = None
+    
 ###################################
 
 class EntropyPredictions:
@@ -459,14 +466,13 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     #! von‑Neumann entropy  (q == 1)
     if np.abs(q - 1.0) < 1e-12:
         s = 0.0
+        LOG_TWO = np.log(2.0)
         for l in lam:
-            p   = 1.0 + l
-            pm  = 1.0 - l
             if l > -1.0:
-                s += p * np.log(p/2.0)
+                s += (1.0 + l) * (np.log1p(l) - LOG_TWO)
             if l < 1.0:
-                s += pm * np.log(pm/2.0)
-        return -0.5 * np.real(s)
+                s += (1.0 - l) * (np.log1p(-l) - LOG_TWO)
+        return -0.5 * s
 
     #! Rényi entropy  (generic q)
     inv_1mq = 1.0 / (1.0 - q)
@@ -484,7 +490,7 @@ class Entanglement(Enum):
     TSALIS  = 3
     SINGLE  = 4
 
-def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN):
+def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy") -> float:
     """
     Calculates the entropy of a probability distribution using the specified entanglement entropy type.
 
@@ -512,15 +518,28 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entan
     Raises:
         ValueError: If an unsupported entanglement type is provided.
     """
-    if typek == Entanglement.VN:
-        return vn_entropy(lam, base)
-    elif typek == Entanglement.RENYI:
-        return renyi_entropy(lam, q, base)
-    elif typek == Entanglement.TSALIS:
-        return tsallis_entropy(lam, q, base)
-    elif typek == Entanglement.SINGLE:
-        return sp_correlation_entropy(lam, q, base)
-
+    if backend.lower() == 'numpy':
+        lam = np.asarray(lam, copy=False)
+        if typek == Entanglement.VN:
+            return vn_entropy(lam, base)
+        elif typek == Entanglement.RENYI:
+            return renyi_entropy(lam, q, base)
+        elif typek == Entanglement.TSALIS:
+            return tsallis_entropy(lam, q, base)
+        elif typek == Entanglement.SINGLE:
+            return sp_correlation_entropy(lam, q, base)
+    elif backend.lower() == 'jax' and JAX_AVAILABLE:
+        if typek == Entanglement.VN:
+            return jnp.vn_entropy(lam, base)
+        elif typek == Entanglement.RENYI:
+            return jnp.renyi_entropy(lam, q, base)
+        elif typek == Entanglement.TSALIS:
+            return jnp.tsallis_entropy(lam, q, base)
+        elif typek == Entanglement.SINGLE:
+            return jnp.sp_correlation_entropy(lam, q, base)
+    else:
+        raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
+    
 ####################################
 
 class Fractal:

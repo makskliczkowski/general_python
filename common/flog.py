@@ -3,14 +3,36 @@ This module provides a logger class for handling console and file logging with v
 It includes methods for printing messages with different log levels, formatting titles, and measuring execution time.
 and it is designed to be used in a quantum computing context, specifically for the Quantum EigenSolver package.
 
-file    :   general_python/common/flog.py
-author  :   Maksymilian Kliczkowski
+file        :   general_python/common/flog.py
+author      :   Maksymilian Kliczkowski
+email       :   maksymilian.kliczkowski@pwr.edu.pl
+date        :   2025-05-01
+description :   This module provides a logger class for handling console and file logging with verbosity control.
 '''
 
+__name__        = "flog"
+__version__     = "1.0.0"
+__author__      = "Maksymilian Kliczkowski"
+__email__       = "maksymilian.kliczkowski@pwr.edu.pl"
+__date__        = "2025-05-01"
+__description__ = "This module provides a logger class for handling console and file logging with verbosity control."
+__license__     = "MIT"
+__status__      = "Development"
+__all__         = [
+    "Logger",
+    "Colors",
+    "printV",
+    "printJust",
+    "printDictionary",
+    "print_arguments",
+    "log_timing_summary",
+    "get_global_logger"
+]
+
 import os
+import sys
 import functools
 import logging
-import numpy as np
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -20,18 +42,36 @@ logging.getLogger("flax").setLevel(logging.WARNING)
 logging.getLogger("tensorflow").setLevel(logging.WARNING)
 
 try:
-    from colorama import init
-    init(autoreset=True)
-    __HAS_COLORAMA = True
+    # from colorama import init
+    # init(autoreset=True)
+    __HAS_COLORAMA = False
 except ImportError:
     __HAS_COLORAMA = False
 
-############################################### PRINT THE OUTPUT WITH A GIVEN COLOR ###############################################
+######################################################
+#! PRINT THE OUTPUT WITH A GIVEN COLOR
+######################################################
 
 class Colors:
     """
     Class for defining ANSI colors for console output.
+    This class provides a way to colorize text in the terminal using ANSI escape codes.
+    
+    Attributes:
+        black (str):
+            ANSI escape code for black text.
+        red (str):
+            ANSI escape code for red text.
+        green (str):
+            ANSI escape code for green text.
+        yellow (str):
+            ANSI escape code for yellow text.
+        blue (str):
+            ANSI escape code for blue text.
+        white (str):
+            ANSI escape code for resetting color to default.
     """
+    
     # Use normal string literals so escape sequences are interpreted
     black   = "\033[30m"
     red     = "\033[31m"
@@ -42,7 +82,6 @@ class Colors:
     
     def __init__(self, color : str):
         self.color = color
-
 
     def __str__(self) -> str:
         mapping = {
@@ -57,8 +96,32 @@ class Colors:
         
     def __repr__(self) -> str:
         return str(self)
+    
+    def __call__(self, text: str) -> str:
+        """
+        Apply the color to the given text.
 
-############################################### PRINT THE OUTPUT WITH A GIVEN LEVEL ###############################################
+        Args:
+            text (str): Text to colorize.
+
+        Returns:
+            str: Colorized text.
+        """
+        return f"{self.color}{text}{Colors.white}"
+    
+    def __len__(self) -> int:
+        """
+        Get the length of the color string.
+
+        Returns:
+            int: Length of the color string.
+        """
+        return len(self.color)
+
+######################################################
+#! PRINT THE OUTPUT WITH A GIVEN LEVEL
+######################################################
+
 class Logger:
     """
     Logger class for handling console and file logging with verbosity control.
@@ -70,12 +133,14 @@ class Logger:
         logging.WARNING : 'warning',
         logging.ERROR   : 'error'
     }
+    
     LEVELS_R = {v: k for k, v in LEVELS.items()}
     
     def __init__(self,
-                logfile     : Optional[str] = None,
-                lvl         : int = logging.INFO,
-                append_ts   : bool = False):
+                logfile         : Optional[str] = None,
+                lvl             : int           = logging.INFO,
+                append_ts       : bool          = False,
+                use_ts_in_cmd   : bool          = False):
         """
         Initialize the logger instance.
 
@@ -86,20 +151,39 @@ class Logger:
                 Logging level (default: logging.INFO).
             append_ts (bool):
                 Whether to append a timestamp to the log file name (default: False).
+            use_ts_in_cmd (bool):
+                Whether to use a timestamp in console output (default: False).
         """
-        self.now            = datetime.now()
-        self.now_str        = self.now.strftime("%d_%m_%Y_%H-%M_%S")
-        self.lvl            = lvl
-        self.logger         = logging.getLogger(__name__)
-        self.handler_added  = False
-        logging.basicConfig(level=lvl, format='%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+        self.now                = datetime.now()
+        self.now_str            = self.now.strftime("%d_%m_%Y_%H-%M_%S")
+        self.lvl                = Logger.LEVELS_R.get(lvl, logging.INFO) if isinstance(lvl, str) else lvl
+        self.handler_added      = False
+        self.use_console_ts     = use_ts_in_cmd
+        
+        # Set up logging: always show timestamp in console if use_ts_in_cmd is True
+        self.logger             = logging.getLogger(__name__)
+        self.logger.setLevel(self.lvl)
+        self.logger.propagate   = False
+        
+        for h in list(self.logger.handlers):
+            self.logger.removeHandler(h)
+            h.close()
+        
+        # Set up console handler
+        console_fmt             = '%(asctime)s [%(levelname)s] %(message)s' if use_ts_in_cmd else '[%(levelname)s] %(message)s'
+        ch                      = logging.StreamHandler(sys.stdout)
+        ch.setLevel(self.lvl)
+        ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+        self.logger.addHandler(ch)
+        
+        # Set the log file name
         if logfile is not None:
-            self.logfile    = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
+            self.logfile = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
             if append_ts:
-                self.logfile    += self.now_str
+                self.logfile += self.now_str
             self.configure("./log")
         else:
-            self.logfile    = self.now_str
+            self.logfile = self.now_str
         
     # --------------------------------------------------------------
     
@@ -144,6 +228,14 @@ class Logger:
             f.write(f"Author: {os.getlogin()}\n")
             f.write(f"Machine: {os.uname().nodename}\n")
             f.write(f"OS: {os.uname().sysname} {os.uname().release} {os.uname().version}\n")
+            f.write(f"Python version: {os.sys.version}\n")
+            f.write(f"Python executable: {os.sys.executable}\n")
+            f.write(f"Current working directory: {os.getcwd()}\n")
+            f.write(f"Log file: {self.logfile}\n")
+            f.write(f"Log level: {self.LEVELS[self.lvl]}\n")
+            f.write(f"Log file created on {self.now_str}\n")
+            f.write(f"Log level set to: {self.LEVELS[self.lvl]}\n")
+            f.write(f"Author: {os.getlogin()}\n")
             f.write('--------------------------------------------------\n')
             
         # Create a file handler only once
@@ -172,7 +264,7 @@ class Logger:
     # --------------------------------------------------------------
     
     @staticmethod
-    def printTab(lvl=0):
+    def print_tab(lvl=0):
         """
         Generate indentation for message formatting.
 
@@ -198,9 +290,9 @@ class Logger:
         Returns:
             str: Formatted message.
         """
-        now             = datetime.now()
+        # now             = datetime.now()
         # nowStr          = now.strftime("%d/%m/%Y %H:%M:%S")
-        formatted_msg   = f"{Logger.printTab(lvl)}{msg}"
+        formatted_msg   = f"{Logger.print_tab(lvl)}{msg}"
         return formatted_msg
 
     # --------------------------------------------------------------
@@ -233,16 +325,19 @@ class Logger:
         Internal helper to log messages based on log level.
 
         Args:
-            log_level (int): Log level (0: info, 1: debug, etc.).
-            msg (str): Message to log.
-            lvl (int): Indentation level.
+            log_level (int):
+                Log level (0: info, 1: debug, etc.).
+            msg (str):
+                Message to log.
+            lvl (int):
+                Indentation level.
         """
         log_function = getattr(self.logger, self.LEVELS.get(log_level, 'info'))  # Get the appropriate log function
         log_function(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
     
-    def info(self, msg: str, lvl=0, verbose=True):
+    def info(self, msg: str, lvl=0, verbose=True, color=None):
         """
         Log an informational message if verbosity is enabled.
 
@@ -253,11 +348,13 @@ class Logger:
         """
         if not verbose:
             return
+        if color is not None:
+            msg = self.colorize(msg, color)
         self.logger.info(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
     
-    def debug(self, msg: str, lvl=0, verbose=True):
+    def debug(self, msg: str, lvl=0, verbose=True, color=None):
         """
         Log a debug message if verbosity is enabled.
 
@@ -265,14 +362,17 @@ class Logger:
             msg (str): Message to log.
             lvl (int): Indentation level.
             verbose (bool): Log if True (default: True).
+            color (str): Optional color for the message.
         """
         if not verbose:
             return
+        if color is not None:
+            msg = self.colorize(msg, color)
         self.logger.debug(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
     
-    def warning(self, msg: str, lvl=0, verbose=True):
+    def warning(self, msg: str, lvl=0, verbose=True, color=None):
         """
         Log a warning message if verbosity is enabled.
 
@@ -283,11 +383,13 @@ class Logger:
         """
         if not verbose:
             return
+        if color is not None:   
+            msg = self.colorize(msg, color)
         self.logger.warning(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
 
-    def error(self, msg: str, lvl=0, verbose=True):
+    def error(self, msg: str, lvl=0, verbose=True, color=None):
         """
         Log an error message if verbosity is enabled.
 
@@ -295,9 +397,12 @@ class Logger:
             msg (str): Message to log.
             lvl (int): Indentation level.
             verbose (bool): Log if True (default: True).
+            color (str): Optional color for the message.
         """
         if not verbose:
             return
+        if color is not None:
+            msg = self.colorize(msg, color)
         self.logger.error(Logger.print(msg, lvl))
         
     # --------------------------------------------------------------
@@ -329,7 +434,7 @@ class Logger:
             
     # --------------------------------------------------------------
 
-    def title(self, tail: str, desired_size: int, fill: str, lvl=0, verbose=True):
+    def title(self, tail: str, desired_size: int, fill: str, lvl=0, verbose=True, color=None):
         """
         Create a formatted title with filler characters if verbosity is enabled.
 
@@ -344,6 +449,8 @@ class Logger:
                 Indentation level.
             verbose (bool):
                 Log if True (default: True).
+            color (str):
+                Optional color for the title.
         """
         if not verbose:
             return
@@ -355,7 +462,13 @@ class Logger:
         
         fillSize    = (desired_size - tailLength) // (2 * len(fill))
         out         = (fill * fillSize) + f"{tail}" + (fill * fillSize)
-        self.info(out, lvl, verbose)
+        
+        if len(out) < desired_size:
+            out += fill[0] * (desired_size - len(out) - 1)
+        elif len(out) > desired_size:
+            out = out[:desired_size]
+            
+        self.info(out, lvl, verbose, color)
 
     # --------------------------------------------------------------
     

@@ -123,6 +123,21 @@ def check_int(n, k):
     return int(out)
 
 @numba.njit
+def check_int_l(n, k, ns):
+    """
+    Check the k-th bit in the binary representation of an integer n.
+
+    Args:
+        n (int): The integer to check.
+        k (int): The position of the bit to check (0-indexed, from the left).
+
+    Returns:
+        int: A non-zero value if the k-th bit is set, otherwise 0.
+    """
+    out = bool(n & (1 << (ns - k - 1)))
+    return int(out)
+
+@numba.njit
 def check_arr_np(n, k : int):
     '''
     Check the value at numpy array
