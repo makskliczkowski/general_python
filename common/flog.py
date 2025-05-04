@@ -180,7 +180,7 @@ class Logger:
         if logfile is not None:
             self.logfile = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
             if append_ts:
-                self.logfile += self.now_str
+                self.logfile += f'_{self.now_str}'
             self.configure("./log")
         else:
             self.logfile = self.now_str
@@ -558,7 +558,7 @@ def get_global_logger():
     """
     global _G_LOGGER
     if _G_LOGGER is None:
-        _G_LOGGER = Logger("global")
+        _G_LOGGER = Logger("global", lvl=logging.INFO, append_ts=True, use_ts_in_cmd=True)
         _G_LOGGER.title("Global logger initialized.", 50, '#', 0)
     return _G_LOGGER
 

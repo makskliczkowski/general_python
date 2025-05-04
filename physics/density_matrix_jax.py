@@ -23,11 +23,11 @@ if JAX_AVAILABLE:
                 order   : tuple[int, ...],
                 size_a  : int) -> jnp.ndarray:
         r"""
-        Reshape‑and‑permute a pure \(N\)-qubit state
+        Reshape-and-permute a pure \(N\)-qubit state
         \(|\psi\rangle\in\mathbb C^{2^N}\)
         into a matrix  
         \(\psi_{A,B}\in\mathbb C^{2^{|A|}\times 2^{|B|}}\)
-        that is ready for a partial‑trace / reduced‑density‑matrix
+        that is ready for a partial-trace / reduced-density-matrix
         calculation with respect to subsystem *A* (first ``size_a`` qubits in
         ``order``).
 
@@ -39,7 +39,7 @@ if JAX_AVAILABLE:
             Permutation of qubit indices; the *first* ``size_a`` entries
             define subsystem *A*.
         size_a : int
-            \(|A|\) – number of qubits in subsystem *A*.
+            \(|A|\) - number of qubits in subsystem *A*.
 
         Returns
         -------
@@ -48,12 +48,12 @@ if JAX_AVAILABLE:
         """
         N = len(order)                          # total number of qubits
 
-        # reshape: 1‑D → N‑D tensor (row‑major)
-        psi_nd = jnp.reshape(state, (2,) * N)   # JAX supports only row‑major
+        # reshape: 1-D → N-D tensor (row-major)
+        psi_nd = jnp.reshape(state, (2,) * N)   # JAX supports only row-major
 
-        # mimic Fortran‑order semantics
+        # mimic Fortran-order semantics
         #   For a (2,2,…,2) tensor, Fortran layout is equivalent to
-        #   row‑major layout with *reversed* axis numbering.
+        #   row-major layout with *reversed* axis numbering.
         perm = tuple(N - 1 - o for o in order)  # map Fortran axes → C axes
 
         # reorder qubits and flatten back to matrix
