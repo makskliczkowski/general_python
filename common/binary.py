@@ -107,7 +107,7 @@ def is_pow_of_two(n : int):
 #! Vector based functions - for extracting bits from a vector
 # --------------------------------------------------------------------------------------------------
 
-@numba.njit
+@numba.njit(inline = 'always')
 def check_int(n, k):
     """
     Checks if the k-th bit in the binary representation of an integer n is set (1).
@@ -122,7 +122,7 @@ def check_int(n, k):
     out = bool(n & (1 << k))
     return int(out)
 
-@numba.njit
+@numba.njit(inline = 'always')
 def check_int_l(n, k, ns):
     """
     Check the k-th bit in the binary representation of an integer n.
@@ -137,7 +137,7 @@ def check_int_l(n, k, ns):
     out = bool(n & (1 << (ns - k - 1)))
     return int(out)
 
-@numba.njit
+@numba.njit(inline = 'always')
 def check_arr_np(n, k : int):
     '''
     Check the value at numpy array
@@ -323,7 +323,7 @@ def flip_all(n          : Array,
 #! SINGLE BIT FLIP
 # --------------------------------------------------------------------------------------------------
 
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_array_np_spin(n : Array, k : int):
     """
     Flip a single bit in a representation of a state.
@@ -332,7 +332,7 @@ def flip_array_np_spin(n : Array, k : int):
     n[k] = -n[k]
     return n
 
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_array_np_nspin(n           : Array,
                         k           : int,
                         spin_value  : float = BACKEND_REPR):
@@ -344,7 +344,7 @@ def flip_array_np_nspin(n           : Array,
     return n
 
 # Multi-index versions for NumPy arrays.
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_array_np_spin_multi(n: Array, ks: Array):
     """
     Flip multiple spins in a NumPy array using advanced indexing.
@@ -355,7 +355,7 @@ def flip_array_np_spin_multi(n: Array, ks: Array):
     n[ks] = -n[ks]
     return n
 
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_array_np_nspin_multi(n: Array, ks: Array, spin_value: float = BACKEND_REPR):
     """
     Flip multiple bits (binary representation) in a NumPy array.
@@ -726,7 +726,9 @@ def int2binstr(n : int, bits : int):
     Returns:
         str: The binary representation of the integer, padded with leading zeros to fit the specified number of bits.
     """
-    return f"{n:0{bits}b}"
+    if isinstance(n, (int, np.integer)):
+        return f"{n:0{bits}b}"
+    return '0' * (len(n) - bits) + str(n)
 
 ####################################################################################################
 
