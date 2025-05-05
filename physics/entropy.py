@@ -519,7 +519,7 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entan
         ValueError: If an unsupported entanglement type is provided.
     """
     if backend.lower() == 'numpy':
-        lam = np.asarray(lam, copy=False)
+        lam = np.asarray(lam)
         if typek == Entanglement.VN:
             return vn_entropy(lam, base)
         elif typek == Entanglement.RENYI:
@@ -539,7 +539,7 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entan
             return jnp.sp_correlation_entropy(lam, q, base)
     else:
         raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
-    
+
 ####################################
 
 class Fractal:
