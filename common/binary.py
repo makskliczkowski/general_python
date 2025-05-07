@@ -369,6 +369,7 @@ def flip_array_np_nspin_multi(n: Array, ks: Array, spin_value: float = BACKEND_R
         n[k] = 0 if n[k] == spin_value else spin_value
     return n
 
+@numba.njit(inline = 'always')
 def flip_array_np(n         : Array,
                 k           : int,
                 spin        : bool = BACKEND_DEF_SPIN,

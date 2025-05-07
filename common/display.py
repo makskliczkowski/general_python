@@ -45,16 +45,32 @@ def _default_to_bin(state: int, ns: int) -> str:
     return strtex
 
 def _format_coeff(c: complex | float) -> str:
-    """Return LaTeX for a numeric coefficient with phase/amplitude split."""
+    """Return LaTeX for a numeric coefficient with phase/amplitude split, using multiples of π for phase."""
     if isinstance(c, complex):
-        amp   = abs(c)
-        phase = np.angle(c)
+        amp     = abs(c)
+        phase   = np.angle(c)
         if amp == 0:
             return "0"
-        if amp == 1:
-            return fr"e^{{i\,{phase:.3g}}}" if phase != 0 else ""
+        # Express phase as a multiple of π if close
+        pi_mult = phase / np.pi
+        # Use a tolerance for floating point comparison
+        tol     = 1e-8
+        minus   = ''
+        if abs(pi_mult) < tol:
+            phase_tex = ""
+        elif abs(pi_mult - 1) < tol:
+            phase_tex = r"\pi"
+        elif abs(pi_mult + 1) < tol:
+            phase_tex = r"-\pi"
+            minus     = '-'
         else:
-            return fr"{amp:g}e^{{i\,{phase:.3g}}}" if phase != 0 else f"{amp:g}"
+            minus     = '-' if pi_mult < 0 else ''
+            phase_tex = f"{abs(pi_mult):.3g}\\pi"
+            
+        if amp == 1:
+            return fr"e^{{{minus}i{phase_tex}}}" if phase_tex else ""
+        else:
+            return fr"{amp:g}e^{{{minus}i{phase_tex}}}" if phase_tex else f"{amp:g}"
     elif isinstance(c, float):
         if c in (1, -1):
             return "" if c == 1 else "-"
@@ -86,7 +102,7 @@ def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None)
 
 def bra(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
     r"""LaTeX code for the bra ⟨ψ| corresponding to :pyfunc:`ket`."""
-    return ket(state, ns, to_bin=to_bin).replace("\\left|", "\\left\langle").replace("\\right\\rangle", "\\right|")
+    return ket(state, ns, to_bin=to_bin).replace(r"\\left|", r"\\left\langle").replace(r"\\right\\rangle", r"\\right|")
 
 # ---------------------------------------------------------------------------
 #! Display primitives
@@ -145,22 +161,34 @@ def display_operator_action(op_tex    : str,
     """
     to_bin = _default_to_bin if to_bin is None else to_bin
 
-    # left-hand side
+    #! left-hand side
     sub   = ",".join(map(str, site)) if isinstance(site, tuple) else str(site)
-    if _isinteger(in_state):
+    isint = _isinteger(in_state)
+    if isint:
         lhs = fr"{op_tex}_{{{sub}}}\,{ket(in_state, ns, to_bin=to_bin)}"
     else:
         statestr = fr"|{str(in_state)[1:-1].replace('.', '')}\rangle"
         lhs      = fr"{op_tex}_{{{sub}}}\,{statestr}"
 
-    # right-hand side
+    #! right-hand side
     if out_state is None:
         rhs = "0"
     else:
         # ensure lists
-        out_list    = list(out_state) if isinstance(out_state, Sequence) else [out_state]
-        coeff_list  = list(coeff)     if isinstance(coeff, Sequence)     else [coeff]
-
+        if isinstance(out_state, np.ndarray) and isint:
+            out_list    = list(out_state)
+            coeff_list  = list(coeff)
+        elif isinstance(out_state, (int, np.integer)) and isint:
+            out_list    = [out_state]
+            coeff_list  = [coeff]
+        else:
+            if len(out_state.shape) > 1:
+                out_list    = out_state
+                coeff_list  = coeff
+            else:
+                out_list    = [out_state]
+                coeff_list  = [coeff]
+                
         if len(out_list) != len(coeff_list):
             raise ValueError("out_state and coeff must have equal length")
 
@@ -173,10 +201,8 @@ def display_operator_action(op_tex    : str,
             ket_tex   = ket(s, ns, to_bin=to_bin)
             term      = coeff_tex + ket_tex
             terms.append(term)
-
         rhs = " + ".join(terms) if terms else "0"
-
-    # display
+    #! display
     display(Math(lhs + " = " + rhs))
 
 # ---------------------------------------------------------------------------

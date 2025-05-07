@@ -1,5 +1,6 @@
 from functools import wraps
 from timeit import default_timer
+import time
 from abc import ABC
 
 ################################################################################
@@ -15,80 +16,106 @@ class Timer(ABC):
         - Verbose output to automatically print timing information.
     
     Attributes:
-        name (str): Optional name to identify the timer.
-        verbose (bool): If True, prints timing information on stop.
+        name (str):
+            Optional name to identify the timer.
+        verbose (bool):
+            If True, prints timing information on stop.
+        format:
+            Optional format for the output timing information.
     """
-    def __init__(self, name: str = None, verbose: bool = False):
+    def __init__(self, name: str = None, verbose: bool = False, precision: str = 's'):
+        """
+        Args:
+            name (str):
+                Optional name to identify the timer.
+            verbose (bool):
+                If True, print elapsed time on stop.
+            precision (str):
+                Time unit for display: 's', 'ms', 'us', or 'ns'.
+        """
         self.name           = name
         self.verbose        = verbose
+        self.precision      = precision
         self._start_time    = None
-        self._elapsed       = 0.0
-        self._laps          = []
-    
+        self._elapsed_ns    = 0
+        self._laps_ns       = []
+
+        self._unit_factors = {
+            's': 1e-9,
+            'ms': 1e-6,
+            'us': 1e-3,
+            'ns': 1.0
+        }
+        if precision not in self._unit_factors:
+            raise ValueError("Precision must be one of: 's', 'ms', 'us', 'ns'")
+
     def restart(self):
-        """Start the timer."""
-        self._start_time = default_timer()
+        """Start or restart the timer."""
+        self._start_time    = time.perf_counter_ns()
         return self
-    
+
     def stop(self):
-        """Stop the timer and optionally print elapsed time."""
-        self._elapsed = default_timer() - self._start_time
+        """Stop the timer and return elapsed time in the selected unit."""
+        now = time.perf_counter_ns()
+        self._elapsed_ns    = now - self._start_time
         if self.verbose:
-            print(f"{self.name}: {self._elapsed:.4f} seconds")
-        return self._elapsed
-    
+            print(f"{self.name or 'Timer'}: {self._format_time(self._elapsed_ns)}")
+        return self._to_unit(self._elapsed_ns)
+
     def lap(self):
-        """Record a lap time."""
-        self._laps.append(default_timer() - self._start_time)
-        return self._laps[-1]
-    
+        """Record a lap time and return it in the selected unit."""
+        now             = time.perf_counter_ns()
+        lap_time        = now - self._start_time
+        self._laps_ns.append(lap_time)
+        return self._to_unit(lap_time)
+
     @property
     def laps(self):
-        """Return the recorded lap times."""
-        return self._laps.copy()
-    
+        """Return a list of recorded lap times in the selected unit."""
+        return [self._to_unit(lap) for lap in self._laps_ns]
+
     @property
     def elapsed(self):
-        """
-        Return the total elapsed time. If the timer is running,
-        include the time from the current lap.
-        """
+        """Return the total elapsed time (in selected unit), including current run if active."""
         if self._start_time is not None:
-            return self._elapsed + (default_timer() - self._start_time)
-        return self._elapsed
-    
+            now         = time.perf_counter_ns()
+            return self._to_unit(self._elapsed_ns + (now - self._start_time))
+        return self._to_unit(self._elapsed_ns)
+
     def reset(self):
-        """Reset the timer and laps."""
+        """Reset the timer and all laps."""
         self._start_time    = None
-        self._elapsed       = 0.0
-        self._laps          = []
-    
+        self._elapsed_ns    = 0
+        self._laps_ns       = []
+
     def __enter__(self):
-        """Start the timer when entering a context manager."""
         self.restart()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        """Stop the timer when exiting a context manager."""
         self.stop()
 
     def __call__(self, func):
-        """
-        Allow the Timer to be used as a decorator.
-
-        When decorating a function, it resets the timer, times the execution,
-        and optionally prints the elapsed time.
-        """
         @wraps(func)
         def wrapper(*args, **kwargs):
             self.reset()
             self.restart()
-            result  = func(*args, **kwargs)
-            lap     = self.stop()
+            result      = func(*args, **kwargs)
+            elapsed     = self.stop()
             if self.verbose:
-                timer_name = self.name or func.__name__
-                print(f"{timer_name} executed in {lap:.6f} seconds")
+                print(f"{self.name or func.__name__} executed in {self._format_time(self._elapsed_ns)}")
             return result
         return wrapper
+
+    def _to_unit(self, ns):
+        """Convert nanoseconds to the selected unit."""
+        return ns * self._unit_factors[self.precision]
+
+    def _format_time(self, ns):
+        """Return a formatted string based on the precision."""
+        unit    = self.precision
+        value   = self._to_unit(ns)
+        return f"{value:.6f} {unit}"
+
     
 ################################################################################
