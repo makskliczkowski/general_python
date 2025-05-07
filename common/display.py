@@ -71,7 +71,7 @@ def _format_coeff(c: complex | float) -> str:
 # ---------------------------------------------------------------------------
 
 def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
-    """LaTeX code for a computational-basis ket |(int) b...⟩.
+    r"""LaTeX code for a computational-basis ket |(int) b...⟩.
 
     Example
     -------
@@ -85,7 +85,7 @@ def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None)
 
 
 def bra(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
-    """LaTeX code for the bra ⟨ψ| corresponding to :pyfunc:`ket`."""
+    r"""LaTeX code for the bra ⟨ψ| corresponding to :pyfunc:`ket`."""
     return ket(state, ns, to_bin=to_bin).replace("\\left|", "\\left\langle").replace("\\right\\rangle", "\\right|")
 
 # ---------------------------------------------------------------------------
@@ -149,7 +149,7 @@ def display_operator_action(op_tex    : str,
     sub   = ",".join(map(str, site)) if isinstance(site, tuple) else str(site)
     if _isinteger(in_state):
         lhs = fr"{op_tex}_{{{sub}}}\,{ket(in_state, ns, to_bin=to_bin)}"
-    else: # array/wave-function label
+    else:
         statestr = fr"|{str(in_state)[1:-1].replace('.', '')}\rangle"
         lhs      = fr"{op_tex}_{{{sub}}}\,{statestr}"
 
@@ -178,7 +178,6 @@ def display_operator_action(op_tex    : str,
 
     # display
     display(Math(lhs + " = " + rhs))
-
 
 # ---------------------------------------------------------------------------
 #! Superpositions and products

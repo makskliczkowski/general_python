@@ -558,7 +558,7 @@ def get_global_logger():
     """
     global _G_LOGGER
     if _G_LOGGER is None:
-        _G_LOGGER = Logger("global", lvl=logging.INFO, append_ts=True, use_ts_in_cmd=True)
+        _G_LOGGER = Logger("QES", lvl=logging.INFO, append_ts=True, use_ts_in_cmd=True)
         _G_LOGGER.title("Global logger initialized.", 50, '#', 0)
     return _G_LOGGER
 

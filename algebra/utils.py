@@ -42,11 +42,11 @@ import multiprocessing
 import logging
 from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List
 from tabulate import tabulate
+from general_python.common.flog import get_global_logger
 
 # ---------------------------------------------------------------------
-
-logging.basicConfig(level=logging.INFO, format='%(levelname)s:%(name)s:%(lineno)d: %(message)s')
-log = logging.getLogger(__name__)
+log = get_global_logger()
+# ---------------------------------------------------------------------\
 
 def _log_message(msg, lvl = 0):
     """

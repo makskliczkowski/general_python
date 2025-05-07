@@ -1,3 +1,16 @@
+'''
+file    :   general_python/ml/net_impl/networks/net_cnn.py
+author  :   Maksymilian Kliczkowski
+date    :   2025-05-07
+brief   :   Convolutional Neural Network (CNN) implementation using Flax.
+            This module defines a CNN class that can be used for various tasks,
+            such as image classification, feature extraction, etc.
+            The CNN is designed to work with JAX and Flax, leveraging their
+            capabilities for efficient computation and automatic differentiation. 
+        
+'''
+
+
 import numpy as np
 from typing import Tuple, Callable, Optional, Any, Sequence, Union
 import math
@@ -192,7 +205,7 @@ class _FlaxCNN(nn.Module):
 ##########################################################
 
 class CNN(FlaxInterface):
- """
+    r"""
     Convolutional Neural Network (CNN) Interface based on FlaxInterface.
 
     Interprets 1D input vectors as configurations on a lattice, processes them
@@ -361,8 +374,7 @@ class CNN(FlaxInterface):
         """Returns the configured output shape (excluding batch dimension)."""
         return self._output_shape
 
-    #! Ca
-
+    #! Callable interface
     def __call__(self, s: 'array-like'):
         """
         Call the network on input x.
