@@ -28,7 +28,24 @@ def _isinteger(state: int | np.ndarray) -> bool:
     return isinstance(state, (int, np.integer, np.int32, np.int64))
 
 def _default_to_bin(state: int, ns: int) -> str:
-    """Return the *ns*-bit binary representation of *state* as a string."""
+    """
+    Return the *ns*-bit binary representation of *state* as a string.
+    -   If *state* is a list, replace -1s with 0s and return the string
+        representation of the list.
+    -   If *state* is an integer, return its binary representation.
+    -   If *state* is a numpy array, replace -1s with 0s and return the
+        string representation of the array.
+    Parameters
+    ----------
+    state : int | list[int] | np.ndarray
+        The state to convert.    
+    ns : int    
+        The number of bits in the binary representation.
+    Returns
+    -------
+    str
+        The binary representation of the state as a string.
+    """
     if isinstance(state, list):
         # replace -1s with 0s
         statex      = [0 if s == -1 else s for s in state]
@@ -45,7 +62,20 @@ def _default_to_bin(state: int, ns: int) -> str:
     return strtex
 
 def _format_coeff(c: complex | float) -> str:
-    """Return LaTeX for a numeric coefficient with phase/amplitude split, using multiples of π for phase."""
+    """
+    Return LaTeX for a numeric coefficient with phase/amplitude split,
+    using multiples of π for phase.
+    
+    Parameters
+    ----------
+    c : complex | float
+        Coefficient to format.
+    Returns
+    -------
+    str
+        LaTeX string representing the coefficient.
+    
+    """
     if isinstance(c, complex):
         amp     = abs(c)
         phase   = np.angle(c)
@@ -99,7 +129,6 @@ def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None)
         return fr"\left|({state})\,{to_bin(state, ns)}\right\rangle"
     return fr"\left|{to_bin((state + 1) // 2, ns)}\right\rangle"
 
-
 def bra(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
     r"""LaTeX code for the bra ⟨ψ| corresponding to :pyfunc:`ket`."""
     return ket(state, ns, to_bin=to_bin).replace(r"\\left|", r"\\left\langle").replace(r"\\right\\rangle", r"\\right|")
@@ -112,8 +141,10 @@ def display_state(state : Union[int, np.ndarray, List[int]],
                 ns      : int,
                 *,
                 label   : str | None = None,
-                to_bin  : Callable[[int, int], str] | None = None) -> None:
-    """Render a single basis state.
+                to_bin  : Callable[[int, int], str] | None = None,
+                verbose : bool = True) -> None:
+    """
+    Render a single basis state.
 
     Parameters
     ----------
@@ -121,7 +152,14 @@ def display_state(state : Union[int, np.ndarray, List[int]],
         Integer basis state and number of sites.
     label
         Optional text (e.g. *Initial*) shown before the ket.
+    to_bin
+        Optional function to convert integer states to binary representation.
+    verbose
+        If True, print the state in a verbose format.
     """
+    if not verbose:
+        return
+    
     if _isinteger(state):
         latex       = ket(state, ns, to_bin=to_bin)
     else:
@@ -230,6 +268,41 @@ def display_superposition(terms : Sequence[Tuple[complex, int]],
     if label:
         latex = fr"\text{{{label}: }}\,{latex}"
     display(Math(latex))
+
+# ---------------------------------------------------------------------------
+#! Operators
+# ---------------------------------------------------------------------------
+
+def prepare_labels(ops, op_label):
+    """
+    Return a tuple of LaTeX labels matching *ops*.
+    Parameters
+    ----------
+    ops : list[Operator]
+        List of operators to label.
+    op_label : str | list[str] | None
+        Label(s) for the operators. If None, use the operator name or
+        'op_k' if no name is available.
+    Returns
+    -------
+    tuple[str]
+        Tuple of LaTeX labels for the operators.
+    Raises
+    ------
+    ValueError
+        If *op_label* is a list and its length does not match the number of
+        operators.
+    """
+    if op_label is None:
+        return tuple(getattr(op, "name", f"op_{k}") for k, op in enumerate(ops))
+    
+    # check if op_label is a Sequence
+    if isinstance(op_label, Sequence):
+        if len(op_label) != len(ops):
+            raise ValueError("Length of op_label must match number of operators")
+        return tuple(op_label)
+    return tuple(op_label for _ in ops)
+
 
 # ---------------------------------------------------------------------------
 #! Examples as doctests (run them in a notebook to verify)  --------------
