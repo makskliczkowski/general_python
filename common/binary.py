@@ -340,7 +340,7 @@ def flip_array_np_nspin(n           : Array,
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
     """
-    n[k] = float(not (n[k] == spin_value)) * spin_value
+    n[k] = (0.0 if n[k] == spin_value else 1.0) * spin_value
     return n
 
 # Multi-index versions for NumPy arrays.
