@@ -303,7 +303,6 @@ def prepare_labels(ops, op_label):
         return tuple(op_label)
     return tuple(op_label for _ in ops)
 
-
 # ---------------------------------------------------------------------------
 #! Examples as doctests (run them in a notebook to verify)  --------------
 # ---------------------------------------------------------------------------
