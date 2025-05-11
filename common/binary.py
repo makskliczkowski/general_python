@@ -335,12 +335,12 @@ def flip_array_np_spin(n : Array, k : int):
 @numba.njit(inline = 'always')
 def flip_array_np_nspin(n           : Array,
                         k           : int,
-                        spin_value  : float = BACKEND_REPR):
+                        spin_value  : float = 1.0):
     """
     Flip a single bit in a representation of a state.
     - This is a helper function for flip.
     """
-    n[k] = (0.0 if n[k] == spin_value else 1.0) * spin_value
+    n[k] = (0 if n[k] > 0 else 1) * spin_value
     return n
 
 # Multi-index versions for NumPy arrays.
