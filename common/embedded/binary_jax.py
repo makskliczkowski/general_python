@@ -202,22 +202,33 @@ if JAX_AVAILABLE:
         return flip_array_jax_nspin_multi(n, ks)
     
     @jax.jit
-    def flip_int_traced_jax(n : int, k : int):
+    def flip_int_traced_jax(n : int, k : int) -> jnp.ndarray:
         '''
         Internal helper function for flipping a single bit in an integer through JAX tracing.
         Parameters:
-            n (array-like)  : The state to flip.
-            k (int)         : The index of the bit to flip.
+            n (array-like) :
+                The state to flip.
+            k (int) :
+                The index of the bit to flip.
         Returns:
-            array-like      : The flipped state.
+            array-like :
+                The flipped state.
         '''
         return jnp.where(check_int_traced_jax(n, k), n - lookup_binary_power_jax[k], n + lookup_binary_power_jax[k])
     
     @jax.jit
-    def flip_int_traced_jax_multi(n: int, ks: Array):
+    def flip_int_traced_jax_multi(n: int, ks: Array) -> jnp.ndarray:
         """
         Flip multiple bits in an integer representation using JAX.
         The function uses vectorized operations via vmap.
+        Parameters:
+            n (int) :
+                The integer to flip.
+            ks (array-like) :
+                The indices of the bits to flip.
+        Returns:
+            array-like :
+                The flipped state.
         """
         ks_arr      = jnp.array(ks)
         # Vectorized check for each index k.
