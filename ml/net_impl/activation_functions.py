@@ -193,6 +193,37 @@ if JAX_AVAILABLE:
         '''
         return x
     
+    @jax.jit
+    def poly6_jnp(x):
+        ''' 
+        Polynomial activation function of degree 6 (JAX implementation).
+        Efficient implementation of the polynomial: 0.022222222*x^6 - 0.083333333*x^4 + 0.5*x^2
+        
+        Parameters:
+            x: Input tensor/array
+            
+        Returns:
+            Polynomial evaluation at x
+        '''
+        x2 = x ** 2
+        return ((0.022222222 * x2 - 0.083333333) * x2 + 0.5) * x2
+    
+    @jax.jit
+    def poly5_jnp(x):
+        ''' 
+        Polynomial activation function of degree 5 (JAX implementation).
+        Efficient implementation of the polynomial: 0.133333333*x^5 - 0.333333333*x^3 + x
+        
+        Parameters:
+            x: Input tensor/array
+            
+        Returns:
+            Polynomial evaluation at x
+        '''
+        xsq = x ** 2
+        return ((0.133333333 * xsq - 0.333333333) * xsq + 1.) * x
+    
+    
     activations_jnp = {
         'identity'      : identity_jnp,
         'log_cosh'      : log_cosh_jnp,
@@ -202,7 +233,9 @@ if JAX_AVAILABLE:
         'relu'          : relu_jnp,
         'leaky_relu'    : leaky_relu_jnp,
         'elu'           : elu_jnp,
-        'softplus'      : softplus_jnp
+        'softplus'      : softplus_jnp,
+        'poly6'         : poly6_jnp,
+        'poly5'         : poly5_jnp
     }
     
     activations_jnp_parameters = {
@@ -214,7 +247,9 @@ if JAX_AVAILABLE:
         'relu'          : None,
         'leaky_relu'    : {'alpha': 0.01},
         'elu'           : {'alpha': 1.0},
-        'softplus'      : None
+        'softplus'      : None,
+        'poly6'         : None,
+        'poly5'         : None
     }
     
     def get_activation_jnp(name: str, params: Optional[dict] = None) -> Callable:

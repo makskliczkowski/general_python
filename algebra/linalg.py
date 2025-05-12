@@ -534,13 +534,15 @@ def eigh(matrix, backend="default"):
         return _eig_np(matrix)
     return _eig_jax(matrix)
 
-def eigsh(matrix, method, backend="default", **kwargs):
+def eigsh(matrix, backend="default", **kwargs):
     """
     Diagonalizes a Hermitian matrix.
     This function computes the eigenvalues and eigenvectors of a Hermitian matrix.
     Parameters:
-        matrix (array-like): The Hermitian matrix to diagonalize.
-        backend (module or object, optional): An object providing array operations such as
+        matrix (array-like):
+            The Hermitian matrix to diagonalize.
+        backend (module or object, optional):
+            An object providing array operations such as
             asarrays
         and array transposition. This parameter should behave similarly to NumPy's API.
         The default value "default" should be replaced with an actual backend.
@@ -548,7 +550,7 @@ def eigsh(matrix, method, backend="default", **kwargs):
         tuple: A tuple containing the eigenvalues and eigenvectors of the input matrix.
     """
     backend = get_backend(backend)
-    
+    method  = kwargs.get("method", "lanczos")
     if method == "lanczos":
         k       = kwargs.get("k", 6)
         which   = kwargs.get("which", "SA")
