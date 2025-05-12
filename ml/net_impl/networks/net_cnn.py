@@ -79,9 +79,9 @@ class _FlaxCNN(nn.Module):
     param_dtype         : jnp.dtype                 = DEFAULT_JP_CPX_TYPE
     dtype               : jnp.dtype                 = DEFAULT_JP_CPX_TYPE
     input_channels      : int                       = 1
-    output_features     : int                       # Total number of output features (e.g., prod(output_shape))
-    final_activation    : Optional[Callable]        = None # Activation for the *output* layer
-    in_activation       : Optional[Callable]        = None # Activation for the *input* layer
+    output_features     : int                       = 1     # Total number of output features (e.g., prod(output_shape))
+    final_activation    : Optional[Callable]        = None  # Activation for the *output* layer
+    in_activation       : Optional[Callable]        = None  # Activation for the *input* layer
     
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:

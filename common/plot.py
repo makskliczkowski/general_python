@@ -1681,13 +1681,16 @@ class Plotter:
                         sizex  =   10.,
                         sizey  =   10.,
                         **kwargs):
+        figsize             = kwargs.get('figsize', (sizex, sizey))
+        kwargs['figsize']   = figsize
+        
         if ncols == 1 and nrows == 1:
-            fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
+            fig, ax = plt.subplots(nrows, ncols, **kwargs)
             return fig, [ax]
         elif (ncols == 1 and nrows > 1) or (nrows == 1 and ncols > 1):
-            return plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
+            return plt.subplots(nrows, ncols, **kwargs)
         else:
-            fig, ax = plt.subplots(nrows, ncols, figsize = (sizex, sizey), **kwargs)
+            fig, ax = plt.subplots(nrows, ncols, **kwargs)
             return fig, [axis for row in ax for axis in row]
         
     ######### S A V I N G #########
