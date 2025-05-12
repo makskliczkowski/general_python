@@ -34,14 +34,10 @@ Provides:
 
 # Import the required modules
 import os
-import sys
-import warnings
-import importlib
 import inspect
 import multiprocessing
 import logging
 from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List
-from tabulate import tabulate
 from general_python.common.flog import get_global_logger
 
 # ---------------------------------------------------------------------
@@ -80,6 +76,8 @@ DEFAULT_BACKEND_KEY     : Optional[str]     = None
 DEFAULT_NP_INT_TYPE     : Type              = np.int64
 DEFAULT_NP_FLOAT_TYPE   : Type              = np.float64
 DEFAULT_NP_CPX_TYPE     : Type              = np.complex128
+BACKEND_REPR            : float             = 0.5
+BACKEND_DEF_SPIN        : bool              = True
 
 DEFAULT_JP_INT_TYPE     : Optional[Type]    = None
 DEFAULT_JP_FLOAT_TYPE   : Optional[Type]    = None

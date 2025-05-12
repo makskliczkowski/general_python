@@ -22,15 +22,24 @@ You can choose the backend (np or jnp) by passing the corresponding module.
 """
 
 import time
-from typing import List, Optional, Union
 import numpy as np
 import numba
 
+from typing import List, Optional, Union
 from general_python.algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
-from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
+from general_python.algebra.utils import (
+    get_backend, maybe_jit, is_traced_jax,
+    DEFAULT_NP_INT_TYPE, JAX_AVAILABLE,
+    get_global_logger, BACKEND_REPR, BACKEND_DEF_SPIN
+)
 from general_python.common.tests import GeneralAlgebraicTest
-from general_python.common.embedded.binary_jax import *
 
+####################################################################################################
+if JAX_AVAILABLE:
+    import general_python.common.embedded.binary_jax as jaxpy
+else:
+    jaxpy = None
+    
 #! extraction
 import general_python.common.embedded.bit_extract as extract
 import general_python.common.embedded.binary_search as bin_search
@@ -38,6 +47,8 @@ import general_python.common.embedded.binary_search as bin_search
 ####################################################################################################
 #! Global functions
 ####################################################################################################
+
+
 
 def set_global_defaults(repr_value : float, spin : bool):
     """
@@ -159,7 +170,7 @@ def check(n, k : int):
         return check_int(n, k)
     
     if is_traced_jax(n):
-        return check_int_traced_jax(n, k)
+        return jaxpy.check_int_traced_jax(n, k)
     
     return n[k] > 0
 
@@ -216,7 +227,7 @@ def int2base(n          : int,
     val_false   = -spin_value if spin else 0
     if backend == np:
         return int2base_np(n, size, value_true = val_true, value_false = val_false)
-    return int2base_jax(n, size, value_true = val_true, value_false = val_false)
+    return jaxpy.int2base_jax(n, size, value_true = val_true, value_false = val_false)
 
 # --------------------------------------------------------------------------------------------------
 
@@ -316,7 +327,7 @@ def flip_all(n          : Array,
         else:
             return [0 if x == spin_value else spin_value for x in n]
     if spin:
-        return flip_all_array_spin(n)
+        return jaxpy.flip_all_array_spin(n)
     return flip_all_array_nspin(n, spin_value, backend)
 
 # --------------------------------------------------------------------------------------------------
@@ -458,11 +469,11 @@ def flip(n,
         return flip_array_np(n, k, spin, spin_value) if single_index else flip_array_np_multi(n, k, spin, spin_value)
     # handle the case when n is a traced JAX array
     elif is_traced_jax(n):
-        return flip_int_traced_jax(n, k) if single_index else flip_int_traced_jax_multi(n, k)
+        return jaxpy.flip_int_traced_jax(n, k) if single_index else jaxpy.flip_int_traced_jax_multi(n, k)
     # otherwise, n is a NumPy or JAX array
     if spin:
-        return flip_array_jax_spin_multi(n, k)
-    return flip_array_jax_nspin_multi(n, k)
+        return jaxpy.flip_array_jax_spin_multi(n, k)
+    return jaxpy.flip_array_jax_nspin_multi(n, k)
 
 # --------------------------------------------------------------------------------------------------
 #! Reverse the bits in a representation of a binary string
@@ -800,8 +811,8 @@ class BinaryFunctionTests(GeneralAlgebraicTest):
         test_number         = self.test_count
         self._log(f"Test {test_number}: Extract leftmost and rightmost 4 bits", test_number, color="blue")
         t0                  = time.time()
-        leftmost            = extract_ord_left(n, size, 4)
-        rightmost           = extract_ord_right(n, 4)
+        leftmost            = jaxpy.extract_ord_left(n, size, 4)
+        rightmost           = jaxpy.extract_ord_right(n, 4)
         t1                  = time.time()
         self._log(f"Input n         : {int2binstr(n, size)}", test_number)
         self._log(f"Leftmost 4 bits : {int2binstr(leftmost, 4)}", test_number)
@@ -815,7 +826,7 @@ class BinaryFunctionTests(GeneralAlgebraicTest):
         test_number     = self.test_count
         self._log(f"Test {test_number}: Prepare mask from positions", test_number, color="blue")
         t0              = time.time()
-        mask_prepared   = prepare_mask(positions, size=size)
+        mask_prepared   = jaxpy.prepare_mask(positions, size=size)
         t1              = time.time()
         self._log(f"Positions          : {positions}", test_number)
         self._log(f"Prepared Mask ({size} bits) : {int2binstr(mask_prepared, size)}", test_number)
@@ -828,7 +839,7 @@ class BinaryFunctionTests(GeneralAlgebraicTest):
         test_number     = self.test_count
         self._log(f"Test {test_number}: Prepare inverted mask from positions", test_number, color="blue")
         t0              = time.time()
-        mask_prepared_inv = prepare_mask(positions, inv=True, size=size)
+        mask_prepared_inv = jaxpy.prepare_mask(positions, inv=True, size=size)
         t1 = time.time()
         self._log(f"Positions             : {positions}", test_number)
         self._log(f"Inverted Mask ({size} bits): {int2binstr(mask_prepared_inv, size)}", test_number)

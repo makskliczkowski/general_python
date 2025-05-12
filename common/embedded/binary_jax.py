@@ -2,10 +2,7 @@
 
 import time
 from typing import List, Optional
-from general_python.algebra.utils import JAX_AVAILABLE, Array
-
-BACKEND_REPR       = 0.5
-BACKEND_DEF_SPIN   = True
+from general_python.algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
 
 if JAX_AVAILABLE:
     import jax.numpy as jnp

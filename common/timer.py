@@ -117,5 +117,37 @@ class Timer(ABC):
         value   = self._to_unit(ns)
         return f"{value:.6f} {unit}"
 
+################################################################################
+
+def timeit(fn, *args, **kwargs):
+    """
+    Measures the execution time of a function, optionally handling JAX DeviceArrays for accurate timing.
+    Args:
+        fn (callable):
+            The function to be timed.
+        *args:
+            Positional arguments to pass to the function.
+        **kwargs:
+            Keyword arguments to pass to the function.
+    Returns:
+        tuple: A tuple containing:
+            - res: The result returned by the function `fn`.
+            - float: The elapsed time in seconds.
+    Notes:
+        If the result is a JAX DeviceArray or a tuple containing DeviceArrays, 
+        the function waits for computation to finish using `block_until_ready()` 
+        to ensure accurate timing.
+    """
     
+    t0      = time.time()
+    res     = fn(*args, **kwargs)
+    # If JAX DeviceArray or tuple thereof, block until ready for accurate timing
+    if hasattr(res, "block_until_ready"):
+        res.block_until_ready()
+    elif isinstance(res, tuple):
+        for x in res:
+            if hasattr(x, "block_until_ready"):
+                x.block_until_ready()
+    return res, time.time() - t0
+
 ################################################################################
