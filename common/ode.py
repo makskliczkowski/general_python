@@ -7,6 +7,7 @@ file    : general_python/common/ode.py
 import numpy as np
 import numba as nb
 import warnings
+import inspect
 from abc import ABC, abstractmethod
 from general_python.algebra.utils import get_backend, JAX_AVAILABLE
 from scipy.integrate import solve_ivp
@@ -43,7 +44,7 @@ class IVP(ABC):
         Array module (numpy or jax.numpy) selected by backend.
     """
     
-    def __init__(self, backend: str = 'numpy'):
+    def __init__(self, backend: str = 'numpy', rhs_prefactor: float = 1.0, dt: float = 1e-3):
         """
         Initialize the ODE solver with a specified backend.
 
@@ -51,14 +52,85 @@ class IVP(ABC):
         ----------
         backend : str
             Backend to use for numerical operations ('numpy' or 'jax').
+        rhs_prefactor : float
+            Prefactor for the right-hand side of the ODE.
         """
-        self.backend    = backend
-        self.xp         = get_backend(backend)
+        self.backend        = backend
+        self.xp             = get_backend(backend)
         if self.xp is None:
             raise ValueError(f"Backend '{backend}' is not supported. Choose 'numpy' or 'jax'.")
-        self._isjax     = not (self.xp is np)
-        self._isnpy     = not self._isjax
-        self._dt        = None
+        self._isjax         = not (self.xp is np)
+        self._isnpy         = not self._isjax
+        self._dt            = dt
+        self._rhs_prefactor = rhs_prefactor
+    
+    def _call_rhs(self, f, t: float, y, int_step: int = 0, **rhs_args):
+        """
+        Call the user-provided RHS function `f`, handling different signatures.
+
+        f may accept:
+            - positional or keyword args for state (y or y0), time t, int_step
+            - additional rhs_args
+        It may return:
+            - (dy, info, other)
+            - dy only (scalar or array)
+        """
+        if self._isjax:
+            #! assume f is a jax function with signature f(t, ...)
+            out = f(y, t, **rhs_args, int_step=int_step)
+        else:
+            sig     = inspect.signature(f)
+            kwargs  = {}
+            # bind state
+            if 'y' in sig.parameters:
+                kwargs['y']     = y
+            elif 'y0' in sig.parameters:
+                kwargs['y0']    = y
+            else:
+                pass
+            
+            #! bind time
+            if 't' in sig.parameters:
+                kwargs['t']         = t
+            #! bind int_step
+            if 'int_step' in sig.parameters:
+                kwargs['int_step']  = int_step
+            #! bind additional args
+            for name, val in rhs_args.items():
+                if name in sig.parameters:
+                    kwargs[name] = val
+            out = f(**kwargs)
+            
+        #! normalize outputs
+        if isinstance(out, tuple):
+            if len(out) == 3:
+                return out # (dy, info, other)
+            elif len(out) == 2:
+                dy, info = out
+                return dy, info, None
+            else:
+                dy = out[0]
+                return dy, None, None
+        else:
+            return out, None, None
+    
+    # -------------------------------------------------------
+    
+    def dt(self, h: float, i: int) -> float:
+        return self._dt
+    
+    def set_dt(self, dt: float):
+        """
+        Set the time step for the integration.
+
+        Parameters
+        ----------
+        dt : float
+            The new time step to set.
+        """
+        self._dt = dt
+    
+    # -------------------------------------------------------
     
     @abstractmethod
     def step(self, f, t: float, y, **rhs_args):
@@ -68,9 +140,6 @@ class IVP(ABC):
         '''
         raise NotImplementedError
 
-    def dt(self, h: float, i: int) -> float:
-        return self._dt
-    
     def update(self, y, h: float, f, t: float, **rhs_args):
         # Default: call step then return state
         yout, _ = self.step(f, t, y, **rhs_args)
@@ -166,7 +235,7 @@ class Euler(IVP):
         'numpy' or 'jax'
     """
     
-    def __init__(self, dt: float = 1e-3, backend: str = 'numpy'):
+    def __init__(self, dt: float = 1e-3, backend: str = 'numpy', rhs_prefactor: float = 1.0):
         """
         Initializes the object with a specified time step and computational backend.
 
@@ -175,9 +244,10 @@ class Euler(IVP):
                 The time step to use for the ODE solver. Defaults to 1e-3.
             backend (str, optional):
                 The computational backend to use (e.g., 'numpy'). Defaults to 'numpy'.
+            rhs_prefactor (float, optional):
+                A prefactor to multiply with the right-hand side of the ODE. Defaults to 1.0.
         """
-        super().__init__(backend)
-        self._dt = dt # does not need to be float, but should be a scalar
+        super().__init__(backend, rhs_prefactor=rhs_prefactor, dt=dt)
 
     def step(self, f, t: float, y, **rhs_args):
         """
@@ -191,32 +261,16 @@ class Euler(IVP):
             The step size used.
         """
         #! Evaluate derivative through function
-        dy      = f(y, t, **rhs_args, intStep=0)
-        yout    = y + self._dt * dy
-        return yout, self._dt
-
-    def dt(self, h: float = None, i: int = None) -> float:
-        """
-        Return the fixed time-step size.
-        Parameters
-        ----------
-        h : float, optional
-            Not used in this implementation.
-        i : int, optional
-            Not used in this implementation.
-        Returns
-        -------
-        float
-            The fixed time-step size.
-        """
-        return self._dt
+        dy, step_info, other    = self._call_rhs(f, t, y, int_step=0, **rhs_args)
+        yout                    = y + (self._dt * self._rhs_prefactor) * dy
+        return yout, self._dt, (step_info, other)
 
     def __repr__(self):
         """
         Return a string representation of the Euler object.
         """
-        return f"Euler(dt={self._dt}, backend={self.backend})"
-    
+        return f"Euler(dt={self._dt}, backend={self.backend}, rhs_p={self._rhs_prefactor})"
+
 ########################################################################
 #! Heun integration
 ########################################################################
@@ -233,9 +287,8 @@ class Heun(IVP):
         'numpy' or 'jax'
     """
     
-    def __init__(self, dt: float = 1e-3, backend: str = 'numpy'):
-        super().__init__(backend)
-        self._dt = dt
+    def __init__(self, dt: float = 1e-3, backend: str = 'numpy', rhs_prefactor: float = 1.0):
+        super().__init__(backend, dt=dt, rhs_prefactor=rhs_prefactor)
 
     def step(self, f, t: float, y, **rhs_args):
         """
@@ -263,23 +316,24 @@ class Heun(IVP):
         -------
             yout and dt.
         """
-        dt      = self._dt
+        dt                      = self._dt
+        multiplier              = self._rhs_prefactor * dt
         # Predictor slope
-        k0      = f(y, t, **rhs_args, intStep=0)
+        k0, step_info, other    = self._call_rhs(f, t, y, int_step=0, **rhs_args)
         # Predictor step
-        y_pred  = y + dt * k0
+        y_pred                  = y + multiplier * k0
         # Corrector slope
-        k1      = f(y_pred, t + dt, **rhs_args, intStep=1)
+        k1, step_info, other    = self._call_rhs(f, t + dt, y_pred, int_step=1, **rhs_args)
         # Combine as average
-        yout    = y + 0.5 * dt * (k0 + k1)
-        return yout, dt
+        yout                    = y + 0.5 * multiplier * (k0 + k1)
+        return yout, dt, (step_info, other)
 
     def __repr__(self):
         """
         Return a string representation of the Heun object.
         """
-        return f"Heun(dt={self._dt}, backend={self.backend})"
-    
+        return f"Heun(dt={self._dt}, backend={self.backend}, rhs_p={self._rhs_prefactor})"
+
 ########################################################################
 #! Adaptive Heun integration
 ########################################################################
@@ -300,12 +354,12 @@ class AdaptiveHeun(IVP):
         'numpy' or 'jax'
     """
     def __init__(self,
-                dt   : float = 1e-3,
-                tol         : float = 1e-8,
-                max_step    : float = 1.0,
-                backend     : str   = 'numpy'):
-        super().__init__(backend)
-        self._dt        = dt
+                dt              : float = 1e-3,
+                tol             : float = 1e-8,
+                max_step        : float = 1.0,
+                backend         : str   = 'numpy',
+                rhs_prefactor   : float = 1.0):
+        super().__init__(backend, dt=dt, rhs_prefactor=rhs_prefactor)
         self.tolerance  = tol
         self.max_step   = max_step
 
@@ -316,23 +370,24 @@ class AdaptiveHeun(IVP):
         dt  = self._dt
         y0  = y
         fe  = 0.0
+        mult= self._rhs_prefactor * dt
         
         #! Adapt until accepted
         while fe < 1.0:
             # Full step - 1st order (just the simple Heun step)
-            k0      = f(y0, t, **rhs_args, intStep=0)
-            y_full  = y0 + dt * k0
-            k1      = f(y_full, t + dt, **rhs_args, intStep=1)
-            dy_full = 0.5 * dt * (k0 + k1)
+            k0, step_info, other = f(y0=y0, t=t, **rhs_args, int_step=0)
+            y_full = y0 + dt * k0
+            k1, step_info, other = f(y0=y_full, t=t + dt, **rhs_args, int_step=1)
+            dy_full = 0.5 * mult * (k0 + k1)
 
             # Two half steps - 2nd order (search for a better step)
             k0h     = k0
-            y_half  = y0 + 0.5 * dt * k0h
-            k1h     = f(y_half, t + 0.5 * dt, **rhs_args, intStep=2)
-            dy_half = 0.5 * dt * k1h
-            y_half2 = y_half + 0.5 * dt * k1h
-            k2h     = f(y_half2, t + dt, **rhs_args, intStep=3)
-            dy_half = 0.25 * dt * (k0h + k2h)
+            y_half  = y0 + 0.5 * mult * k0h
+            k1h, step_info, other = f(y0=y_half, t=t + 0.5 * dt, **rhs_args, int_step=2)
+            dy_half = 0.5 * mult * k1h
+            y_half2 = y_half + 0.5 * mult * k1h
+            k2h, step_info, other = f(y0=y_half2, t=t + dt, **rhs_args, int_step=3)
+            dy_half = 0.25 * mult * (k0h + k2h)
 
             #! Error estimate
             err     = norm_fun(dy_half - dy_full)       # absolute error
@@ -347,8 +402,8 @@ class AdaptiveHeun(IVP):
         # Accept step
         self._dt    = dt
         yout        = y0 + dy_half
-        return yout, dt
-    
+        return yout, dt, (step_info, other)
+
     def __repr__(self):
         """
         Return a string representation of the AdaptiveHeun object.
@@ -459,13 +514,13 @@ class RK(IVP):
             yi = y
             for j in range(i):
                 yi = yi + h * self.a[i, j] * k[j]
-            k[i] = f(yi, ti, **rhs_args, intStep=i)
-        
+            k[i], step_info, other = f(yi, ti, **rhs_args, int_step=i)
+
         #! Combine
         yout = y
         for i in range(self.stages):
             yout = yout + h * self.b[i] * k[i]
-        return yout, h
+        return yout, h, (step_info, other)
 
     def __repr__(self):
         """
@@ -525,7 +580,7 @@ class ScipyRK(IVP):
             Actual time step taken.
         """
         def _ode_system(t_i, y_i):
-            return f(y_i, t_i, **rhs_args)
+            return f(y_i, t_i, **rhs_args)[0]
 
         t_span = (t, t + self._dt)
         sol = solve_ivp(
@@ -543,7 +598,7 @@ class ScipyRK(IVP):
         yout        = sol.y[:, -1]
         dt_actual   = sol.t[-1] - t
         self._dt    = dt_actual
-        return yout, dt_actual
+        return yout, dt_actual, (None, None)
     
     def __repr__(self):
         """
