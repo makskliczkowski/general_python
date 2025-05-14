@@ -105,7 +105,7 @@ try:
     try:
         logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
         logging.getLogger('jax').setLevel(logging.WARNING)
-        jax.config.update('jax_log_compiles', True)
+        # jax.config.update('jax_log_compiles', True)
     except Exception as e:
         log.debug(f"Could not configure JAX logger levels: {e}")
     

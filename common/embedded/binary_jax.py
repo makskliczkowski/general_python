@@ -122,8 +122,7 @@ if JAX_AVAILABLE:
         Returns:
             array-like      : The flipped state.
         """
-        n = n.at[k].set(-n[k])
-        return n
+        return n.at[k].set(-n[k])
 
     @jax.jit
     def flip_array_jax_nspin(n : Array, k : int):

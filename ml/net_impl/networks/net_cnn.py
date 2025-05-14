@@ -18,7 +18,8 @@ import math
 try:
     from general_python.ml.net_impl.interface_net_flax import FlaxInterface
     from general_python.ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    from general_python.ml.net_impl.activation_functions import get_activation_jnp
+    from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
     print(f"Error importing QES base modules: {e}")
     class FlaxInterface:
@@ -70,19 +71,50 @@ class _FlaxCNN(nn.Module):
         final_activation (Optional[Callable]):
             Activation function applied after the final Dense layer. Default is None (linear).
     """
-    reshape_dims        : Tuple[int, ...]           # e.g., (Lx, Ly)
-    features            : Sequence[int]             # e.g., (16, 32)
-    kernel_sizes        : Sequence[Tuple[int,...]]  # e.g., ((3,3), (3,3))
-    strides             : Sequence[Tuple[int,...]]  # e.g., ((1,1), (1,1))
-    activation_fns      : Sequence[Callable]        # e.g., (nn.relu, nn.relu)
-    use_bias            : Sequence[bool]            # e.g., (True, True)
-    param_dtype         : jnp.dtype                 = DEFAULT_JP_CPX_TYPE
-    dtype               : jnp.dtype                 = DEFAULT_JP_CPX_TYPE
-    input_channels      : int                       = 1
-    output_features     : int                       = 1     # Total number of output features (e.g., prod(output_shape))
-    final_activation    : Optional[Callable]        = None  # Activation for the *output* layer
-    in_activation       : Optional[Callable]        = None  # Activation for the *input* layer
+    reshape_dims   : Tuple[int, ...]            # e.g. (8, 8)
+    features       : Sequence[int]              # conv channels, e.g. (16, 32)
+    kernel_sizes   : Sequence[Tuple[int, ...]]  # e.g. ((3, 3), (3, 3))
+    strides        : Sequence[Tuple[int, ...]]  # e.g. ((1, 1), (1, 1))
+    activations    : Sequence[Callable]         # already resolved callables
+    use_bias       : Sequence[bool]
+    output_feats   : int                        # prod(output_shape)
+    in_act         : Optional[Callable] = None
+    out_act        : Optional[Callable] = None
+    param_dtype    : jnp.dtype          = DEFAULT_JP_CPX_TYPE
+    dtype          : jnp.dtype          = DEFAULT_JP_CPX_TYPE
+    input_channels : int                = 1
     
+    def setup(self):
+        is_cplx     = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
+        k_init      = (lambda: cplx_variance_scaling(1., 'fan_in', 'normal', self.param_dtype) if is_cplx else lambda: nn.initializers.lecun_normal(self.param_dtype))
+
+        self.convs = [
+            nn.Conv(
+                features    = f,
+                kernel_size = ks,
+                strides     = st,
+                padding     = 'SAME',
+                use_bias    = ub,
+                param_dtype = self.param_dtype,
+                dtype       = self.dtype,
+                kernel_init = k_init(),
+                bias_init   = nn.initializers.zeros,
+                name        = f"conv_{i}"
+            )
+            for i, (f, ks, st, ub) in enumerate(zip(self.features, self.kernel_sizes, self.strides, self.use_bias))
+        ]
+
+        #! Last layer is a Dense layer
+        self.dense = nn.Dense(
+            self.output_feats,
+            use_bias    = True,
+            param_dtype = self.param_dtype,
+            dtype       = self.dtype,
+            kernel_init = k_init(),
+            bias_init   = nn.initializers.zeros,
+            name        = "dense_out"
+        )
+
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         r"""
@@ -125,80 +157,28 @@ class _FlaxCNN(nn.Module):
             jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,).
         """
         
-        #! 1. Input Reshaping and Validation
-        n_visible_expected = math.prod(self.reshape_dims)
-        if s.shape[-1] != n_visible_expected:
-            raise ValueError(f"Input's last dimension ({s.shape[-1]}) does not match "
-                            f"the expected number of visible units ({n_visible_expected}) "
-                            f"from reshape_dims {self.reshape_dims}.")
-
-        # Reshape: (batch, n_visible) -> (batch, Lx, Ly, ..., input_channels)
-        target_shape    = (-1,) + self.reshape_dims + (self.input_channels,)
-        x               = s.reshape(target_shape).astype(self.dtype)
-
-        #! Optional Input Activation
-        if self.in_activation is not None:
-            x = self.in_activation(x)
-
-        #! 2. Convolutional Layers
-        num_layers      = len(self.features)
-        complex_dtype   = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-
-        for i in range(num_layers):
-            # Determine Initializer based on parameter dtype
-            if complex_dtype:
-                kernel_init_fn = cplx_variance_scaling(1.0, 'fan_in', 'normal', dtype=self.param_dtype)
-            else:
-                kernel_init_fn = lecun_normal(dtype=self.param_dtype) # Good default for ReLU-like
-            bias_init_fn = jax.nn.initializers.zeros
-
-            # Define Convolution Layer for this step
-            conv_layer = nn.Conv(
-                features    =   self.features[i],
-                kernel_size =   self.kernel_sizes[i],
-                strides     =   self.strides[i],
-                use_bias    =   self.use_bias[i],
-                padding     =   'SAME',             # Keeps spatial dimensions the same (for stride 1)
-                dtype       =   self.dtype,         # Computation dtype
-                param_dtype =   self.param_dtype,   # Parameter dtype
-                kernel_init =   kernel_init_fn,
-                bias_init   =   bias_init_fn,
-                name        =   f"conv_layer_{i}"
-            )
-
-            # Apply Convolution and Activation
-            x = conv_layer(x)
-            x = self.activation_fns[i](x)
-
-        #! 3. Flatten the output of the convolutional part
+        if s.ndim == 1:                     # shape (n_visible,)
+            s = s[jnp.newaxis, ...]         # → (1, n_visible)
         
-        # Shape becomes (batch, flattened_features)
-        x = x.reshape((x.shape[0], -1))
+        # reshape to (B, *spatial, C)
+        s = s.reshape((s.shape[0],) + self.reshape_dims + (self.input_channels,))
+        if self.in_act is not None:
+            activation = self.in_act[0]
+            s = activation(s)
 
-        #! 4. Final Dense Layer to achieve desired output features
-        if complex_dtype:
-            dense_kernel_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', dtype=self.param_dtype)
-        else:
-            dense_kernel_init = lecun_normal(dtype=self.param_dtype)
-        dense_bias_init = jax.nn.initializers.zeros
+        x = s.astype(self.dtype)
+        for conv, act in zip(self.convs, self.activations):
+            activation = act[0]
+            x = activation(conv(x))
 
-        output_layer = nn.Dense(
-            features        =   self.output_features,
-            name            =   "output_dense",
-            use_bias        =   True, # Usually use bias in the final dense layer
-            kernel_init     =   dense_kernel_init,
-            bias_init       =   dense_bias_init,
-            dtype           =   self.dtype,
-            param_dtype     =   self.param_dtype
-        )
-        output = output_layer(x)                    # Shape: (batch, output_features)
+        x = x.reshape((x.shape[0], -1))      # flatten
+        x = self.dense(x)
 
-        #! 5. Apply final activation if specified
-        if self.final_activation is not None:
-            output = self.final_activation(output)
+        if self.out_act is not None:
+            activation = self.out_act[0]
+            x = activation(x)
 
-        # Return the final output, shape (batch, output_features)
-        return output.reshape(-1) # Flatten to (batch, output_features)
+        return x.reshape(-1)
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -259,111 +239,84 @@ class CNN(FlaxInterface):
         if not JAX_AVAILABLE:
             raise ImportError("CNN requires JAX.")
 
-        #! Validate Input Shape and Reshape Dimensions
         if len(input_shape) != 1:
-            raise ValueError(f"input_shape must be 1D (e.g., (n_visible,)), got {input_shape}")
-        
+            raise ValueError("input_shape must be 1-D, e.g. (n_visible,)")
+
         n_visible   = input_shape[0]
-        # Dimensionality of the reshaped input/convolution
-        n_dim       = len(reshape_dims) if kwargs.get('n_dim', None) is None else kwargs['n_dim']
-        # Allow 1D, 2D, 3D convolutions primarily
-        if n_dim not in [1, 2, 3]:
-            raise ValueError(f"reshape_dims implies {n_dim}D structure. Common CNNs are 1D, 2D, 3D.")
-        reshape_dims= reshape_dims[:n_dim] # Ensure we only use the first n_dim dimensions
-        
+        n_dim       = len(reshape_dims)
+        if n_dim not in (1, 2, 3):
+            raise ValueError("Only 1-, 2- or 3-D convolutions are supported.")
+
         if math.prod(reshape_dims) != n_visible:
-            raise ValueError(f"Product of reshape_dims {reshape_dims} ({math.prod(reshape_dims)}) "
-                            f"must equal input_shape[0] ({n_visible}).")
+            raise ValueError(f"reshape_dims {reshape_dims} product != input length {n_visible}")
 
-        #! Resolve Dtypes
-        final_dtype             = self._resolve_dtype(dtype)
-        final_param_dtype       = self._resolve_dtype(param_dtype) if param_dtype is not None else final_dtype
-        self._is_cpx            = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
+        #! convert kernel/stride specs
+        def _as_tuple(v, name):
+            out = []
+            for item in v:
+                if isinstance(item, int):
+                    out.append((item,) * n_dim)
+                elif isinstance(item, tuple) and len(item) == n_dim:
+                    out.append(item)
+                else:
+                    raise ValueError(f"{name} {item} must be int or tuple of length {n_dim}")
+            return tuple(out)
 
-        #! Process Layer Arguments (Convolutional Layers)
-        num_layers              = len(features)
+        if len(kernel_sizes) != len(features):
+            raise ValueError("kernel_sizes and features lengths must match")
+        kernels = _as_tuple(kernel_sizes, "kernel_size")
 
-        processed_kernels       = []
-        if len(kernel_sizes) != num_layers:
-            raise ValueError(f"Length of kernel_sizes ({len(kernel_sizes)}) != features ({num_layers}).")
-        
-        # Process kernel sizes
-        for k in kernel_sizes:
-            if isinstance(k, int):
-                # if is int, convert to tuple of length n_dim
-                processed_kernels.append(tuple([k] * n_dim))
-            elif isinstance(k, tuple) and len(k) == n_dim:
-                processed_kernels.append(k)
-            else:
-                raise ValueError(f"Kernel size {k} must be int or tuple of length {n_dim}.")
-
-        processed_strides = []
         if strides is None:
-            # Default to 1 for all layers
-            strides = [1] * num_layers
-            
-        if len(strides) != num_layers:
-            raise ValueError(f"Length of strides ({len(strides)}) != features ({num_layers}).")
-        for s in strides:
-            if isinstance(s, int):
-                processed_strides.append(tuple([s] * n_dim))
-            elif isinstance(s, tuple) and len(s) == n_dim:
-                processed_strides.append(s)
-            else:
-                raise ValueError(f"Stride {s} must be int or tuple of length {n_dim}.")
+            strides = (1,) * len(features)
+        if len(strides) != len(features):
+            raise ValueError("strides and features lengths must match")
+        strides_t = _as_tuple(strides, "stride")
 
-        if isinstance(activations, (str, Callable.__class__)):
-            # If a single activation function is provided, use it for all layers
-            processed_activations = [activations] * num_layers
-        elif isinstance(activations, Sequence) and len(activations) == num_layers:
-            processed_activations = activations
+        # ---------------- activation spec ▸ callable tuple -------------------
+        if isinstance(activations, (str, Callable)):
+            acts = (get_activation_jnp(activations),) * len(features)
+        elif isinstance(activations, Sequence) and len(activations) == len(features):
+            acts = tuple(get_activation_jnp(a) for a in activations)
         else:
-            raise ValueError(f"activations must be single spec or sequence of length {num_layers}.")
-        #! Activation functions themselves are initialized by FlaxInterface
+            raise ValueError("activations spec must be single item or sequence = features")
 
+        #! bias flags
         if isinstance(use_bias, bool):
-            processed_bias = [use_bias] * num_layers
-        elif isinstance(use_bias, Sequence) and len(use_bias) == num_layers:
-            processed_bias = list(use_bias)
+            bias_flags = (use_bias,) * len(features)
+        elif isinstance(use_bias, Sequence) and len(use_bias) == len(features):
+            bias_flags = tuple(bool(b) for b in use_bias)
         else:
-            raise ValueError(f"use_bias must be bool or sequence of length {num_layers}.")
+            raise ValueError("use_bias must be bool or sequence = features")
 
-        #! Process Output Layer Arguments
-        # Total number of features in the desired output shape, reshaping may happen somewhere else
-        output_features         = math.prod(output_shape) 
-        # Final activation spec is passed directly; FlaxInterface handles it via net_kwargs
-        final_activation_spec   = final_activation
+        #! dtype handling
+        p_dtype = param_dtype if param_dtype is not None else dtype
 
-        #! Prepare kwargs for _FlaxCNN
-        net_kwargs = {
-            'reshape_dims'      : tuple(reshape_dims),
-            'features'          : tuple(features),
-            'kernel_sizes'      : tuple(processed_kernels),
-            'strides'           : tuple(processed_strides),
-            'activation_fns'    : tuple(processed_activations), # Pass specs
-            'use_bias'          : tuple(processed_bias),
-            'param_dtype'       : final_param_dtype,
-            'dtype'             : final_dtype,
-            'input_channels'    : 1,
-            'output_features'   : output_features,              # Pass total output features
-            'final_activation'  : final_activation_spec,        # Pass final activation spec
-            'in_activation'     : in_activation,                # Pass input activation spec
-            **kwargs
-        }
+        #! build kwargs for CNN
+        net_kwargs = dict(
+            reshape_dims    =   reshape_dims,
+            features        =   tuple(features),
+            kernel_sizes    =   kernels,
+            strides         =   strides_t,
+            activations     =   acts,
+            use_bias        =   bias_flags,
+            output_feats    =   math.prod(output_shape),
+            in_act          =   get_activation_jnp(in_activation) if in_activation else None,
+            out_act         =   get_activation_jnp(final_activation) if final_activation else None,
+            dtype           =   dtype,
+            param_dtype     =   p_dtype,
+            input_channels  =   1,
+        )
 
-        # Store the desired final output shape for potential use outside
-        self._output_shape = output_shape
+        self._out_shape = output_shape  # store for __call__
 
-        #! Initialize using FlaxInterface parent class
         super().__init__(
-            net_module      = _FlaxCNN,
-            net_args        = (),
-            net_kwargs      = net_kwargs,
-            input_shape     = input_shape,
-            in_activation   = in_activation,
-            backend         = 'jax',
-            dtype           = final_dtype,
-            seed            = seed
+            net_module  =   _FlaxCNN,
+            net_args    =   (),
+            net_kwargs  =   net_kwargs,
+            input_shape =   input_shape,
+            backend     =   "jax",
+            dtype       =   dtype,
+            seed        =   seed,
         )
 
         self._has_analytic_grad = False
@@ -375,7 +328,7 @@ class CNN(FlaxInterface):
         return self._output_shape
 
     #! Callable interface
-    def __call__(self, s: 'array-like'):
+    def __call__(self, s: Array):
         """
         Call the network on input x.
         Output shape will be (batch_size, *output_shape).
@@ -400,25 +353,15 @@ class CNN(FlaxInterface):
         kernel sizes, output shape, data types, number of parameters,
         and initialization status.
         """
-        init_status = "initialized" if self.initialized else "uninitialized"
-        cnn_type    = "Complex" if self._is_cpx else "Real"
-        if self.initialized:
-            features    = self._flax_module.features
-            kernels     = self._flax_module.kernel_sizes
-            reshape     = self._flax_module.reshape_dims
-            n_params    = self.nparams
-            dtype       = self.dtype
-            out_shape   = self.output_shape
-        else: # Fallback to kwargs before initialization
-            features    = self._net_kwargs.get('features', '?')
-            kernels     = self._net_kwargs.get('kernel_sizes', '?')
-            reshape     = self._net_kwargs.get('reshape_dims', '?')
-            n_params    = '?'
-            dtype       = self._net_kwargs.get('dtype', '?')
-            out_shape   = self._output_shape
-
-        return (f"{cnn_type}CNN(reshape={reshape}, features={features}, kernels={kernels}, "
-                f"output_shape={out_shape}, dtype={dtype}, params={n_params}, {init_status})")
+        kind = "Complex" if self._iscpx else "Real"
+        return (
+            f"{kind}CNN(reshape={self._flax_module.reshape_dims}, "
+            f"features={self._flax_module.features}, "
+            f"kernels={self._flax_module.kernel_sizes}, "
+            f"output_shape={self._out_shape}, dtype={self.dtype}, "
+            f"params={self.nparams}, "
+            f'{"initialized" if self.initialized else "uninitialized"})'
+        )
         
 ##########################################################
 #! End of CNN File

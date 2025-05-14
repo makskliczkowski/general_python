@@ -67,6 +67,25 @@ class _FlaxRBM(nn.Module):
     dtype           : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
     islog           : bool                  = True                  # Logarithmic form of the wavefunction
     
+    def setup(self):
+        # Setup Dense layer
+        is_complex = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
+
+        self.dense = nn.Dense(
+            features    =   self.n_hidden,
+            use_bias    =   self.bias,
+            kernel_init =   cplx_variance_scaling(1.0, "fan_in", "normal", self.param_dtype) if is_complex else nn.initializers.lecun_normal(),
+            bias_init   =   nn.initializers.zeros,
+            dtype       =   self.dtype,
+            param_dtype =   self.param_dtype,
+            name        =   "VisibleToHidden"
+        )
+
+        if self.visible_bias:
+            self.visible_bias_param = self.param(
+                "visible_bias", nn.initializers.zeros, (self.n_hidden,), self.param_dtype
+            )
+    
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         r"""
@@ -89,65 +108,26 @@ class _FlaxRBM(nn.Module):
         Returns:
             jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,).
         """
-        # if not _JAX_AVAILABLE:
-            # raise ImportError("Flax module requires JAX.")
+        # Ensure shape: (batch, n_visible)
+        if s.ndim == 1:
+            s = s[jnp.newaxis, :]
+        elif s.ndim > 2:
+            s = s.reshape(s.shape[0], -1)
 
-        # Check if the input is complex
-        complex_dtype       = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-        
-        # Apply input activation (e.g., map {0,1} to {-1,1})
-        visible_state       = s.astype(self.dtype)
+        v = s.astype(self.dtype)
         if self.input_activation is not None:
-            visible_state   = self.input_activation(visible_state)
+            v = self.input_activation(v)
 
-        # Flatten input if necessary (RBM Dense layer expects rank 2: [batch, features])
-        if visible_state.ndim > 2:
-            visible_state   = visible_state.reshape(visible_state.shape[0], -1)
+        theta = self.dense(v)
+        log_psi = jnp.sum(log_cosh_jnp(theta), axis=-1)
 
-        #! Define Initializer based on parameter dtype
-        if complex_dtype:
-            kernel_init_fn  = cplx_variance_scaling(1.0, 'fan_in', 'normal', dtype=self.param_dtype)
-            bias_init_fn    = jax.nn.initializers.zeros
-        else:
-            kernel_init_fn  = lecun_normal(dtype=self.param_dtype)
-            bias_init_fn    = jax.nn.initializers.zeros
-        
-        #! Visible bias term
-        n_visible           = visible_state.shape[-1]
         if self.visible_bias:
-            visible_bias    = self.param("visible_bias", bias_init_fn,
-                                (n_visible,), self.param_dtype)
-        else:
-            visible_bias    = None
+            # Infer shape from input, don't store it
+            bias = self.variables["params"]["visible_bias"]
+            log_psi += jnp.sum(v * bias, axis=-1)
 
-        # Define the Dense layer (Visible to Hidden weights W and hidden bias b_h)
-        # Input features    = number of visible units (s.shape[-1])
-        # Output features   = number of hidden units
-        dense_layer = nn.Dense(
-            features    = self.n_hidden,
-            name        = "VisibleToHidden",                # Name of the layer
-            use_bias    = self.bias,                        # Include bias if True
-            kernel_init = kernel_init_fn,                   # Weight initialization
-            bias_init   = bias_init_fn,                     # Bias initialization
-            dtype       = self.dtype,                       # Computation dtype
-            param_dtype = self.param_dtype                  # Parameter dtype
-        )
+        return log_psi if self.islog else jnp.exp(log_psi)
 
-        # Calculate hidden layer activations (theta_j = W_j * v + b_j)
-        theta           = dense_layer(visible_state)        # Shape (batch, n_hidden)
-
-        # Apply log(cosh) activation to hidden activations
-        log_cosh_theta  = log_cosh_jnp(theta)               # Shape (batch, n_hidden)
-        
-        # Sum over hidden units to get log(psi) for each batch element
-        log_psi         = jnp.sum(log_cosh_theta, axis=-1)  # Shape (batch,)
-        if self.visible_bias:
-            log_psi     += jnp.sum(visible_state * visible_bias, axis=-1)
-            
-        # Add visible bias if needed (not included in this implementation)
-        if self.islog:
-            return log_psi.reshape(-1)
-        return jnp.exp(log_psi).reshape(-1)                 # Ensure output is 1D (batch,)
 
 ##########################################################
 #! RBM WRAPPER CLASSES USING FlaxInterface
@@ -197,8 +177,8 @@ class RBM(FlaxInterface):
         self._is_cpx            = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
 
         # Basic type compatibility check
-        is_final_cpx = jnp.issubdtype(final_dtype, jnp.complexfloating)
-        self._is_cpx = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
+        is_final_cpx            = jnp.issubdtype(final_dtype, jnp.complexfloating)
+        self._is_cpx            = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
         if is_final_cpx != self._is_cpx:
             self.log(f"Warning: RBM dtype ({final_dtype}) and param_dtype ({final_param_dtype}) differ in complexity. "
                     "Ensure this is intended.", log='warning', lvl=1, color='yellow')
@@ -230,7 +210,7 @@ class RBM(FlaxInterface):
         )
 
         #! For the analytic gradient, we need to compile the function
-        self._compiled_grad_fn  = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
+        self._compiled_grad_fn = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
         # self._has_analytic_grad = True
 
     # ------------------------------------------------------------
@@ -333,6 +313,12 @@ class RBM(FlaxInterface):
         n_hidden    = self._flax_module.n_hidden if self.initialized else self._net_kwargs.get('n_hidden', '?')
         bias        = "on" if (self._flax_module.bias if self.initialized else self._net_kwargs.get('bias', '?')) else "off"
         vis_bias    = "on" if (self._flax_module.visible_bias if self.initialized else self._net_kwargs.get('visible_bias', '?')) else "off"
-        n_params = self.nparams if self.initialized else '?'
+        n_params    = self.nparams if self.initialized else '?'
         return (f"{rbm_type}RBM(shape={self.input_shape}, hidden={n_hidden}, "
             f"bias={bias}, visible_bias={vis_bias}, dtype={self.dtype}, params={n_params}, analytic_grad={self._has_analytic_grad}, {init_status})")
+        
+    # ------------------------------------------------------------
+    
+# ----------------------------------------------------------------
+#! End of RBM Class
+# ----------------------------------------------------------------

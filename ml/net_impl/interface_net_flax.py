@@ -207,11 +207,12 @@ class FlaxInterface(GeneralNet):
         if not self._initialized or self._apply_jax_handle is None:
             raise RuntimeError(self._ERR_NET_NOT_INITIALIZED + " Cannot compile functions.")
         
-        apply_handle = self._apply_jax_handle
-        @jax.jit
+        # Avoid closure over apply_handle
         def compiled_apply(p, x):
-            return apply_handle({'params': p}, x)
-        self._compiled_apply_fn = compiled_apply
+            return self._apply_jax_handle({'params': p}, x)
+
+        # Compile once
+        self._compiled_apply_fn = jax.jit(compiled_apply)
     
     def _initialize_activations(self, act_fun_specs: Any) -> Tuple[Callable, ...]:
         """
@@ -267,6 +268,18 @@ class FlaxInterface(GeneralNet):
             net_kwargs['act_fun']       = self._initialized_act_funs
         else:
             self._initialized_act_funs  = () # No activations specified
+    
+    def force_init(self):
+        """
+        Force initialization of the network parameters.
+        This method is used to ensure that the network is initialized
+        even if it was not explicitly called.
+        """
+        self._initialized = False
+        self.init()
+        self._initialized = True
+        self.log(f"Network {self.__class__} initialized with forced init.",
+                log = 'info', lvl = 1, color = self._dcol)
     
     def init(self, key: Optional[jax.random.PRNGKey] = None):
         """

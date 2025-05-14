@@ -392,14 +392,14 @@ def gamma(shape, backend="default",
 # Random beta distribution
 ###############################################################################
 
-def __beta_np(rng, a, b, size):
+def _beta_np(rng, a, b, size):
     if rng is None:
         rng = npr.default_rng(None)
     return rng.beta(a, b, size=size)
 
 if JAX_AVAILABLE:
     @jax.jit
-    def __beta_jax(key, shape, a, b, dtype):
+    def _beta_jax(key, shape, a, b, dtype):
         try:
             return jrand.beta(key, a, b, shape=shape, dtype=dtype)
         except AttributeError as e:
@@ -418,10 +418,10 @@ def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dty
     if dtype is None:
         dtype = backend_mod.float32
     if backend_mod is np:
-        return __beta_np(rnd_module, a, b, shape).astype(dtype)
+        return _beta_np(rnd_module, a, b, shape).astype(dtype)
     if key is None:
         key = JAX_RND_DEFAULT_KEY
-    return __beta_jax(key, shape, a, b, dtype)
+    return _beta_jax(key, shape, a, b, dtype)
 
 ###############################################################################
 #! Random randint distribution
@@ -439,13 +439,10 @@ def randint_np(low, high, size):
     return np.random.randint(low=low, high=high, size=size)
 
 if JAX_AVAILABLE:
-	@partial(jax.jit, static_argnames=('low', 'high', 'shape'))
-	def randint_jax(key,
-					shape,
-					low,
-					high):
-		'''Create a random integer array using JAX.'''
-		return random_jp.randint(key, shape=shape, minval=low, maxval=high)
+    @partial(jax.jit, static_argnames=('shape',))
+    def randint_jax(key, shape, low: int, high: int):
+        """Efficient random integer generation in JAX."""
+        return random_jp.randint(key, shape, minval=low, maxval=high)
 
 def randint(low, high, shape, backend="default", seed: Optional[int] = None, dtype=None, rng=None, rng_k=None):
     """

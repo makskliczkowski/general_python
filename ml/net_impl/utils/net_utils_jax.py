@@ -16,6 +16,7 @@ if JAX_AVAILABLE:
     from jax import numpy as jnp
     from jax.tree_util import tree_flatten, tree_unflatten, tree_map, tree_leaves
     from jax.flatten_util import ravel_pytree
+    from jax import lax
 
     # use flax
     import flax
@@ -34,6 +35,7 @@ else:
     unfreeze        = None
     nn              = None
     flax            = None
+    lax             = None
     
 #########################################################################
 #! BATCHES
@@ -117,15 +119,27 @@ if JAX_AVAILABLE:
         jnp.ndarray
             The results of evaluating the function on the input data in batches.
         """
-        
-        #! Create batches of data
-        batches = create_batches_jax(data, batch_size)
-        
-        def scan_fun(c, x):
-            return c, jax.vmap(lambda y: func(params, y), in_axes=(0,))(x)
+        n           = data.shape[0]
+        num_batches = (n + batch_size - 1) // batch_size
 
-        # Evaluate the function on each batch using vmap
-        return jax.lax.scan(scan_fun, None, jnp.array(batches))[1].reshape((-1,))
+        def eval_single_batch(i):
+            start   = i * batch_size
+            end     = jnp.minimum((i + 1) * batch_size, n)
+            batch   = jax.lax.dynamic_slice_in_dim(data, start, end - start, axis=0)
+            return jax.vmap(partial(func, params))(batch)
+
+        # Evaluate each batch using lax.map (no carry needed)
+        results = jax.lax.map(eval_single_batch, jnp.arange(num_batches))
+        return jnp.concatenate(results, axis=0)
+    
+        # #! Create batches of data
+        # batches = create_batches_jax(data, batch_size)
+        
+        # def scan_fun(c, x):
+        #     return c, jax.vmap(lambda y: func(params, y), in_axes=(0,))(x)
+
+        # # Evaluate the function on each batch using vmap
+        # return jax.lax.scan(scan_fun, None, jnp.array(batches))[1].reshape((-1,))
     
     @jax.jit
     def eval_batched_jax_simple(batch_size  : int,
@@ -252,7 +266,6 @@ if JAX_AVAILABLE:
         
         # Concatenate all 1D arrays together.
         return jnp.concatenate(flat_leaves), shapes, sizes, complexity
-
 
     # ---
     
@@ -877,16 +890,32 @@ if JAX_AVAILABLE:
         
         applied = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
         return applied, jnp.mean(applied, axis = 0), jnp.std(applied, axis = 0)
-    
-    @partial(jax.jit, static_argnums=(0,4,6))
+
+    @partial(jax.jit, static_argnums=(3,))
+    def _pad_and_batch(states, logps, probs, batch_size):
+        n          = states.shape[0]
+        nbatches   = (n + batch_size - 1) // batch_size
+        pad_len    = nbatches * batch_size - n            # 0 ≤ pad_len < batch_size
+        pad_spec   = [(0, pad_len)]
+
+        def _pad(x):   # works for any rank ≥1
+            return jnp.pad(x, pad_spec + [(0, 0)] * (x.ndim - 1), mode="edge")
+
+        states_b = _pad(states)   .reshape(nbatches, batch_size, *states.shape[1:])
+        logps_b  = _pad(logps)    .reshape(nbatches, batch_size)       # assume shape (N,)
+        probs_b  = _pad(probs)    .reshape(nbatches, batch_size)
+
+        return states_b, logps_b, probs_b, n        # keep original N for trimming
+
+    @partial(jax.jit, static_argnums=(0,4,6,7))
     def apply_callable_batched_jax(func,
                                     states,
                                     sample_probas,
                                     logprobas_in,
                                     logproba_fun,
                                     parameters,
-                                    batch_size: int,
-                                    mu = 2.0):
+                                    batch_size  : int,
+                                    mu          = 2.0):
         """
         Applies a transformation function to each state (in batches) and computes a locally weighted estimate
         as described in [2108.08631]. This version incorporates sample probabilities.
@@ -911,35 +940,106 @@ if JAX_AVAILABLE:
         # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))#[:, 0]
         # sample_probas   = jnp.reshape(sample_probas, (-1, 1))#[:, 0]
         
-        # Function to compute the estimate for a single state.
-        def compute_estimate(state, logp, sample_p):
-            logp                    = logp[0]           # Squeeze scalar.
-            sample_p                = sample_p[0]       # Squeeze scalar.
-            new_states, new_vals    = func(state)
-            new_logprobas           = logproba_fun(parameters, new_states)
-            weights                 = jnp.exp((new_logprobas - logp))
-            weighted_sum            = jnp.sum(new_vals * weights, axis=0)
-            output                  = (sample_p * weighted_sum)
-            return output
-        
-        # Create batches using a helper (assumed to be defined elsewhere).
-        batches         = create_batches_jax(states, batch_size)
-        log_batches     = create_batches_jax(logprobas_in, batch_size)
-        sample_batches  = create_batches_jax(sample_probas, batch_size)
-        
-        # # jax.debug.print("batches.shape {}", batches.shape)
-        # # jax.debug.print("log_batches.shape {}", log_batches.shape)
-        # # jax.debug.print("sample_batches.shape {}", sample_batches.shape)
-        nstates         = states.shape[0]
+        state_dim           = states.shape[-1]
+        flat_states         = states.reshape(-1, state_dim)
+        # Ensure logprobas_in and sample_probas are (N_total, 1) for vmap compatibility later
+        flat_logprobas_in   = logprobas_in.reshape(-1, 1)
+        flat_sample_probas  = sample_probas.reshape(-1, 1)
+        n_total_states      = flat_states.shape[0]
 
-        # Evaluate each batch using vmap.
-        def compute_batch(batch_states, batch_logps, batch_samples):
-            return jax.vmap(compute_estimate, in_axes=(0, 0, 0))(batch_states, batch_logps, batch_samples)
+        # This function will be vmapped over a batch of states.
+        def _process_single_state(state_item, logp_item_arr, sample_p_item_arr):
+            # state_item: (state_dim,)
+            # logp_item_arr, sample_p_item_arr: (1,) each, due to vmap slicing (N,1) arrays
+            
+            new_states, new_vals    = func(state_item) 
+            # new_states: (M, state_dim), new_vals: (M,)
+            new_logprobas           = logproba_fun(parameters, new_states) # (M,)
+            logp_squeezed           = jnp.squeeze(logp_item_arr)     # scalar
+            sample_p_squeezed       = jnp.squeeze(sample_p_item_arr) # scalar
+
+            #! Weight calculation using mu, as per [2108.08631], Eq. (13) structure
+            weights                 = jnp.exp(mu * (new_logprobas - logp_squeezed)) # (M,)
+            weighted_sum            = jnp.sum(new_vals * weights)                   # scalar sum over M proposals
+            
+            # Final estimate for this state_item, scaled by its sample probability
+            return sample_p_squeezed * weighted_sum
+
+        num_batches = (n_total_states + batch_size - 1) // batch_size
         
-        # Map over batches.
-        batch_estimates = jax.vmap(compute_batch, in_axes=(0, 0, 0))(batches, log_batches, sample_batches)
-        estimates       = batch_estimates.reshape(-1)[:nstates]
-        return estimates, jnp.mean(estimates, axis=0), jnp.std(estimates, axis=0)
+        #! Pad inputs to ensure all batches have `batch_size` elements.
+        pad_amount  = num_batches * batch_size - n_total_states
+        
+        def pad_array(arr, constant_val=0.0): # Use float constant_val for safety
+            if pad_amount > 0:
+                # Padding applied to the first dimension (the one being batched)
+                padding_config = [(0, pad_amount)] + [(0, 0)] * (arr.ndim - 1)
+                return jnp.pad(arr, padding_config, mode='constant', constant_values=constant_val)
+            return arr
+
+        padded_states           = pad_array(flat_states)
+        padded_logprobas_in     = pad_array(flat_logprobas_in)
+        padded_sample_probas    = pad_array(flat_sample_probas)
+
+        # Reshape for batching: (num_batches, batch_size, ...)
+        batched_states          = padded_states.reshape(num_batches, batch_size, state_dim)
+        batched_logprobas_in    = padded_logprobas_in.reshape(num_batches, batch_size, 1)
+        batched_sample_probas   = padded_sample_probas.reshape(num_batches, batch_size, 1)
+        
+        #! Vectorize _process_single_state to handle a batch of states
+        # Input: (B,D), (B,1), (B,1) -> Output: (B,) where B is batch_size
+        _vmapped_process_batch_content = jax.vmap(_process_single_state, in_axes=(0, 0, 0))
+
+        # Use jax.lax.map to iterate over batches.
+        # The lambda function receives one batch of each input.
+        # x[0]: one batch of states, shape (batch_size, state_dim)
+        # x[1]: one batch of logprobas_in, shape (batch_size, 1)
+        # x[2]: one batch of sample_probas, shape (batch_size, 1)
+        all_batch_estimates = jax.lax.map(
+            lambda x: _vmapped_process_batch_content(x[0], x[1], x[2]),
+            (batched_states, batched_logprobas_in, batched_sample_probas)
+        )
+        # all_batch_estimates will have shape: (num_batches, batch_size)
+        
+        #! Final reshape to flatten the output
+        estimates_flat_padded   = all_batch_estimates.flatten() # Shape: (num_batches * batch_size,)
+        
+        # Remove any estimates corresponding to padded states
+        estimates               = estimates_flat_padded[:n_total_states] # Shape: (n_total_states,)
+        
+        mean_estimate           = jnp.mean(estimates)           # Global mean over all valid estimates
+        std_estimate            = jnp.std(jnp.real(estimates))  # Global std over all valid estimates
+
+        return estimates, mean_estimate, std_estimate
+        # # Function to compute the estimate for a single state.
+        # def compute_estimate(state, logp, sample_p):
+        #     logp                    = logp[0]           # Squeeze scalar.
+        #     sample_p                = sample_p[0]       # Squeeze scalar.
+        #     new_states, new_vals    = func(state)
+        #     new_logprobas           = logproba_fun(parameters, new_states)
+        #     weights                 = jnp.exp((new_logprobas - logp))
+        #     weighted_sum            = jnp.sum(new_vals * weights, axis=0)
+        #     output                  = (sample_p * weighted_sum)
+        #     return output
+        
+        # # Create batches using a helper (assumed to be defined elsewhere).
+        # batches         = create_batches_jax(states, batch_size)
+        # log_batches     = create_batches_jax(logprobas_in, batch_size)
+        # sample_batches  = create_batches_jax(sample_probas, batch_size)
+        
+        # # # jax.debug.print("batches.shape {}", batches.shape)
+        # # # jax.debug.print("log_batches.shape {}", log_batches.shape)
+        # # # jax.debug.print("sample_batches.shape {}", sample_batches.shape)
+        # nstates         = states.shape[0]
+
+        # # Evaluate each batch using vmap.
+        # def compute_batch(batch_states, batch_logps, batch_samples):
+        #     return jax.vmap(compute_estimate, in_axes=(0, 0, 0))(batch_states, batch_logps, batch_samples)
+        
+        # # Map over batches.
+        # batch_estimates = jax.vmap(compute_batch, in_axes=(0, 0, 0))(batches, log_batches, sample_batches)
+        # estimates       = batch_estimates.reshape(-1)[:nstates]
+        # return estimates, jnp.mean(estimates, axis=0), jnp.std(estimates, axis=0)
     
     @partial(jax.jit, static_argnums=(0,3,5))
     def apply_callable_batched_jax_uniform(func,

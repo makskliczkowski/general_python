@@ -14,6 +14,7 @@ based on the specified backend.
 
 import numpy as np
 from typing import Optional, Tuple, Callable
+from functools import partial
 
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend
 if JAX_AVAILABLE:
@@ -68,7 +69,7 @@ def poly5(x):
 if JAX_AVAILABLE:
     import jax
     
-    @jax.jit
+    @partial(jax.jit, inline = True)
     def log_cosh_jnp(x):
         ''' 
         Logarithm of the hyperbolic cosine activation function (JAX implementation).
@@ -81,9 +82,9 @@ if JAX_AVAILABLE:
         '''
         sgn_x   = -2 * jnp.signbit(x.real) + 1
         x       = x * sgn_x
-        return x + jnp.log1p(jnp.exp(-2.0 * x)) - jnp.log(2.0)
+        return x + jax.lax.log1p(jax.lax.exp(-2.0 * x)) - jax.lax.log(2.0)
 
-    @jax.jit
+    @partial(jax.jit, inline = True)
     def tanh_jnp(x):
         ''' 
         Hyperbolic tangent activation function (JAX implementation).
