@@ -8,7 +8,7 @@ the SolverType enum, and the choose_solver factory function.
 
 import inspect
 from typing import Union, Optional, Any, Type
-from enum import Enum
+from enum import Enum, auto, unique
 
 # Import base classes and types from solver.py (assuming it's in the parent directory or path)
 from general_python.algebra.solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
@@ -190,6 +190,29 @@ def generate_test_mat_vec(make_random: bool,
         b_imag = rdg.random((size,), dtype=dtype)
         b = b_real + 1j * b_imag
     return A, b
+
+# -----------------------------------------------------------------------------
+
+class SolverForm(Enum):
+    """
+    Enum for solver forms.
+    """
+    MATRIX      = auto()    # Matrix form -> expects a matrix formation explicitly
+    MATVEC      = auto()    # Matrix-vector form -> expects a matrix-vector multiplication function (f(x))
+    GRAM        = auto()    # Gram form -> expects a Gram matrix decomposition S and S^+ as input
+
+    def __eq__(self, other):
+        if isinstance(other, SolverForm):
+            return self.value == other.value
+        if isinstance(other, int):
+            return self.value == other
+        return NotImplemented
+
+    def __ne__(self, other):
+        eq = self.__eq__(other)
+        if eq is NotImplemented:
+            return NotImplemented
+        return not eq
 
 # -----------------------------------------------------------------------------
 

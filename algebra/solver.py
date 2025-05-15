@@ -390,7 +390,7 @@ class Solver(ABC):
                 def wrapper_jax_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     # Create the matvec function (or matrix)
                     matvec  = Solver.create_matvec_from_fisher_jax(s, s_p, sigma=sigma, create_full=use_matrix)
-                    precond = lambda r, **kwargs: precond_apply(r=r, s=s, sp=s_p, **kwargs) if precond_apply else None
+                    precond = (lambda r, **kwargs: precond_apply(r=r, s=s, sp=s_p, **kwargs)) if precond_apply else None
                     return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 _the_wrapper = wrapper_jax_fisher
                 
@@ -399,7 +399,7 @@ class Solver(ABC):
                 # @np.njit
                 def wrapper_np_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     matvec  = Solver.create_matvec_from_matrix_np(a, sigma=sigma)
-                    precond = lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs) if precond_apply else None
+                    precond = (lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs)) if precond_apply else None
                     return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 wrapper_np_matrix.__defaults__ = (None,)
                 _the_wrapper = wrapper_np_matrix
@@ -408,7 +408,7 @@ class Solver(ABC):
                 @partial(jax.jit, static_argnames=static_argnames_tuple)
                 def wrapper_jax_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     matvec  = Solver.create_matvec_from_matrix_jax(a, sigma=sigma)
-                    precond = lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs) if precond_apply else None
+                    precond = (lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs)) if precond_apply else None
                     return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
                 _the_wrapper = wrapper_jax_matrix
 
