@@ -10,6 +10,7 @@ from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
 import sys, os 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from maths import MathMod
+import numpy as np
 
 #######################################################################################
 
@@ -34,12 +35,15 @@ class SquareLattice(Lattice):
 
         self._kvectors  = LatticeBackend.zeros((self.Ns, 3))
         self._rvectors  = LatticeBackend.zeros((self.Ns, 3))
+        self._a1        = self._vectors[:, 0]
+        self._a2        = self._vectors[:, 1]
+        self._a3        = self._vectors[:, 2]
         
         match(dim):
             case 1:
-                self._lx = lx
-                self._ly = 1
-                self._lz = 1
+                self._lx            = lx
+                self._ly            = 1
+                self._lz            = 1
                 self._nn_forward    = [0]
                 self._nnn_forward   = [0]
             case 2:
@@ -58,18 +62,7 @@ class SquareLattice(Lattice):
                 raise ValueError("Only 1D, 2D, and 3D lattices are supported.")
         self._ns        = self.lx * self.ly * self.lz                   # Total sites
         self._dim       = dim                                           # Dimension of the lattice
-        
-        # Compute lattice properties
-        self.calculate_coordinates()
-        self.calculate_r_vectors()
-        self.calculate_k_vectors()
-
-        if self.Ns < 100:
-            self.calculate_dft_matrix()
-
-        self.calculate_nn()
-        self.calculate_nnn()
-        self.calculate_norm_sym()
+        self.init()
     
     # ---------------------------------------------------------------------------------
     
@@ -223,9 +216,7 @@ class SquareLattice(Lattice):
         return self._nnn_forward[site][num] if num < len(self._nnn_forward[site]) else None
 
     # ---------------------------------------------------------------------------------
-    
-    # Calculate the nearest neighbors
-    
+    #! Calculate the nearest neighbors
     # ---------------------------------------------------------------------------------
     
     def calculate_nn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
@@ -250,8 +241,8 @@ class SquareLattice(Lattice):
                 - int: Index after applying boundary conditions (PBC or OBC)            
             """
             if pbc:
-                return MathMod.mod_euc(index, limit)  # Apply periodic boundary condition
-            return index if 0 <= index < limit else -1  # Apply open boundary condition
+                return MathMod.mod_euc(index, limit) # Apply periodic boundary condition
+            return index if 0 <= index < limit else np.nan
 
         self._nn            = [[] for _ in range(self.Ns)]
         self._nn_forward    = [[] for _ in range(self.Ns)]
@@ -295,9 +286,7 @@ class SquareLattice(Lattice):
             raise ValueError("Only 1D, 2D, and 3D lattices are supported.")
 
     # ---------------------------------------------------------------------------------
-    
-    # Calculate the next-nearest neighbors
-    
+    #! Calculate the next-nearest neighbors
     # ---------------------------------------------------------------------------------
     
     def calculate_nnn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
@@ -323,7 +312,7 @@ class SquareLattice(Lattice):
             """
             if pbc:
                 return MathMod.mod_euc(index, limit)
-            return index if 0 <= index < limit else -1
+            return index if 0 <= index < limit else np.nan
 
         self._nnn           = [[] for _ in range(self.Ns)]
         self._nnn_forward   = [[] for _ in range(self.Ns)]
@@ -339,12 +328,14 @@ class SquareLattice(Lattice):
         elif self.dim == 2:
             # 2D Lattice: Each site has 4 next-nearest neighbors
             for i in range(self.Ns):
-                x, y, _ = self.get_coordinates(i)
+                x, y, _     = self.get_coordinates(i)
+                move_up     = y * self.Lx
+                move_right  = x
 
-                right   = boundary_check(x + 2, self.Lx, pbcx) + y * self.Lx
-                top     = boundary_check(y + 2, self.Ly, pbcy) * self.Lx + x
-                left    = boundary_check(x - 2, self.Lx, pbcx) + y * self.Lx
-                bottom  = boundary_check(y - 2, self.Ly, pbcy) * self.Lx + x
+                right   = boundary_check(x + 2, self.Lx, pbcx) + move_up
+                top     = boundary_check(y + 2, self.Ly, pbcy) * self.Lx + move_right
+                left    = boundary_check(x - 2, self.Lx, pbcx) + move_up
+                bottom  = boundary_check(y - 2, self.Ly, pbcy) * self.Lx + move_right
 
                 self._nnn[i]            = [right, top, left, bottom]
                 self._nnn_forward[i]    = [right, top]

@@ -14,11 +14,12 @@ from general_python.common import directories as DirectoriesMod
 from abc import ABC, abstractmethod
 
 import numpy as np
+import scipy.sparse as sp
 from enum import Enum, auto, unique                 # for enumerations
 from typing import Union, Callable, Tuple, List     # type hints for the functions and methods
 
 #############################################################################################################
-@unique
+
 class LatticeDirection(Enum):
     '''
     Enumeration for the lattice directions
@@ -28,7 +29,7 @@ class LatticeDirection(Enum):
     Z = auto()
 
 # -----------------------------------------------------------------------------------------------------------
-@unique
+
 class LatticeBC(Enum):
     '''
     Enumeration for the boundary conditions in the lattice model.
@@ -39,7 +40,7 @@ class LatticeBC(Enum):
     SBC = auto()    # Special Boundary Conditions   - periodic in Y direction, open in X direction
     
 # -----------------------------------------------------------------------------------------------------------
-@unique
+
 class LatticeType(Enum):
     '''
     Contains all the implemented lattice types for the lattice model. 
@@ -50,7 +51,60 @@ class LatticeType(Enum):
 
 ############################################## GENERAL LATTICE ##############################################
 
-Backend         = np
+def handle_boundary_conditions(bc):
+    """
+    Handles and normalizes the input for boundary conditions.
+    Parameters:
+        bc (str, LatticeBC, or None):
+            The boundary condition to handle. Can be a string
+            ("pbc", "obc", "mbc", "sbc"), an instance of LatticeBC, or None.
+    Returns:
+        LatticeBC: The corresponding LatticeBC enum value for the given boundary condition.
+    Raises:
+        ValueError: If the provided boundary condition is not recognized.
+    """
+
+    if bc is None:
+        bc = LatticeBC.PBC
+    elif isinstance(bc, str):
+        if bc.lower() == "pbc":
+            bc = LatticeBC.PBC
+        elif bc.lower() == "obc":
+            bc = LatticeBC.OBC
+        elif bc.lower() == "mbc":
+            bc = LatticeBC.MBC
+        elif bc.lower() == "sbc":
+            bc = LatticeBC.SBC
+        else:
+            raise ValueError(f"Unknown boundary condition: {bc}")
+    elif not isinstance(bc, LatticeBC):
+        raise ValueError(f"Unknown boundary condition: {bc}")
+    return bc
+
+def handle_dim(lx, ly, lz):
+    """
+    Handles and normalizes the input for lattice dimensions.
+    Parameters:
+        lx (int):
+            Number of sites in the x-direction.
+        ly (int):
+            Number of sites in the y-direction.
+        lz (int):
+            Number of sites in the z-direction.
+    Returns:
+        tuple: A tuple containing the dimensions (lx, ly, lz).
+    """
+    if lx <= 0 or ly <= 0 or lz <= 0:
+        raise ValueError("Lattice dimensions must be positive integers.")
+    
+    dim = 1
+    if ly > 1:
+        dim += 1
+    if lz > 1:
+        dim += 1
+    return dim, lx, ly, lz
+
+Backend = np
 
 class Lattice(ABC):
     '''
@@ -110,27 +164,28 @@ class Lattice(ABC):
     a = 1
     b = 1
     c = 1
-    
-    def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):
-        '''
-        Initialize the general lattice model with the following parameters:
-        - dim   : dimension of the lattice
-        - lx    : number of sites in the x direction
-        - ly    : number of sites in the y direction
-        - lz    : number of sites in the z direction
-        - bc    : boundary conditions
-        '''
+
+    def __init__(self, 
+                dim     = None,
+                lx      = 1,
+                ly      = 1,
+                lz      = 1,
+                bc      = None,
+                adj_mat = None,
+                *args,
+                **kwargs):
         
-        
-        self._dim   = dim
-        self._bc    = bc            # Boundary conditions
-        self._lx    = lx
-        self._ly    = ly
-        self._lz    = lz
-        self._lxly  = lx * ly
-        self._lxlylz= lx * ly * lz
-        self._ns    = lx * ly * lz  # Number of sites - set only initially as it is implemented in the children
-        self._type  = LatticeType.SQUARE
+        self._dim           = handle_dim(lx, ly, lz)[0] if dim is None else dim
+        self._bc            = handle_boundary_conditions(bc)
+        self._lx            = lx
+        self._ly            = ly
+        self._lz            = lz
+        self._lxly          = lx * ly
+        self._lxlylz        = lx * ly * lz
+        self._ns            = lx * ly * lz                  # Number of sites - set only initially as it is implemented in the children
+        self._type          = LatticeType.SQUARE
+        self._adj_mat       = adj_mat
+        super().__init__(*args, **kwargs)
         
         # neighbors
         self._nn            = [[]]
@@ -143,6 +198,7 @@ class Lattice(ABC):
         self._spatial_norm  = [[[]]]                        # three dimensional array for the spatial norm
         
         # matrices for real space and inverse space vectors
+        self._vectors       = Backend.zeros((3, 3))         # real space vectors - base vectors of the lattice
         self._a1            = Backend.zeros((dim, dim))     # real space vectors - base vectors of the lattice
         self._a2            = Backend.zeros((dim, dim))
         self._a3            = Backend.zeros((dim, dim))
@@ -170,6 +226,70 @@ class Lattice(ABC):
     def __repr__(self):
         ''' Representation of the lattice '''
         return f"{self._type.name},{self._bc.name},d={self._dim},Ns={self._ns},Lx={self._lx},Ly={self._ly},Lz={self._lz}"
+    
+    # -----------------------------------------------------------------------------
+    
+    def init(self):
+        """
+        Initializes the lattice object by calculating coordinates, reciprocal vectors, and neighbor lists.
+        This method performs the following steps:
+        1. Calculates the real-space coordinates, r-vectors, and k-vectors of the lattice.
+        2. If the number of sites (`self.Ns`) is less than 100, computes the discrete Fourier transform (DFT) matrix.
+        3. If an adjacency matrix (`self._adj_mat`) is provided:
+            - Determines the number of sites (`Ns`) from the adjacency matrix.
+            - For each site, identifies nearest neighbors (nn) as those connected by the highest weight in the adjacency matrix, and next-nearest neighbors (nnn) as those connected by the next highest distinct weight.
+            - Stores forward neighbors (indices greater than the current site) for both nn and nnn.
+        4. If no adjacency matrix is provided, calculates nearest and next-nearest neighbors using default methods.
+        5. Calculates normalization or symmetry properties of the lattice.
+        This method sets up all necessary neighbor lists and lattice properties required for further computations.
+        """
+
+        self.calculate_coordinates()
+        self.calculate_r_vectors()
+        self.calculate_k_vectors()
+
+        if self.Ns < 100:
+            self.calculate_dft_matrix()
+
+        if self._adj_mat is not None:
+            Ns                  = self._adj_mat.shape[0]
+            self._ns            = Ns
+            W                   = self._adj_mat
+            nn_list             = []
+            nnn_list            = []
+            for i in range(Ns):
+                #! get sorted neighbors by weight desc (exclude self-loop)
+                js              = [j for j in range(Ns) if j != i and W[i, j] != 0]
+                sorted_js       = sorted(js, key=lambda j: W[i, j], reverse=True)
+                if not sorted_js:
+                    nn_list.append([])
+                    nnn_list.append([])
+                    continue
+                
+                #! highest weight defines nn
+                max_w           = W[i, sorted_js[0]]
+                nn_js           = [j for j in sorted_js if W[i, j] == max_w]
+                nn_list.append(nn_js)
+                
+                if len(sorted_js) > len(nn_js):
+                    #! find next distinct weight
+                    remaining   = [W[i, j] for j in sorted_js if W[i, j] != max_w]
+                    if remaining:
+                        second_w    = max(remaining)
+                        nnn_js      = [j for j in sorted_js if W[i, j] == second_w]
+                    else:
+                        nnn_js      = []
+                else:
+                    nnn_js = []
+                nnn_list.append(nnn_js)
+            self._nn            = nn_list
+            self._nn_forward    = [[j for j in nn_list[i] if j>i] for i in range(Ns)]
+            self._nnn           = nnn_list
+            self._nnn_forward   = [[j for j in nnn_list[i] if j>i] for i in range(Ns)]
+        else:
+            self.calculate_nn()
+            self.calculate_nnn()
+        self.calculate_norm_sym()
     
     ################################### GETTERS ###################################
     
@@ -695,8 +815,50 @@ class Lattice(ABC):
     
     # -----------------------------------------------------------------------------
     
-    # standard getters
-
+    def neighbors(self, site: int, order=1):
+        '''Return neighbors of a site: 1 for nn (all with highest weight), 2 for nnn (all with second-highest), 'all' for both.'''
+        if order == 1:
+            return self._nn[site]
+        elif order == 2:
+            return self._nnn[site]
+        elif order == 'all':
+            if self._adj_mat is not None:
+                # return all neighbors from adjacency matrix
+                non_zero_indices = np.nonzero(self._adj_mat[site])[0]
+                return [i for i in non_zero_indices if i != site]
+            else:
+                return list(set(self._nn[site]) | set(self._nnn[site]))
+        else:
+            raise ValueError(f"Invalid neighbor order: {order}")
+        
+    def neighbors_forward(self, site: int, order=1):
+        '''Return forward neighbors of a site: 1 for nn (all with highest weight), 2 for nnn (all with second-highest), 'all' for both.'''
+        if order == 1:
+            return self._nn_forward[site]
+        elif order == 2:
+            return self._nnn_forward[site]
+        elif order == 'all':
+            if self._adj_mat is not None:
+                # return all neighbors from adjacency matrix
+                non_zero_indices = np.nonzero(self._adj_mat[site])[0]
+                return [i for i in non_zero_indices if i != site and i > site]
+            else:
+                return list(set(self._nn_forward[site]) | set(self._nnn_forward[site]))
+        else:
+            raise ValueError(f"Invalid neighbor order: {order}")
+    
+    def any_neighbor(self, site: int, order=1):
+        '''Return any neighbor (first) of given order or None.'''
+        neigh = self.neighbors(site, order)
+        return neigh[0] if neigh else Lattice._BAD_LATTICE_SITE
+    
+    def any_neighbor_forward(self, site: int, order=1):
+        '''Return any forward neighbor (first) of given order or None.'''
+        neigh = self.neighbors_forward(site, order)
+        return neigh[0] if neigh else Lattice._BAD_LATTICE_SITE
+    
+    # -----------------------------------------------------------------------------
+    #! Standard getters
     # -----------------------------------------------------------------------------
 
     def get_coordinates(self, *args):
@@ -754,9 +916,7 @@ class Lattice(ABC):
         pass
 
     # -----------------------------------------------------------------------------
-    
-    # Spatial information
-    
+    #! Spatial information
     # -----------------------------------------------------------------------------
     
     def get_spatial_norm(self, *args):
@@ -833,9 +993,7 @@ class Lattice(ABC):
         pass
     
     # -----------------------------------------------------------------------------
-    
-    # Nearest neighbors
-    
+    #! Nearest neighbors
     # -----------------------------------------------------------------------------
     
     def _calculate_nn_pbc(self):
@@ -892,9 +1050,7 @@ class Lattice(ABC):
                 raise ValueError("The boundary conditions are not implemented.")
 
     # -----------------------------------------------------------------------------
-    
-    # Next nearest neighbors
-    
+    #! Next nearest neighbors
     # -----------------------------------------------------------------------------
     
     def _calculate_nnn_pbc(self):
@@ -951,11 +1107,76 @@ class Lattice(ABC):
                 raise ValueError("The boundary conditions are not implemented.")
 
     # -----------------------------------------------------------------------------
-    
-    # Saving the lattice
-    
+    #! Saving the lattice
     # -----------------------------------------------------------------------------
     
+    def adjacency_matrix(self, sparse: bool = False, save: bool = True) -> np.ndarray:
+        r"""
+        Construct adjacency matrix A_ij = 1 if i and j are neighbors.
+
+        Args:
+            sparse      (bool):
+                return a scipy.sparse CSR matrix if True.
+
+        Returns:
+            A (ndarray or sparse CSR): adjacency matrix of size (Ns, Ns).
+        """
+        if self._adj_mat is None:
+            # fallback to binary from lists
+            Ns      = self.ns
+            rows    = []
+            cols    = []
+            data    = []
+            
+            for i in range(Ns):
+                if self._nn and self._nn[i]:
+                    for jj, j in enumerate(self._nn[i]):
+                        if self._nn[i][jj] and not np.isnan(self._nn[i][jj]) and self._nn[i][jj] > 0:
+                            rows.append(i)
+                            cols.append(j)
+                            data.append(3)
+                if self._nnn and self._nnn[i]:
+                    for jj, j in enumerate(self._nnn[i]):
+                        if self._nnn[i][jj] and not np.isnan(self._nnn[i][jj]) and self._nnn[i][jj] > 0:
+                            rows.append(i)
+                            cols.append(j)
+                            data.append(2)
+                # diagonal
+                rows.append(i)
+                cols.append(i)
+                data.append(1)
+                
+            # remove duplicates
+            rows, cols, data    = np.unique((rows, cols, data), axis=1)
+            # # remove nans
+            # rows, cols, data    = rows[~np.isnan(data)], cols[~np.isnan(data)], data[~np.isnan(data)]
+            # as integers
+            rows, cols, data    = rows.astype(int), cols.astype(int), data
+            
+            if sparse:
+                A = sp.csr_matrix((data, (rows, cols)), shape=(Ns, Ns))
+            else:
+                A               = np.zeros((Ns, Ns))
+                A[rows, cols]   = data
+                A[cols, rows]   = data
+        else:
+            if sparse:
+                A = self._adj_mat if isinstance(self._adj_mat, sp.csr_matrix) else sp.csr_matrix(self._adj_mat)
+            else:
+                A = self._adj_mat.toarray() if isinstance(self._adj_mat, sp.csr_matrix) else self._adj_mat
+        if save:
+            self._adj_mat = A
+        return A
+    
+    def print_forward(self, logger):
+        for i in range(self.ns):
+            neighbors = self.get_nn_forward_num(i)
+            logger.info(f"Neighbors of site {i}: {neighbors}", lvl = 1, color = 'green')
+            for j in range(neighbors):
+                nei_in = self.get_nn_forward(i, j)
+                logger.info(f"Neighbor {j} of site {i}: {nei_in}", lvl = 2, color = 'blue')
+
+            
 #############################################################################################################
 
 def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
