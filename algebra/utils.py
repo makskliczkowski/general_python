@@ -37,7 +37,7 @@ import os
 import inspect
 import multiprocessing
 import logging
-from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List
+from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List, Dict, Literal
 from general_python.common.flog import get_global_logger
 
 # ---------------------------------------------------------------------
@@ -140,7 +140,89 @@ else:
     JaxDevice   : TypeAlias = None
 
 # ---------------------------------------------------------------------
+#! Types
+# ---------------------------------------------------------------------
 
+DType           = Union[Type[np.generic], Any]
+
+#! Define a registry for NumPy and JAX dtypes
+_DTYPE_REGISTRY: Dict[str, Dict[Literal['numpy', 'jax'], DType]] = {
+    'float32': {
+        'numpy': np.float32,
+        'jax':  jnp.float32 if JAX_AVAILABLE else None,
+    },
+    'float64': {
+        'numpy': np.float64,
+        'jax':  jnp.float64 if JAX_AVAILABLE else None,
+    },
+    'int32': {
+        'numpy': np.int32,
+        'jax':  jnp.int32 if JAX_AVAILABLE else None,
+    },
+    'int64': {
+        'numpy': np.int64,
+        'jax':  jnp.int64 if JAX_AVAILABLE else None,
+    },
+    'complex64': {
+        'numpy': np.complex64,
+        'jax':  jnp.complex64 if JAX_AVAILABLE else None,
+    },
+    'complex128': {
+        'numpy': np.complex128,
+        'jax':  jnp.complex128 if JAX_AVAILABLE else None,
+    },
+}
+
+#! Create a reverse mapping from dtype to name
+_TYPE_TO_NAME: Dict[Any, str] = {}
+for name, backends in _DTYPE_REGISTRY.items():
+    for backend, dtype in backends.items():
+        if dtype is not None:
+            _TYPE_TO_NAME[dtype] = name
+_TYPE_TO_NAME[int]              = 'int64'
+_TYPE_TO_NAME[float]            = 'float64'
+_TYPE_TO_NAME[complex]          = 'complex128'
+
+def distinguish_type(typek: Any, backend: Literal['numpy', 'jax'] = 'numpy') -> DType:
+    """
+    Given a type (e.g. np.float32, jnp.int64, or int), return the corresponding
+    dtype object in either NumPy or JAX.
+
+    Parameters
+    ----------
+    typek
+        A dtype class or Python int; may be from numpy, jax.numpy, or the builtin int.
+    backend
+        'numpy' or 'jax' — which library the returned dtype should belong to.
+
+    Returns
+    -------
+    dtype
+        The requested dtype object (e.g. np.float64 or jnp.int32).
+
+    Raises
+    ------
+    ValueError
+        If `typek` isn’t one of the supported types, or if you ask for JAX
+        but JAX isn’t available.
+    """
+
+    try:
+        name = _TYPE_TO_NAME[typek]
+    except KeyError:
+        raise ValueError(f"Unsupported state type: {typek!r}")
+
+    entry   = _DTYPE_REGISTRY[name]
+    dtype   = entry.get(backend)
+
+    if dtype is None:
+        if backend == 'jax' and not JAX_AVAILABLE:
+            raise ValueError("JAX not installed or not available")
+        raise ValueError(f"Type {name!r} not defined for backend {backend!r}")
+    return dtype
+
+# ---------------------------------------------------------------------
+#! Functions
 # ---------------------------------------------------------------------
 
 def get_hardware_info() -> Tuple[int, int]:

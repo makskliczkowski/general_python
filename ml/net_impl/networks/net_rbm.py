@@ -59,6 +59,7 @@ class _FlaxRBM(nn.Module):
             Data type for intermediate computations (usually matches param_dtype).
             Note: `act_fun` attribute from _FlaxNet is NOT used here.
     """
+    n_visible       : int
     n_hidden        : int
     bias            : bool                  = True                  # Bias for hidden units is common in RBMs
     input_activation: Optional[Callable]    = None                  # e.g., lambda x: 2*x-1
@@ -83,7 +84,7 @@ class _FlaxRBM(nn.Module):
 
         if self.visible_bias:
             self.visible_bias_param = self.param(
-                "visible_bias", nn.initializers.zeros, (self.n_hidden,), self.param_dtype
+                "visible_bias", nn.initializers.zeros, (self.n_visible,), self.param_dtype
             )
     
     @nn.compact
@@ -118,13 +119,12 @@ class _FlaxRBM(nn.Module):
         if self.input_activation is not None:
             v = self.input_activation(v)
 
-        theta = self.dense(v)
+        theta   = self.dense(v)
         log_psi = jnp.sum(log_cosh_jnp(theta), axis=-1)
 
         if self.visible_bias:
-            # Infer shape from input, don't store it
-            bias = self.variables["params"]["visible_bias"]
-            log_psi += jnp.sum(v * bias, axis=-1)
+            bias        = self.variables["params"]["visible_bias"]
+            log_psi    += jnp.sum(v * bias, axis=-1)
 
         return log_psi if self.islog else jnp.exp(log_psi)
 
@@ -188,6 +188,7 @@ class RBM(FlaxInterface):
         self._in_activation     = in_activation
         # Prepare kwargs for _FlaxRBM
         net_kwargs = {
+            'n_visible'       : np.prod(input_shape), # Flatten input shape
             'n_hidden'        : n_hidden,
             'bias'            : bias,
             'visible_bias'    : visible_bias,

@@ -1168,13 +1168,57 @@ class Lattice(ABC):
             self._adj_mat = A
         return A
     
-    def print_forward(self, logger):
+    def print_neighbors(self, logger : 'Logger'):
+        """
+        Logs the neighbors of each site in the lattice using the provided logger.
+
+        For each site in the lattice, this method retrieves its nearest neighbors and logs their indices.
+        Additionally, for each neighbor, it logs detailed information using a higher verbosity level.
+
+        Args:
+            logger: An object with an `info` method for logging messages. The `info` method should accept
+                    parameters `lvl` (int) for verbosity level and `color` (str) for message color.
+
+        """
+        def print_nei(msg, lvl = 1, color = 'green'):
+            if logger is not None:
+                logger.info(msg, lvl = lvl, color = color)
+            else:
+                print(msg)
+        
+        for i in range(self.ns):
+            neighbors = self.get_nn(i)
+            print_nei(f"Neighbors of site {i}: {neighbors}", lvl = 1, color = 'green')
+            for j in range(len(neighbors)):
+                nei_in = self.get_nei(i, j)
+                print_nei(f"Neighbor {j} of site {i}: {nei_in}", lvl = 2, color = 'blue')
+
+    def print_forward(self, logger : 'Logger'):
+        """
+        Logs the forward nearest neighbors for each site in the lattice.
+
+        For each site in the lattice, this method retrieves the number of forward nearest neighbors
+        and logs their indices using the provided logger. The method outputs two levels of information:
+        - Level 1 (green): Lists the neighbors of each site.
+        - Level 2 (blue): Details each neighbor's index for the site.
+
+        Args:
+            logger: A logging object with an `info` method that accepts a message, 
+                    a logging level (`lvl`), and a color (`color`).
+        """
+        
+        def print_nei(msg, lvl = 1, color = 'green'):
+            if logger is not None:
+                logger.info(msg, lvl = lvl, color = color)
+            else:
+                print(msg)
+        
         for i in range(self.ns):
             neighbors = self.get_nn_forward_num(i)
-            logger.info(f"Neighbors of site {i}: {neighbors}", lvl = 1, color = 'green')
+            print_nei(f"Neighbors of site {i}: {neighbors}", lvl = 1, color = 'green')
             for j in range(neighbors):
                 nei_in = self.get_nn_forward(i, j)
-                logger.info(f"Neighbor {j} of site {i}: {nei_in}", lvl = 2, color = 'blue')
+                print_nei(f"Neighbor {j} of site {i}: {nei_in}", lvl = 2, color = 'blue')
 
             
 #############################################################################################################

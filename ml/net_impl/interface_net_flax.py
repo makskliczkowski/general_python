@@ -213,6 +213,7 @@ class FlaxInterface(GeneralNet):
 
         # Compile once
         self._compiled_apply_fn = jax.jit(compiled_apply)
+        # self._compiled_apply_fn = compiled_apply
     
     def _initialize_activations(self, act_fun_specs: Any) -> Tuple[Callable, ...]:
         """
