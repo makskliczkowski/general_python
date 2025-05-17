@@ -224,7 +224,7 @@ def overlap_np(a, b, mat = None):
     Compute the quantum overlap <a|mat|b> where:
         - a and b can each be a state vector (1D) or a matrix (with columns as states),
         - in the matrix case, pairwise overlaps (each to each) are computed.
-      
+
     The computation is performed via:
         overlap = (a^\\dagger) dot (act(mat, b))
         
@@ -261,7 +261,7 @@ def overlap_np(a, b, mat = None):
         raise ValueError("Invalid dimensions for states a and b.")
 
 # @maybe_jit
-def overlap(a, b, mat, backend="default"):
+def overlap(a, mat, b = None, backend = "default"):
     """
     Compute the quantum overlap <a|mat|b> where:
         - a and b can each be a state vector (1D) or a matrix (with columns as states),
@@ -271,16 +271,22 @@ def overlap(a, b, mat, backend="default"):
         overlap = (a^\\dagger) dot (act(mat, b))
         
     Parameters:
-        a      : Bra state(s) as a 1D vector or a 2D array (columns are states).
-        mat    : 2D transformation matrix.
-        b      : Ket state(s) as a 1D vector or a 2D array (columns are states).
+        a :
+            Bra state(s) as a 1D vector or a 2D array (columns are states).
+        mat:
+            2D transformation matrix.
+        b :
+            Ket state(s) as a 1D vector or a 2D array (columns are states).
     
     Returns:
         If both a and b are vectors: a scalar.
         If one is a matrix and the other a vector: a vector with the overlap of each column.
         If both are matrices: a matrix with the overlap for each bra/ket combination.
     """
-    backend         = get_backend(backend)
+    if b is None:
+        b = a
+    
+    backend = get_backend(backend)
     if backend == np or not JAX_AVAILABLE:
         if sp.sparse.issparse(mat):
             b = act(mat, b, backend=backend)
@@ -316,7 +322,7 @@ def overlap(a, b, mat, backend="default"):
         raise ValueError("Invalid dimensions for states a and b.")
 
 # @maybe_jit
-def overlap_diag(a, mat, b, backend="default"):
+def overlap_diag(a, mat, b = None, backend="default"):
     """
     Compute only the diagonal overlaps <a_i|mat|b_i> for each state, where
     a and b are either:
@@ -324,13 +330,19 @@ def overlap_diag(a, mat, b, backend="default"):
         - Matrices (2D with states as columns): returns a 1D array with the overlap for each corresponding pair.
 
     Parameters:
-        a      : Bra state(s) as a 1D vector or 2D matrix.
-        mat    : 2D transformation matrix.
-        b      : Ket state(s) as a 1D vector or 2D matrix.
+        a :
+            Bra state(s) as a 1D vector or 2D matrix.
+        mat :
+            2D transformation matrix.
+        b :
+            Ket state(s) as a 1D vector or 2D matrix.
 
     Returns:
         A scalar if a and b are vectors, or a 1D array of diagonal overlaps if a and b are matrices.
     """
+    
+    if b is None:
+        b = a
     backend         = get_backend(backend)
     # Transform the ket(s)
     transformed_b   = act(mat, b, backend=backend)

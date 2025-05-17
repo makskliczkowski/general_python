@@ -174,6 +174,43 @@ if JAX_AVAILABLE:
         return loss - loss_m
     
     @jax.jit
+    def loss_centered_jax_modified_ratios(  loss        : jnp.ndarray,
+                                            loss_m      : jnp.ndarray,
+                                            betas       : jnp.ndarray,
+                                            ratios_exc  : jnp.ndarray,
+                                            ratios_low  : jnp.ndarray
+                                            ) -> jnp.ndarray:
+        # loss_c  = loss - loss_m
+        # samples = loss.shape[0]
+        
+        # for i, beta in enumerate(betas):
+        #     r_excited   =   ratios_exc[i]
+        #     r_low       =   ratios_low[i]
+        #     m_lower     =   jnp.mean(r_low, axis=0)
+        #     m_excited   =   jnp.mean(r_excited, axis=0)
+        #     loss_c     +=   (r_excited - m_excited) * ((beta / samples) * m_lower)
+        # return loss_c
+        
+        # center the loss
+        loss_c      = loss - loss_m
+        n           = loss.shape[0]
+
+        # per-beta means over the sample axis
+        m_low       = jnp.mean(ratios_low, axis=1)  # shape [n_betas]
+        m_exc       = jnp.mean(ratios_exc, axis=1)  # shape [n_betas]
+
+        # deviations of excited ratios - centering
+        delta_exc   = ratios_exc - m_exc[:, None]   # shape [n_betas, n]
+
+        # scale factor for each beta
+        scales      = betas * (m_low / n)           # shape [n_betas]
+
+        # contract over the beta‐dimension
+        # result has shape [n], same as loss
+        corr        = jnp.einsum('i,ij->j', scales, delta_exc)
+        return loss_c + corr
+
+    @jax.jit
     def derivatives_centered_jax(derivatives: jnp.ndarray, derivatives_m: jnp.ndarray) -> jnp.ndarray:
         '''
         Calculates the centered derivatives:
@@ -281,6 +318,40 @@ if JAX_AVAILABLE:
         loss_m          = jnp.mean(loss, axis=0)
         # Use the jitted versions explicitly if needed for clarity
         loss_c          = loss_centered_jax(loss, loss_m)
+
+        full_size       = var_deriv.shape[1]
+        var_deriv_m     = jnp.mean(var_deriv, axis=0)
+        var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
+        var_deriv_c_h   = jnp.conj(var_deriv_c.T)
+        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
+
+    @jax.jit
+    def solve_jax_prepare_modified_ratios(loss, var_deriv, betas, ratios_exc, ratios_low):
+        """
+        Prepares centered loss and derivative tensors for stochastic optimization using JAX.
+        Args:
+            loss (jnp.ndarray):
+                Array of loss values with shape (n_samples, ...).
+            var_deriv (jnp.ndarray):
+                Array of variational derivatives with shape (n_samples, full_size).
+            betas (Any):
+                Parameters used for centering the loss (passed to loss_centered_jax).
+            ratios_exc (Any):
+                Excitation ratios used in loss centering.
+            ratios_low (Any):
+                Lower ratios used in loss centering.
+        Returns:
+            tuple:
+                loss_c (jnp.ndarray): Centered loss tensor.
+                var_deriv_c (jnp.ndarray): Centered variational derivatives.
+                var_deriv_c_h (jnp.ndarray): Hermitian conjugate (complex conjugate transpose) of centered derivatives.
+                n_samples (int): Number of samples in the batch.
+                full_size (int): Size of the variational parameter space.
+        """
+    
+        n_samples       = loss.shape[0]
+        loss_m          = jnp.mean(loss, axis=0)
+        loss_c          = loss_centered_jax(loss, loss_m, betas, ratios_exc, ratios_low)
 
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
