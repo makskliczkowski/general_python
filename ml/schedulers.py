@@ -23,10 +23,11 @@ _INF = float('inf')
 
 class InitialSchedulerClass(ABC):
     """
-    Abstract Base Class for initial class.
+    Abstract Base Class for Schedulers.
     This is a placeholder for any common functionality or attributes
     that might be needed in the future.
     """
+    
     def __init__(self, logger: Optional[Logger]):
         """
         Args:
@@ -38,7 +39,9 @@ class InitialSchedulerClass(ABC):
         self._logger    = logger
         self._log_level = 'info'
     
-    def _log(self, message: str, log: str = 'info', lvl = 0, **kwargs):
+    # -----------------------------------------------------------------
+    
+    def _log(self, message: str, log : Union[int, str] = Logger.LEVELS_R['info'], lvl : int = 0, color : str = "white", append_msg = True, **kwargs):
         """
         Internal logging helper.
         
@@ -49,19 +52,35 @@ class InitialSchedulerClass(ABC):
                 The logging level (e.g., 'info', 'debug', 'warning').
             lvl (int):
                 The logging tabulating level.
+            color (str):
+                The color for the message (if applicable).
+            append_msg (bool):
+                If True, appends the message to the logger.
             **kwargs:
                 Additional keyword arguments for the logger.            
         """
+        if append_msg:
+            message = f"[{self.__class__.__name__}] {message}"
+        
+        if color:
+            message = self._logger.colorize(message, color)
+
         if self._logger:
-            # Add class name prefix if logger doesn't do it automatically
-            # Assuming logger methods handle kwargs like 'lvl', 'log' etc.
-            self._logger.say(f"[{self.__class__.__name__}] {message}", lvl=lvl, log=log, **kwargs)
+            
+            #! fallback
+            if isinstance(lvl, str):
+                lvl = 0
+            
+            if isinstance(log, str):
+                log = Logger.LEVELS_R[log]
+
+            self._logger.say(message, lvl=lvl, log=log, **kwargs)
         else:
             # Basic print fallback
             if log not in ['debug', 'info']:
-                print(f"{log.upper()}: [{self.__class__.__name__}] {message}")
+                print(f"{log.upper()}: {message}")
             else:
-                print(f"[{self.__class__.__name__}] {message}")
+                print(f"{message}")
 
     def set_logger(self, logger: Logger):
         """
@@ -171,7 +190,7 @@ class EarlyStopping(InitialSchedulerClass):
         for better readability.
         """
         state = (
-            f"Patience         : {self._patience}\n"
+            f"Patience           : {self._patience}\n"
             f"  Min Delta        : {self._min_delta:.2e}\n"
             f"  Best Metric      : {self._best_metric:.4e}\n"
             f"  Epoch Since Best : {self._epoch_since_best}\n"
@@ -201,7 +220,11 @@ class EarlyStopping(InitialSchedulerClass):
         
         # Check if the metric is a valid numeric type
         if not isinstance(_metric, (float, complex, np.number)):
-            raise TypeError(self._ERR_METRIC)
+            # transform to float if possible
+            try:
+                _metric = float(_metric)
+            except (ValueError, TypeError):
+                raise TypeError(self._ERR_METRIC)
 
         # Extract the real part for comparison if complex
         metric_val      = _metric.real if isinstance(_metric, complex) else float(_metric)
@@ -241,9 +264,10 @@ class EarlyStopping(InitialSchedulerClass):
         """
         Check if the given metric values are infinite.
         """
-        self._log(self._ERR_METRIC_INF, log='error', lvl=1, color='red')
         istrue              = np.isinf(_metric_r) or np.isinf(_metric_im)
-        self._stop_training = istrue
+        if istrue:
+            self._log(self._ERR_METRIC_INF, log='error', lvl=1, color='red')
+            self._stop_training = istrue
         return istrue
     
     def _check_nan(self, _metric_r: float, _metric_i: float) -> bool:
@@ -313,9 +337,9 @@ class SchedulerType(enum.Enum):
     STEP        = 2
     COSINE      = 3
     ADAPTIVE    = 4 # Corresponds to ReduceLROnPlateau from PyTorch
-    
+
 # ##############################################################################
-    
+
 class Parameters(InitialSchedulerClass, ABC):
     """
     Abstract Base Class for learning rate schedulers.

@@ -8,6 +8,7 @@ import numpy as np
 import numba as nb
 import warnings
 import inspect
+from typing import Union, Any, Tuple, Callable
 from abc import ABC, abstractmethod
 from general_python.algebra.utils import get_backend, JAX_AVAILABLE
 from scipy.integrate import solve_ivp
@@ -57,6 +58,7 @@ class IVP(ABC):
         """
         self.backend        = backend
         self.xp             = get_backend(backend)
+        self.backendstr     = 'numpy' if self.xp is np else 'jax'
         if self.xp is None:
             raise ValueError(f"Backend '{backend}' is not supported. Choose 'numpy' or 'jax'.")
         self._isjax         = not (self.xp is np)
@@ -181,7 +183,7 @@ class IVP(ABC):
         """
         Return a string representation of the IVP object.
         """
-        return f"SimpleIVP(backend={self.backend})"
+        return f"SimpleIVP(backend={self.backendstr})"
     
     def __str__(self):
         """
@@ -250,7 +252,7 @@ class Euler(IVP):
         super().__init__(backend, rhs_prefactor=rhs_prefactor, dt=dt)
 
     def step(self, f, t: float, y, **rhs_args):
-        """
+        r"""
         Compute one Euler step: y_{n+1} = y_n + \Delta t * f(y_n, t).
 
         Returns
@@ -269,7 +271,7 @@ class Euler(IVP):
         """
         Return a string representation of the Euler object.
         """
-        return f"Euler(dt={self._dt}, backend={self.backend}, rhs_p={self._rhs_prefactor})"
+        return f"Euler(dt={self._dt}, backend={self.backendstr}, rhs_p={self._rhs_prefactor})"
 
 ########################################################################
 #! Heun integration
@@ -291,7 +293,7 @@ class Heun(IVP):
         super().__init__(backend, dt=dt, rhs_prefactor=rhs_prefactor)
 
     def step(self, f, t: float, y, **rhs_args):
-        """
+        r"""
         Compute one Heun step:
         .. math::
             y_{n+1} = y_n + \frac{\Delta t}{2} \left( f(y_n, t) + f(y_n + \Delta t f(y_n, t), t + \Delta t) \right)
@@ -332,7 +334,7 @@ class Heun(IVP):
         """
         Return a string representation of the Heun object.
         """
-        return f"Heun(dt={self._dt}, backend={self.backend}, rhs_p={self._rhs_prefactor})"
+        return f"Heun(dt={self._dt}, backend={self.backendstr}, rhs_p={self._rhs_prefactor})"
 
 ########################################################################
 #! Adaptive Heun integration
@@ -408,8 +410,8 @@ class AdaptiveHeun(IVP):
         """
         Return a string representation of the AdaptiveHeun object.
         """
-        return f"AdaptiveHeun(dt={self._dt}, tol={self.tolerance}, max_step={self.max_step}, backend={self.backend})"
-    
+        return f"AdaptiveHeun(dt={self._dt}, tol={self.tolerance}, max_step={self.max_step}, backend={self.backendstr})"
+
 #########################################################################
 #! General Runge-Kutta integration
 #########################################################################
@@ -526,8 +528,8 @@ class RK(IVP):
         """
         Return a string representation of the RK object.
         """
-        return f"RK(order={self.order}, dt={self._dt}, backend={self.backend})"
-    
+        return f"RK(order={self.order}, dt={self._dt}, backend={self.backendstr})"
+
 #########################################################################
 #! From scipy.integrate import solve_ivp
 #########################################################################
@@ -604,7 +606,62 @@ class ScipyRK(IVP):
         """
         Return a string representation of the ScipyRK object.
         """
-        return f"ScipyRK(method={self.method}, dt={self._dt}, tol={self.tol}, max_step={self.max_step}, backend={self.backend})"
+        return f"ScipyRK(method={self.method}, dt={self._dt}, tol={self.tol}, max_step={self.max_step}, backend={self.backendstr})"
+
+#########################################################################
+
+class OdeTypes:
+    """
+    Enum-like class for ODE types.
+    """
+    EULER      = 'euler'
+    HEUN       = 'heun'
+    RK2        = 'rk2'
+    RK4        = 'rk4'
+    ADAPTIVE   = 'adaptive'
+    SCIPY      = 'scipy'
+
+def choose_ode(ode_type: Union[str, int, OdeTypes], *, dt: float = 1e-1, rhs_p: float = 1.0, backend: Any = 'numpy', **kwargs) -> IVP:
+    """
+    Choose an ODE solver based on the specified type.
+
+    Parameters
+    ----------
+    ode_type : str or int
+        Type of ODE solver to use.
+    dt : float, optional
+        Time step size. Default is 1e-1.
+    backend : str, optional
+        Computational backend to use. Default is 'numpy'.
+    **kwargs : keyword arguments
+        Additional arguments for the ODE solver.
+
+    Returns
+    -------
+    IVP
+        An instance of the selected ODE solver.
+    """
+    
+    if isinstance(ode_type, int):
+        ode_type = OdeTypes(ode_type)
+    
+    if isinstance(ode_type, str):
+        ode_type = ode_type.lower()
+    
+    if ode_type == OdeTypes.EULER:
+        return Euler(dt=dt, backend=backend, **kwargs)
+    elif ode_type == OdeTypes.HEUN:
+        return Heun(dt=dt, backend=backend, **kwargs)
+    elif ode_type == OdeTypes.RK2:
+        return RK.from_order(2, dt=dt, backend=backend, **kwargs)
+    elif ode_type == OdeTypes.RK4:
+        return RK.from_order(4, dt=dt, backend=backend, **kwargs)
+    elif ode_type == OdeTypes.ADAPTIVE:
+        return AdaptiveHeun(dt=dt, backend=backend, **kwargs)
+    elif ode_type == OdeTypes.SCIPY:
+        return ScipyRK(dt=dt, backend=backend, **kwargs)
+    
+    raise ValueError(f"Unknown ODE type: {ode_type}") 
 
 #########################################################################
 #! End of file

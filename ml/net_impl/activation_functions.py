@@ -69,7 +69,7 @@ def poly5(x):
 if JAX_AVAILABLE:
     import jax
     
-    @partial(jax.jit, inline = True)
+    # @partial(jax.jit, inline = True)
     def log_cosh_jnp(x):
         ''' 
         Logarithm of the hyperbolic cosine activation function (JAX implementation).
@@ -84,7 +84,7 @@ if JAX_AVAILABLE:
         x       = x * sgn_x
         return x + jax.lax.log1p(jax.lax.exp(-2.0 * x)) - jax.lax.log(2.0)
 
-    @partial(jax.jit, inline = True)
+    # @partial(jax.jit, inline = True)
     def tanh_jnp(x):
         ''' 
         Hyperbolic tangent activation function (JAX implementation).
@@ -99,7 +99,7 @@ if JAX_AVAILABLE:
         x       = x * sgn_x
         return jnp.tanh(x)
     
-    @jax.jit
+    # # @jax.jit
     def sigmoid_jnp(x):
         ''' 
         Sigmoid activation function (JAX implementation).
@@ -112,7 +112,7 @@ if JAX_AVAILABLE:
         '''
         return nn.sigmoid(x)
     
-    @jax.jit
+    # # @jax.jit
     def sigmoid_inv_jnp(x):
         ''' 
         Inverse of the sigmoid activation function (JAX implementation).
@@ -127,7 +127,7 @@ if JAX_AVAILABLE:
         x       = x * sgn_x
         return -jnp.log(1 / x - 1)
 
-    @jax.jit
+    # # @jax.jit
     def relu_jnp(x):
         ''' 
         Rectified linear unit activation function (JAX implementation).
@@ -140,7 +140,7 @@ if JAX_AVAILABLE:
         '''
         return nn.relu(x)
     
-    @jax.jit
+    # # @jax.jit
     def leaky_relu_jnp(x, alpha=0.01):
         ''' 
         Leaky rectified linear unit activation function (JAX implementation).
@@ -154,7 +154,7 @@ if JAX_AVAILABLE:
         '''
         return nn.leaky_relu(x, negative_slope=alpha)
     
-    @jax.jit
+    # @jax.jit
     def elu_jnp(x, alpha=1.0):
         ''' 
         Exponential linear unit activation function (JAX implementation).
@@ -168,7 +168,7 @@ if JAX_AVAILABLE:
         '''
         return nn.elu(x, alpha=alpha)
     
-    @jax.jit
+    # @jax.jit
     def softplus_jnp(x):
         ''' 
         Softplus activation function (JAX implementation).
@@ -181,7 +181,7 @@ if JAX_AVAILABLE:
         '''
         return nn.softplus(x)
     
-    @jax.jit
+    # @jax.jit
     def identity_jnp(x):
         ''' 
         Identity activation function (JAX implementation).
@@ -194,7 +194,7 @@ if JAX_AVAILABLE:
         '''
         return x
     
-    @jax.jit
+    # @jax.jit
     def poly6_jnp(x):
         ''' 
         Polynomial activation function of degree 6 (JAX implementation).
@@ -209,7 +209,7 @@ if JAX_AVAILABLE:
         x2 = x ** 2
         return ((0.022222222 * x2 - 0.083333333) * x2 + 0.5) * x2
     
-    @jax.jit
+    # @jax.jit
     def poly5_jnp(x):
         ''' 
         Polynomial activation function of degree 5 (JAX implementation).

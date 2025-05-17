@@ -300,7 +300,7 @@ class Plotter:
     ###########################################################
     @staticmethod
     def get_figsize(columnwidth, wf=0.5, hf=None, aspect_ratio=None):
-        """
+        r"""
         Parameters:
             - wf [float]:  width fraction in columnwidth units
             - hf [float]:  height fraction in columnwidth units. If None, it will be calculated based on aspect_ratio.

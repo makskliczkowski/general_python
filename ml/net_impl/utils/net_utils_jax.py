@@ -91,7 +91,7 @@ if JAX_AVAILABLE:
 
 if JAX_AVAILABLE:
     
-    @partial(jax.jit, static_argnums=(0,1))
+    # @partial(jax.jit, static_argnums=(0,1))
     def eval_batched_jax(batch_size : int,
                         func        : Any,
                         params      : Any,
@@ -231,7 +231,7 @@ if JAX_AVAILABLE:
     #! Flatten the gradients
     # -----------------------------------------------------------------------------
     
-    @jax.jit
+    # @jax.jit
     def flatten_gradient_pytree(grad_pytree: Any) -> jnp.ndarray:
         """
         Flattens a PyTree of gradients into a single 1D JAX array.
@@ -270,7 +270,7 @@ if JAX_AVAILABLE:
 
     # ---
     
-    @jax.jit
+    # @jax.jit
     def flatten_gradient_pytree_real(grad_pytree: Any) -> jnp.ndarray:
         """
         Flattens a PyTree of real gradients into a single 1D JAX array (float).
@@ -296,7 +296,7 @@ if JAX_AVAILABLE:
     
     # ---
     
-    @jax.jit
+    # @jax.jit
     def flatten_gradient_pytree_complex(grad_pytree: Any) -> jnp.ndarray:
         """
         Flattens a PyTree of complex gradients into a single 1D JAX array (complex).
@@ -333,7 +333,7 @@ if JAX_AVAILABLE:
 
     # ---
 
-    @jax.jit
+    # @jax.jit
     def flatten_gradient_pytree_holo(complex_grad_pytree: Any) -> jnp.ndarray:
         """
         Flattens a complex PyTree (like ∇_{p*} f) into `[Re(g)..., Im(g)...]`.
@@ -368,7 +368,7 @@ if JAX_AVAILABLE:
     #! PyTree gradients
     # -----------------------------------------------------------------------------
     
-    @partial(jax.jit, static_argnums=(0,))
+    # @partial(jax.jit, static_argnums=(0,))
     def pytree_gradient_real_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
                                 params      : Any,
                                 state       : Any) -> Any:
@@ -399,7 +399,7 @@ if JAX_AVAILABLE:
     
     # ---
 
-    @partial(jax.jit, static_argnums=(0,))
+    # @partial(jax.jit, static_argnums=(0,))
     def pytree_gradient_cpx_nonholo_jax(apply_fun   : Callable[[Any, Any], jnp.ndarray],
                                         params      : Any,
                                         state       : Any) -> Any:
@@ -450,7 +450,7 @@ if JAX_AVAILABLE:
     
     # ---
     
-    @partial(jax.jit, static_argnums=(0,))
+    # @partial(jax.jit, static_argnums=(0,))
     def pytree_gradient_cpx_holo_jax(apply_fun  : Callable[[Any, Any], jnp.ndarray],
                                     params      : Any,
                                     state       : Any) -> Any:
@@ -502,7 +502,7 @@ if JAX_AVAILABLE:
 
     # ---
     
-    @partial(jax.jit, static_argnames=('a_grad_fun',))
+    # @partial(jax.jit, static_argnames=('a_grad_fun',))
     def pytree_gradient_analytic_jax(a_grad_fun: Callable[[Any, Any], jnp.ndarray],
                                     params      : Any,
                                     state       : Any) -> Any:
@@ -532,7 +532,7 @@ if JAX_AVAILABLE:
     #! Flattened gradients
     # -----------------------------------------------------------------------------
     
-    @partial(jax.jit, static_argnames=('apply_fun',))
+    # @partial(jax.jit, static_argnames=('apply_fun',))
     def flat_gradient_real_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
                                 params      : Any,
                                 state       : Any) -> jnp.ndarray:
@@ -545,7 +545,7 @@ if JAX_AVAILABLE:
     
     # return flatten_gradient_pytree_real(grad_pytree)
 
-    @partial(jax.jit, static_argnames=('apply_fun',))
+    # @partial(jax.jit, static_argnames=('apply_fun',))
     def flat_gradient_cpx_nonholo_jax(apply_fun : Callable[[Any, Any], jnp.ndarray],
                                         params  : Any,
                                         state   : Any) -> jnp.ndarray:
@@ -558,7 +558,7 @@ if JAX_AVAILABLE:
         return flat, shapes, sizes, is_cpx
         # return flatten_gradient_pytree_complex(grad_pytree)
 
-    @partial(jax.jit, static_argnames=('apply_fun',))
+    # @partial(jax.jit, static_argnames=('apply_fun',))
     def flat_gradient_cpx_holo_jax(apply_fun    : Callable[[Any, Any], jnp.ndarray],
                                     params      : Any,
                                     state       : Any) -> jnp.ndarray:
@@ -572,7 +572,7 @@ if JAX_AVAILABLE:
         return flat, shapes, sizes, is_cpx 
         # return flatten_gradient_pytree_holo(grad_pytree)
 
-    @partial(jax.jit, static_argnames=('a_grad_fun',))
+    # @partial(jax.jit, static_argnames=('a_grad_fun',))
     def flat_gradient_analytic_jax(a_grad_fun   : Callable[[Any, Any], jnp.ndarray],
                                     params      : Any,
                                     state       : Any) -> jnp.ndarray:
@@ -594,13 +594,13 @@ if JAX_AVAILABLE:
     #! Compute the gradient
     # ----------------------------------------------------------------------------
     
-    @partial(jax.jit, static_argnums=(0, 3, 4))                                     # apply_fun and single_sample_flat_grad_fun are static
+    # @partial(jax.jit, static_argnums=(0, 3, 4))                                         # apply_fun and single_sample_flat_grad_fun are static
     def compute_gradients_batched(
-        net_apply                   : Callable[[Any, Any], jnp.ndarray],            # Network apply function f(p, s).
-        params                      : Any,                                          # Network parameters `p` (PyTree).
-        states                      : jnp.ndarray,                                  # Expects shape (n_samples, ...)
-        single_sample_flat_grad_fun : Callable[[Callable, Any, Any], jnp.ndarray],
-        batch_size                  : int = 1,                                      # Batch size for gradient computation.
+            net_apply                   : Callable[[Any, Any], jnp.ndarray],            # Network apply function f(p, s).
+            params                      : Any,                                          # Network parameters `p` (PyTree).
+            states                      : jnp.ndarray,                                  # Expects shape (n_samples, ...)
+            single_sample_flat_grad_fun : Callable[[Callable, Any, Any], jnp.ndarray],
+            batch_size                  : int = 1,                                      # Batch size for gradient computation.
         ) -> jnp.ndarray:
         """
         Compute flattened gradients per sample over a batch of states using jax.vmap.
@@ -799,7 +799,7 @@ if JAX_AVAILABLE:
 
 if JAX_AVAILABLE:
     
-    @partial(jax.jit, static_argnums=(0,4))
+    # @partial(jax.jit, static_argnums=(0,4))
     def apply_callable_jax(func,
                         states,
                         sample_probas,
@@ -851,7 +851,7 @@ if JAX_AVAILABLE:
         applied = jax.vmap(compute_estimate, in_axes=(0, 0, 0))(states, logprobas_in, sample_probas)
         return applied, jnp.mean(applied, axis = 0), jnp.std(jnp.real(applied), axis = 0)
     
-    @partial(jax.jit, static_argnums=(0,3))
+    # @partial(jax.jit, static_argnums=(0,3))
     def apply_callable_jax_uniform(func, states, logprobas_in, logproba_fun, parameters, mu = 2.0):
         """
         Applies a transformation function to each state and computes a locally
@@ -896,7 +896,7 @@ if JAX_AVAILABLE:
         applied = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
         return applied, jnp.mean(applied, axis = 0), jnp.std(applied, axis = 0)
 
-    @partial(jax.jit, static_argnums=(0,4,6))
+    # @partial(jax.jit, static_argnums=(0,4,6))
     def apply_callable_batched_jax(func,
                                     states,
                                     sample_probas,
@@ -987,7 +987,7 @@ if JAX_AVAILABLE:
 
         return estimates, mean_estimate, std_estimate
         
-    @partial(jax.jit, static_argnums=(0,3,5))
+    # @partial(jax.jit, static_argnums=(0,3,5))
     def apply_callable_batched_jax_uniform(func,
                                         states,
                                         logprobas_in,
@@ -1161,7 +1161,7 @@ if JAX_AVAILABLE:
         
     # --------------------------------------------------------------------------
     
-    @partial(jax.jit, static_argnums=(1,))
+    # @partial(jax.jit, static_argnums=(1,))
     def fast_unflatten(
         flat_real_vector    : jnp.ndarray,
         slice_metadata      : Tuple[SliceInfo, ...]) -> List[jnp.ndarray]:
@@ -1224,7 +1224,7 @@ if JAX_AVAILABLE:
 
     # @partial(jax.jit, static_argnames=('params_tree_def', 'params_slice_metadata', 'params_total_size'))
     # def transform_flat_params_jit(d_par, params_tree_def, params_slice_metadata, params_total_size):
-    @partial(jax.jit, static_argnames=('params_tree_def', 'params_slice_metadata', 'params_total_size'))
+    # @partial(jax.jit, static_argnames=('params_tree_def', 'params_slice_metadata', 'params_total_size'))
     def transform_flat_params_jit(d_par, params_tree_def, params_slice_metadata, params_total_size):
         """
         JIT-compiled helper to transform the flat parameter update vector

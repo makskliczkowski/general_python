@@ -59,13 +59,12 @@ import jax
 import jax.numpy as jnp
 from jax import random
 from flax import linen as nn
-from flax.core import unfreeze, freeze
-from jax.tree_util import tree_flatten, tree_unflatten, tree_map
+from jax.tree_util import tree_flatten, tree_map
 
 # from general_python utilities
 from general_python.ml.net_impl.net_general import GeneralNet
 from general_python.ml.net_impl.activation_functions import get_activation
-from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, Array
 
 ########################################################################
 #! GENERIC FLAX NETWORK INTERFACE
@@ -212,8 +211,9 @@ class FlaxInterface(GeneralNet):
             return self._apply_jax_handle({'params': p}, x)
 
         # Compile once
-        self._compiled_apply_fn = jax.jit(compiled_apply)
-        # self._compiled_apply_fn = compiled_apply
+        # self._compiled_apply_fn = jax.jit(compiled_apply)
+        #!TODO: Should I compile it or not?
+        self._compiled_apply_fn = compiled_apply
     
     def _initialize_activations(self, act_fun_specs: Any) -> Tuple[Callable, ...]:
         """
@@ -381,7 +381,7 @@ class FlaxInterface(GeneralNet):
     #! EVALUATION
     ########################################################
     
-    def apply_jax(self, x: 'array-like'):
+    def apply_jax(self, x: Array):
         """
         Evaluate the network on input x using Flax (and JAX).
         Params:
@@ -444,7 +444,7 @@ class FlaxInterface(GeneralNet):
     #! CALL ME MAYBE
     #########################################################
     
-    def __call__(self, x: 'array-like'):
+    def __call__(self, x: Array):
         """
         Call the network on input x.
         This is a wrapper around the Flax module's apply method.

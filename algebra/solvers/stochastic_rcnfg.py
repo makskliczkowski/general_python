@@ -153,7 +153,7 @@ if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax.scipy as jsp
     
-    @jax.jit
+    # @jax.jit
     def loss_centered_jax(loss: jnp.ndarray, loss_m: jnp.ndarray) -> jnp.ndarray:
         '''
         Calculates the centered loss:
@@ -173,7 +173,7 @@ if JAX_AVAILABLE:
         '''
         return loss - loss_m
     
-    @jax.jit
+    # @jax.jit
     def loss_centered_jax_modified_ratios(  loss        : jnp.ndarray,
                                             loss_m      : jnp.ndarray,
                                             betas       : jnp.ndarray,
@@ -210,7 +210,7 @@ if JAX_AVAILABLE:
         corr        = jnp.einsum('i,ij->j', scales, delta_exc)
         return loss_c + corr
 
-    @jax.jit
+    # @jax.jit
     def derivatives_centered_jax(derivatives: jnp.ndarray, derivatives_m: jnp.ndarray) -> jnp.ndarray:
         '''
         Calculates the centered derivatives:
@@ -233,7 +233,7 @@ if JAX_AVAILABLE:
         '''
         return derivatives - derivatives_m
     
-    @jax.jit
+    # @jax.jit
     def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray) -> jnp.ndarray:
         '''
         Calculates the covariance matrix for stochastic reconfiguration from
@@ -250,7 +250,7 @@ if JAX_AVAILABLE:
         '''
         return jnp.matmul(derivatives_c, derivatives_c_h) / derivatives_c.shape[1]
     
-    @jax.jit
+    # @jax.jit
     def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         '''
         Calculates the covariance matrix for stochastic reconfiguration from
@@ -266,7 +266,7 @@ if JAX_AVAILABLE:
         '''
         return jnp.matmul(derivatives_c_h, derivatives_c) / n_samples
     
-    @jax.jit
+    # @jax.jit
     def gradient_jax(derivatives_c_h: jnp.ndarray,  loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         '''
         Calculates the gradient of the loss function with respect to the
@@ -284,7 +284,7 @@ if JAX_AVAILABLE:
         '''
         return jnp.matmul(derivatives_c_h, loss_c) / n_samples
 
-    @jax.jit
+    # @jax.jit
     def solve_jax_prepare(loss, var_deriv):
         """
         Prepares the loss and variational derivatives for the stochastic reconfiguration solver.
@@ -325,7 +325,7 @@ if JAX_AVAILABLE:
         var_deriv_c_h   = jnp.conj(var_deriv_c.T)
         return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
 
-    @jax.jit
+    # @jax.jit
     def solve_jax_prepare_modified_ratios(loss, var_deriv, betas, ratios_exc, ratios_low):
         """
         Prepares centered loss and derivative tensors for stochastic optimization using JAX.
