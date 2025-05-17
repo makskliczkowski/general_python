@@ -657,9 +657,10 @@ if JAX_AVAILABLE:
         gradients = jax.vmap(batch_grads_fun, in_axes=(None, 0), out_axes=0)(params, batches)
         # # jax.debug.print("jax compute gradients: {}", gradients[0])
         # Reshape gradients to match the original number of samples
-        gradients = gradients.reshape(states.shape[0], -1)
-        # gradients shape: (num_samples, num_flat_params)
+        gradients = gradients.reshape(-1, gradients.shape[-1])      # flatten first
+        gradients = gradients[: states.shape[0]]                    # drop padding
         return gradients, shapes, sizes, is_cpx
+
     
     # ----------------------------------------------------------------------------
     #! Transform the vector from the original representation to the real representation [Re..., Im...]
