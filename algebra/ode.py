@@ -118,7 +118,7 @@ class IVP(ABC):
     
     # -------------------------------------------------------
     
-    def dt(self, h: float, i: int) -> float:
+    def dt(self, h: float = 0.0, i: int = 0) -> float:
         return self._dt
     
     def set_dt(self, dt: float):
