@@ -621,7 +621,7 @@ class OdeTypes:
     ADAPTIVE   = 'adaptive'
     SCIPY      = 'scipy'
 
-def choose_ode(ode_type: Union[str, int, OdeTypes], *, dt: float = 1e-1, rhs_p: float = 1.0, backend: Any = 'numpy', **kwargs) -> IVP:
+def choose_ode(ode_type: Union[str, int, OdeTypes], *, dt: float = 1e-1, rhs_prefactor: float = 1.0, backend: Any = 'numpy', **kwargs) -> IVP:
     """
     Choose an ODE solver based on the specified type.
 
@@ -649,19 +649,19 @@ def choose_ode(ode_type: Union[str, int, OdeTypes], *, dt: float = 1e-1, rhs_p: 
         ode_type = ode_type.lower()
     
     if ode_type == OdeTypes.EULER:
-        return Euler(dt=dt, backend=backend, **kwargs)
+        return Euler(dt=dt, backend=backend, rhs_prefactor=rhs_prefactor, **kwargs)
     elif ode_type == OdeTypes.HEUN:
-        return Heun(dt=dt, backend=backend, **kwargs)
+        return Heun(dt=dt, backend=backend, rhs_prefactor=rhs_prefactor, **kwargs)
     elif ode_type == OdeTypes.RK2:
-        return RK.from_order(2, dt=dt, backend=backend, **kwargs)
+        return RK.from_order(2, dt=dt, backend=backend, rhs_prefactor=rhs_prefactor, **kwargs)
     elif ode_type == OdeTypes.RK4:
-        return RK.from_order(4, dt=dt, backend=backend, **kwargs)
+        return RK.from_order(4, dt=dt, backend=backend, rhs_prefactor=rhs_prefactor, **kwargs)
     elif ode_type == OdeTypes.ADAPTIVE:
-        return AdaptiveHeun(dt=dt, backend=backend, **kwargs)
+        return AdaptiveHeun(dt=dt, backend=backend, rhs_prefactor=rhs_prefactor, **kwargs)
     elif ode_type == OdeTypes.SCIPY:
-        return ScipyRK(dt=dt, backend=backend, **kwargs)
-    
-    raise ValueError(f"Unknown ODE type: {ode_type}") 
+        return ScipyRK(dt=dt, backend=backend, rhs_prefactor=rhs_prefactor, **kwargs)
+
+    raise ValueError(f"Unknown ODE type: {ode_type}")
 
 #########################################################################
 #! End of file
