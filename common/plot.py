@@ -1216,6 +1216,45 @@ class Plotter:
         if 'y' in which:
             ax.yaxis.set_label_coords(inX, inY, **kwargs)
     
+    @staticmethod
+    def set_smart_lim(
+        ax,
+        *,
+        which           : str = "both",             # "x", "y", or "both"
+        data            : np.ndarray | None = None, # 1-D or 2-D; if None infer from artists
+        margin_p        : float = 0,                # log_scale moves
+        margin_m        : float = 1,                # log_scale moves
+        xlim            : tuple | None = None,      # x limits
+        ylim            : tuple | None = None,      # y limits
+        ):
+        """
+        Auto-compute robust axis limits and apply them to *ax*.
+        """
+        if which not in ["x", "y", "both"]:
+            raise ValueError(f"Invalid axis: {which}. Use 'x', 'y', or 'both'.")
+        
+        if which == 'y' or which == 'both':
+            if data is not None:
+                d_max   = np.max(data)
+                d_max   = np.ceil(np.log10(d_max))
+                d_min   = np.floor(np.log10(np.min(data[data > 0])))
+                d_lim   = (10**(d_min-margin_m), 10**(d_max+margin_p))
+                d_lim   = ylim if ylim is not None else d_lim
+            else:
+                d_lim   = ylim
+            ax.set_ylim(d_lim)
+            
+        if which == 'x' or which == 'both':
+            if data is not None:
+                d_max   = np.max(data)
+                d_max   = np.ceil(np.log10(d_max))
+                d_min   = np.floor(np.log10(np.min(data[data > 0])))
+                d_lim   = (10**(d_min-margin_m), 10**(d_max+margin_p))
+                d_lim   = xlim if xlim is not None else d_lim
+            else:
+                d_lim   = xlim
+            ax.set_xlim(d_lim)
+
     #################### L A B E L ####################
     
     # @staticmethod
@@ -1537,8 +1576,7 @@ class Plotter:
     ##################### L O O K #####################
     
     @staticmethod
-    def set_transparency(ax, 
-                         alpha = 0.0):
+    def set_transparency(ax, alpha = 0.0):
         ax.patch.set_alpha(alpha)
     
     ################### L E G E N D ###################
@@ -1630,7 +1668,6 @@ class Plotter:
             for text in legend.get_texts():
                 text.set_horizontalalignment(alignment)
 
-    
     @staticmethod
     def set_legend_custom(  ax,
                             conditions  : list,

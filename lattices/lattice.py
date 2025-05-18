@@ -477,7 +477,7 @@ class Lattice(ABC):
     @nn_forward.setter
     def nn_forward(self, value):
         self._nn_forward = value
-    
+
     @property
     def nnn(self):
         ''' Next nearest neighbors '''
@@ -731,9 +731,7 @@ class Lattice(ABC):
             return (site + corr_len * self._lxly) if (site + corr_len * self._lxly) < self._lxlylz else self.bad_lattice_site
         
     # -----------------------------------------------------------------------------
-    
-    # Virtual methods
-    
+    #! Virtual methods
     # -----------------------------------------------------------------------------
     
     @abstractmethod
@@ -757,10 +755,101 @@ class Lattice(ABC):
         '''
         pass
     
+    def get_nnn_direction(self, site : int, direction : LatticeDirection):
+        '''
+        Returns the next nearest neighbors in a given direction.
+        '''
+        pass
+    
+    # -----------------------------------------------------------------------------
+    #! Virtual methods for neighbors
     # -----------------------------------------------------------------------------
     
-    # Virtual methods for forward neighbors
+    def wrong_nei(self, nei):
+        """
+        Check if a given neighbor index is invalid.
+
+        A neighbor is considered invalid if it is:
+            - None
+            - Equal to self.bad_lattice_site
+            - NaN (not a number)
+            - Less than 0
+
+        Parameters
+        ----------
+        nei : Any
+            The neighbor index to check.
+
+        Returns
+        -------
+        bool
+            True if the neighbor index is invalid, False otherwise.
+        """
+        return  nei is None or                  \
+                nei == self.bad_lattice_site or \
+                np.isnan(nei) or                \
+                nei < 0
     
+    def get_nn_num(self, site : int):
+        '''
+        Returns the number of nearest neighbors of a given site.
+        
+        Args:
+        - site : lattice site
+        Returns:
+        - number of nearest neighbors
+        '''
+        if self._nn is None:
+            return 0
+        return len(self.nn[site])
+    
+    def get_nn(self, site, num : int = -1):
+        '''
+        Returns the nearest neighbors of a given site.
+        
+        Args:
+            - site : lattice site
+            - num  : number of nearest neighbors
+        Returns:
+            - list of nearest neighbors        
+        '''
+        if num < 0:
+            return self._nn[site]
+        if self._nn is None:
+            return []
+        return self._nn[site][num]
+    
+    def get_nnn_num(self, site : int):
+        '''
+        Returns the number of next nearest neighbors of a given site.
+        
+        Args:
+        - site : lattice site
+        Returns:
+        - number of next nearest neighbors
+        '''
+        if self._nnn is None:
+            return 0
+        return len(self._nnn[site])
+    
+    def get_nnn(self, site, num : int = -1):
+        '''
+        Returns the next nearest neighbors of a given site.
+        
+        Args:
+            - site : lattice site
+            - num  : number of next nearest neighbors
+        Returns:
+            - list of next nearest neighbors        
+        '''
+        if num < 0:
+            return self._nnn[site]
+        if self._nnn is None:
+            return []
+        return self._nnn[site][num]
+    
+    # -----------------------------------------------------------------------------
+    #! Virtual methods for forward neighbors
     # -----------------------------------------------------------------------------
     
     def get_nn_forward_num(self, site : int):
