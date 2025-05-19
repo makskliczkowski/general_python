@@ -85,6 +85,9 @@ class GeneralNet(ABC):
         
         # activation - modifies the input before the network
         self._in_activation     = in_activation
+        self._net_module_class  = None
+        self._net_args          = None
+        self._seed              = None
         
     # ---------------------------------------------------
     #! INFO
@@ -346,6 +349,38 @@ class GeneralNet(ABC):
             Optional[List[Tuple[int, tuple]]]: Shapes for update.
         """
         return self._shapes_for_update
+
+    # ---
+    
+    @property
+    def net_module(self):
+        """
+        Get the network module.
+        
+        Returns:
+            object: Network module.
+        """
+        return self._net_module_class
+
+    @property
+    def net_args(self):
+        """
+        Get the network arguments.
+        
+        Returns:
+            object: Network arguments.
+        """
+        return self._net_args
+    
+    @property
+    def seed(self):
+        """
+        Get the random seed.
+        
+        Returns:
+            int: Random seed.
+        """
+        return self._seed
 
     # ---------------------------------------------------
     #! SETTERS

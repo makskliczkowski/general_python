@@ -903,7 +903,33 @@ class Plotter:
         if label is None or label == '':
             labelcond = False
         ax.plot(x, y, ls = ls, lw = lw, color = color, label = label if labelcond else '', zorder = zorder, **kwargs)
-    
+
+    @staticmethod
+    def fill_between(
+        ax,
+        x,
+        y1,
+        y2,
+        color       =   'blue',
+        alpha       =   0.5,
+        **kwargs):
+        """
+        Fills the area between two curves on the provided axis.
+
+        Parameters:
+            ax (matplotlib.axes.Axes): The axis on which to fill the area.
+            x (array-like): The x-coordinates of the points.
+            y1 (array-like): The y-coordinates of the first curve.
+            y2 (array-like): The y-coordinates of the second curve.
+            color (str, optional): The color of the filled area (default: 'blue').
+            alpha (float, optional): The transparency of the filled area (0.0 to 1.0, default: 0.5).
+            **kwargs: Additional keyword arguments passed to `matplotlib.axes.Axes.fill_between`.
+
+        Example:
+            fill_between(ax, x_data, y1_data, y2_data, color='red', alpha=0.3)
+        """
+        ax.fill_between(x, y1, y2, color=color, alpha=alpha, **kwargs)
+
     #################### T I C K S ####################
     
     @staticmethod

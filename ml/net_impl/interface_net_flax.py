@@ -126,7 +126,7 @@ class FlaxInterface(GeneralNet):
         if net_kwargs is None:
             net_kwargs = {}
         
-        self._seed                  = seed
+        self._seed                  = seed if seed is not None else np.random.randint(0, 2**32 - 1)
         self._net_module_class      = net_module
         self._net_args              = net_args
         self._initialized           = False

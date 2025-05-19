@@ -1,288 +1,374 @@
+'''
+Directories handler. Reading, writing, creating directories.
+file    : directories.py
+author  : Maksymilian Kliczkowski
+email   : maksymilian.kliczkowski@pwr.edu.pl
+'''
+
 import os
 import random
 import shutil
-from .flog import *
+from pathlib import Path
+from typing import Callable, Iterable, List, Optional, Union, Iterator
+PathLike = Union[str, Path]
+
+from general_python.common.flog import printV
 
 kPS = os.sep
 
 #######################################################################################################################
 
-class Directories(str):
+class Directories(object):
     """ 
     Class representing a directory handler
     - static methods are represented with camel case
     - class methods are represented with underscore
     """
     
-    def __new__(cls, *args):
-        return str.__new__(cls, cls.makeDir(*args))
-    
-    def __init__(self, *args, **kwargs) -> None:
-        '''
-        Initialize a directory handler.
-        '''
-        super(Directories, self).__init__()
-    
-    ############################################################################
-    
-    def format_str(self, *args, **kwargs) -> "Directories":
-        if not args and not kwargs:
-            return Directories("")
-        return Directories(self.format(*args, **kwargs))
-    
-    ############################################################################
-    
-    @staticmethod
-    def win(st : str) -> "Directories":
-        return Directories(*st.split('\\'))
-    
-    ############################################################################
-    
-    @staticmethod
-    def makeDir(*args, create = False):
-        '''
-        [summary] 
-        Given a set of folder it creates a directory with correct path separator
-        '''
-        directory = ""
-        for i, arg in enumerate(args):
-            if i == 0 and arg.endswith(kPS):
-                directory += arg
-            else:
-                directory += arg + kPS
-        # creates if necessary
-        if create:
-            Directories.createFolder(directory)
-        return directory
-    
-    def make_dir(self, *args, create = False):
-        return Directories(Directories.makeDir(*args, create = create))
+    def __init__(self, *parts: PathLike) -> None:
+        """
+        Initialize with one or more path components.
+        >>> d = Directories("foo", "bar")  # -> Path("foo/bar")
+        """
+        self.path = Path(*parts)
 
-    ############################################################################
+    def __fspath__(self) -> str:
+        return str(self.path)
     
-    @staticmethod
-    def upDir(direct):
-        '''
-        [summary] 
-        Reproduction of ../
-        
-        [parameters]
-        - dir : directory
-        '''
-        tmp = direct
-        
-        # check if the directory has path separator at the end already
-        if tmp[-1] == kPS:
-            tmp = tmp[:-1]
-        
-        # already being in the root directory
-        if tmp[-1] == '.':
-            return ".." + kPS
-            
-        # remove while we don't get the path separator or to the end of the directory
-        # while tmp[-1] != kPS and tmp[-1] != '.' and len(tmp) > 0:
-        while tmp[-1] != kPS and len(tmp) > 0:
-            tmp = tmp[:-1]
-        # check if it's just a current directory 
-        if tmp == '.':
-            return ".." + kPS
-        elif tmp[-2] + tmp[-1] == '..':
-            return ".." + kPS + tmp + kPS
-        
-        if isinstance(direct, str):
-            return Directories(tmp)
-        elif isinstance(direct, Directories):
-            return str(tmp)
-    
-    def up_dir(self):
-        return Directories(Directories.upDir(self))
-        
-    ############################################################################
-    
-    @staticmethod
-    def createFolder(folder : str, silent = False):
-        '''
-        Create single folder listed as a directory
-        - folder : folder to be created
-        - silent : talk?
-        '''
-        try:
-            if not os.path.isdir(folder):
-                os.makedirs(folder)
-                if not silent:
-                    printV(f"Created a directory : {folder}", silent)
-        except OSError:
-            printV("Creation of the directory %s failed" % folder, silent)      
-    
-    @staticmethod
-    def createFolders(directories : list, silent = False):
-        '''
-        Create folders from the list of directories.
-        '''
-        for folder in directories:
-            try:
-                Directories.createFolder(folder, silent)
-            except OSError:
-                printV("Creation of the directory %s failed" % folder, silent)      
-    
-    def create_folder(self, silent = False):
-        Directories.createFolder(self, silent)
+    def __len__(self) -> int:
+        """
+        """
+        if self.path.is_dir():
+            return self.size_human()
+        return len(self.path)
+
+    #! Operators
+
+    def __add__(self, other: PathLike) -> "Directories":
+        """
+        Concatenate with another path component.
+        >>> d = Directories("foo") + "bar"  # -> Path("foo/bar")
+        """
+        return self.join(other)
+
+    def __iadd__(self, other: PathLike) -> "Directories":
+        """
+        In-place concatenation with another path component.
+        >>> d = Directories("foo"); d += "bar"  # -> Path("foo/bar")
+        """
+        self.path = self.path.joinpath(other)
         return self
-        
-    ############################################################################
-
-    @staticmethod
-    def getRandomFile(folder : str, cond, relative = False):
-        '''
-        [summary]
-        Getting a random file from a folder
-        - folder        : folder to read from
-        - cond          : lambda function to be applied to the file (if we shall consider it or not)
-        - relative      : give path without the folder
-        '''
-        choice  = random.choice(os.listdir(folder))
-        maxlen  = len(os.listdir(folder))
-        counter = 0
-        while not cond(choice):
-            choice  = random.choice(os.listdir(folder))
-            if counter > maxlen:
-                raise Exception("Outside file scope")
-            counter += 1
-        if relative:
-            return choice
+    
+    def __radd__(self, other: PathLike) -> "Directories":
+        """
+        Concatenate with another path component.
+        >>> d = "foo" + Directories("bar")  # -> Path("foo/bar")
+        """
+        return self.join(other)
+    
+    def __truediv__(self, other: PathLike) -> "Directories":
+        """
+        Concatenate with another path component using / operator.
+        >>> d = Directories("foo") / "bar"  # -> Path("foo/bar")
+        """
+        return self.join(other)
+    
+    def __rtruediv__(self, other: PathLike) -> "Directories":
+        """
+        Concatenate with another path component using / operator.
+        >>> d = "foo" / Directories("bar")  # -> Path("foo/bar")
+        """
+        return self.join(other)
+    
+    #! Comparison
+    
+    def __eq__(self, other: PathLike) -> bool:
+        """
+        Check equality with another path component.
+        >>> d = Directories("foo") == "foo"  # -> True
+        """
+        if isinstance(other, str):
+            return str(self) == other
+        elif isinstance(other, Path):
+            return self.path == other
         else:
-            return folder + choice
+            return False
         
-    def get_random_file(self, cond, relative = False):
-        '''
-        [summary]
-        Getting a random file from a folder
-        - cond          : lambda function to be applied to the file (if we shall consider it or not)
-        - relative      : give path without the folder
-        '''
-        return Directories.getRandomFile(self, cond, relative)
-        
-    ############################################################################
-
-    @staticmethod
-    def clearFiles(directory : str, files = [], empty = True):
-        '''
-        Clears the empty files in a directory
-        - directory     : shall clear this up!
-        - files         : fileToGoThrough
-        - empty         : removes empty files if set to true
-        '''
-        filelist = list(os.listdir(directory)) if len(files) == 0 else files
-        fileLeft = []
-        # go through list of files
-        for filename in filelist:
-            removing = not empty
-            try:
-                # try removing if empty file
-                removing = (not removing) and (os.stat(directory + filename).st_size == 0)
-                if removing:
-                    os.remove(directory + filename)
-                    printV(f"removed {directory + filename}", True, 2)
-                else:
-                    fileLeft.append(filename)
-            except Exception as inst:
-                printV(f"Problem with reading: {inst} - {directory}/{filename}", True, 1)
-        return fileLeft
-
-    def clear_files(self, files = [], empty = True):
-        return Directories.clearFiles(self, files, empty)
+    def __ne__(self, other: PathLike) -> bool:
+        """
+        Check inequality with another path component.
+        >>> d = Directories("foo") != "bar"  # -> True
+        """
+        return not self.__eq__(other)
     
-    ############################################################################
+    #! Hashing
+    
+    def __hash__(self) -> int:
+        """
+        Hash the path for use in sets or dictionaries.
+        >>> d = Directories("foo")  # -> hash(Path("foo"))
+        """
+        return hash(self.path)
+    
+    #! String representation    
+    
+    def __repr__(self) -> str:
+        """
+        Return a string representation of the path.
+        >>> d = Directories("foo")  # -> "Directories('foo')"
+        """
+        return f"Directories({self.path!r})"
+    
+    def __str__(self) -> str:
+        """
+        Return a string representation of the path.
+        >>> d = Directories("foo")  # -> "foo"
+        """
+        return str(self.path)
+    
+    
+    
+    ################################################################################
+    #! Construction / Navigation
+    ################################################################################
+
+    def join(self, *parts: PathLike, create: bool = False) -> "Directories":
+        """
+        Return a new Directories for self/path joined with parts.
+        If create=True, mkdir(parents=True, exist_ok=True) is called.
+        """
+        new_path = self.path.joinpath(*parts)
+        if create:
+            new_path.mkdir(parents=True, exist_ok=True)
+        return Directories(new_path)
+
+    def parent(self) -> "Directories":
+        """
+        Return Directories for parent directory (..).
+        """
+        return Directories(self.path.parent)
+
+    @classmethod
+    def win(cls, raw: str) -> "Directories":
+        """
+        Parse a Windows-style backslash path into Directories.
+        """
+        return cls(*raw.split("\\"))
+    
+    ################################################################################
+    #! Creation
+    ################################################################################
+
+    def mkdir(self, parents: bool = True, exist_ok: bool = True) -> "Directories":
+        """
+        Create this directory on disk.
+        Returns self for chaining.
+        """
+        self.path.mkdir(parents=parents, exist_ok=exist_ok)
+        return self
 
     @staticmethod
-    def listDirs(directories    : list,
-                 clearEmpty     = False,
-                 conditions     = [], 
-                 sortCondition  = None,
-                 appendDir      = True):
-        '''
-        Lists a specific directory and gives the files that match a condition.
-        - directories   : directories to be listed    
-        - clearEmpty    : shall clear empty files?
-        - conditions    : lambda functions to be applied to filenames or files
-        '''
-        files       = []
-        directories = [d for d in directories if os.path.exists(d)]
-        for directory in directories:
-            files   += Directories.listDir(directory, clearEmpty, conditions, sortCondition, appendDir)
+    def mkdirs(paths    : Iterable[PathLike], 
+            parents     : bool = True, 
+            exist_ok    : bool = True) -> None:
+        """
+        Create multiple directories.
+        """
+        for p in paths:
+            Path(p).mkdir(parents=parents, exist_ok=exist_ok)
+            
+    ################################################################################
+    #! Listing & Clearing
+    ################################################################################
+
+    def list_files(self,
+                   *,
+                include_empty   :   bool                            = True,
+                filters         :   List[Callable[[Path], bool]]    = [],
+                sort_key        :   Optional[Callable[[Path], any]] = None) -> List[Path]:
+        """
+        List files (not directories) in this directory.
+        - include_empty : if False, skip files of size zero.
+        - filters       : a list of callables Path->bool; all must pass.
+        - sort_key      : key function for sorting.
+        """
+        files = [p for p in self.path.iterdir() if p.is_file()]
+
+        if not include_empty:
+            files = [p for p in files if p.stat().st_size > 0]
+
+        for f in filters:
+            files = list(filter(f, files))
+
+        if sort_key:
+            files.sort(key=sort_key)
+
         return files
-    
-    @staticmethod
-    def listDir(directory      :   str, 
-                clearEmpty     =   False, 
-                conditions     =   [],
-                sortCondition  =   None,
-                appendDir      =   False) -> list[str]:
-        '''
-        Lists a specific directory and gives the files that match a condition.
-        - directory     : directory to be listed
-        - clearEmpty    : shall clear empty files?
-        - conditions    : lambda functions to be applied to filenames or files
-        '''
-        files       =   list(os.listdir(directory))
 
-        # go through conditions
-        for condition in conditions:
-            files   =   list(filter(condition, files))
+    def clear_empty(self) -> List[Path]:
+        """
+        Remove all zero-length files in this directory.
+        Returns list of files left after removal.
+        """
+        
+        survivors: List[Path] = []
+        for p in self.path.iterdir():
+            if p.is_file() and p.stat().st_size == 0:
+                p.unlink()
+            else:
+                survivors.append(p)
+        return survivors
 
-        # check clear
-        if clearEmpty:
-            files   =   Directories.clearFiles(directory, files, clearEmpty)
-            
-        if sortCondition is not None:
-            files   =   sorted(files, key = sortCondition)
-        
-        if appendDir:
-            files   =   [directory + kPS + file for file in files]
-            
-        return list(files)
+    def walk(self) -> Iterator[Path]:
+        """
+        Walk the directory tree and yield all files.
+        """
+        yield from self.path.rglob('*')
+
+    def glob(self, pattern: str) -> List[Path]:
+        """
+        Return a list of all files matching the pattern in this directory.
+        """
+        return list(self.path.glob(pattern))
     
-    def list_dir(self, clearEmpty = False, conditions = [], sortCondition = None, appendDir = False) -> list[str]:
-        return Directories.listDir(self, clearEmpty, conditions, sortCondition, appendDir = appendDir)
-    
-    ############################################################################
-    
-    @staticmethod
-    def transferFiles(dirFrom,
-                      dirInto,
-                      filereg : list):
-        '''
-        Copies files from one directory to another
-        - dirFrom : directory to copy from
-        - dirInto : directory to copy into
-        - filereg : regular expression to be applied to the files
-        '''
+    ################################################################################
+    #! Random file
+    ################################################################################
+
+    def random_file(self, condition: Callable[[Path], bool] = lambda _: True) -> Path:
+        """
+        Return a random Path in this directory satisfying condition.
+        Raises ValueError if none match.
+        """
+        candidates = [p for p in self.path.iterdir() if p.is_file() and condition(p)]
+        if not candidates:
+            raise ValueError(f"No file satisfying condition in {self.path}")
+        return random.choice(candidates)
+
+    ################################################################################
+    #! Transfer
+    ################################################################################
+
+    def copy_files(self,
+                    dest        : PathLike,
+                    condition   : Callable[[Path], bool],
+                    overwrite   : bool = False) -> None:
+        """
+        Copy all files satisfying condition() from self to dest.
+        Creates dest if needed.
         
-        if not os.path.exists(dirFrom):
-            return
-        
-        # create directory if not exist
-        Directories.createFolder(dirInto)
-        
-        # list files and go through them
-        filesFrom = dirFrom.list_dir(conditions = filereg)
-        
-        # go through files and copy them
-        for f in filesFrom:
-            try:
-                if os.path.exists(dirFrom + f):
-                    print(f"Path exists: {dirFrom + f}")
+        Parameters
+        ----------
+        dest : PathLike
+            Destination directory.
+        condition : Callable[[Path], bool]
+            Function that takes a Path and returns True if the file should be copied.
+        overwrite : bool, optional
+            If True, overwrite existing files in the destination directory. Default is False.
+        """
+        dest_path = Path(dest)
+        dest_path.mkdir(parents=True, exist_ok=True)
+
+        for p in self.path.iterdir():
+            if p.is_file() and condition(p):
+                target = dest_path / p.name
+                if not overwrite and target.exists():
                     continue
-                
-                if os.path.exists(dirFrom + f):
-                    shutil.move(dirFrom + f, dirInto + f)
-                    print(f"Moving {f} to {dirInto}")
-                    
-            except Exception as e:
-                print("Exception occured for file: ", f)
-                print(e)
-                continue
+                shutil.copy2(p, target)
+
+    def transfer_files(self,
+                    dest        : PathLike,
+                    condition   : Callable[[Path], bool]) -> None:
+        """
+        Move all files satisfying condition() from self to dest.
+        Creates dest if needed.
+        """
+        dest_path = Path(dest)
+        dest_path.mkdir(parents=True, exist_ok=True)
+
+        for p in self.path.iterdir():
+            if p.is_file() and condition(p):
+                target = dest_path / p.name
+                p.rename(target)
+
+    ################################################################################
+    #! Convenience
+    ################################################################################
+
+    def exists(self) -> bool:
+        """
+        Check if the path exists.
+        """
+        return self.path.exists()
+
+    def as_path(self) -> Path:
+        '''
+        Return the path as a Path object.
+        '''
+        return self.path
     
-    ############################################################################
+    def is_empty(self) -> bool:
+        """
+        Check if the directory is empty.
+        """
+        return not any(self.path.iterdir())
+
+    def is_dir(self) -> bool:
+        """
+        Check if the path is a directory.
+        """
+        return self.path.is_dir()
     
+    def is_file(self) -> bool:
+        """
+        Check if the path is a file.
+        """
+        return self.path.is_file()
     
+    def is_symlink(self) -> bool:
+        """
+        Check if the path is a symlink.
+        """
+        return self.path.is_symlink()
+    
+    def size(self) -> int:
+        """
+        Return the size of the directory in bytes.
+        """
+        return sum(f.stat().st_size for f in self.path.glob('*') if f.is_file())
+    
+    def size_human(self) -> str:
+        """
+        Return the size of the directory in a human-readable format.
+        """
+        size = self.size()
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size < 1024:
+                return f"{size:.2f} {unit}"
+            size /= 1024
+        return f"{size:.2f} PB"
+    
+    def disk_usage(self) -> str:
+        """
+        Return the disk usage of the directory in a human-readable format.
+        """
+        total, used, free = shutil.disk_usage(self.path)
+        return f"Total: {total // (2**30)} GB, Used: {used // (2**30)} GB, Free: {free // (2**30)} GB"
+    
+    def checksum(self) -> str:
+        """
+        Return the checksum of the directory.
+        """
+        import hashlib
+        hash_md5 = hashlib.md5()
+        for f in self.path.glob('*'):
+            if f.is_file():
+                with open(f, "rb") as file:
+                    for chunk in iter(lambda: file.read(4096), b""):
+                        hash_md5.update(chunk)
+        return hash_md5.hexdigest()
+    
+
+
+################################################################################
+#! EOF

@@ -806,11 +806,11 @@ try:
     DEFAULT_BACKEND_KEY     = backend_mgr.key           # Default JAX key (if JAX is active)
     backend_mgr.print_info() # Print backend info
 except ImportError as e:
-    log.error(f"Error importing backend modules: {e}", exc_info=True)
+    log.error(f"Error importing backend modules: {e}")
 except AttributeError as e:
-    log.error(f"Error accessing backend attributes: {e}", exc_info=True)
+    log.error(f"Error accessing backend attributes: {e}")
 except Exception as e:
-    log.error(f"Error printing backend info: {e}", exc_info=True)
+    log.error(f"Error printing backend info: {e}")
 
 # ---------------------------------------------------------------------
 
