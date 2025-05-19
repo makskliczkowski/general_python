@@ -3,7 +3,7 @@ import numpy as np
 import scipy as sp
 from numba import njit
 
-from general_python.algebra.utils import JAX_AVAILABLE, maybe_jit, get_backend, JIT
+from general_python.algebra.utils import JAX_AVAILABLE, maybe_jit, get_backend, JIT, Array
 import general_python.algebra.linalg_sparse as sparse 
 import general_python.algebra.utils as utils
 
@@ -18,7 +18,7 @@ if JAX_AVAILABLE:
 # -----------------------------------------------------------------
 
 @maybe_jit
-def change_basis(unitary_matrix: 'array-like', state_vector: 'array-like', backend="default"):
+def change_basis(unitary_matrix: Array, state_vector: Array, backend="default"):
     """
     Transforms a state vector to a new basis using a unitary matrix U.
     $V' = U V$
@@ -166,26 +166,26 @@ def kron(A, B, backend="default"):
 # -----------------------------------------------------------------
 
 @maybe_jit
-def ket_bra(vec: 'array-like', backend="default"):
+def ket_bra(vec: Array, backend="default"):
     """Computes the ket-bra (outer product) of a vector."""
     backend = get_backend(backend)
     return outer(vec, vec, backend=backend)
 
 @maybe_jit
-def bra_ket(vec: 'array-like', backend="default"):
+def bra_ket(vec: Array, backend="default"):
     """Computes the bra-ket (outer product) of a vector."""
     backend = get_backend(backend)
     return backend.dot(vec.T, vec)
 
 @maybe_jit
-def inner(vec1: 'array-like', vec2: 'array-like', backend="default"):
+def inner(vec1: Array, vec2: Array, backend="default"):
     """Computes the inner product of two vectors."""
     backend = get_backend(backend)
     return backend.dot(vec1, vec2)
 
 # -----------------------------------------------------------------
 
-@njit
+# @njit
 def act_np(mat, x):
     """
     Apply the transformation given by mat on the state(s) x using standard matrix multiplication.
@@ -193,7 +193,7 @@ def act_np(mat, x):
     """
     return np.matmul(mat, x)
 
-def act_dense_or_sparse_np(mat, x):
+def _act_dense_or_sparse_np(mat, x):
     '''
     '''
     # If mat is sparse, use its built-in multiplication (which is in object mode)
@@ -201,7 +201,7 @@ def act_dense_or_sparse_np(mat, x):
         return mat @ x
     return act_np(mat, x)
 
-@maybe_jit
+# @maybe_jit
 def act(mat, x, backend="default"):
     """
     Apply the transformation given by mat on the state(s) x.
@@ -215,149 +215,120 @@ def act(mat, x, backend="default"):
     """
     backend = get_backend(backend)
     if backend == np or not JAX_AVAILABLE:
-        return act_dense_or_sparse_np(mat, x)
+        return _act_dense_or_sparse_np(mat, x)
     return mat @ x
 
-# @njit
-def overlap_np(a, b, mat = None):
-    """
-    Compute the quantum overlap <a|mat|b> where:
-        - a and b can each be a state vector (1D) or a matrix (with columns as states),
-        - in the matrix case, pairwise overlaps (each to each) are computed.
+def overlap_jax(a: Array,
+                O: Array,   # or any object supporting O @ x
+                b: Array = None) -> Array:
+    a_mat   = jnp.atleast_2d(a)  # (dim, n)
+    b_mat   = jnp.atleast_2d(b) if b is not None else a_mat  # (dim, m)
+    Ob      = O @ b_mat  # (dim, m) or (dim, 1)
+    res     = jnp.matmul(a_mat.conj().T, Ob)  # (1, m), or (n, 1), or (1,1)
+    return res
 
-    The computation is performed via:
-        overlap = (a^\\dagger) dot (act(mat, b))
-        
-    Parameters:
-        a      : Bra state(s) as a 1D vector or a 2D array (columns are states).
-        mat    : 2D transformation matrix.
-        b      : Ket state(s) as a 1D vector or a 2D array (columns are states).
-    
-    Returns:
-        If both a and b are vectors: a scalar.
-        If one is a matrix and the other a vector: a vector with the overlap of each column.
-        If both are matrices: a matrix with the overlap for each bra/ket combination.
+def overlap(a: Array, 
+            O: Array,   # or any object supporting O @ x
+            b: Array = None) -> Array:
     """
-    # Compute the transformed b
-    transformed_b   = act(mat, b) if mat is not None else b
-    # Convert inputs to backend arrays for uniform handling.
-    # Case 1: Both a and tb_arr are vectors.
-    if len(a.shape) and len(transformed_b.shape) == 1:
-        return np.vdot(a, transformed_b)
-    # Case 2: Both a and tb_arr are matrices (assumed: columns are states).
-    elif len(a.shape) == 2 and len(transformed_b.shape) == 2:
-        # Pairwise overlap: (a^\dagger) @ tb_arr gives a matrix whose (i,j) element is <a_i|mat|b_j>.
-        return np.matmul(a.conj().T, transformed_b)
-    # Case 3: a is a matrix and tb_arr is a vector.
-    elif len(a.shape) == 2 and len(transformed_b.shape) == 1:
-        # Return the overlap of each column in a with the vector tb_arr.
-        return np.matmul(a.conj().T, transformed_b)
-    # Case 4: a is a vector and tb_arr is a matrix.
-    elif len(a.shape) == 1 and len(transformed_b.shape) == 2:
-        # Treat a as a bra vector; compute its overlap with each column of tb_arr.
-        # Expand a to a row vector and multiply.
-        return np.matmul(a.conj()[None, :], transformed_b)[0]
-    else:
-        raise ValueError("Invalid dimensions for states a and b.")
+    Compute ⟨a|O|b⟩ for vectors or matrices of Column states.
 
-# @maybe_jit
-def overlap(a, mat, b = None, backend = "default"):
+    Parameters
+    ----------
+    a : array_like
+        Shape (dim,) or (dim, n).  Column states |a_i⟩ are the columns of `a`.
+    O : array_like or sparse matrix
+        Shape (dim, dim).  The operator.
+    b : array_like
+        Shape (dim,) or (dim, m).  Column states |b_j⟩ are the columns of `b`.
+
+    Returns
+    -------
+    overlaps : scalar, or ndarray
+        If both `a` and `b` are 1D, returns a single complex scalar ⟨a|O|b⟩.
+        If one argument is 1D and the other is 2D, returns a 1D array of length n or m.
+        If both are 2D, returns an (n \times m) matrix whose (i,j) entry is ⟨a_i|O|b_j⟩.
     """
-    Compute the quantum overlap <a|mat|b> where:
-        - a and b can each be a state vector (1D) or a matrix (with columns as states),
-        - in the matrix case, pairwise overlaps (each to each) are computed.
-    
-    The computation is performed via:
-        overlap = (a^\\dagger) dot (act(mat, b))
-        
-    Parameters:
-        a :
-            Bra state(s) as a 1D vector or a 2D array (columns are states).
-        mat:
-            2D transformation matrix.
-        b :
-            Ket state(s) as a 1D vector or a 2D array (columns are states).
-    
-    Returns:
-        If both a and b are vectors: a scalar.
-        If one is a matrix and the other a vector: a vector with the overlap of each column.
-        If both are matrices: a matrix with the overlap for each bra/ket combination.
-    """
+    # ensure 2D column‐matrix form
     if b is None:
         b = a
     
-    backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
-        if sp.sparse.issparse(mat):
-            b = act(mat, b, backend=backend)
-            return overlap_np(a, b)
-        return overlap_np(a, b, mat)
-    
-    # Compute the transformed b
-    transformed_b   = act(mat, b, backend=backend) if mat is not None else b
-    # Convert inputs to backend arrays for uniform handling.
-    a_arr           = backend.asarray(a)
-    tb_arr          = backend.asarray(transformed_b)
-    
-    # Case 1: Both a and tb_arr are vectors.
-    if a_arr.ndim == 1 and tb_arr.ndim == 1:
-        return backend.vdot(a_arr, tb_arr)
-    
-    # Case 2: Both a and tb_arr are matrices (assumed: columns are states).
-    elif a_arr.ndim == 2 and tb_arr.ndim == 2:
-        # Pairwise overlap: (a^\dagger) @ tb_arr gives a matrix whose (i,j) element is <a_i|mat|b_j>.
-        return backend.matmul(a_arr.conj().T, tb_arr)
-    
-    # Case 3: a is a matrix and tb_arr is a vector.
-    elif a_arr.ndim == 2 and tb_arr.ndim == 1:
-        # Return the overlap of each column in a with the vector tb_arr.
-        return backend.matmul(a_arr.conj().T, tb_arr)
-    
-    # Case 4: a is a vector and tb_arr is a matrix.
-    elif a_arr.ndim == 1 and tb_arr.ndim == 2:
-        # Treat a as a bra vector; compute its overlap with each column of tb_arr.
-        # Expand a to a row vector and multiply.
-        return backend.matmul(a_arr.conj()[None, :], tb_arr)[0]
+    if a.ndim == 1:
+        a_mat = a[:, None]        # (dim, 1)
     else:
-        raise ValueError("Invalid dimensions for states a and b.")
+        a_mat = a                 # (dim, n)
+
+    if b.ndim == 1:
+        b_mat = b[:, None]        # (dim, 1)
+    else:
+        b_mat = b                 # (dim, m)
+
+    # apply operator
+    # Ob = np.matmul(O, b_mat)      # (dim, m) or (dim, 1)
+    Ob = (O @ b_mat)                # (dim, m) or (dim, 1)
+
+    # compute overlaps: a† (O b)
+    # res = np.matmul(a_mat.conj().T, Ob)  # (1, m), or (n, 1), or (1,1)
+    res = a_mat.conj().T @ Ob     # (n, m), or (1, m), (n, 1), or (1,1)
+
+    # squeeze trivial dimensions
+    if res.shape == (1, 1):
+        return res[0, 0]
+    if res.shape[0] == 1:
+        return res[0, :]
+    if res.shape[1] == 1:
+        return res[:, 0]
+    return res
+
+# -----------------------------------------------------------------
 
 # @maybe_jit
-def overlap_diag(a, mat, b = None, backend="default"):
+def overlap_diag(a  : Array,
+                O   : Array,
+                b   : Array = None) -> Array:
     """
-    Compute only the diagonal overlaps <a_i|mat|b_i> for each state, where
-    a and b are either:
-        - Vectors (1D): returns the scalar overlap.
-        - Matrices (2D with states as columns): returns a 1D array with the overlap for each corresponding pair.
+    Compute only the diagonal elements ⟨a_i|O|b_i⟩ for column-states.
 
-    Parameters:
-        a :
-            Bra state(s) as a 1D vector or 2D matrix.
-        mat :
-            2D transformation matrix.
-        b :
-            Ket state(s) as a 1D vector or 2D matrix.
+    If `a` and `b` are both 1D (shape (dim,)), returns the scalar
+        ⟨a|O|b⟩.
 
-    Returns:
-        A scalar if a and b are vectors, or a 1D array of diagonal overlaps if a and b are matrices.
+    If `a` and `b` are both 2D with shape (dim, n), returns a 1D array `r`
+    of length n with
+        r[i] = ⟨a_i|O|b_i⟩ = ∑_k conj(a[k,i]) · (O @ b[:,i])[k].
+
+    If `b` is None, it defaults to `a`, giving ⟨a_i|O|a_i⟩ for each i.
+
     """
-    
+    return overlap(a, O, b).diagonal()
     if b is None:
         b = a
-    backend         = get_backend(backend)
-    # Transform the ket(s)
-    transformed_b   = act(mat, b, backend=backend)
-    a_arr           = backend.asarray(a)
-    tb_arr          = backend.asarray(transformed_b)
-
-    if a_arr.ndim == 1 and tb_arr.ndim == 1:
-        return backend.vdot(a_arr, tb_arr)
-    elif a_arr.ndim == 2 and tb_arr.ndim == 2:
-        if a_arr.shape[1] != tb_arr.shape[1]:
-            raise ValueError("For diagonal overlap, a and transformed_b must have the same number of columns.")
-        # Compute diagonal elements: for each column, sum over the elementwise product.
-        return backend.sum(a_arr.conj() * tb_arr, axis=0)
+    
+    # ensure column‐matrix form
+    if a.ndim == 1:
+        a_mat = a[:, None]       # (dim, 1)
     else:
-        raise ValueError("Diagonal overlap is defined only for both vectors or both matrices.")
+        a_mat = a                # (dim, n)
+
+    if b is None:
+        b_mat = a_mat
+    elif b.ndim == 1:
+        b_mat = b[:, None]       # (dim, 1)
+    else:
+        b_mat = b                # (dim, n)
+
+    if a_mat.shape != b_mat.shape:
+        raise ValueError("`a` and `b` must have the same shape when both are matrices.")
+
+    # apply operator to each column of b_mat
+    Ob = O @ b_mat if hasattr(O, "__matmul__") else O.dot(b_mat)  # (dim, n)
+
+    # elementwise multiply and sum over basis index: ⟨a_i|O|b_i⟩
+    diag_r = np.einsum('ik,ki->i', np.conj(a_mat), Ob)  # (n,)
+
+    # unwrap scalar case
+    if diag_r.size == 1:
+        return diag_r[0]
+    return diag_r
 
 # -----------------------------------------------------------------
 #! Matrix properties
@@ -527,7 +498,7 @@ def _eig_shift_inv_np(matrix, k=6, sigma=0.0, which='LM', mode='normal'):
     '''Computes the eigenvalues and eigenvectors of a matrix using the shift-invert method.'''
     return sp.sparse.linalg.eigsh(matrix, k=k, sigma=sigma, which=which, mode=mode)
 
-def eigh(matrix, backend="default"):
+def eigh(matrix, backend="default", **kwargs):
     """
     Diagonalizes a Hermitian matrix.
     This function computes the eigenvalues and eigenvectors of a Hermitian matrix.
