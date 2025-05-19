@@ -1,5 +1,7 @@
 import sys
 from numpy.lib.stride_tricks import sliding_window_view
+from numba import int64, float64
+from numba.experimental import jitclass
 from .math_utils import *
 
 from scipy.signal import savgol_filter
@@ -380,21 +382,20 @@ class Histogram:
         
         if edges is not None:
             # If edges are provided, assume they form the full set of boundaries.
-            self.bin_edges = np.array(edges, dtype=self.dtype)
-            if self.bin_edges.ndim != 1 or self.bin_edges.size < 2:
+            e = np.array(edges, dtype=self.dtype)
+            if e.ndim != 1 or e.size < 2:
                 raise ValueError("edges must be a one-dimensional array with at least two elements.")
-            self.n_bins     = self.bin_edges.size - 1
-            self.bin_counts = np.zeros(self.n_bins + 1, dtype=np.uint64)
+            self.bin_edges  = e
+            self.n_bins     = e.size - 1
         elif n_bins is not None:
             self.n_bins     = n_bins
-            # In the default (number-of-bins) constructor, we allocate n_bins+1 counts.
-            # The bin_edges array will have length n_bins+1.
-            self.bin_edges  = np.zeros(self.n_bins + 1, dtype=self.dtype)
-            self.bin_counts = np.zeros(self.n_bins + 1, dtype=np.uint64)
+            # placeholder edges; you must call set_histogram_counts or set_edges before append
+            self.bin_edges  = np.zeros(n_bins, dtype=self.dtype)
         else:
             self.n_bins     = 1
-            self.bin_edges  = np.zeros(2, dtype=self.dtype)
-            self.bin_counts = np.zeros(2, dtype=np.uint64)
+            self.bin_edges  = np.zeros(1, dtype=self.dtype)
+        # counts has length n_bins+1
+        self.bin_counts = np.zeros(self.n_bins + 1, dtype=np.uint64)
 
     #######################################################
     #! Setters
@@ -408,26 +409,25 @@ class Histogram:
         If set_bins is True, the bin edges will be determined from the minimum and maximum of the data.
         For complex-valued inputs, only the real part is used.
         """
-        # Convert input to a NumPy array; if complex, take the real part.
-        values = np.asarray(values)
-
+        v = np.asarray(values)
+        # real‐part for complex
+        if np.iscomplexobj(v):
+            v = v.real
         if set_bins:
-            v_min = values.min() if not np.iscomplexobj(values) else values.real.min()
-            v_max = values.max() if not np.iscomplexobj(values) else values.real.max()
-            # Set the bin edges based on the min and max of the data.
-            self.bin_edges = np.linspace(v_min, v_max, self.n_bins + 1)
-        
-        # Reset counts to zero before computing new counts.
+            vmin, vmax = v.min(), v.max()
+            # C++: linspace(min, max, nBins_)
+            self.bin_edges = np.linspace(vmin, vmax, self.n_bins, dtype=self.dtype)
+        # reset
         self.bin_counts.fill(0)
-        
-        # Compute underflow, proper bins, and overflow.
-        # 1) Underflow: values below the first edge.
-        self.bin_counts[0] = np.sum(values < self.bin_edges[0])
-        # 2) Overflow: values greater than or equal to the last edge.
-        self.bin_counts[-1] = np.sum(values >= self.bin_edges[-1])
-        # 3) For the bins in between.
-        for i in range(self.n_bins - 1):
-            self.bin_counts[i+1] = np.sum((values >= self.bin_edges[i]) & (values < self.bin_edges[i+1]))
+        # underflow
+        self.bin_counts[0] = np.sum(v <  self.bin_edges[0])
+        # overflow
+        self.bin_counts[-1] = np.sum(v >= self.bin_edges[-1])
+        # proper bins 1..n_bins-1 map to intervals [edges[i-1], edges[i])
+        for i in range(1, self.n_bins):
+            lo = self.bin_edges[i-1]
+            hi = self.bin_edges[i]
+            self.bin_counts[i] = np.sum((v >= lo) & (v < hi))
     
     def set_edges(self, edges: Union[np.ndarray, Sequence[float]]) -> None:
         """
@@ -438,13 +438,12 @@ class Histogram:
         Raises:
             ValueError: If edges is not a one-dimensional array or list with at least two elements.
         """
-        edges = np.asarray(edges, dtype=self.dtype)
-        if edges.ndim != 1 or edges.size < 2:
-            raise ValueError("edges must be a one-dimensional array with at least two elements.")
-        self.bin_edges  = edges
-        self.n_bins     = edges.size - 1
-        # Reinitialize counts to match new edges.
-        self.bin_counts = np.zeros(self.n_bins + 1, dtype=np.uint64)
+        e = np.asarray(edges, dtype=self.dtype)
+        if e.ndim != 1 or e.size < 2:
+            raise ValueError("edges must be 1D with ≥2 points")
+        self.bin_edges  = e
+        self.n_bins     = e.size - 1
+        self.bin_counts = np.zeros(self.n_bins+1, dtype=np.uint64)
     
     #######################################################
     #! Getters
@@ -455,7 +454,6 @@ class Histogram:
         """Return the bin edges."""
         return self.bin_edges
     
-    @property
     def counts(self, i: Optional[int] = None) -> Union[np.uint64, np.ndarray]:
         """
         If i is provided, return the count for that bin index.
@@ -525,33 +523,48 @@ class Histogram:
     #! Setters
     #######################################################
     
-    def uniform(self, v_max: float, v_min: float = 0) -> None:
+    @staticmethod
+    def uniform(n_bins: int, v_max: float, v_min: float = 0) -> None:
         """
         Create a uniform distribution of bins between v_min and v_max.
         Parameters:
         - v_max: Maximum value for the histogram.
         - v_min: Minimum value for the histogram.
         """
-        self.bin_edges = np.linspace(v_min, v_max, self.n_bins + 1)
-    
-    def uniform_log(self, v_max: float, v_min: float = 1e-5, base: int = 10) -> None:
+        return np.linspace(v_min, v_max, n_bins + 1)
+
+    @staticmethod
+    def uniform_log(n_bins: int, v_max: float, v_min: float = 1e-5, base: int = 10) -> np.ndarray:
         """
         Create a logarithmic distribution of bins between v_min and v_max.
         Parameters:
+        - n_bins: Number of bins.
         - v_max: Maximum value for the histogram.
         - v_min: Minimum value for the histogram.
+        - base: Logarithm base (default 10).
+        Returns:
+        - bin_edges: Array of bin edges (length n_bins + 1).
         """
+        if v_min <= 0 or v_max <= 0:
+            raise ValueError("v_min and v_max must be positive for logarithmic binning.")
+        if v_min >= v_max:
+            raise ValueError("v_min must be less than v_max.")
+
         if base == 10:
-            start           = math.log10(v_min)
-            stop            = math.log10(v_max)
-            self.bin_edges  = np.logspace(start, stop, self.n_bins + 1, base=10)
+            start       = np.log10(v_min)
+            stop        = np.log10(v_max)
+            bin_edges   = np.logspace(start, stop, n_bins + 1, base=10)
+        elif base == 2:
+            start       = np.log2(v_min)
+            stop        = np.log2(v_max)
+            bin_edges   = np.logspace(start, stop, n_bins + 1, base=2)
         else:
-            # General case: use logarithms with the specified base.
-            start           = math.log(v_min, base)
-            stop            = math.log(v_max, base)
-            exponents       = np.linspace(start, stop, self.n_bins + 1)
-            self.bin_edges  = np.power(base, exponents)
-    
+            start       = np.log(v_min) / np.log(base)
+            stop        = np.log(v_max) / np.log(base)
+            exponents   = np.linspace(start, stop, n_bins + 1)
+            bin_edges   = np.power(base, exponents)
+        return bin_edges
+
     #######################################################
     #! Append
     #######################################################
@@ -565,19 +578,23 @@ class Histogram:
         Returns:
         - bin indices: The indices of the bin where the value was appended.        
         """
-        if hasattr(values, 'ndim') and values.ndim == 0 or np.isscalar(values):
-            values = np.array([values])
-        indices = np.zeros_like(values, dtype = np.int64)
-        for iv, v in enumerate(values):
-            indices[iv] = np.argmin(np.abs(v - self.bin_edges))
+        # === prepare array of values ===
+        vals = np.atleast_1d(values)
+        # === find bin indices: bins are [edges[i-1], edges[i]) ===
+        idx  = np.searchsorted(self.bin_edges, vals, side='right')
+        if idx.size == 0:
+            raise ValueError("No bins found for the provided values.")
+        # underflow → bin 0
+        idx[vals <  self.bin_edges[0]] = 0
+        # overflow  → last bin
+        idx[vals >= self.bin_edges[-1]] = self.n_bins
+        # update counts
         
-        # indices = np.searchsorted(self.bin_edges, values, side='right')
-        # Correct for underflow and overflow
-        indices = np.where(values < self.bin_edges[0], 0, indices)
-        indices = np.where(values >= self.bin_edges[-1], self.n_bins, indices)
-        # Update bin counts in-place. np.add.at handles repeated indices correctly.
-        np.add.at(self.bin_counts, indices, 1)
-        return indices
+        #! remove nans
+        idx[np.isnan(vals)] = 0
+        
+        np.add.at(self.bin_counts, idx, 1)
+        return idx
 
     def merge(self, other: "Histogram") -> None:
         """
@@ -622,9 +639,7 @@ class HistogramAverage(Histogram):
         Return the bin averages. If i is provided, return the average for that bin.
         Otherwise, return the full averages array.
         """
-        if i is not None:
-            return self.bin_averages[i]
-        return self.bin_averages
+        return (self.bin_averages[i] if i is not None else self.bin_averages)
 
     def averages_av(self, is_typical: bool = False) -> np.ndarray:
         """
@@ -632,13 +647,10 @@ class HistogramAverage(Histogram):
         If is_typical is True, exponentiate the normalized averages (useful if the averages
         represent logarithms).
         """
-        out             = self.bin_averages.copy()
-        # Normalize each bin where the count is nonzero.
-        nonzero         = self.bin_counts != 0
-        out[nonzero]    = out[nonzero] / self.bin_counts[nonzero]
-        if is_typical:
-            return np.exp(out)
-        return out
+        out         = self.bin_averages.copy()
+        nz          = self.bin_counts != 0
+        out[nz]    /= self.bin_counts[nz]
+        return np.exp(out) if is_typical else out
     
     ###############################################
     #! Reset
@@ -674,14 +686,25 @@ class HistogramAverage(Histogram):
         Returns:
             - bin_idx: The indices of the bin where the value was appended.
         """
-        bin_idx                     = super().append(values)
-        # for i, idx in enumerate(bin_idx):
-            # self.bin_averages[idx]  += elements[i]
-        np.add.at(self.bin_averages, bin_idx, elements)
-        # self.bin_averages[bin_idx]  += elements
-        return bin_idx
+        # prepare arrays
+        vals    = np.atleast_1d(values)
+        els     = np.atleast_1d(elements)
+        if els.shape != vals.shape:
+            raise ValueError("`elements` must have same shape as `values`")
+        # find bins
+        idx     = np.searchsorted(self.bin_edges, vals, side='right')
+        idx[vals <  self.bin_edges[0]]  = 0
+        idx[vals >= self.bin_edges[-1]] = self.n_bins
+        
+        #! remove nans
+        idx[np.isnan(vals)] = 0
+        els[np.isnan(vals)] = 0
+        
+        # update counts and averages
+        np.add.at(self.bin_counts,   idx, 1)
+        np.add.at(self.bin_averages, idx, els)
+        return idx
     
-    # ------------------ Merge ------------------
     def merge(self, other: "HistogramAverage") -> None:
         """
         Merge another HistogramAverage into this one.

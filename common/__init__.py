@@ -1,6 +1,13 @@
 # Importing modules from the common package
 from .directories import Directories
-from .plot import Plotter, PlotterSave, MatrixPrinter
+
+#! Plotting and visualization utilities
+from .plot import (
+    Plotter, PlotterSave, MatrixPrinter,
+    colorsCycle, colorsCycleBright, colorsCycleDark, colorsList,
+    linestylesCycle, linestylesCycleExtended, linestylesList,
+    markersCycle, markersList
+)
 from .datah import DataHandler
 from .hdf5_lib import HDF5Handler
 # Description of the modules
@@ -16,7 +23,6 @@ This module contains the following submodules:
 - flog: Provides logging functionalities.
 """
 
-import sys
 
 ####################################################################################################
 
@@ -24,18 +30,9 @@ import sys
 # from . import binary
 # from . import directories
 # from . import hdf5_lib
-from . import flog
+from general_python.common.flog import get_global_logger
 
 ####################################################################################################
-
-def get_global_logger():
-    """
-    Lazily loads and returns the global logger instance.
-
-    Returns:
-    - Logger instance from flog module.
-    """
-    return flog.get_global_logger()
 
 def get_module_description(module_name):
     """
