@@ -516,7 +516,7 @@ class Plotter:
                         ):
         '''
         Add colorbar to the plot.
-        - fig       :   figure to add the colorbar to
+        - fig :   figure to add the colorbar to
         - cmap      :   colormap to use
         - mapable   :   mapable object
         - pos       :   position of the colorbar
