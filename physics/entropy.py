@@ -15,6 +15,7 @@ from general_python.common.hdf5_lib import *
 from scipy.special import digamma, polygamma, binom, psi
 import numpy as np
 import numba
+import math
 
 from general_python.algebra.utils import JAX_AVAILABLE, Array
 if JAX_AVAILABLE:
@@ -371,7 +372,7 @@ def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
     return -np.dot(lam, log)
 
 @numba.njit(cache=True)
-def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e) -> float:
+def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e, threshold: float = 1e-12) -> float:
     """
     Calculates the Rényi entropy of a probability distribution.
 
@@ -407,8 +408,8 @@ def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e) -> float:
         log /= np.log(base)
     return log / (1.0 - q)
 
-@numba.njit(cache=True)
-def tsallis_entropy(lam: np.ndarray, q: float) -> float:
+# @numba.njit(cache=True)
+def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> float:
     """
     Compute the Tsallis entropy for a given probability distribution.
 
@@ -427,7 +428,7 @@ def tsallis_entropy(lam: np.ndarray, q: float) -> float:
     References:
         - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479–487 (1988).
     """
-    if q == 1.0:
+    if 1.0 - threshold < q < 1.0 + threshold:
         return vn_entropy(lam)
     lam = _clean_probs(lam)
     return (1.0 - (lam ** q).sum()) / (q - 1.0)
@@ -483,14 +484,108 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
         s += np.log(p ** q + pm ** q)
     return inv_1mq * s / log_base
 
+#! Participation entropies
+
+def information_entropy(states: np.ndarray, threshold: float = 1e-12):
+    """
+    Compute S_j = -∑_i p_{i,j} ln p_{i,j},  p_{i,j}=|states[i,j]|^2,
+    dropping p<=threshold.  Works for 1D (n,) or 2D (n,m) input.
+
+    Parameters
+    ----------
+    states : np.ndarray
+        Complex array, shape (n,) or (n, m).
+    threshold : float
+        Values of p<=threshold are treated as zero.
+
+    Returns
+    -------
+    out : float or np.ndarray
+        Scalar entropy if input was 1D, else 1D array of length m.
+    """
+    # reshape 1D → 2D(n,1)
+    if states.ndim == 1:
+        S = states.reshape(states.shape[0], 1)
+        single = True
+    else:
+        S = states
+        single = False
+
+    n, m    = S.shape
+    ent     = np.zeros(m, dtype=np.float64)
+
+    # parallel over columns, minimal memory
+    for j in numba.prange(m):
+        acc = 0.0
+        for i in range(n):
+            c = S[i, j]
+            p = c.real*c.real + c.imag*c.imag
+            if p > threshold:
+                acc += p * math.log(p)
+        ent[j] = -acc
+
+    return ent[0] if single else ent
+
+@numba.njit(cache=True)
+def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float = 1e-12) -> float:
+    """
+    Compute the participation entropy for a given probability distribution.
+
+    The participation entropy is a measure of how evenly the probability is distributed among the eigenvalues.
+    It is defined as the negative logarithm of the sum of the squares of the probabilities.
+
+    Args:
+        lam (np.ndarray):
+            Array of eigenvalues or probabilities (should sum to 1).
+        q (float):
+            Entropy parameter. For q=1, returns the von Neumann entropy.
+
+    Returns:
+        float: The participation entropy of the input distribution.
+    """
+    single = False
+    if states.ndim == 1:
+        states = states.reshape(states.shape[0], 1)
+        single = True
+
+    n, m    = states.shape
+    out     = np.empty(m, dtype=np.float64)
+    is_q1   = math.fabs(q - 1.0) < 1e-12
+
+    # parallel over columns
+    for j in numba.prange(m):
+        acc = 0.0
+        if is_q1:
+            # Shannon‐type
+            for i in range(n):
+                c   = states[i, j]
+                p   = c.real * c.real + c.imag * c.imag
+                if p > threshold:
+                    acc += p * math.log(p)
+            out[j] = -acc
+        else:
+            # Rényi‐type: sum p^q, then (1/(1−q))·ln(...)
+            for i in range(n):
+                c   = states[i, j]
+                p   = c.real * c.real + c.imag * c.imag
+                if p > threshold:
+                    acc += p ** q
+            # protect against acc==0 (all below threshold)
+            out[j] = math.log(acc) / (1.0 - q) if acc > 0.0 else 0.0
+    return out
+
+# ----------------------------------
+
 @unique
 class Entanglement(Enum):
-    VN      = 1
-    RENYI   = 2
-    TSALIS  = 3
-    SINGLE  = 4
+    VN          = 1
+    RENYI       = 2
+    TSALLIS     = 3
+    SINGLE      = 4
+    PARTIC      = 5
 
-def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy") -> float:
+def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
+        typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> float:
     """
     Calculates the entropy of a probability distribution using the specified entanglement entropy type.
 
@@ -507,7 +602,7 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entan
                     Von Neumann entropy
                 - Entanglement.RENYI:
                     Rényi entropy
-                - Entanglement.TSALIS:
+                - Entanglement.TSALLIS:
                     Tsallis entropy
                 - Entanglement.SINGLE:
                     Single-particle correlation entropy
@@ -524,19 +619,23 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *, typek: Entan
             return vn_entropy(lam, base)
         elif typek == Entanglement.RENYI:
             return renyi_entropy(lam, q, base)
-        elif typek == Entanglement.TSALIS:
+        elif typek == Entanglement.TSALLIS:
             return tsallis_entropy(lam, q, base)
         elif typek == Entanglement.SINGLE:
             return sp_correlation_entropy(lam, q, base)
+        elif typek == Entanglement.PARTIC:
+            return participation_entropy(lam, q, kwargs.get('threshold', 1e-12))
     elif backend.lower() == 'jax' and JAX_AVAILABLE:
         if typek == Entanglement.VN:
             return jnp.vn_entropy(lam, base)
         elif typek == Entanglement.RENYI:
             return jnp.renyi_entropy(lam, q, base)
-        elif typek == Entanglement.TSALIS:
+        elif typek == Entanglement.TSALLIS:
             return jnp.tsallis_entropy(lam, q, base)
         elif typek == Entanglement.SINGLE:
             return jnp.sp_correlation_entropy(lam, q, base)
+        elif typek == Entanglement.PARTIC:
+            return jnp.participation_entropy(lam, q, kwargs.get('threshold', 1e-12))
     else:
         raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
 

@@ -731,7 +731,7 @@ class Fraction:
         The number of states to take.
         """
         
-        if fraction == 1.0:
+        if np.isclose(fraction, 1.0, rtol=1e-09, atol=1e-09):
             return size
         if fraction >= 1.0:
             states = min(int(fraction), size)
