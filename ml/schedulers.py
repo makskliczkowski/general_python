@@ -1454,7 +1454,7 @@ class SchedulerTester(InitialSchedulerClass):
             - Checks if the same object is returned after updating.
 
         test_missing_arg():
-            - Tests the scheduler factory’s error handling by attempting to create a scheduler with
+            - Tests the scheduler factory's error handling by attempting to create a scheduler with
               a missing required argument.
             - Expects to catch a TypeError and logs the error appropriately.
 

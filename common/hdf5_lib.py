@@ -95,7 +95,7 @@ def read_hdf5_extract(hdf5files,
     ''' 
     for f in hdf5files:
         yield f[key]
-        
+
 def read_hdf5_extract_concat(hdf5files,
                             key      : str,
                             repeatax : int  = 0,
@@ -184,7 +184,8 @@ def read_multiple_hdf5(directories  : list,
                        keys         = [],
                        verbose      = False,
                        sortme       = True,
-                       listme       = True
+                       listme       = True,
+                       logger       = None
                        ):
     '''
     Parse multiple hdf5 files. 
@@ -203,7 +204,7 @@ def read_multiple_hdf5(directories  : list,
         if verbose:
             logging.info(f"\t\tReading {f}")
         yield read_hdf5(f, keys, verbose = verbose)
-        
+
 def read_multiple_hdf5l(directories  : list,
                         conditions   = [],
                         keys         = [],
@@ -219,7 +220,7 @@ def read_multiple_hdf5l(directories  : list,
     @return       : list - this is eager evaluated loading!
     '''
     return list(read_multiple_hdf5(directories, conditions, keys, verbose, sortme, listme))
-    
+
 ####################################################### READ HDF5 FILE #######################################################
 
 def read_hdf5_extract_and_concat(directories  : list, 
@@ -242,7 +243,7 @@ def read_hdf5_extract_and_concat(directories  : list,
     
     return read_hdf5_extract_concat(files, key if isinstance(key, str) else '',
                                     repeatax, verbose, is_vector, cut_0_ax, cut_v_ax, padding, check_limit)
-    
+
 def read_hdf5_extract_and_concat_list(directories  : list,
                                     conditions  = [],
                                     key         = None,
@@ -258,9 +259,9 @@ def read_hdf5_extract_and_concat_list(directories  : list,
     Do the same as read_hdf5_extract but concat single file and return a list
     '''
     return [read_hdf5_extract_and_concat([d], conditions, key, verbose, is_vector, repeatax, cut_0_ax, cut_v_ax, padding, check_limit) for d in directories]
-    
+
 ####################################################### SAVE HDF5 FILE #######################################################
-    
+
 def create_labels_hdf5(data, keys : list | dict, shape : tuple = ()) -> list:
     if len(keys) == len(data) or shape != ():
         return keys
@@ -302,7 +303,7 @@ def save_hdf5(directory, filename, data, shape: tuple = (), keys: list = []):
             hf.create_dataset(key, data=np.array(data[key], dtype=dtype).reshape(shape) if shape != () else np.array(data[key], dtype=dtype))
     # close
     hf.close()
-    
+
 def append_hdf5(directory, filename, new_data, keys=[], override = True):
     """
     Append new data to an existing HDF5 file.
@@ -619,7 +620,7 @@ def change_h5_bad(directory : Directories,
     else:
         printV("Saving the file in a different directory: " + directoryS, verbose, 1)
         save_hdf5(directoryS, filename, h5data, (), keys = list(h5data.keys()))
-    
+
 def change_h5_bad_dirs(
         directories : list,
         conditions  = [],
@@ -705,43 +706,47 @@ class HDF5Handler:
     ############### PUBLIC METHODS ################
     
     @staticmethod
-    def read_hdf5(file_path, keys=None, verbose=False, remove_bad=False):
+    def read_hdf5(file_path, keys=None, verbose=False, remove_bad=False, logger=None):
         """
         Read an HDF5 file and return a dictionary of datasets.
         """
         data = {}
         if not os.path.exists(file_path):
-            logging.error(f"File {file_path} does not exist")
+            if logger is not None:
+                logger.error(f"File {file_path} does not exist")
             return data
 
         try:
             if not file_path.endswith(('.h5', '.hdf5', '.hdf')):
-                logging.error(f"File {file_path} is not an HDF5 file")
+                if logger is not None:
+                    logger.error(f"File {file_path} is not an HDF5 file")
                 return data
 
             with h5py.File(file_path, "r") as f:
                 if keys is None or len(keys) == 0:
                     keys = HDF5Handler._allbottomkeys(f)
-                    if verbose:
-                        logging.info(f"Available keys: {keys}")
+                    if verbose and logger is not None:
+                        logger.info(f"Available keys: {keys}")
 
                 for key in keys:
                     try:
                         data[key] = f[key][()]
                     except KeyError:
-                        if verbose:
-                            logging.warning(f"Key {key} not found in file {file_path}")
+                        if verbose and logger is not None:
+                            logger.warning(f"Key {key} not found in file {file_path}")
                     except Exception as e:
-                        if verbose:
-                            logging.error(f"Error reading {key} from {file_path}: {str(e)}")
+                        if verbose and logger is not None:
+                            logger.error(f"Error reading {key} from {file_path}: {str(e)}")
 
             data["filename"] = file_path
             return data
 
         except Exception as e:
-            logging.error(f"Error opening file {file_path}: {str(e)}")
+            if logger is not None:
+                logger.error(f"Error opening file {file_path}: {str(e)}")
             if "truncated" in str(e) or "doesn't exist" in str(e) and remove_bad:
-                logging.info(f"Removing corrupted file {file_path}")
+                if logger is not None:
+                    logger.info(f"Removing corrupted file {file_path}")
                 os.remove(file_path)
             return {}
 
@@ -757,7 +762,7 @@ class HDF5Handler:
             yield f[key]
 
     @staticmethod
-    def read_hdf5_extract_concat(hdf5files, key, repeatax=0, verbose=False, isvector=False, cut_0_ax=None, cut_v_ax=None, padding=False, check_limit=None):
+    def read_hdf5_extract_concat(hdf5files, key, repeatax=0, verbose=False, isvector=False, cut_0_ax=None, cut_v_ax=None, padding=False, check_limit=None, logger=None):
         """
         Concatenate data from multiple HDF5 files along a specified axis for a given key.
 
@@ -797,8 +802,8 @@ class HDF5Handler:
         for f in hdf5files:
             try:
                 d       = f[key]                                                                # Read the dataset from the file
-                if verbose:
-                    logging.warning(f"{f['filename']}: Reading {key} with shape {d.shape}")
+                if verbose and logger is not None:
+                    logger.warning(f"{f['filename']}: Reading {key} with shape {d.shape}")
 
                 if shape_repeat is None:
                     shape_repeat = d.shape[repeatax]                                            # Set the shape of the repeat axis for the first dataset
@@ -1038,3 +1043,6 @@ class HDF5Handler:
             # ExceptionHandler().handle(e, "Uknown error", FileExistsError, FileNotFoundError)
 
     ######################################################### CHANGE H5 #########################################################
+    
+#############################################################
+#! END OF FILE

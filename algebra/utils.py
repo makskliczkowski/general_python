@@ -84,7 +84,8 @@ DEFAULT_JP_FLOAT_TYPE   : Optional[Type]    = None
 DEFAULT_JP_CPX_TYPE     : Optional[Type]    = None
 
 PREFER_JAX              : bool              = os.environ.get("BACKEND", "jax").lower() != "numpy"
-
+PREFER_32BIT            : bool              = os.environ.get("FLOATING_POINT", "64bit").lower() in ["32bit", "32", "float32", "float"]
+PREFER_64BIT            : bool              = True if not PREFER_32BIT else False
 
 #! Backend Detection
 JAX_AVAILABLE           = False
@@ -95,40 +96,68 @@ jrn                     = None
 jax_jit                 = lambda x: x
 jcfg                    = None
 
-try:
-    import jax
-    import jax.numpy as jnp
-    import jax.scipy as jsp
-    import jax.random as jrn
-    from jax import config as jax_config
-    
+if PREFER_JAX:
     try:
-        logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
-        logging.getLogger('jax').setLevel(logging.WARNING)
-        # jax.config.update('jax_log_compiles', True)
-    except Exception as e:
-        log.debug(f"Could not configure JAX logger levels: {e}")
+        import jax
+        import jax.numpy as jnp
+        import jax.scipy as jsp
+        import jax.random as jrn
+        from jax import config as jax_config
+        
+        try:
+            logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
+            logging.getLogger('jax').setLevel(logging.WARNING)
+            # jax.config.update('jax_log_compiles', True)
+        except Exception as e:
+            log.debug(f"Could not configure JAX logger levels: {e}")
+        
+        JAX_AVAILABLE           = True
+        jit                     = jax.jit # Use real JIT if JAX is available
+        jcfg                    = jax_config
+        _log_message("JAX backend available and successfully imported", 0)
+
+        # Set JAX global configuration by enabling 64-bit precision if available
+        try:
+            if PREFER_64BIT or not PREFER_32BIT:
+                jcfg.update("jax_enable_x64", True)
+            _log_message("JAX 64-bit precision enabled.", 1)
+        except Exception as e:
+            _log_message(f"Could not enable JAX 64-bit precision: {e}", 1)
+    except ImportError:
+        _log_message("JAX backend not available. Falling back to NumPy.", 0)
+        pass
+else:
+    JAX_AVAILABLE           = False
+    jit                     = lambda x: x # Identity function for JIT
+    jcfg                    = None
+    jnp                     = None
+    jrn                     = None
+    jsp                     = None
+    jax                     = None
+    DEFAULT_JP_INT_TYPE     = None
+    DEFAULT_JP_FLOAT_TYPE   = None
+    DEFAULT_JP_CPX_TYPE     = None
+
+if PREFER_32BIT:
+    DEFAULT_NP_INT_TYPE             = np.int32
+    DEFAULT_NP_FLOAT_TYPE           = np.float32
+    DEFAULT_NP_CPX_TYPE             = np.complex64
+    if JAX_AVAILABLE:
+        DEFAULT_JP_INT_TYPE         = jnp.int32
+        DEFAULT_JP_FLOAT_TYPE       = jnp.float32
+        DEFAULT_JP_CPX_TYPE         = jnp.complex64
+    PREFER_64BIT                    = False
+else:
+    DEFAULT_NP_INT_TYPE             = np.int64
+    DEFAULT_NP_FLOAT_TYPE           = np.float64
+    DEFAULT_NP_CPX_TYPE             = np.complex128
+    if JAX_AVAILABLE:
+        DEFAULT_JP_INT_TYPE         = getattr(jnp, 'int64', getattr(jnp, 'int32'))          # Prefer 64bit if available
+        DEFAULT_JP_FLOAT_TYPE       = getattr(jnp, 'float64', getattr(jnp, 'float32'))      # Prefer 64bit if available
+        DEFAULT_JP_CPX_TYPE         = getattr(jnp, 'complex128', getattr(jnp, 'complex64')) # Prefer 128bit if available
+    PREFER_32BIT                    = False
+    PREFER_64BIT                    = True
     
-    JAX_AVAILABLE           = True
-    jit                     = jax.jit # Use real JIT if JAX is available
-    jcfg                    = jax_config
-    _log_message("JAX backend available and successfully imported", 0)
-
-    # Set JAX specific default types *after* successful import
-    DEFAULT_JP_INT_TYPE     = getattr(jnp, 'int64', getattr(jnp, 'int32'))          # Prefer 64bit if available
-    DEFAULT_JP_FLOAT_TYPE   = getattr(jnp, 'float64', getattr(jnp, 'float32'))      # Prefer 64bit if available
-    DEFAULT_JP_CPX_TYPE     = getattr(jnp, 'complex128', getattr(jnp, 'complex64')) # Prefer 128bit if available
-
-    # Set JAX global configuration by enabling 64-bit precision if available
-    try:
-        jcfg.update("jax_enable_x64", True)
-        _log_message("JAX 64-bit precision enabled.", 1)
-    except Exception as e:
-        _log_message(f"Could not enable JAX 64-bit precision: {e}", 1)
-except ImportError:
-    _log_message("JAX backend not available. Falling back to NumPy.", 0)
-    pass
-
 #! Type Aliases
 if JAX_AVAILABLE and jnp:
     Array       : TypeAlias = Union[np.ndarray, jnp.ndarray]
@@ -203,8 +232,8 @@ def distinguish_type(typek: Any, backend: Literal['numpy', 'jax'] = 'numpy') -> 
     Raises
     ------
     ValueError
-        If `typek` isn’t one of the supported types, or if you ask for JAX
-        but JAX isn’t available.
+        If `typek` isn't one of the supported types, or if you ask for JAX
+        but JAX isn't available.
     """
 
     try:

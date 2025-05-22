@@ -160,13 +160,15 @@ def __uniform_np(rng, low, high, size):
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.uniform(low=low, high=high, size=size)
 
-# if JAX_AVAILABLE:
-
-@partial(jax.jit, static_argnames=('minval', 'maxval', 'shape'))
-def _uniform_jax(key, shape, minval, maxval):
-    ''' Generate a random uniform array using JAX. '''
-    return jrand.uniform(key, shape=shape, minval=minval, maxval=maxval)
-
+if JAX_AVAILABLE:
+    @partial(jax.jit, static_argnames=('minval', 'maxval', 'shape'))
+    def _uniform_jax(key, shape, minval, maxval):
+        ''' Generate a random uniform array using JAX. '''
+        return jrand.uniform(key, shape=shape, minval=minval, maxval=maxval)
+else:
+    def _uniform_jax(key, shape, minval, maxval):
+        return None
+    
 def uniform(shape   : Union[tuple, int] =   (1,),
             backend                     =   "default",
             seed    : Optional[int]     =   None,
@@ -256,6 +258,9 @@ if JAX_AVAILABLE:
                     An array of the specified shape drawn from a normal distribution.        
         '''
         return jrand.normal(key, shape=shape, dtype=dtype) * std + mean
+else:
+    def __normal_jax(key, shape, dtype, mean, std):
+        return None
 
 def normal(shape,
         backend =   "default",
@@ -311,7 +316,10 @@ if JAX_AVAILABLE:
     @jax.jit
     def __exponential_jax(key, shape, scale, dtype):
         return jrand.exponential(key, shape=shape, dtype=dtype) * scale
-
+else:
+    def __exponential_jax(key, shape, scale, dtype):
+        return None
+    
 def exponential(shape,
                 backend="default",
                 seed: Optional[int] = None,
@@ -343,7 +351,10 @@ if JAX_AVAILABLE:
     @jax.jit
     def __poisson_jax(key, shape, lam, dtype):
         return jrand.poisson(key, lam=lam, shape=shape, dtype=dtype)
-
+else:
+    def __poisson_jax(key, shape, lam, dtype):
+        return None
+    
 def poisson(shape, backend="default",
             seed: Optional[int] = None,
             lam=1.0, dtype=None, rng=None, rng_k=None):
@@ -372,7 +383,10 @@ if JAX_AVAILABLE:
     @jax.jit
     def __gamma_jax(key, shape, a, scale, dtype):
         return jrand.gamma(key, a, shape=shape, dtype=dtype) * scale
-
+else:
+    def __gamma_jax(key, shape, a, scale, dtype):
+        return None
+    
 def gamma(shape, backend="default",
         seed: Optional[int] = None,
         a=1.0, scale=1.0, dtype=None, rng=None, rng_k=None):
@@ -408,7 +422,10 @@ if JAX_AVAILABLE:
             x = jrand.gamma(key1, a, shape=shape, dtype=dtype)
             y = jrand.gamma(key2, b, shape=shape, dtype=dtype)
             return x / (x + y)
-
+else:
+    def _beta_jax(key, shape, a, b, dtype):
+        return None
+    
 def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dtype=None):
     """
     Generate a random beta array.
@@ -443,7 +460,10 @@ if JAX_AVAILABLE:
     def randint_jax(key, shape, low: int, high: int):
         """Efficient random integer generation in JAX."""
         return random_jp.randint(key, shape, minval=low, maxval=high)
-
+else:
+    def randint_jax(key, shape, low: int, high: int):
+        return None
+    
 def randint(low, high, shape, backend="default", seed: Optional[int] = None, dtype=None, rng=None, rng_k=None):
     """
     Generate a random integer array.
@@ -513,6 +533,10 @@ if JAX_AVAILABLE:
         # idx = jrand.randint(key, shape=(size,) if isinstance(size, int) else size,
                                 # minval=0, maxval=a.shape[0])
         # return jnp.take(a, idx)
+
+else:
+    def choice_jax(key, a, shape):
+        return None
 
 def choice(a    :   'array-like',
         shape   :   Union[Tuple, int],

@@ -214,6 +214,8 @@ if JAX_AVAILABLE:
                             axis=1, dtype=jnp.uint64)
         return packed
 else:
+    jnp             = None
+    jax             = None
     extract_jax     = None
     extract_vjax    = None
 
@@ -259,7 +261,7 @@ def extract_ord_right(n: int, size_r: int) -> int:
 
 Backend = Literal["python", "numba", "numba_shifts", "jax_scalar", "jax_vector", "numba_vnb"]
 
-def make_extractor( mask    : Union[int, np.ndarray, jnp.array],
+def make_extractor( mask    : Union[int, Array],
                     size    : Optional[int] = None,
                     *,
                     backend : Backend = "python") -> Callable[[int], int] | Callable:

@@ -1,26 +1,28 @@
-from general_python.algebra.utils import JAX_AVAILABLE
+from general_python.algebra.utils import JAX_AVAILABLE, Array
 
 #! jax
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     from jax import lax
+    from jax import jit
 else:
     jax = None
     jnp = None
+    jit = None
     
 ################################################################################################################
 
 _ZERO_TOL       = 1e-11
 
 if JAX_AVAILABLE:
-    @jax.jit
+    @jit
     def _check_skew_symmetric_jax(A: jnp.array, tol=_ZERO_TOL):
         """
         Checks if a matrix A is skew-symmetric within a tolerance using JAX.
         A matrix is skew-symmetric if A^T = -A.
         Parameters:
-            A (jnp.ndarray):
+            A (Array):
                 The matrix to check.
             tol (float):
                 The tolerance for checking skew-symmetry.
@@ -31,8 +33,7 @@ if JAX_AVAILABLE:
             raise ValueError("Input must be a square matrix.")
         return jnp.allclose(A, -A.T, atol=tol)
 else:
-    @jax.jit
-    def _check_skew_symmetric_jax(A: jnp.ndarray, tol=1e-9):
+    def _check_skew_symmetric_jax(A: Array, tol=1e-9):
         """
         Placeholder for JAX skew-symmetric check.
         This function is not used if JAX is not available.
@@ -95,7 +96,7 @@ if JAX_AVAILABLE:
         ########################################################################
         
         @staticmethod
-        @jax.jit
+        @jit
         def _pfaffian_hessenberg_jax(A, N):
             """
             Calculates the Pfaffian using the Hessenberg form (JAX JIT).
@@ -130,7 +131,7 @@ if JAX_AVAILABLE:
         ########################################################################
 
         @staticmethod
-        @jax.jit
+        @jit
         def _pfaffian_parlett_reid_jax(A_in, N):
             """
             Internal JAX JIT: 
@@ -255,7 +256,7 @@ if JAX_AVAILABLE:
         ########################################################################
         
         @staticmethod
-        @jax.jit
+        @jit
         def _cayleys_formula_jax(_pffA, _Ainv_row, _updRow):
             """
             Internal JAX JIT implementation for Cayley's identity.
@@ -283,7 +284,7 @@ if JAX_AVAILABLE:
         ########################################################################
         
         @staticmethod
-        @jax.jit
+        @jit
         def _scherman_morrison_skew_jax(Ainv, updIdx, updRow):
             """
             Internal JAX JIT implementation for Sherman-Morrison update
