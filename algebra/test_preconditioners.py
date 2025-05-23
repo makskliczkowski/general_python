@@ -52,7 +52,7 @@ if JAX_AVAILABLE:
         _dummy_jax_solver_step  = None
 else:
     jax                         = None
-    jnp                         = None
+    jnp                         = np
     _dummy_jax_solver_step      = None
 
 # Determine available backends for testing

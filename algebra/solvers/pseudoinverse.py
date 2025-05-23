@@ -51,7 +51,7 @@ try:
     import jax.numpy as jnp
 except ImportError:
     jax = None
-    jnp = None
+    jnp = np
 
 try:
     import numba

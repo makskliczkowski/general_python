@@ -192,8 +192,20 @@ class Directories(object):
         - filters       : a list of callables Path->bool; all must pass.
         - sort_key      : key function for sorting.
         """
-        files = [p for p in self.path.iterdir() if p.is_file()]
-
+        try:
+            files = [p for p in self.path.iterdir() if p.is_file()]
+        except FileNotFoundError:
+            return []
+        except PermissionError:
+            print(f"PermissionError: {self.path}")
+            return []
+        except OSError as e:
+            print(f"OSError: {self.path} - {e}")
+            return []
+        except Exception as e:
+            print(f"Unexpected error: {self.path} - {e}")
+            return []
+        
         if not include_empty:
             files = [p for p in files if p.stat().st_size > 0]
 

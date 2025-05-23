@@ -90,11 +90,11 @@ try:
         import jax.lax as lax
     else:
         jax = None
-        jnp = None
+        jnp = np
         lax = None
 except ImportError:
     jax = None
-    jnp = None
+    jnp = np
     lax = None
 
 # Numba import (currently MINRES-QLP NumPy version is not Numba-compiled due to complexity)

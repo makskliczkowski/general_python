@@ -1,4 +1,5 @@
 from general_python.algebra.utils import JAX_AVAILABLE, Array
+import numpy as np
 
 #! jax
 if JAX_AVAILABLE:
@@ -8,7 +9,7 @@ if JAX_AVAILABLE:
     from jax import jit
 else:
     jax = None
-    jnp = None
+    jnp = np
     jit = None
     
 ################################################################################################################

@@ -25,7 +25,7 @@ try:
     import jax.scipy.linalg as jax_spla
 except ImportError:
     jax = None
-    jnp = None
+    jnp = np
 
 import scipy.linalg as spla
 

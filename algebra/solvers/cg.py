@@ -64,7 +64,7 @@ if JAX_AVAILABLE:
         pass
 else:
     jax = None
-    jnp = None
+    jnp = np
     lax = None
 
 # --- 

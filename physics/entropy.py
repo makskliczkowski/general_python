@@ -21,7 +21,7 @@ from general_python.algebra.utils import JAX_AVAILABLE, Array
 if JAX_AVAILABLE:
     from general_python.physics import entropy_jax as jnp
 else:
-    jnp = None
+    jnp = np
     
 ###################################
 

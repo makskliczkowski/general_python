@@ -327,4 +327,4 @@ else:
 try:
     import general_python.physics.density_matrix_jax as jnp
 except ImportError:
-    jnp = None
+    jnp = np
