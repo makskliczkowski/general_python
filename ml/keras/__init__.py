@@ -32,8 +32,8 @@ from tensorflow.keras.optimizers.legacy import SGD
 from tensorflow.keras import layers, losses, Input, Model, callbacks
 from tensorflow.keras.layers import Dense, LeakyReLU, ELU, BatchNormalization, Input, LayerNormalization, Dropout
 from tensorflow.keras.layers import Conv2D, AveragePooling1D, Conv2DTranspose, Dropout, Dense, Input, BatchNormalization, AveragePooling2D, MaxPooling2D, MaxPooling1D, Flatten, GlobalAveragePooling2D, Dot, Lambda, Reshape, Conv1DTranspose
-from tensorflow.keras.layers import DenseFeatures, DepthwiseConv1D, ConvLSTM1D,LocallyConnected1D
-from tensorflow.keras.layers import TimeDistributed, Conv1D, SpatialDropout1D, Conv1DTranspose, LSTM, UpSampling2D, Average, Embedding, Bidirectional,RepeatVector
+from tensorflow.keras.layers import DepthwiseConv1D, ConvLSTM1D
+from tensorflow.keras.layers import TimeDistributed, Conv1D, SpatialDropout1D, Conv1DTranspose, LSTM, UpSampling2D, Average, Embedding, Bidirectional, RepeatVector
 
 # import activations
 from tensorflow.keras.activations import relu, softmax, elu
@@ -55,7 +55,8 @@ from tensorflow.keras import initializers
 from tensorflow.keras import regularizers
 
 # import losses
-from tensorflow.keras.losses import mean_squared_error, mean_squared_logarithmic_error , KLDivergence, log_cosh, huber, categorical_crossentropy, mean_absolute_error, binary_crossentropy, sparse_categorical_crossentropy, BinaryCrossentropy, Poisson, Hinge, CategoricalCrossentropy
+import tensorflow.keras.losses as losses
+from tensorflow.keras.losses import KLDivergence, BinaryCrossentropy, Poisson, Hinge, CategoricalCrossentropy
 
 """ TQDM """
 from tqdm.keras import TqdmCallback

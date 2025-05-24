@@ -10,7 +10,7 @@ General Python Utilities (GenUtils Python) is a collection of modules providing 
    introduction
    installation
    usage
-   api
+   api_simple
    contributing
    license
 
