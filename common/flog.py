@@ -239,7 +239,6 @@ class Logger:
             f.write(f"Log level: {self.LEVELS[self.lvl]}\n")
             f.write(f"Log file created on {self.now_str}\n")
             f.write(f"Log level set to: {self.LEVELS[self.lvl]}\n")
-            f.write(f"Author: {os.getlogin()}\n")
             f.write('--------------------------------------------------\n')
             
         # Create a file handler only once
