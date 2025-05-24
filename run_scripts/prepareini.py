@@ -436,7 +436,7 @@ class ManyBodyEstimator:
     """Class for many-body estimator"""
     
     base_memory_per_element     = 8     # bytes (for double precision)
-    memory_overhead_factor      = 1.2   # Empirical factor for overhead
+    memory_overhead_factor      = 1.1   # Empirical factor for overhead
     
     def __init__(self, script: str):
         self.script = script
@@ -505,21 +505,23 @@ class ManyBodyEstimator:
         )
         
         # Convert to GB and add safety margin
-        memory_gb = int(max(1, matrix_memory_bytes / 1e9 * 1.2))
-        
+        memory_gb = int(max(1, matrix_memory_bytes / 1e9 * ManyBodyEstimator.memory_overhead_factor))
+
         # Apply empirical corrections based on your original data
         if Ns < 10:
             memory_gb = max(memory_gb, 10)
         elif Ns < 12:
             memory_gb = max(memory_gb, 16)
-        elif Ns < 14:
-            memory_gb = max(memory_gb, 16)
+        elif Ns == 12:
+            memory_gb = max(memory_gb, 24)
+        elif Ns == 13:
+            memory_gb = max(memory_gb, 32)
         elif Ns == 14:
             memory_gb = max(memory_gb, 64)
         elif Ns == 15:
-            memory_gb = max(memory_gb, 144)
+            memory_gb = max(memory_gb, 80)
         elif Ns == 16:
-            memory_gb = max(memory_gb, 296)
+            memory_gb = max(memory_gb, 144)
         elif Ns > 16:
             # For very large systems, use more conservative estimates
             memory_gb = ManyBodyEstimator.estimate_matrix_memory(int(np.log2(Ns)))
