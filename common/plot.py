@@ -1,5 +1,9 @@
 import itertools
-import scienceplots
+try:
+    import scienceplots
+except ImportError:
+    print("scienceplots not found, some styles may not be available.")
+
 ########################## matplotlib ##########################
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -25,8 +29,11 @@ plt.rcParams['axes.facecolor']      =   'white'
 plt.rcParams['savefig.facecolor']   =   'w'
 
 ########################## labellines
-from labellines import labelLine, labelLines
-
+try:
+    from labellines import labelLine, labelLines
+except ImportError:
+    print("labellines not found, labelLine and labelLines functions will not be available.")
+    
 ########################## style
 SMALL_SIZE                          =   12
 MEDIUM_SIZE                         =   14
@@ -61,6 +68,8 @@ try:
     plt.style.use(['science', 'no-latex', 'colors5-light'])
 except Exception as e:
     print(e)
+    plt.style.use(['science', 'no-latex'])
+    
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
 
@@ -2004,44 +2013,84 @@ class PlotterSave:
 ##############################################################################
 
 from sympy import Matrix, init_printing
-from IPython.display import display
-
-class MatrixPrinter:
-    '''
-    Class for printing matrices and vectors
-    '''
-    
-    def __init__(self):
-        init_printing()
-    
-    @staticmethod
-    def print_matrix(matrix: np.ndarray):
+try:
+    from IPython.display import display
+        
+    class MatrixPrinter:
         '''
-        Prints the matrix in a nice form
+        Class for printing matrices and vectors
         '''
-        display(Matrix(matrix))
-    
-    @staticmethod
-    def print_vector(vector: np.ndarray):
-        '''
-        Prints the vector in a nice form
-        '''
-        display(Matrix(vector))
-    
-    @staticmethod
-    def print_matrices(matrices: list):
-        '''
-        Prints a list of matrices in a nice form
-        '''
-        for matrix in matrices:
+        
+        def __init__(self):
+            init_printing()
+        
+        @staticmethod
+        def print_matrix(matrix: np.ndarray):
+            '''
+            Prints the matrix in a nice form
+            '''
             display(Matrix(matrix))
-    
-    @staticmethod
-    def print_vectors(vectors: list):
-        '''
-        Prints a list of vectors in a nice form
-        '''
-        for vector in vectors:
+        
+        @staticmethod
+        def print_vector(vector: np.ndarray):
+            '''
+            Prints the vector in a nice form
+            '''
             display(Matrix(vector))
+        
+        @staticmethod
+        def print_matrices(matrices: list):
+            '''
+            Prints a list of matrices in a nice form
+            '''
+            for matrix in matrices:
+                display(Matrix(matrix))
+        
+        @staticmethod
+        def print_vectors(vectors: list):
+            '''
+            Prints a list of vectors in a nice form
+            '''
+            for vector in vectors:
+                display(Matrix(vector))
+except ImportError:
+    print("IPython is not installed. Matrix display will not work.")
 
+    class MatrixPrinter:
+        '''
+        Class for printing matrices and vectors
+        '''
+        
+        @staticmethod
+        def print_matrix(matrix: np.ndarray):
+            '''
+            Prints the matrix in a nice form
+            '''
+            print("Matrix:")
+            print(matrix)
+        
+        @staticmethod
+        def print_vector(vector: np.ndarray):
+            '''
+            Prints the vector in a nice form
+            '''
+            print("Vector:")
+            print(vector)
+        
+        @staticmethod
+        def print_matrices(matrices: list):
+            '''
+            Prints a list of matrices in a nice form
+            '''
+            for matrix in matrices:
+                MatrixPrinter.print_matrix(matrix)
+        
+        @staticmethod
+        def print_vectors(vectors: list):
+            '''
+            Prints a list of vectors in a nice form
+            '''
+            for vector in vectors:
+                MatrixPrinter.print_vector(vector)
+    
 ##############################################################################

@@ -33,6 +33,7 @@ import os
 import sys
 import functools
 import logging
+import getpass
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -222,10 +223,13 @@ class Logger:
         
         # Write initial log file header
         with open(self.logfile, 'w+') as f:
+            author = getpass.getuser() or "unknown"
+            f.write('--------------------------------------------------\n')
             f.write('This is the log file for the current session.\n')
             f.write(f'Log file created on {self.now_str}.\n')
             f.write(f'Log level set to: {self.LEVELS[self.lvl]}.\n')
-            f.write(f"Author: {os.getlogin()}\n")
+            # f.write(f"Author: {os.getlogin()}\n")
+            f.write(f"Author: {author}\n")
             f.write(f"Machine: {os.uname().nodename}\n")
             f.write(f"OS: {os.uname().sysname} {os.uname().release} {os.uname().version}\n")
             f.write(f"Python version: {os.sys.version}\n")
