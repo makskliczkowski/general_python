@@ -164,7 +164,7 @@ def schmidt_numpy( state : Array,
 #! Numba
 if numba:
     
-    @numba.njit
+    # @numba.njit
     def rho_numba(state: Array, dimA: int, dimB: int) -> Array:
         psi = state.reshape(dimA, dimB, order="F")
         return psi @ psi.conj().T
@@ -240,7 +240,7 @@ if numba:
         #     psi[iA, iB]    += amp
         # return psi
 
-    @numba.njit(cache=True, fastmath=True)
+    # @numba.njit(cache=True, fastmath=True)
     def schmidt_numba(  psi     : Array,
                         dimA    : int,
                         dimB    : int,
