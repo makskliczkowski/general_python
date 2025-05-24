@@ -68,8 +68,7 @@ ADDITIONAL_LINESTYLES               =   {
 try:
     plt.style.use(['science', 'no-latex', 'colors5-light'])
 except Exception as e:
-    print(e)
-    plt.style.use(['science', 'no-latex'])
+    print("Error applying style:", e)
     
 mpl.rcParams['mathtext.fontset']    = 'stix'
 mpl.rcParams['font.family']         = 'STIXGeneral'
