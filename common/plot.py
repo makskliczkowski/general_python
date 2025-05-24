@@ -1,5 +1,6 @@
 import itertools
 try:
+    import style
     import scienceplots
 except ImportError:
     print("scienceplots not found, some styles may not be available.")
