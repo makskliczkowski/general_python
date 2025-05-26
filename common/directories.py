@@ -155,6 +155,14 @@ class Directories(object):
         """
         return cls(*raw.split("\\"))
     
+    def format(self, *args, **kwargs) -> "Directories":
+        """
+        Format the path using str.format() and return a new Directories.
+        >>> d = Directories("foo").format("bar")  # -> Path("foo/bar")
+        """
+        formatted_path = self.path.as_posix().format(*args, **kwargs)
+        return Directories(formatted_path)
+    
     ################################################################################
     #! Creation
     ################################################################################

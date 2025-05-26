@@ -527,7 +527,7 @@ def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     return ent[0] if single else ent
 
 @numba.njit(cache=True)
-def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float = 1e-12) -> float:
+def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float = 1e-12, square: bool = True) -> float:
     """
     Compute the participation entropy for a given probability distribution.
 
@@ -550,8 +550,9 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
 
     n, m    = states.shape
     out     = np.empty(m, dtype=np.float64)
+    two_q   = 2.0 * q if square else q
     is_q1   = math.fabs(q - 1.0) < 1e-12
-
+    
     # parallel over columns
     for j in numba.prange(m):
         acc = 0.0
@@ -559,7 +560,7 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
             # Shannon‐type
             for i in range(n):
                 c   = states[i, j]
-                p   = c.real * c.real + c.imag * c.imag
+                p   = abs(c) ** two_q
                 if p > threshold:
                     acc += p * math.log(p)
             out[j] = -acc
@@ -567,9 +568,9 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
             # Rényi‐type: sum p^q, then (1/(1−q))·ln(...)
             for i in range(n):
                 c   = states[i, j]
-                p   = c.real * c.real + c.imag * c.imag
+                p   = abs(c) ** q
                 if p > threshold:
-                    acc += p ** q
+                    acc += p
             # protect against acc==0 (all below threshold)
             out[j] = math.log(acc) / (1.0 - q) if acc > 0.0 else 0.0
     return out
