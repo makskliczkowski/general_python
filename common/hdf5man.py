@@ -464,14 +464,20 @@ class HDF5Manager:
         """
         Generates dataset names for saving multiple datasets.
         """
-        if isinstance(proposed_names, str): # Single name, use as prefix
+        if isinstance(proposed_names, str):
             return [f"{proposed_names}_{i}" for i in range(num_datasets)]
-        if isinstance(proposed_names, list) and len(proposed_names) == num_datasets:
-            return proposed_names
-        if isinstance(proposed_names, list) and len(proposed_names) == 1 and num_datasets > 0:
-            # If one name provided for multiple datasets, use as prefix for all
-            return [f"{proposed_names[0]}_{i}" for i in range(num_datasets)]
-        
+
+        if isinstance(proposed_names, list):
+            if len(proposed_names) == num_datasets:
+                if any(name == "" for name in proposed_names):
+                    raise ValueError("Dataset names must not be empty strings.")
+                return proposed_names
+            if len(proposed_names) == 1:
+                prefix = proposed_names[0]
+                if not prefix:
+                    raise ValueError("Dataset name prefix must not be an empty string.")
+                return [f"{prefix}_{i}" for i in range(num_datasets)]
+
         # Default naming
         return [f"dataset_{i}" for i in range(num_datasets)]
 
