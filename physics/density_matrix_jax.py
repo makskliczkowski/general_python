@@ -110,5 +110,6 @@ if JAX_AVAILABLE:
     
 else:
     schmidt = rho = None
+    rho_mask = schmidt_mask = None
     
 # --------------------------------------------------------------------
