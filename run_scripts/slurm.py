@@ -118,7 +118,13 @@ class SlurmMonitor:
             if elapsed_time >= job_time - limit:
                 SlurmMonitor.logger.info(f"Elapsed time exceeds limit: {elapsed_time} seconds", lvl=3)
                 return True
+        if start_time is not None and job_time is not None:
+            remaining_time = job_time - (time.perf_counter() - start_time)
+            if remaining_time < limit:
+                SlurmMonitor.logger.info(f"Remaining time is less than limit: {remaining_time} seconds", lvl=3)
+                return True
         
+        #! Get remaining time from SLURM
         remaining_time = SlurmMonitor.get_remaining_time()
         
         if remaining_time == -1:
