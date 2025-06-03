@@ -218,7 +218,11 @@ class Directories(object):
             files = [p for p in files if p.stat().st_size > 0]
 
         for f in filters:
-            files = list(filter(f, files))
+            try:
+                files = list(filter(f, files))
+            except Exception as e:
+                print(f"Error applying filter {f.__name__}: {e}")
+                continue
 
         if sort_key:
             files.sort(key=sort_key)
