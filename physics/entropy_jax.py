@@ -7,7 +7,10 @@ date    : 2025-05-01
 '''
 
 try:
-    from general_python.algebra.utils import JAX_AVAILABLE, Array
+    import jax
+    from jax import numpy as jnp
+    JAX_AVAILABLE   = True
+    Array           = jnp.ndarray
 except ImportError:
     JAX_AVAILABLE   = False
     Array           = None

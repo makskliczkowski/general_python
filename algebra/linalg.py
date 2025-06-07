@@ -1,17 +1,29 @@
-from abc import ABC, abstractmethod
+'''
+This module provides various linear algebra operations, including matrix transformations,
+outer and Kronecker products, inner products, and matrix diagonalization.
+It supports both dense and sparse matrices, and can operate with different numerical backends
+such as NumPy and JAX.
+'''
+
 import numpy as np
 import scipy as sp
 from numba import njit
+from functools import partial
 
-from general_python.algebra.utils import JAX_AVAILABLE, maybe_jit, get_backend, JIT, Array
+from general_python.algebra.utils import maybe_jit, get_backend, JIT, Array
 import general_python.algebra.linalg_sparse as sparse 
 import general_python.algebra.utils as utils
 
+# -----------------------------------------------------------------
 
-if JAX_AVAILABLE:
+try:
     import jax
     import jax.numpy as jnp
     import jax.scipy as jsp
+    JAX_AVAILABLE = True
+except ImportError:
+    jax = jnp = jsp = None
+    JAX_AVAILABLE = False
 
 # -----------------------------------------------------------------
 #! Matrix operations
@@ -551,7 +563,101 @@ def eigsh(matrix, backend="default", **kwargs):
     if backend == np or not JAX_AVAILABLE:
         return _eig_np(matrix.todense())
     return _eig_jax(matrix.todense())
-    
+
+# ------------------------------------------------------------------
+#! State manipulation
 # ------------------------------------------------------------------
 
+if JAX_AVAILABLE:
+    
+    @partial(jax.jit, static_argnums=(4,))
+    def _apply_givens_rotation_jax(V: jnp.ndarray, i: int, j: int, theta: float, M: int) -> jnp.ndarray:
+        """
+        Applies a complex Givens rotation to a matrix V.
+        
+        For simplicity, we use a complex rotation based on
+        the real Givens structure, which is a common choice.
+        
+        V_new = V @ R, where R is the rotation matrix.
+        
+        Parameters:
+            V (jnp.ndarray):
+                The matrix or vector to which the Givens rotation is applied.
+            i (int):
+                The index of the first row/column to rotate.
+            j (int):
+                The index of the second row/column to rotate.
+            theta (float):
+                The angle of rotation in radians.
+            M (int, optional):
+                The size of the Givens rotation matrix. Default is 2.
+        Returns:
+            jnp.ndarray:
+                The transformed matrix or vector after applying the Givens rotation.
+        Notes:
+            The Givens rotation is a rotation in the plane spanned by the i-th and j-th basis vectors.
+            It is commonly used in numerical linear algebra for QR decomposition and other applications.
+            The rotation matrix R is defined as:
+            
+            R = [[c, -s],
+                [s,  c]]
+                
+            where c = cos(theta) and s = sin(theta).
+        """
+        # Create the rotation matrix R
+        R = jnp.eye(M, dtype=jnp.complex64)
+        c, s = jnp.cos(theta), jnp.sin(theta)
+        
+        # Standard SO(N) rotation structure
+        # For a more general U(N) rotation, a phase factor would be needed.
+        # e.g., R[i,j] = -exp(i*phi)*s, R[j,i] = exp(-i*phi)*s
+        # We stick to the simpler real-structured rotation as a starting point.
+        R = R.at[i, i].set(c)
+        R = R.at[j, j].set(c)
+        R = R.at[i, j].set(-s)
+        R = R.at[j, i].set(s)
+        
+        return V @ R
 
+def _apply_givens_rotation_np(V: np.ndarray, i: int, j: int, theta: float, M: int = 2):
+    """
+    Applies a Givens rotation to a matrix or vector.
+    
+    Parameters:
+        V (array-like): The matrix or vector to which the Givens rotation is applied.
+        i (int): The index of the first row/column to rotate.
+        j (int): The index of the second row/column to rotate.
+        theta (float): The angle of rotation in radians.
+        M (int, optional): The size of the Givens rotation matrix. Default is 2.
+    
+    Returns:
+        array-like: The transformed matrix or vector after applying the Givens rotation.
+    """
+    R       = np.eye(M)                        # Identity matrix of size MxM 
+    c, s    = np.cos(theta), np.sin(theta)    # Cosine and sine of the rotation angle 
+    R[i, i] = c
+    R[j, j] = c
+    R[i, j] = -s
+    R[j, i] = s
+    # Apply the Givens rotation to the matrix/vector V
+    return V @ R
+
+def apply_givens_rotation(V: Array, i: int, j: int, theta: float, M: int = 2) -> Array:
+    """
+    Applies a Givens rotation to a matrix or vector.
+    
+    Parameters:
+        V (array-like): The matrix or vector to which the Givens rotation is applied.
+        i (int): The index of the first row/column to rotate.
+        j (int): The index of the second row/column to rotate.
+        theta (float): The angle of rotation in radians.
+        M (int, optional): The size of the Givens rotation matrix. Default is 2.
+    
+    Returns:
+        array-like: The transformed matrix or vector after applying the Givens rotation.
+    """
+    if isinstance(V, jnp.ndarray) and JAX_AVAILABLE:
+        return _apply_givens_rotation_jax(V, i, j, theta, M)
+    return _apply_givens_rotation_np(V, i, j, theta, M)
+
+# ------------------------------------------------------------------

@@ -4,10 +4,23 @@ author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-05-01
 This module provides a function to compute the reduced density matrix
+using JAX. It enables to optimize the computation of the reduced
+density matrix for quantum states, particularly useful in quantum
+entanglement and quantum information tasks.
 '''
-from general_python.algebra.utils import JAX_AVAILABLE, Array
+
+try:
+    import jax
+    from jax import numpy as jnp
+    JAX_AVAILABLE = True
+except ImportError:
+    jax = jnp = None
+    JAX_AVAILABLE = False
+
 from typing import Optional, Union
 from functools import partial
+
+# --------------------------------------------------------------------
 
 if JAX_AVAILABLE:
     import jax
