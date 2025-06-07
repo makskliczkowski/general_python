@@ -570,14 +570,14 @@ class BackendManager:
 
         # Collect version information for each library.
         backend_versions = {
-            "NumPy": np.__version__,
-            "SciPy": sp.__version__,
+            "NumPy": getattr(np, '__version__', 'Unknown'),
+            "SciPy": getattr(sp, '__version__', 'Unknown'), 
             "JAX": "Not Available"
         }
 
         # If JAX is available, get its actual version
         if self.is_jax_available and self._jax_module:
-            backend_versions["JAX"] = self._jax_module.__version__
+            backend_versions["JAX"] = getattr(self._jax_module, '__version__', 'Unknown')
 
         # Print header.
         _log_message("*"*50, 0)

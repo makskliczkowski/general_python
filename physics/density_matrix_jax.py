@@ -14,14 +14,14 @@ if JAX_AVAILABLE:
     import jax.numpy as jnp
     
     @partial(jax.jit, static_argnums=(1, 2))
-    def rho(state, dimA: int, dimB: int):
+    def rho_jax(state, dimA: int, dimB: int):
         psi = jnp.reshape(state, (dimA, dimB), order="F")
         return psi @ jnp.conj(psi).T
 
     @partial(jax.jit, static_argnums=(1, 2))
-    def rho_mask(state  : jnp.ndarray,
-                order   : tuple[int, ...],
-                size_a  : int) -> jnp.ndarray:
+    def rho_mask_jax(state  : jnp.ndarray,
+                    order   : tuple[int, ...],
+                    size_a  : int) -> jnp.ndarray:
         r"""
         Reshape-and-permute a pure \(N\)-qubit state
         \(|\psi\rangle\in\mathbb C^{2^N}\)
@@ -62,7 +62,7 @@ if JAX_AVAILABLE:
         return jnp.reshape(psi_perm, (dA, -1))
 
     @partial(jax.jit, static_argnums=(1, 2, 3))
-    def schmidt(state, dimA: int, dimB: int, use_eig: bool):
+    def schmidt_jax(state, dimA: int, dimB: int, use_eig: bool):
         psi = jnp.reshape(state, (dimA, dimB), order="F")
         if use_eig:
             if dimA <= dimB:
@@ -79,7 +79,7 @@ if JAX_AVAILABLE:
         return vals[::-1], vecs[:, ::-1]
     
     @partial(jax.jit, static_argnums=(1, 2, 3))
-    def schmidt_mask(state: jnp.array, order: tuple, size_a: int, eig: bool = False):
+    def schmidt_mask_jax(state: jnp.array, order: tuple, size_a: int, eig: bool = False):
         """
         Computes the Schmidt decomposition for a given state and mask.
         
@@ -109,7 +109,6 @@ if JAX_AVAILABLE:
         return vals[::-1], vecs[:, ::-1]
     
 else:
-    schmidt = rho = None
-    rho_mask = schmidt_mask = None
+    schmidt_jax = rho_jax = schmidt_mask_jax = rho_mask_jax = None
     
 # --------------------------------------------------------------------

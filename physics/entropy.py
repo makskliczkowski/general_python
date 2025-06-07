@@ -19,9 +19,9 @@ import math
 
 from general_python.algebra.utils import JAX_AVAILABLE, Array
 if JAX_AVAILABLE:
-    from general_python.physics import entropy_jax as jnp
+    from general_python.physics import entropy_jax as entropy_jax
 else:
-    jnp = np
+    entropy_jax = None
     
 ###################################
 
@@ -324,7 +324,10 @@ class EntropyPredictions:
         - L : system size
         - n : fermionic filling
         '''
-        return ((n-1.0) * np.log(1.0-n) - n*np.log(n))*f*L - np.sqrt(n*(1.0-n)/2.0/np.pi) * np.abs(np.log((1.0-n)/n)) * (1.0 if f == 0.5 else 0.) * np.sqrt(L) + (f+np.log(1-f))/2. - 0.5 * (1. if f == 0.5 else 0) * (1. if n == 0.5 else 0.0)
+        return ((n - 1.0) * np.log(1.0 - n) - n * np.log(n)) * f * L \
+            - np.sqrt(n * (1.0 - n) / (2.0 * np.pi)) * np.abs(np.log((1.0 - n) / n)) * (1.0 if f == 0.5 else 0.0) * np.sqrt(L) \
+            + (f + np.log(1 - f)) / 2.0 \
+            - 0.5 * (1.0 if f == 0.5 else 0.0) * (1.0 if n == 0.5 else 0.0)
 
 ###################################
 #! helpers: eigenvalues from ρ
@@ -527,7 +530,7 @@ def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     return ent[0] if single else ent
 
 @numba.njit(cache=True)
-def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float = 1e-12, square: bool = True) -> float:
+def participation_entropy(lam: np.ndarray, q: float = 1.0, threshold: float = 1e-12) -> float:
     """
     Compute the participation entropy for a given probability distribution.
 
@@ -676,5 +679,3 @@ class Fractal:
             return (np.log2(pr_lp1) - np.log2(pr_l)) / (1 - q)
         else:
             return (np.log2(pr_lp1) - np.log2(pr_l))
-
-####################################

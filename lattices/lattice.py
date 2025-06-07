@@ -3,6 +3,7 @@ Contains the general lattice class and its children for different lattice types.
 @Author: Maksymilian Kliczkowski
 @Email: maksymilian.kliczkowski@pwr.edu.pl
 @Date: 2025-02-01
+
 """
 
 # Import the necessary modules

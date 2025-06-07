@@ -6,7 +6,12 @@ date    : 2025-05-01
 
 '''
 
-from general_python.algebra.utils import JAX_AVAILABLE, Array
+try:
+    from general_python.algebra.utils import JAX_AVAILABLE, Array
+except ImportError:
+    JAX_AVAILABLE   = False
+    Array           = None
+    
 from typing import Optional, Union
 from functools import partial
 from enum import Enum, unique
@@ -35,7 +40,7 @@ if JAX_AVAILABLE:
     # --------------------------------------------------------------------
 
     @partial(jax.jit, static_argnames=("base",))
-    def vn_entropy(lam: jnp.ndarray, base: float = jnp.e) -> float:
+    def vn_entropy_jax(lam: jnp.ndarray, base: float = jnp.e) -> float:
         r"""
         Von Neumann (Shannon) entropy
 
@@ -63,7 +68,7 @@ if JAX_AVAILABLE:
         return -jnp.vdot(lam, logp)
 
     @partial(jax.jit, static_argnames=("base",))
-    def renyi_entropy(lam: jnp.ndarray, q: float, base: float = jnp.e) -> float:
+    def renyi_entropy_jax(lam: jnp.ndarray, q: float, base: float = jnp.e) -> float:
         r"""
         Rényi entropy of order \(q\neq 1\)
 
@@ -87,7 +92,7 @@ if JAX_AVAILABLE:
         lam = _clean_probs_jax(lam)
 
         def _vn(_: None) -> float:
-            return vn_entropy(lam, base)
+            return vn_entropy_jax(lam, base)
 
         def _generic(_: None) -> float:
             s       = jnp.sum(lam ** q)
@@ -99,7 +104,7 @@ if JAX_AVAILABLE:
         return jax.lax.cond(jnp.isclose(q, 1.0), _vn, _generic, operand=None)
 
     @jax.jit
-    def tsallis_entropy(lam: jnp.ndarray, q: float) -> float:
+    def tsallis_entropy_jax(lam: jnp.ndarray, q: float) -> float:
         r"""
         Tsallis entropy
 
@@ -120,7 +125,7 @@ if JAX_AVAILABLE:
         lam = _clean_probs_jax(lam)
 
         def _vn(_: None) -> float:
-            return vn_entropy(lam)
+            return vn_entropy_jax(lam)
 
         def _generic(_: None) -> float:
             return (1.0 - jnp.sum(lam ** q)) / (q - 1.0)
@@ -129,7 +134,7 @@ if JAX_AVAILABLE:
 
 
     @partial(jax.jit, static_argnames=("base",))
-    def sp_correlation_entropy(lam: jnp.ndarray, q: float, base: float = jnp.e) -> float:
+    def sp_correlation_entropy_jax(lam: jnp.ndarray, q: float, base: float = jnp.e) -> float:
         r"""
         Compute the single-particle correlation entropy for a set of eigenvalues.
 
@@ -175,5 +180,11 @@ if JAX_AVAILABLE:
         return jax.lax.cond(jnp.isclose(q, 1.0), _vn, _renyi, operand=None)
 
     # ------------------------------------------------------------------------
+else:
+    vn_entropy_jax = None
+    renyi_entropy_jax = None
+    tsallis_entropy_jax = None
+    sp_correlation_entropy_jax = None
     
 # ------------------------------------------------------------------------
+    

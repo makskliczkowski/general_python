@@ -15,7 +15,14 @@ import scipy as sp
 from enum import Enum, unique
 
 # random matrices
-from tenpy.linalg.random_matrix import COE, GUE, GOE, CRE, CUE
+try:
+    from tenpy.linalg.random_matrix import COE, GUE, GOE, CRE, CUE
+except ImportError:
+    # Mock random matrix classes for documentation generation
+    class MockRandomMatrix:
+        def __init__(self, *args, **kwargs):
+            pass
+    COE = GUE = GOE = CRE = CUE = MockRandomMatrix
 
 # -----------------------------------------------------------------------------
 

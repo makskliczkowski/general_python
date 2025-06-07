@@ -87,7 +87,11 @@ from . import algebra
 from . import common
 from . import lattices
 from . import maths
-from . import ml
+try:
+    from . import ml
+except ImportError:
+    # ML module might fail during documentation builds due to sklearn dependencies
+    pass
 from . import physics
 
 # ---------------------------------------------------------------------

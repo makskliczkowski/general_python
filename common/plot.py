@@ -1,4 +1,5 @@
 import itertools
+from typing import Union, Optional
 try:
     import scienceplots
 except ImportError:
@@ -25,8 +26,14 @@ from matplotlib.legend_handler import HandlerBase, HandlerPatch
 ########################## other
 import numpy as np
 mpl.rcParams.update(mpl.rcParamsDefault)
-plt.rcParams['axes.facecolor']      =   'white'
-plt.rcParams['savefig.facecolor']   =   'w'
+
+# Safely set rcParams (for compatibility with documentation build systems)
+try:
+    plt.rcParams['axes.facecolor']      =   'white'
+    plt.rcParams['savefig.facecolor']   =   'w'
+except (TypeError, AttributeError, KeyError):
+    # Handle cases where rcParams doesn't support item assignment (e.g., during doc builds)
+    pass
 
 ########################## labellines
 try:
@@ -69,8 +76,13 @@ try:
 except Exception as e:
     print("Error applying style:", e)
     
-mpl.rcParams['mathtext.fontset']    = 'stix'
-mpl.rcParams['font.family']         = 'STIXGeneral'
+# Safely set additional rcParams (for compatibility with documentation build systems)
+try:
+    mpl.rcParams['mathtext.fontset']    = 'stix'
+    mpl.rcParams['font.family']         = 'STIXGeneral'
+except (TypeError, AttributeError, KeyError):
+    # Handle cases where rcParams doesn't support item assignment (e.g., during doc builds)
+    pass
 
 # plt.rcParams['text.usetex']         = True
 # latex_engine                        = 'pdflatex'
@@ -294,8 +306,6 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
     if 'x' in axis:
         ax.xaxis.set_major_formatter(formatter)
 
-############################ grids ############################
-
 ########################### plotter ###########################
 
 import seaborn as sns
@@ -305,7 +315,49 @@ class Plotter:
     A Plotter class that handles the methods of plotting.
     """
     
+    def __init__(self, default_cmap='viridis', font_size=12, dpi=200):
+        '''
+        Initialize the Plotter class with default parameters.
+        Parameters:
+            default_cmap [str]:
+                Default colormap to use for plots.
+            font_size [int]:
+                Default font size for text in plots.
+            dpi [int]:
+                Dots per inch for the figure resolution.
+        '''
+        self.default_cmap   = default_cmap
+        self.font_size      = font_size
+        self.dpi            = dpi
+    
     ###########################################################
+    #! Utilities for plotting
+    ###########################################################
+    
+    @staticmethod
+    def ensure_list(x):
+        return x if isinstance(x, (list, tuple, np.ndarray)) else [x]
+
+    @staticmethod
+    def unify_limits(axes, which='y'):
+        
+        # Unify the limits of the given axes for either 'x' or 'y' axis.
+        axes    = Plotter.ensure_list(axes)
+        if which == 'y':
+            limits  = [ax.get_ylim() for ax in axes]
+            min_l   = min(l[0] for l in limits)
+            max_l   = max(l[1] for l in limits)
+            for ax in axes:
+                ax.set_ylim(min_l, max_l)
+        elif which == 'x':
+            limits  = [ax.get_xlim() for ax in axes]
+            min_l   = min(l[0] for l in limits)
+            max_l   = max(l[1] for l in limits)
+            for ax in axes:
+                ax.set_xlim(min_l, max_l)
+    
+    ###########################################################
+    
     @staticmethod
     def get_figsize(columnwidth, wf=0.5, hf=None, aspect_ratio=None):
         r"""
@@ -328,12 +380,22 @@ class Plotter:
         return [fig_width, fig_height]
     
     ###########################################################
+    
     @staticmethod 
     def get_color(color,
-                  alpha = None,
-                  edgecolor = (0,0,0,1), 
-                  facecolor = (1,1,1,0)
-                  ):
+                alpha     = None,
+                edgecolor = (0,0,0,1), 
+                facecolor = (1,1,1,0)):
+        '''
+        Get a dictionary with color properties for matplotlib patches.
+        Parameters:
+            - color [str or tuple]: Color to use, can be a named color or an RGB tuple.
+            - alpha [float]: Transparency level (0 to 1).
+            - edgecolor [tuple]: Edge color as an RGB tuple.
+            - facecolor [tuple]: Face color as an RGB tuple.
+        Returns:
+            - dictionary [dict]: Dictionary with color properties.
+        '''
         dictionary = dict(facecolor = facecolor, edgecolor = edgecolor, color=color)
         if alpha is not None:
             dictionary['alpha'] = alpha
@@ -342,21 +404,81 @@ class Plotter:
     ####################### C O L O R S #######################
 
     @staticmethod
-    def add_colorbar(axes, fig, cmap, title = '', norm = None, *args, **kwargs):
-        '''
-        Add colorbar to the plot. 
-        - axes      :   axis to add the colorbar to
-        - fig       :   figure to add the colorbar to
-        - cmap      :   colormap to use
-        - title     :   title of the colorbar
-        - norm      :   normalization of the colorbar
-        '''
-        sm = plt.cm.ScalarMappable(cmap = cmap, norm = norm)
+    def add_colorbar(
+        axes,
+        fig,
+        cmap,
+        title         = '',
+        norm          = None,
+        orientation   = 'vertical',
+        position      = 'right',
+        size          = '5%',
+        pad           = 0.05,
+        shrink        = 1.0,
+        aspect        = 20,
+        anchor        = (0.0, 0.5),
+        extend        = 'neither',
+        extendfrac    = None,
+        ticks         = None,
+        **kwargs):
+        """
+        Add a shared colorbar to one or more axes.
+
+        Parameters:
+            axes        : single axis or list of axes to which the colorbar corresponds
+            fig         : matplotlib figure object
+            cmap        : matplotlib colormap
+            title       : title of the colorbar
+            norm        : matplotlib normalization instance
+            orientation : 'vertical' or 'horizontal'
+            position    : position of colorbar if using `make_axes_locatable` ('right', 'left', etc.)
+            size        : size of the colorbar (as a fraction or absolute)
+            pad         : spacing between the colorbar and axes
+            shrink      : shrink factor for the colorbar
+            aspect      : aspect ratio of the colorbar
+            anchor      : anchor position (if needed)
+            extend      : 'neither', 'both', 'min', 'max'
+            ticks       : optional tick locations
+            kwargs      : passed to `fig.colorbar`
+        """
+
+        if not isinstance(axes, (list, tuple, np.ndarray)):
+            axes = [axes]
+
+        sm = mpl.colormaps.ScalarMappable(norm=norm, cmap=cmap)
         sm.set_array([])
-        
-        # add colorbar
-        cbar    = fig.colorbar(sm, ax = axes, *args, **kwargs)
-        cbar.ax.set_title(title)
+
+        # Combine bounding boxes of all axes
+        bbox = Bbox.union([ax.get_position(fig.transFigure) for ax in axes])
+
+        if orientation == 'vertical':
+            cax_position = [
+                bbox.x1 + pad, bbox.y0,
+                float(size) if isinstance(size, float) else 0.02,
+                bbox.height
+            ]
+        elif orientation == 'horizontal':
+            cax_position = [
+                bbox.x0, bbox.y0 - pad,
+                bbox.width,
+                float(size) if isinstance(size, float) else 0.02
+            ]
+        else:
+            raise ValueError(f"Invalid orientation: {orientation}")
+
+        # Add colorbar axis
+        cax     = fig.add_axes(cax_position)
+        cbar    = fig.colorbar(sm, cax=cax, orientation=orientation,
+                            shrink=shrink, aspect=aspect,
+                            extend=extend, extendfrac=extendfrac,
+                            ticks=ticks, **kwargs)
+
+        if title:
+            if orientation == 'vertical':
+                cbar.ax.set_title(title, pad=10)
+            else:
+                cbar.ax.set_xlabel(title, labelpad=10)
+
         return cbar
     
     @staticmethod
@@ -980,29 +1102,29 @@ class Plotter:
     def set_ax_params(
             ax,
             which           : str           = 'both',       # which axis to update
-            label           : dict | str    = "",           # general label
-            xlabel          : dict | str    = "",           # x label - works when which is 'x' or 'both'
+            label           : Union[dict, str]    = "",           # general label
+            xlabel          : Union[dict, str]    = "",           # x label - works when which is 'x' or 'both'
             ylabel          : str           = "",           # y label - works when which is 'y' or 'both'
             title           : str           = "",           # title of the axis
-            scale           : str  | dict   = "linear",     # scale of the axis
+            scale           : Union[str, dict]   = "linear",     # scale of the axis
             xscale                          = None,         # scale of the x-axis
             yscale                          = None,         # scale of the y-axis
-            lim             : dict | tuple | None = None,   # fallback for axis limits
+            lim             : Union[dict, tuple, None] = None,   # fallback for axis limits
             xlim                            = None,         # specific limits for x-axis
             ylim                            = None,         # specific limits for y-axis
             fontsize        : int           = plt.rcParams['font.size'],
             labelPad        : float         = 0.0,          # padding for axis labels
-            labelCond       : bool | dict   = True,
-            labelPos        : dict | str | None = None,     # label positions
-            xlabelPos       : str  | None   = None,         # position of the xlabel
-            ylabelPos       : str  | None   = None,         # position of the ylabel
-            tickPos         : dict | str | None = None,     # tick positions
-            labelCords      : dict | str | None = None,     # manual label coordinates
-            ticks           : dict | str | None = None,     # custom ticks
-            labels          : dict | str | None = None,     # custom tick labels
+            labelCond       : Union[bool, dict]   = True,
+            labelPos        : Union[dict, str, None] = None,     # label positions
+            xlabelPos       : Union[str, None]   = None,         # position of the xlabel
+            ylabelPos       : Union[str, None]   = None,         # position of the ylabel
+            tickPos         : Union[dict, str, None] = None,     # tick positions
+            labelCords      : Union[dict, str, None] = None,     # manual label coordinates
+            ticks           : Union[dict, str, None] = None,     # custom ticks
+            labels          : Union[dict, str, None] = None,     # custom tick labels
             maj_tick_l      : float         = 2,
             min_tick_l      : float         = 1,
-            tick_params     : dict | str | None = None,
+            tick_params     : Union[dict, str, None] = None,
             title_fontsize  : int           = 14,
         ):
             """
@@ -1255,11 +1377,11 @@ class Plotter:
         ax,
         *,
         which           : str = "both",             # "x", "y", or "both"
-        data            : np.ndarray | None = None, # 1-D or 2-D; if None infer from artists
+        data            : Union[np.ndarray, None] = None, # 1-D or 2-D; if None infer from artists
         margin_p        : float = 0,                # log_scale moves
         margin_m        : float = 1,                # log_scale moves
-        xlim            : tuple | None = None,      # x limits
-        ylim            : tuple | None = None,      # y limits
+        xlim            : Union[tuple, None] = None,      # x limits
+        ylim            : Union[tuple, None] = None,      # y limits
         ):
         """
         Auto-compute robust axis limits and apply them to *ax*.
