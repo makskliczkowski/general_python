@@ -570,53 +570,52 @@ def eigsh(matrix, backend="default", **kwargs):
 
 if JAX_AVAILABLE:
     
-    @partial(jax.jit, static_argnums=(4,))
-    def _apply_givens_rotation_jax(V: jnp.ndarray, i: int, j: int, theta: float, M: int) -> jnp.ndarray:
+    @partial(jax.jit, static_argnums=(5,))
+    def _apply_complex_givens_rotation_jax(
+            V     : jnp.ndarray, 
+            i     : int, 
+            j     : int, 
+            theta : float, 
+            phi   : float, 
+            dim   : int) -> jnp.ndarray:
         """
-        Applies a complex Givens rotation to a matrix V.
-        
-        For simplicity, we use a complex rotation based on
-        the real Givens structure, which is a common choice.
-        
-        V_new = V @ R, where R is the rotation matrix.
-        
-        Parameters:
-            V (jnp.ndarray):
-                The matrix or vector to which the Givens rotation is applied.
-            i (int):
-                The index of the first row/column to rotate.
-            j (int):
-                The index of the second row/column to rotate.
-            theta (float):
-                The angle of rotation in radians.
-            M (int, optional):
-                The size of the Givens rotation matrix. Default is 2.
-        Returns:
-            jnp.ndarray:
-                The transformed matrix or vector after applying the Givens rotation.
-        Notes:
-            The Givens rotation is a rotation in the plane spanned by the i-th and j-th basis vectors.
-            It is commonly used in numerical linear algebra for QR decomposition and other applications.
-            The rotation matrix R is defined as:
-            
-            R = [[c, -s],
-                [s,  c]]
-                
-            where c = cos(theta) and s = sin(theta).
+        Apply a complex Givens rotation on V of size (dim x dim).
+
+        Rotation matrix R acts on the (i, j) subspace as:
+        R_ii = cos(theta)
+        R_jj = cos(theta)
+        R_ij = -sin(theta) * exp(i * phi)
+        R_ji = sin(theta) * exp(-i * phi)
+
+        Parameters
+        ----------
+        V     : (dim, dim) complex ndarray
+            Unitary matrix to rotate.
+        i, j  : int
+            Indices to rotate between.
+        theta : float
+            Rotation angle in radians.
+        phi   : float
+            Phase angle in radians.
+        dim   : int
+            Dimension of the unitary matrix.
+
+        Returns
+        -------
+        jnp.ndarray
+            Rotated matrix V_new = V @ R
         """
-        # Create the rotation matrix R
-        R = jnp.eye(M, dtype=jnp.complex64)
-        c, s = jnp.cos(theta), jnp.sin(theta)
-        
-        # Standard SO(N) rotation structure
-        # For a more general U(N) rotation, a phase factor would be needed.
-        # e.g., R[i,j] = -exp(i*phi)*s, R[j,i] = exp(-i*phi)*s
-        # We stick to the simpler real-structured rotation as a starting point.
+        R = jnp.eye(dim, dtype=jnp.complex64)
+        c = jnp.cos(theta)
+        s = jnp.sin(theta)
+        exp_i_phi = jnp.exp(1j * phi)
+        exp_neg_i_phi = jnp.exp(-1j * phi)
+
         R = R.at[i, i].set(c)
         R = R.at[j, j].set(c)
-        R = R.at[i, j].set(-s)
-        R = R.at[j, i].set(s)
-        
+        R = R.at[i, j].set(-s * exp_i_phi)
+        R = R.at[j, i].set(s * exp_neg_i_phi)
+
         return V @ R
 
 def _apply_givens_rotation_np(V: np.ndarray, i: int, j: int, theta: float, M: int = 2):

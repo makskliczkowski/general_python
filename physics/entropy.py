@@ -147,43 +147,66 @@ class EntropyPredictions:
             return f * L * np.log(2) - binom(2 * f * L, f * L) / binom(L, L / 2) / 2
 
         @staticmethod
-        def page(La: int, Lb: int):
+        def page(da: int, db: int):
             """
             Page value for given subsystem sizes.
 
-            Parameters:
-            La (int): Subsystem A size.
-            Lb (int): Subsystem B size.
+            Parameters: 
+            da (int):
+                Size of subsystem A.
+            db (int):
+                Size of subsystem B.
 
             Returns:
             float: Page value.
             """
-            da = 2 ** La
-            db = 2 ** Lb
             return digamma(da * db + 1) - digamma(db + 1) - (da - 1) / (2 * db)
 
         @staticmethod
         def page_u1(La: int, Lb: int, n: float = 0.5):
             """
-            Page result with the correction for U(1).
+            Page result with the correction for U(1) symmetry.
 
             Parameters:
-            La (int): Subsystem A size.
-            Lb (int): Subsystem B size.
-            n (float, optional): Fermionic filling. Default is 0.5.
+            La (int):
+                Subsystem A size.
+            Lb (int):
+                Subsystem B size.
+            n (float, optional):
+                Fermionic filling fraction. Default is 0.5 - half filling.
 
             Returns:
-            float: Page value with U(1) correction.
+                float: Page value with U(1) correction.
+
+            Notes:
+            This implements the Page value calculation for systems with U(1) charge conservation,
+            following the formula: 〈SA〉N = ∑(dA dB / dN)[〈SA〉 + ψ(dN + 1) - ψ(dA dB + 1)]
             """
-            Sval = 0
-            L_tot = int(La + Lb)
-            N = int(L_tot * n)
-            for na in range(0, min(N, La) + 1):
+            
+            if La <= 0 or Lb <= 0:
+                return 0.0
+            
+            Sval        = 0.0
+            L_tot       = La + Lb
+            N           = int(L_tot * n)
+            
+            # Ensure N is within valid bounds
+            N           = max(0, min(N, L_tot))
+            
+            for na in range(max(0, N - Lb), min(N, La) + 1):
+                nb = N - na
+                if nb < 0 or nb > Lb:
+                    continue
+                    
                 d_a = binom(La, na)
-                d_b = binom(Lb, N - na)
+                d_b = binom(Lb, nb)
                 d_N = binom(L_tot, N)
-            # page_result2 is not defined in the original code. Replace with appropriate function if needed.
-            Sval += d_a * d_b / d_N * (digamma(d_a * d_b + 1) - digamma(d_b + 1) - (d_a - 1) / (2 * d_b) + digamma(d_N + 1) - digamma(d_a * d_b + 1))
+            
+                if d_N > 0:  # Avoid division by zero
+                    weight      = d_a * d_b / d_N
+                    sa_mean     = EntropyPredictions.Mean.page(d_a, d_b)
+                    correction  = digamma(d_N + 1) - digamma(d_a * d_b + 1)
+                    Sval       += weight * (sa_mean + correction)
             return Sval
 
         @staticmethod
