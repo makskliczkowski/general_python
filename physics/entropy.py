@@ -553,7 +553,7 @@ def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     return ent[0] if single else ent
 
 @numba.njit(cache=True)
-def participation_entropy(lam: np.ndarray, q: float = 1.0, threshold: float = 1e-12) -> float:
+def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float = 1e-12, square = False) -> float:
     """
     Compute the participation entropy for a given probability distribution.
 

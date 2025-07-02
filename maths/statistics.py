@@ -759,8 +759,8 @@ class Fraction:
         return (min_index, max_index)
     
     @staticmethod
-    def take_fraction(frac  : float, 
-                    data    : np.ndarray, 
+    def take_fraction(frac          : float, 
+                    data            : np.ndarray, 
                     around          = None,
                     fraction_left   = 0.5,
                     fraction_right  = 0.5,
