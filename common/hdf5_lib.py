@@ -711,15 +711,20 @@ class HDF5Handler:
         Read an HDF5 file and return a dictionary of datasets.
         """
         data = {}
+        file_path = str(file_path)
         if not os.path.exists(file_path):
             if logger is not None:
                 logger.error(f"File {file_path} does not exist")
+            elif verbose:
+                print(f"File {file_path} does not exist")
             return data
 
         try:
             if not file_path.endswith(('.h5', '.hdf5', '.hdf')):
                 if logger is not None:
                     logger.error(f"File {file_path} is not an HDF5 file")
+                elif verbose:
+                    print(f"File {file_path} is not an HDF5 file")
                 return data
 
             with h5py.File(file_path, "r") as f:
@@ -727,6 +732,8 @@ class HDF5Handler:
                     keys = HDF5Handler._allbottomkeys(f)
                     if verbose and logger is not None:
                         logger.info(f"Available keys: {keys}")
+                    elif verbose:
+                        print(f"Available keys: {keys}")
 
                 for key in keys:
                     try:
@@ -744,6 +751,8 @@ class HDF5Handler:
         except Exception as e:
             if logger is not None:
                 logger.error(f"Error opening file {file_path}: {str(e)}")
+            elif verbose:
+                print(f"Error opening file {file_path}: {str(e)}")
             if "truncated" in str(e) or "doesn't exist" in str(e) and remove_bad:
                 if logger is not None:
                     logger.info(f"Removing corrupted file {file_path}")
