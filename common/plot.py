@@ -1,5 +1,6 @@
 import itertools
-from typing import Union, Optional
+from typing import Tuple, Union, Optional, List
+
 try:
     import scienceplots
 except ImportError:
@@ -1873,7 +1874,7 @@ class Plotter:
                         ncols  =   1,
                         sizex  =   10.,
                         sizey  =   10.,
-                        **kwargs):
+                        **kwargs) -> Tuple[plt.Figure, List[plt.Axes]]:
         figsize             = kwargs.get('figsize', (sizex, sizey))
         kwargs['figsize']   = figsize
         
