@@ -31,12 +31,18 @@ from functools import partial
 
 from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 
+# Initialize JAX_RND_DEFAULT_KEY
+JAX_RND_DEFAULT_KEY = None
+
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
-    from jax import random as jrand
-    from jax import numpy as jnp
     from jax import random as random_jp
+    
+    # Initialize default JAX PRNG key
+    JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42)  # Default seed
+else:
+    JAX_RND_DEFAULT_KEY = None
 
 ###############################################################################
 #! Random number generator initialization
@@ -90,8 +96,11 @@ def set_global_seed(seed: int, backend: str = "default"):
     global JAX_RND_DEFAULT_KEY
     modules                         = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key)  = modules if isinstance(modules, tuple) else (modules, (None, None))
-    if backend_mod is np:
+    if backend == "np" or backend == "numpy" or backend is np:
         np.random.seed(seed)
+        if hasattr(npr, "default_rng"):
+            # Reset the default_rng for newer NumPy versions
+            npr.default_rng(seed)
     else:
         from jax import random as rnd_module
         JAX_RND_DEFAULT_KEY = rnd_module.PRNGKey(seed)
@@ -171,7 +180,7 @@ if JAX_AVAILABLE:
     @partial(jax.jit, static_argnames=('minval', 'maxval', 'shape'))
     def _uniform_jax(key, shape, minval, maxval):
         ''' Generate a random uniform array using JAX. '''
-        return jrand.uniform(key, shape=shape, minval=minval, maxval=maxval)
+        return random_jp.uniform(key, shape=shape, minval=minval, maxval=maxval)
 else:
     def _uniform_jax(key, shape, minval, maxval):
         return None
