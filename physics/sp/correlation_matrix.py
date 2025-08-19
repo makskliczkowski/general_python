@@ -65,7 +65,7 @@ def corr_single(
     ----------
     W_A  : ndarray (Ls, La)
         - mode = "slater":
-            ndarray (Ls, La), rows = orbitals q, cols = sites i∈A.
+            ndarray (Ls, La), rows = orbitals q, cols = sites i\inA.
         - mode starts with "bdg":
             either a tuple (U_A, V_A) of shape (Ls, La) each, or a stacked ndarray (2*Ls, La) if `stacked_uv=True`
             with first Ls rows = U_A and last Ls rows = V_A.
@@ -104,7 +104,7 @@ def corr_single(
 
     Notes (BdG, zero/finite T):
     ---------------------------
-    Let c = U a + V a^\dag, with U,V ∈ C^{La\times Ls} (we use U_A,V_A as (Ls,La) row-major in orbitals; see below).
+    Let c = U a + V a^\dag, with U,V \in C^{La\times Ls} (we use U_A,V_A as (Ls,La) row-major in orbitals; see below).
     For diagonal quasiparticle occupations f = diag(f_q), the standard equal-time correlations are
         N ≡ ⟨c^\dag c⟩  = U f U^\dag + V (I - f) V^\dag,
         F ≡ ⟨c   c⟩  = U (I - f) V^T + V f U^T,
@@ -199,77 +199,222 @@ def corr_single(
 
     return G
 
+def corr_full(
+    W                   : Array,            # Slater    : (Ls, L)
+                                            # BdG       : (U, V) each (Ls, L), or stacked (2*Ls, L) with stacked_uv=True
+    occ                 : Array,            # Slater    : n_q in {0,1};  BdG: f_q in [0,1]
+    *,
+    subtract_identity   : bool              = True,
+    W_CT                : Optional[Array]   = None,
+    raw                 : bool              = True,
+    mode                : Literal["slater", "bdg-normal", "bdg-full"] = "slater",
+    stacked_uv          : bool              = False) -> Array:
+    r"""
+    Full-system correlation matrix (no subsystem restriction).
+
+    Parameters
+    ----------
+    W : 
+        - "slater":
+            single-particle orbitals (rows=orbitals q, cols=sites i), shape (Ls, L).
+        - "bdg-*":
+            either a tuple (U, V) with each (Ls, L), or stacked [U; V] of shape (2*Ls, L) if `stacked_uv=True`.
+    occ :
+        - "slater":
+            occupations n_q \in {0,1}.
+        - "bdg-*":
+            quasiparticle occupations f_q \in [0,1].
+    subtract_identity :
+        - "slater"/"bdg-normal":
+            subtract I on the normal block.
+        - "bdg-full":
+            subtract block-diag(I, I) on the 2L × 2L Nambu matrix.
+    raw :
+        - "slater" fast path using selection by boolean mask and computes 2·(W_occ^† W_occ).
+        If False, uses the (2·occ-1) trick.
+    mode : {"slater","bdg-normal","bdg-full"}
+        - "slater"     : returns C = ⟨c^† c⟩, shape (L, L).
+        - "bdg-normal" : returns N = ⟨c^† c⟩ for BdG, shape (L, L).
+        - "bdg-full"   : returns Nambu G =
+                        [[ ⟨c^† c⟩, ⟨c^† c^†⟩ ],
+                        [ ⟨c   c⟩, ⟨c   c^†⟩ ]] of shape (2L, 2L).
+    stacked_uv :
+        If True in BdG modes, interpret W as vertically stacked [U; V].
+
+    Notes
+    -----
+    - For "slater", we keep the spin-unpolarized convention C = 2·W_occ^† W_occ (you can drop the factor 2 if not needed).
+    - For BdG with diagonal quasiparticle occupations f = diag(f_q):
+        N = U f U^† + V (I - f) V^†,
+        F = U (I - f) V^T + V f U^T,
+        Ñ = I - N.
+    """
+    if mode == "slater":
+        if W_CT is None:
+            W_CT = W.conj().T # (N, Ns)
+        
+        Ls, L       = W.shape
+        occ_bool    = np.asarray(occ, dtype=bool)
+        nocc        = int(np.sum(occ_bool))
+        if nocc == 0:
+            C = np.zeros((L, L), dtype=W.dtype)
+        elif raw:
+            W_occ   = W[occ_bool, :]            # (nocc, L)
+            C       = W_occ.conj().T @ W_occ    # (L, L)
+            C      *= 2.0                       # spin-unpolarized doubling
+        else:
+            pref    = (2.0 * np.asarray(occ) - 1.0).astype(np.float64, copy=False)  # weights over orbitals
+            C       = (W_CT * pref) @ W
+
+        if subtract_identity:
+            np.fill_diagonal(C, np.diag(C) - 1.0)
+        return C
+
+    # --- BdG parse ---
+    if isinstance(W, tuple):
+        U, V = W
+        U_CT = U.conj().T
+        V_CT = V.conj().T
+    else:
+        if not stacked_uv:
+            raise ValueError("For BdG modes, pass (U, V) tuple or set stacked_uv=True with stacked [U; V].")
+        sh = W.shape
+        if len(sh) != 2 or (sh[0] % 2 != 0):
+            raise ValueError("Stacked BdG array must have shape (2*Ls, L).")
+        Ls = sh[0] // 2
+        U = W[:Ls, :]
+        V = W[Ls:, :]
+        U_CT = U.conj().T
+        V_CT = V.conj().T
+
+    L = U.shape[1]
+    f = np.asarray(occ, dtype=np.float64)  # (Ls,)
+    if f.ndim != 1 or f.shape[0] != U.shape[0]:
+        raise ValueError("`occ` for BdG must be a 1D array of length Ls (number of quasiparticle modes).")
+    one_minus_f = 1.0 - f
+
+    # N = U f U^† + V (1-f) V^†   via weighted Gram without forming diag(f)
+    N = (U_CT * f) @ U + (V_CT * one_minus_f) @ V
+
+    if mode == "bdg-normal":
+        if subtract_identity:
+            np.fill_diagonal(N, np.diag(N) - 1.0)
+        return N
+
+    # bdg-full: build G with F and Ñ = I - N
+    F = (U_CT * one_minus_f).T @ V + (V_CT * f).T @ U   # (L, L)
+    N_tilde = np.eye(L, dtype=N.dtype) - N
+
+    G = np.empty((2*L, 2*L), dtype=N.dtype)
+    G[:L, :L]   = N
+    G[:L, L:]   = F.conj().T
+    G[L:, :L]   = F
+    G[L:, L:]   = N_tilde
+
+    if subtract_identity:
+        idx = np.arange(2*L)
+        G[idx, idx] -= 1.0
+    return G
+
 #################################### 
 #! 2)  Multiple Slater determinants
 ####################################
 
+def _haar_complex_unit_vector(n: int, rng: Optional[np.random.Generator] = None) -> np.ndarray:
+    """Return a complex Haar-random unit vector of length n."""
+    rng     = np.random.default_rng() if rng is None else rng
+    z       = rng.normal(size=n) + 1j * rng.normal(size=n)
+    z      /= np.linalg.norm(z)
+    return z
+
 def corr_superposition(
-    W_A                 : np.ndarray,               # (Ls, La)
-    occ_list            : Sequence[np.ndarray],     # list/tuple of bool arrays, each (Ls,)
-    coeff               : np.ndarray | None = None,
+    W_A                 : np.ndarray,                   # (Ls, La)
+    occ_list            : Sequence[np.ndarray],         # list/tuple of bool arrays, each (Ls,)
+    coeff               : Optional[np.ndarray] = None,  # 1D complex array of coefficients (a_k) for the superposition, length len(occ_list)
     *,
-    WA_CT               : Optional[np.ndarray] = None,
-    subtract_identity   : bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    W_A_CT              : Optional[np.ndarray] = None,  # (La, Ls)
+    subtract_identity   : bool = True,
+    raw                 : bool = True,
+    mode                : Literal["slater", "bdg-normal", "bdg-full"] = "slater",
+    stacked_uv          : bool = False  # if True and mode starts with "bdg", W_A is stacked [U; V] with shape (2*Ls, La)
+    ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Compute the correlation matrix for a quantum state that is a superposition of Slater determinants.
+    Correlation matrix for a superposition of Slater determinants:
+        |psi> = sum_k a_k |m_k>,  ||psi|| = 1.
 
-    Given a state:
-        |ψ⟩ = Σ_k a_k |m_k⟩,    with normalization ⟨ψ|ψ⟩ = 1
+    Matches the interface/conventions of `corr_single`:
+    - spin-unpolarized factor of 2 on normal blocks,
+    - subtract_identity behavior identical to `corr_single`,
+    - accepts W_A_CT precompute,
+    - same (mode, raw, stacked_uv) signature; only "slater" is implemented here.
 
-    This function calculates the single-particle correlation matrix C for |ψ⟩, taking into account both diagonal (within the same determinant) and off-diagonal (between determinants differing by exactly two orbitals) contributions.
-
-    - All determinants in `occ_list` must conserve particle number and have the same number of particles (N).
-    - Off-diagonal contributions are included only for pairs of determinants that differ in exactly two orbital occupations.
-
-    W_A : np.ndarray, shape (Ls, La)
-        Single-particle orbital transformation matrix restricted to a subsystem.
-    occ_list : Sequence[np.ndarray]
-        List or tuple of boolean or {0,1} arrays, each of shape (Ls,), representing occupation vectors for each determinant.
-    coeff : np.ndarray or None, optional
-        1D complex array of coefficients (a_k) for the superposition, of length len(occ_list).
-        If None, coefficients are drawn Haar-randomly.
-        If True, subtracts the identity from the diagonal of the correlation matrix.
-
-    C : np.ndarray, shape (La, La)
-        The computed correlation matrix for the superposition state.
-    coeff : np.ndarray
-        The array of coefficients actually used in the calculation (either provided or generated).
-
-    Notes
-    -----
-    - For off-diagonal terms, the implementation follows Eq. (5) from PRL 125, 180604 (2020).
-    - The function raises ValueError if `occ_list` is empty or if any occupation vector does not match the expected length.
+    Returns
+    -------
+    C : ndarray
+        (La, La) normal correlation matrix in "slater" mode.
+    coeff : ndarray
+        The (normalized) coefficient vector actually used.
     """
+    
+    if mode != "slater":
+        raise NotImplementedError("corr_superposition currently supports mode='slater' only.")
+
     gamma = len(occ_list)
     if gamma == 0:
         raise ValueError("occ_list is empty")
 
-    Ls = W_A.shape[0]
-    for occ in occ_list:
-        if occ.size != Ls:
-            raise ValueError("Every occupation vector must have length Ls")
-
-    # ------------------------------------------------------------------------------------------------
-    #!  Equal part (m = n) …  sum_k |a_k|² · W_A\dag diag(n_k) W_A
-    # ------------------------------------------------------------------------------------------------
+    Ls, La          = W_A.shape[0], W_A.shape[1]
+    occ_bool_list   = []
+    for k, occ in enumerate(occ_list):
+        occ = np.asarray(occ, dtype=bool)
+        if occ.ndim != 1 or occ.size != Ls:
+            raise ValueError(f"Occupation vector #{k} must be 1D of length Ls={Ls}.")
+        occ_bool_list.append(occ)
+        
+    # Coefficients: use user-supplied, else draw Haar-random complex and normalize.
     if coeff is None:
-        coeff = np.random.normal(size = 1.0) / np.sqrt(gamma)
+        coeff = _haar_complex_unit_vector(gamma)
+    else:
+        coeff = np.asarray(coeff, dtype=np.complex128)
+        if coeff.ndim != 1 or coeff.size != gamma:
+            raise ValueError(f"coeff must be 1D of length gamma={gamma}.")
+        # Normalize to ensure <psi|psi>=1 (does not change physics of C)
+        norm = np.linalg.norm(coeff)
+        if norm == 0:
+            raise ValueError("coeff must not be the zero vector.")
+        coeff = coeff / norm    
+        
+    # precompute W_A_CT if not provided
+    if W_A_CT is None:
+        W_A_CT = W_A.conj().T  # (La, Ls)
 
     # allocate me
     C = np.zeros((W_A.shape[1], W_A.shape[1]), dtype=W_A.dtype)
 
-    # add diagonal part
-    for ck, occ in zip(coeff, occ_list):
-        C += (abs(ck) ** 2) * corr_single(W_A, occ, subtract_identity=False)
+    # --------------------------------------------------------------------------------
+    # Diagonal (m = n): sum_k |a_k|^2 * C[occ_k], with the same fast-path as corr_single
+    # --------------------------------------------------------------------------------
+    cache = {}
+    for ck, occ in zip(coeff, occ_bool_list):
+        key = occ.tobytes()
+        if key not in cache:
+            # Fast path: C_occ = 2 * (W_occ)† (W_occ)
+            if np.any(occ):
+                W_occ = W_A[occ, :]                   # (nocc, La)
+                C_occ = (W_occ.conj().T @ W_occ) * 2.0
+            else:
+                C_occ = np.zeros((La, La), dtype=W_A.dtype)
+            cache[key] = C_occ
+        C += (abs(ck) ** 2) * cache[key]
 
-    # ------------------------------------------------------------------------------------------------
-    #  Unequal part  (m ≠ n)  … only when dets differ in exactly 2 orbitals
-    #  Use Eq. (5) from PRL 125 180604
-    # ------------------------------------------------------------------------------------------------
-    La      = W_A.shape[1]
-    if WA_CT is None:
-        WA_CT = W_A.conj().T                # (La, Ls)
-
+    # --------------------------------------------------------------------------------
+    # Off-diagonal (m ≠ n): only when configurations differ by exactly one hop
+    #   i.e., XOR has Hamming weight 2. Let q_from be occupied in m, empty in n,
+    #   and q_to be empty in m, occupied in n. Then the contribution is:
+    #       2 * a_m* a_n * sgn * |phi_{q_to}><phi_{q_from}|  + h.c.
+    #   where sgn = (-1)^(# occupied between q_from and q_to in m).
+    # --------------------------------------------------------------------------------
+    
     # go through the occupations
     for a, occ_a in enumerate(occ_list):
         for b in range(a + 1, gamma):
@@ -278,7 +423,11 @@ def corr_superposition(
             if diff.sum() != 2:
                 continue                    # only 2-orbital difference contributes
 
+            # Identify source/destination indices for a -> b
+            # q_from: occupied in a, empty in b
+            # q_to  : empty in a, occupied in b
             q1, q2 = np.nonzero(diff)[0]    # the two differing orbitals
+            
             # The ± sign from fermionic exchange:
             #   if |m⟩ has q1 occupied and |n⟩ has q1 empty  -> annihilate at q1
             #   otherwise the opposite.
@@ -291,11 +440,11 @@ def corr_superposition(
             coef = 2.0 * sign * np.conjugate(coeff[a]) * coeff[b]
 
             #! Outer product  (La,1)·(1,La) fused by BLAS as gemm
-            C += coef * np.outer(WA_CT[:, q1], W_A[q2, :])
+            C += coef * np.outer(W_A_CT[:, q1], W_A[q2, :])
 
             # and its Hermitian conjugate (because we skipped the term with indices
             # swapped in the loop)
-            C += np.conjugate(coef) * np.outer(WA_CT[:, q2], W_A[q1, :])
+            C += np.conjugate(coef) * np.outer(W_A_CT[:, q2], W_A[q1, :])
 
     #! Identity
     if subtract_identity:
@@ -467,8 +616,6 @@ def _corr_from_statevector_jit(psi                  : np.ndarray,
             G[k, k] -= 1.0
 
     return G
-
-# ---------------- user-facing wrapper ---------------- #
 
 def corr_from_statevector(psi               : np.ndarray,
                         ns                  : int,

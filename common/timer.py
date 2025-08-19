@@ -23,6 +23,7 @@ class Timer(ABC):
         format:
             Optional format for the output timing information.
     """
+    
     def __init__(self, name: str = None, verbose: bool = False, precision: str = 's'):
         """
         Args:
@@ -40,34 +41,49 @@ class Timer(ABC):
         self._elapsed_ns    = 0
         self._laps_ns       = []
 
-        self._unit_factors = {
-            's': 1e-9,
+        self._unit_factors  = {
+            's' : 1e-9,
             'ms': 1e-6,
             'us': 1e-3,
             'ns': 1.0
         }
         if precision not in self._unit_factors:
             raise ValueError("Precision must be one of: 's', 'ms', 'us', 'ns'")
+        self.restart()
 
     def restart(self):
         """Start or restart the timer."""
-        self._start_time    = time.perf_counter_ns()
+        self._start_time = self.now()
         return self
 
     def stop(self):
         """Stop the timer and return elapsed time in the selected unit."""
-        now = time.perf_counter_ns()
-        self._elapsed_ns    = now - self._start_time
+        now = self.now()
         if self.verbose:
-            print(f"{self.name or 'Timer'}: {self._format_time(self._elapsed_ns)}")
+            print(f"{self.name or 'Timer'}: {self.format_time(now, self._start_time)}")
         return self._to_unit(self._elapsed_ns)
 
     def lap(self):
         """Record a lap time and return it in the selected unit."""
-        now             = time.perf_counter_ns()
-        lap_time        = now - self._start_time
+        now = self.now()
+        lap_time = now - self._start_time
         self._laps_ns.append(lap_time)
         return self._to_unit(lap_time)
+    
+    def elapsed_since(self, since):
+        now = self.now()
+        if isinstance(since, (int, float)):
+            return self._to_unit(now - since)
+        return self._to_unit(now - self.start)
+
+    ##################################
+    #! Properties
+    ##################################
+
+    @property
+    def start(self):
+        """Return the start time in nanoseconds."""
+        return self._start_time if self._start_time is not None else 0
 
     @property
     def laps(self):
@@ -78,9 +94,15 @@ class Timer(ABC):
     def elapsed(self):
         """Return the total elapsed time (in selected unit), including current run if active."""
         if self._start_time is not None:
-            now         = time.perf_counter_ns()
+            now = self.now()
             return self._to_unit(self._elapsed_ns + (now - self._start_time))
         return self._to_unit(self._elapsed_ns)
+
+    ###################################
+
+    @staticmethod
+    def now():
+        return time.perf_counter_ns()
 
     def reset(self):
         """Reset the timer and all laps."""
@@ -103,7 +125,7 @@ class Timer(ABC):
             result      = func(*args, **kwargs)
             elapsed     = self.stop()
             if self.verbose:
-                print(f"{self.name or func.__name__} executed in {self._format_time(self._elapsed_ns)}")
+                print(f"{self.name or func.__name__} executed in {self.format_time(self._elapsed_ns)}")
             return result
         return wrapper
 
@@ -111,12 +133,14 @@ class Timer(ABC):
         """Convert nanoseconds to the selected unit."""
         return ns * self._unit_factors[self.precision]
 
-    def _format_time(self, ns):
+    def format_time(self, ns, ns_since=None):
         """Return a formatted string based on the precision."""
-        unit    = self.precision
-        value   = self._to_unit(ns)
+        unit = self.precision
+        if ns_since is not None and isinstance(ns_since, (int, float)):
+            ns = ns - ns_since
+        value = self._to_unit(ns)
         return f"{value:.6f} {unit}"
-
+    
 ################################################################################
 
 def timeit(fn, *args, **kwargs):
