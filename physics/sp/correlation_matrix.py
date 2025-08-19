@@ -316,6 +316,116 @@ def corr_full(
         G[idx, idx] -= 1.0
     return G
 
+def fourpoint_cdcd_matrix_left_from_W(W: np.ndarray, i: int, j: int, *, spin_factor: float = 1.0) -> np.ndarray:
+    """
+    Return M_{kl} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (k,l), directly from W.
+
+    Parameters
+    ----------
+    W : ndarray, shape (N, L)
+    i, j : int
+        Fixed creation indices (left pair).
+    spin_factor : float
+        2.0 for spin-unpolarized doubling, else 1.0.
+
+    Returns
+    -------
+    M : ndarray, shape (L, L)
+        M[k, l] = <c_i^† c_j^† c_k c_l>.
+    """
+    vi = np.conj(W[:, i])      # (N,)
+    vj = np.conj(W[:, j])      # (N,)
+
+    # A[k] = sum_alpha vi[alpha]*W[alpha, k] = (vi @ W) -> (L,)
+    # B[l] = sum_alpha vj[alpha]*W[alpha, l] = (vj @ W) -> (L,)
+    A = vi @ W                 # (L,)
+    B = vj @ W                 # (L,)
+
+    # M_{kl} = A_k B_l - A_l B_k
+    M = (A[:, None] * B[None, :]) - (A[None, :] * B[:, None])
+    return spin_factor * M
+
+def fourpoint_cdcd_matrix_right_from_W(W: np.ndarray, k: int, l: int, *, spin_factor: float = 1.0) -> np.ndarray:
+    """
+    Return M_{ij} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (i,j), directly from W.
+
+    Parameters
+    ----------
+    W : ndarray, shape (N, L)
+    k, l : int
+        Fixed annihilation indices (right pair).
+    spin_factor : float
+        2.0 for spin-unpolarized doubling, else 1.0.
+
+    Returns
+    -------
+    M : ndarray, shape (L, L)
+        M[i, j] = <c_i^† c_j^† c_k c_l>.
+    """
+    vk = W[:, k]               # (N,)
+    vl = W[:, l]               # (N,)
+
+    # A'[i] = (W.conj() @ vk)[i],   B'[j] = (W.conj() @ vl)[j]
+    A = W.conj() @ vk          # (L,)
+    B = W.conj() @ vl          # (L,)
+
+    M = (A[:, None] * B[None, :]) - (A[None, :] * B[:, None])
+    return spin_factor * M
+
+def fourpoint_cdcd_matrix_left_from_wick(corr_mat: np.ndarray, i: int, j: int, *, spin_factor: float = 1.0) -> np.ndarray:
+    """
+    Return M_{kl} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (k,l), directly from the correlation matrix.
+
+    Parameters
+    ----------
+    corr_mat : ndarray, shape (L, L)
+        The correlation matrix.
+    i, j : int
+        Fixed creation indices (left pair).
+    spin_factor : float
+        2.0 for spin-unpolarized doubling, else 1.0.
+
+    Returns
+    -------
+    M : ndarray, shape (L, L)
+        M[k, l] = <c_i^† c_j^† c_k c_l>.
+    """
+    L = corr_mat.shape[0]
+    M = np.zeros((L, L), dtype=corr_mat.dtype)
+
+    for k in range(L):
+        for l in range(L):
+            M[k, l] = corr_mat[i, k] * corr_mat[j, l] - corr_mat[i, l] * corr_mat[j, k]
+
+    return spin_factor * M
+
+def fourpoint_cdcd_matrix_right_from_wick(corr_mat: np.ndarray, k: int, l: int, *, spin_factor: float = 1.0) -> np.ndarray:
+    """
+    Return M_{ij} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (i,j), directly from the correlation matrix.
+
+    Parameters
+    ----------
+    corr_mat : ndarray, shape (L, L)
+        The correlation matrix.
+    k, l : int
+        Fixed annihilation indices (right pair).
+    spin_factor : float
+        2.0 for spin-unpolarized doubling, else 1.0.
+
+    Returns
+    -------
+    M : ndarray, shape (L, L)
+        M[i, j] = <c_i^† c_j^† c_k c_l>.
+    """
+    L = corr_mat.shape[0]
+    M = np.zeros((L, L), dtype=corr_mat.dtype)
+
+    for i in range(L):
+        for j in range(L):
+            M[i, j] = corr_mat[i, k] * corr_mat[j, l] - corr_mat[i, l] * corr_mat[j, k]
+
+    return spin_factor * M
+
 #################################### 
 #! 2)  Multiple Slater determinants
 ####################################
@@ -375,7 +485,6 @@ def corr_superposition(
     if coeff is None:
         coeff = _haar_complex_unit_vector(gamma)
     else:
-        coeff = np.asarray(coeff, dtype=np.complex128)
         if coeff.ndim != 1 or coeff.size != gamma:
             raise ValueError(f"coeff must be 1D of length gamma={gamma}.")
         # Normalize to ensure <psi|psi>=1 (does not change physics of C)
