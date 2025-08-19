@@ -490,7 +490,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     
     log_base = np.log(base)
     
-    #! von‑Neumann entropy  (q == 1)
+    #! von‑Neumann entropy (q == 1)
     if np.abs(q - 1.0) < 1e-12:
         s = 0.0
         LOG_TWO = np.log(2.0)
@@ -501,9 +501,9 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
                 s += (1.0 - l) * (np.log1p(-l) - LOG_TWO)
         return -0.5 * s
 
-    #! Rényi entropy  (generic q)
+    #! Rényi entropy (generic q)
     inv_1mq = 1.0 / (1.0 - q)
-    s = 0.0
+    s       = 0.0
     for l in lam:
         p  = 0.5 * (1.0 + l)
         pm = 1.0 - p

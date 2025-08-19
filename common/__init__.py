@@ -42,7 +42,7 @@ from .plot import (
     linestylesCycle, linestylesCycleExtended, linestylesList,
     markersCycle, markersList
 )
-from .datah import DataHandler
+from .datah import DataHandler, complement_indices, indices_from_mask
 from .hdf5_lib import HDF5Handler
 # Description of the modules
 """

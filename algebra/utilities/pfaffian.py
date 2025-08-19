@@ -303,7 +303,7 @@ class Pfaffian:
     ############################################################################################################
     
     @staticmethod
-    @numba.jit("f8(f8, f8[:], f8[:])", nopython=True, cache=True)
+    # @numba.jit("f8(f8, f8[:], f8[:])", nopython=True, cache=True)
     def _cayleys_formula(_pffA, _Ainv_row, _updRow):
         """
         Internal Numba implementation for Cayley's identity.
