@@ -50,18 +50,18 @@ The minimization of this distance is equivalent to solving the linear equation:
 ------------------------------------------
 In conventional SR, one defines the **quantum metric** (or Fisher information matrix) as:
 
-    S = O† · O                                              (Eq. 4)
+    S = O\dag · O                                              (Eq. 4)
 
 This metric measures the change in the quantum state induced by a parameter update,
 and the FS distance can be 
 written as:
 
-    d²(Ψ(θ), Ψ(θ+δθ)) = δθ† · S · δθ                        (Eq. 5)
+    d²(Ψ(θ), Ψ(θ+δθ)) = δθ\dag · S · δθ                        (Eq. 5)
 
 The SR method then updates the variational parameters using the solution of the linear equation (Eq. 3). The 
 standard solution is obtained as:
 
-    δθ = S⁻¹ · O† · ε                                       (Eq. 6)
+    δθ = S⁻¹ · O\dag · ε                                       (Eq. 6)
 
 This approach requires computing and inverting the matrix S,
 which is of size NₚxNₚ (Nₚ is the number of 
@@ -78,7 +78,7 @@ posing additional numerical challenges.
 To overcome the computational bottleneck in standard SR, MinSR reformulates the optimization by introducing the 
 **neural tangent kernel**:
 
-    T = O · O†
+    T = O · O\dag
 
 T is an NₛxNₛ matrix and shares the same nonzero eigenvalues as S.
 By imposing a minimum-norm (or minimum-step) 
@@ -86,7 +86,7 @@ condition—i.e. selecting, among all solutions of Eq. (3),
 the one with the smallest ||δθ||—the MinSR update is 
 given by:
 
-    δθ = O† · T⁻¹ · ε                                  (Eq. 5)
+    δθ = O\dag · T⁻¹ · ε                                  (Eq. 5)
 
 This formulation avoids the costly inversion of the full S matrix.
 The inversion is now only on the smaller T matrix, 
@@ -98,15 +98,15 @@ Two derivations support this result:
 
     L({δθₖ}, {α₍σ₎}) = ∑₍k₎ |δθₖ|² – [∑₍σ₎ α₍σ₎* (∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎) + c.c.]
 
-Solving the resulting equations leads to δθ = O† · (O · O†)⁻¹ · ε, which is equivalent to Eq. (5).
+Solving the resulting equations leads to δθ = O\dag · (O · O\dag)⁻¹ · ε, which is equivalent to Eq. (5).
 
 2. **Pseudo-Inverse Method:**  
 By showing that the least-squares minimum-norm solution of O · δθ = ε is given by:
 
-    δθ = O† · (O · O†)⁻¹ · ε,
+    δθ = O\dag · (O · O\dag)⁻¹ · ε,
 
 and using properties of the pseudo-inverse,
-one establishes the equivalence (O · O†)⁻¹ = T⁻¹, thereby recovering 
+one establishes the equivalence (O · O\dag)⁻¹ = T⁻¹, thereby recovering 
 Eq. (5).
 
 Regularization is typically applied to T⁻¹

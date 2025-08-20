@@ -279,7 +279,7 @@ def overlap(a: Array,
     # Ob = np.matmul(O, b_mat)      # (dim, m) or (dim, 1)
     Ob = (O @ b_mat)                # (dim, m) or (dim, 1)
 
-    # compute overlaps: a† (O b)
+    # compute overlaps: a\dag (O b)
     # res = np.matmul(a_mat.conj().T, Ob)  # (1, m), or (n, 1), or (1,1)
     res = a_mat.conj().T @ Ob     # (n, m), or (1, m), (n, 1), or (1,1)
 

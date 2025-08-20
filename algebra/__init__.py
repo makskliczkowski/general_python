@@ -197,14 +197,14 @@ class AlgebraTests:
             MatrixPrinter.print_vector(A)
             print("B=")
             MatrixPrinter.print_vector(B)
-            print("outer_product= A ⊗ B")
+            print("outer_product= A \otimes B")
             MatrixPrinter.print_matrix(outer_product)
             
             print("A_mat=")
             MatrixPrinter.print_matrix(A_mat)
             print("B_mat=")
             MatrixPrinter.print_matrix(B_mat)
-            print("outer_product_mat= A_mat ⊗ B_mat")
+            print("outer_product_mat= A_mat \otimes B_mat")
             MatrixPrinter.print_matrix(outer_product_mat)
 
         self._log("Completed outer", test_number, color="green")
@@ -234,7 +234,7 @@ class AlgebraTests:
             MatrixPrinter.print_matrix(A)
             print("B=")
             MatrixPrinter.print_matrix(B)
-            print("kron_product= A ⊗ B")
+            print("kron_product= A \otimes B")
             MatrixPrinter.print_matrix(kron_product)
 
         self._log("Completed kron", test_number, color="green")

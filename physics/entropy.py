@@ -353,7 +353,7 @@ class EntropyPredictions:
             - 0.5 * (1.0 if f == 0.5 else 0.0) * (1.0 if n == 0.5 else 0.0)
 
 ###################################
-#! helpers: eigenvalues from ρ
+#! helpers: eigenvalues from \rho
 ###################################
 
 @numba.njit(cache=True)
@@ -368,6 +368,25 @@ def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
     return q / s if s != 1.0 else q
 
 # ----------------------------------
+
+def purity(dens_or_vals: np.ndarray):
+    """
+    Calculates the purity of a quantum state represented by its density matrix.
+
+    Args:
+        dens (np.ndarray): Density matrix of the quantum state.
+
+    Returns:
+        float: Purity of the state.
+    """
+    if isinstance(dens_or_vals, np.ndarray):
+        if dens_or_vals.ndim == 1:
+            return np.sum(dens_or_vals ** 2)
+        # Calculate the eigenvalues of the density matrix
+        eigvals = _eigvals_numba(dens_or_vals)
+        # Purity is the trace of the square of the density matrix
+        return np.sum(eigvals ** 2)
+    return 0.0
 
 @numba.njit(cache=True)
 def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
@@ -512,6 +531,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
 
 #! Participation entropies
 
+@numba.njit(cache=True)
 def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     """
     Compute S_j = -∑_i p_{i,j} ln p_{i,j},  p_{i,j}=|states[i,j]|^2,

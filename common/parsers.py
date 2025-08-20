@@ -21,7 +21,7 @@ def filter_dataframe(df     : pd.DataFrame,
                 *,
                 copy        : bool = False) -> pd.DataFrame:
     """
-    Return `df` filtered to rows where each column key ∈ criteria contains one of the allowed values.
+    Return `df` filtered to rows where each column key \in criteria contains one of the allowed values.
 
     Parameters
     ----------

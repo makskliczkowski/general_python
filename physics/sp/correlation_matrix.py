@@ -230,22 +230,22 @@ def corr_full(
         - "bdg-full":
             subtract block-diag(I, I) on the 2L × 2L Nambu matrix.
     raw :
-        - "slater" fast path using selection by boolean mask and computes 2·(W_occ^† W_occ).
+        - "slater" fast path using selection by boolean mask and computes 2·(W_occ^\dag W_occ).
         If False, uses the (2·occ-1) trick.
     mode : {"slater","bdg-normal","bdg-full"}
-        - "slater"     : returns C = ⟨c^† c⟩, shape (L, L).
-        - "bdg-normal" : returns N = ⟨c^† c⟩ for BdG, shape (L, L).
+        - "slater"     : returns C = ⟨c^\dag c⟩, shape (L, L).
+        - "bdg-normal" : returns N = ⟨c^\dag c⟩ for BdG, shape (L, L).
         - "bdg-full"   : returns Nambu G =
-                        [[ ⟨c^† c⟩, ⟨c^† c^†⟩ ],
-                        [ ⟨c   c⟩, ⟨c   c^†⟩ ]] of shape (2L, 2L).
+                        [[ ⟨c^\dag c⟩, ⟨c^\dag c^\dag⟩ ],
+                        [ ⟨c   c⟩, ⟨c   c^\dag⟩ ]] of shape (2L, 2L).
     stacked_uv :
         If True in BdG modes, interpret W as vertically stacked [U; V].
 
     Notes
     -----
-    - For "slater", we keep the spin-unpolarized convention C = 2·W_occ^† W_occ (you can drop the factor 2 if not needed).
+    - For "slater", we keep the spin-unpolarized convention C = 2·W_occ^\dag W_occ (you can drop the factor 2 if not needed).
     - For BdG with diagonal quasiparticle occupations f = diag(f_q):
-        N = U f U^† + V (I - f) V^†,
+        N = U f U^\dag + V (I - f) V^\dag,
         F = U (I - f) V^T + V f U^T,
         Ñ = I - N.
     """
@@ -293,7 +293,7 @@ def corr_full(
         raise ValueError("`occ` for BdG must be a 1D array of length Ls (number of quasiparticle modes).")
     one_minus_f = 1.0 - f
 
-    # N = U f U^† + V (1-f) V^†   via weighted Gram without forming diag(f)
+    # N = U f U^\dag + V (1-f) V^\dag   via weighted Gram without forming diag(f)
     N = (U_CT * f) @ U + (V_CT * one_minus_f) @ V
 
     if mode == "bdg-normal":
@@ -316,115 +316,15 @@ def corr_full(
         G[idx, idx] -= 1.0
     return G
 
-def fourpoint_cdcd_matrix_left_from_W(W: np.ndarray, i: int, j: int, *, spin_factor: float = 1.0) -> np.ndarray:
-    """
-    Return M_{kl} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (k,l), directly from W.
-
-    Parameters
-    ----------
-    W : ndarray, shape (N, L)
-    i, j : int
-        Fixed creation indices (left pair).
-    spin_factor : float
-        2.0 for spin-unpolarized doubling, else 1.0.
-
-    Returns
-    -------
-    M : ndarray, shape (L, L)
-        M[k, l] = <c_i^† c_j^† c_k c_l>.
-    """
-    vi = np.conj(W[:, i])      # (N,)
-    vj = np.conj(W[:, j])      # (N,)
-
-    # A[k] = sum_alpha vi[alpha]*W[alpha, k] = (vi @ W) -> (L,)
-    # B[l] = sum_alpha vj[alpha]*W[alpha, l] = (vj @ W) -> (L,)
-    A = vi @ W                 # (L,)
-    B = vj @ W                 # (L,)
-
-    # M_{kl} = A_k B_l - A_l B_k
-    M = (A[:, None] * B[None, :]) - (A[None, :] * B[:, None])
-    return spin_factor * M
-
-def fourpoint_cdcd_matrix_right_from_W(W: np.ndarray, k: int, l: int, *, spin_factor: float = 1.0) -> np.ndarray:
-    """
-    Return M_{ij} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (i,j), directly from W.
-
-    Parameters
-    ----------
-    W : ndarray, shape (N, L)
-    k, l : int
-        Fixed annihilation indices (right pair).
-    spin_factor : float
-        2.0 for spin-unpolarized doubling, else 1.0.
-
-    Returns
-    -------
-    M : ndarray, shape (L, L)
-        M[i, j] = <c_i^† c_j^† c_k c_l>.
-    """
-    vk = W[:, k]               # (N,)
-    vl = W[:, l]               # (N,)
-
-    # A'[i] = (W.conj() @ vk)[i],   B'[j] = (W.conj() @ vl)[j]
-    A = W.conj() @ vk          # (L,)
-    B = W.conj() @ vl          # (L,)
-
-    M = (A[:, None] * B[None, :]) - (A[None, :] * B[:, None])
-    return spin_factor * M
-
-def fourpoint_cdcd_matrix_left_from_wick(corr_mat: np.ndarray, i: int, j: int, *, spin_factor: float = 1.0) -> np.ndarray:
-    """
-    Return M_{kl} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (k,l), directly from the correlation matrix.
-
-    Parameters
-    ----------
-    corr_mat : ndarray, shape (L, L)
-        The correlation matrix.
-    i, j : int
-        Fixed creation indices (left pair).
-    spin_factor : float
-        2.0 for spin-unpolarized doubling, else 1.0.
-
-    Returns
-    -------
-    M : ndarray, shape (L, L)
-        M[k, l] = <c_i^† c_j^† c_k c_l>.
-    """
-    L = corr_mat.shape[0]
-    M = np.zeros((L, L), dtype=corr_mat.dtype)
-
-    for k in range(L):
-        for l in range(L):
-            M[k, l] = corr_mat[i, k] * corr_mat[j, l] - corr_mat[i, l] * corr_mat[j, k]
-
-    return spin_factor * M
-
-def fourpoint_cdcd_matrix_right_from_wick(corr_mat: np.ndarray, k: int, l: int, *, spin_factor: float = 1.0) -> np.ndarray:
-    """
-    Return M_{ij} = <c_i^† c_j^† c_k c_l> as an (L x L) matrix over (i,j), directly from the correlation matrix.
-
-    Parameters
-    ----------
-    corr_mat : ndarray, shape (L, L)
-        The correlation matrix.
-    k, l : int
-        Fixed annihilation indices (right pair).
-    spin_factor : float
-        2.0 for spin-unpolarized doubling, else 1.0.
-
-    Returns
-    -------
-    M : ndarray, shape (L, L)
-        M[i, j] = <c_i^† c_j^† c_k c_l>.
-    """
-    L = corr_mat.shape[0]
-    M = np.zeros((L, L), dtype=corr_mat.dtype)
-
-    for i in range(L):
-        for j in range(L):
-            M[i, j] = corr_mat[i, k] * corr_mat[j, l] - corr_mat[i, l] * corr_mat[j, k]
-
-    return spin_factor * M
+@numba.njit
+def corr_single2_slater_wick(corr: np.ndarray, ns: int, j: int = 0, l: int = 0):
+    '''Compute the Wick contraction for a single Slater determinant.'''
+    
+    C_wick = np.zeros_like(corr)
+    for k in range(ns):
+        for i in range(ns):
+            C_wick[i, k] += -corr[i, k] * corr[j, l] + corr[i, l] * corr[j, k]
+    return C_wick
 
 #################################### 
 #! 2)  Multiple Slater determinants
@@ -436,6 +336,28 @@ def _haar_complex_unit_vector(n: int, rng: Optional[np.random.Generator] = None)
     z       = rng.normal(size=n) + 1j * rng.normal(size=n)
     z      /= np.linalg.norm(z)
     return z
+
+@numba.njit(parallel=True, fastmath=True)
+def _accumulate(C, occ_list, coeff, W_A, W_A_CT):
+    gamma = len(occ_list)
+    La = W_A.shape[1]
+    for a in range(gamma):
+        occ_a = occ_list[a]
+        for b in range(a+1, gamma):
+            diff = occ_a ^ occ_list[b]
+            if diff.sum() != 2:
+                continue
+            q = np.nonzero(diff)[0]
+            q1, q2 = q[0], q[1]
+            sign = 1.0
+            if occ_a[q2]:
+                sign = -1.0
+            coef = 2.0 * sign * np.conj(coeff[a]) * coeff[b]
+            ua = W_A_CT[:, q1]
+            vb = W_A[q2, :]
+            for i in range(La):
+                for j in range(La):
+                    C[i,j] += coef * ua[i]*vb[j] + np.conj(coef) * W_A_CT[i,q2]*W_A[q1,j]
 
 def corr_superposition(
     W_A                 : np.ndarray,                   # (Ls, La)
@@ -507,9 +429,9 @@ def corr_superposition(
     for ck, occ in zip(coeff, occ_bool_list):
         key = occ.tobytes()
         if key not in cache:
-            # Fast path: C_occ = 2 * (W_occ)† (W_occ)
+            # Fast path: C_occ = 2 * (W_occ)\dag (W_occ)
             if np.any(occ):
-                W_occ = W_A[occ, :]                   # (nocc, La)
+                W_occ = W_A[occ, :] # (nocc, La)
                 C_occ = (W_occ.conj().T @ W_occ) * 2.0
             else:
                 C_occ = np.zeros((La, La), dtype=W_A.dtype)
@@ -608,6 +530,8 @@ def _apply_creation(idx: int, i: int, Ns: int) -> (int, int):
         sign    = -1 if parity & 1 else 1
         return new_idx, sign
     return 0, 0
+
+# -----------------------------------------
 
 @numba.njit
 def _corr_from_statevector_jit(psi                  : np.ndarray,
@@ -726,11 +650,94 @@ def _corr_from_statevector_jit(psi                  : np.ndarray,
 
     return G
 
+@numba.njit
+def _corr_from_statevector2_slater_jit(psi  : np.ndarray,
+                                ns          : int,
+                                j           : int = 0,
+                                l           : int = 0):
+    """
+    Compute the correlation matrix from a state vector.
+    This is:
+    <c_i^\dag c_j^\dag c_k c_l> - fixing j and l
+
+    Parameters
+    ----------
+    psi: np.ndarray
+        The state vector.
+    ns: int
+        The number of single-particle states.
+    j: int
+        The index of the second creation operator.
+    l: int
+        The index of the second annihilation operator.
+
+    Returns
+    -------
+    np.ndarray
+        The correlation matrix.
+    """
+    
+    dim = psi.size
+    if dim != (1 << ns):
+        raise ValueError("Many-body state length not 2^ns")
+
+    if ns > 64:
+        raise ValueError("ns must be <= 64 for many-body states")
+
+    # non-zero elements of the many-body state
+    nz              = np.nonzero(psi)[0]
+
+    # N_ij = <c_i^\dag c_j^\dag c_k c_l>
+    Nmat            = np.zeros((ns, ns), dtype=psi.dtype)
+
+    # annihilation
+    for kk in range(nz.size):
+        idx         = np.uint64(nz[kk])
+        amp         = psi[int(idx)]
+        idx1, s1    = _apply_annihilation(idx, l, ns)
+        if s1 == 0:
+            continue
+        
+        # Loop over k that are occupied in idx1 (second annihilation)
+        for k in range(ns):
+
+            # cannot annihilate at l
+            if k == l:
+                continue
+            
+            idx2, s2 = _apply_annihilation(idx1, k, ns)
+            if s2 == 0:
+                continue
+
+            idx3, s3 = _apply_creation(idx2, j, ns)
+            if s3 == 0:
+                continue
+
+            # Loop over i that are empty in idx3 (second creation)
+            for i in range(ns):
+
+                # cannot create twice at j
+                if i == j:
+                    continue
+
+                idx4, s4 = _apply_creation(idx3, i, ns)
+                if s4 == 0:
+                    continue
+
+                contrib     = (s1 * s2 * s3 * s4) * np.conj(psi[int(idx4)]) * amp
+                Nmat[i,k]  += contrib
+
+    return Nmat
+
+# -----------------------------------------
+
 def corr_from_statevector(psi               : np.ndarray,
                         ns                  : int,
                         mode                : Literal["slater","bdg-normal","bdg-full"] = "slater",
                         subtract_identity   : bool = True,
-                        spin_unpolarized    : bool = True) -> np.ndarray:
+                        spin_unpolarized    : bool = True,
+                        order               : int  = 2,
+                        **kwargs) -> np.ndarray:
     """
     ψ-based correlators matching corr_single's conventions.
 
@@ -765,7 +772,12 @@ def corr_from_statevector(psi               : np.ndarray,
         mcode = _MODE_BDG_FULL
     else:
         raise ValueError("The mode must be 'slater', 'bdg-normal', or 'bdg-full'")
-
+    
+    if order == 4 and mode == "slater":
+        # special case for 4-point Wick contractions
+        return _corr_from_statevector2_slater_jit(psi, ns, j=kwargs.get("j", 0), l=kwargs.get("l", 0))
+    elif order != 2:
+        raise ValueError("order must be 2 or 4 for corr_from_statevector")
     return _corr_from_statevector_jit(psi, int(ns), int(mcode), bool(subtract_identity), bool(spin_unpolarized))
 
 ###########################################
