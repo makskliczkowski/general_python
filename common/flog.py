@@ -178,7 +178,7 @@ class Logger:
         self.logger.addHandler(ch)
         
         # Set the log file name
-        if logfile is not None:
+        if logfile is not None and 'QES_LOGFILE' in os.environ and os.environ['QES_LOGFILE'] != '0':
             self.logfile = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
             if append_ts:
                 self.logfile += f'_{self.now_str}'
@@ -246,9 +246,9 @@ class Logger:
         
         # Write initial log file header if the log file is created
         if not self.handler_added:
-            self._f_handler = logging.FileHandler(self.logfile, encoding='utf-8')
+            self._f_handler         = logging.FileHandler(self.logfile, encoding='utf-8')
+            self._f_format          = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
             self._f_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
-            self._f_format = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
             self._f_handler.setFormatter(self._f_format)
             self.logger.addHandler(self._f_handler)
 

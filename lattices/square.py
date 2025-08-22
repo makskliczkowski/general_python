@@ -22,11 +22,11 @@ class SquareLattice(Lattice):
     a* = [2*pi, 0, 0], b* = [0, 2*pi, 0], c* = [0, 0, 2*pi]
     '''
 
-    def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):
+    def __init__(self, dim, lx, ly=1, lz=1, bc=LatticeBC.PBC, **kwargs):
         '''
         Initializer of the square lattice
         '''
-        super().__init__(dim, lx, ly, lx, bc, *args, **kwargs)
+        super().__init__(dim, lx, ly, lz, bc, **kwargs)
 
         self._type      = LatticeType.SQUARE                            # Lattice type
         self._vectors   = LatticeBackend.array([[SquareLattice.a, 0, 0],
