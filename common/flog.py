@@ -34,6 +34,7 @@ import sys
 import functools
 import logging
 import getpass
+import threading
 from datetime import datetime
 from typing import Optional, Dict, List
 
@@ -138,6 +139,7 @@ class Logger:
     LEVELS_R = {v: k for k, v in LEVELS.items()}
     
     def __init__(self,
+                name            : str           = "Global",
                 logfile         : Optional[str] = None,
                 lvl             : int           = logging.INFO,
                 append_ts       : bool          = False,
@@ -550,20 +552,41 @@ def printJust(file,
 ######################################################
 
 # Global logger instance (starts as None)
-_G_LOGGER = None
 
-def get_global_logger():
+_G_LOGGER     = None
+_G_LOGGER_PID = None
+_G_LOCK       = threading.Lock()
+
+def get_global_logger(**kwargs) -> Logger:
     """
-    Lazily initializes and returns the global logger instance.
-    
-    Returns:
-    - Logger instance.
+    One Logger wrapper per process (PID), safe across threads/forks.
+    Prints the banner only once per entire program via env sentinel.
     """
-    global _G_LOGGER
-    if _G_LOGGER is None:
-        _G_LOGGER = Logger("QES", lvl=logging.INFO, append_ts=True, use_ts_in_cmd=True)
-        _G_LOGGER.title("Global logger initialized.", 50, '#', 0)
-    return _G_LOGGER
+    global _G_LOGGER, _G_LOGGER_PID
+    pid = os.getpid()
+    if _G_LOGGER is not None and _G_LOGGER_PID == pid:
+        return _G_LOGGER
+
+    with _G_LOCK:
+        if _G_LOGGER is not None and _G_LOGGER_PID == pid:
+            return _G_LOGGER
+
+        logger = Logger(
+            name            = kwargs.get("name", "Global"),
+            lvl             = kwargs.get("lvl", logging.INFO),
+            append_ts       = kwargs.get("append_ts", True),
+            use_ts_in_cmd   = kwargs.get("use_ts_in_cmd", True),
+            logfile         = kwargs.get("logfile", None),
+        )
+
+        # Print the banner only once per program (env is inherited by forked workers)
+        if os.environ.get("GEN_PYTHON_LOGGER_INIT_DONE", "0") != "1":
+            logger.title("Global Logger initialized!", 50, '#', 0)
+            os.environ["GEN_PYTHON_LOGGER_INIT_DONE"] = "1"
+
+        _G_LOGGER       = logger
+        _G_LOGGER_PID   = pid
+        return _G_LOGGER
 
 ######################################################
 
@@ -578,7 +601,7 @@ def get_global_logger():
 # logger.say("This is a message.", log=2, lvl=0, verbose=True)
 # logger.say("This is a message.", log=3, lvl=0, verbose=True)
 
-def get_example_usage():
+def get_example_usage() -> str:
     """
     Returns example usage of the global logger.
 
@@ -601,7 +624,7 @@ def get_example_usage():
 def print_arguments(parser,
                     logger      : Optional[Logger] = None,
                     title       : str = "Options for the script",
-                    columnsize  : int = 30):
+                    columnsize  : int = 30) -> None:
     """
     Prints the arguments of a parser in a formatted table using the provided logger.
     Args:

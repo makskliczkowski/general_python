@@ -332,7 +332,7 @@ class Fitter:
         '''
         Generalized Cauchy distribution
         - v is the normalization factor
-        - α is the stability parameter, often referred to as the shape parameter,
+        - \alpha is the stability parameter, often referred to as the shape parameter,
         - β is the scale parameter,
         - γ is a scale parameter related to the width of the distribution.
         '''

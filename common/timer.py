@@ -1,11 +1,22 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
 from functools import wraps
-from timeit import default_timer
+from typing import Callable, Iterable, Optional, Dict, List, Tuple, Any
+from enum import Enum
 import time
-from abc import ABC
+import logging
 
 ################################################################################
+# High-precision, monotonic clock in nanoseconds
+_now_ns: Callable[[], int] = time.perf_counter_ns
 
-class Timer(ABC):
+class TimerState(Enum):
+    RUNNING     = "running"
+    PAUSED      = "paused"
+    STOPPED     = "stopped"
+
+@dataclass(slots=True)
+class Timer:
     """
     Enhanced timer class for measuring elapsed time.
 
@@ -23,155 +34,298 @@ class Timer(ABC):
         format:
             Optional format for the output timing information.
     """
+    name                    : Optional[str]                     = None
+    logger                  : Optional[logging.Logger]          = None
+    logger_args             : Optional[Dict[str, Any]]          = None
+    verbose                 : bool                              = False
+    unit                    : str                               = "auto"
+    deadline_s              : Optional[float]                   = None
+    synchronizer            : Optional[Callable[[Any], None]]   = None
+
+    # internal state
+    _start_ns               : Optional[int]                     = field(default=None, init=False)
+    _paused                 : bool                              = field(default=False, init=False)
+    _stopped                : bool                              = field(default=False, init=False)
+    _elapsed_ns             : int                               = field(default=0, init=False)
     
-    def __init__(self, name: str = None, verbose: bool = False, precision: str = 's'):
-        """
-        Args:
-            name (str):
-                Optional name to identify the timer.
-            verbose (bool):
-                If True, print elapsed time on stop.
-            precision (str):
-                Time unit for display: 's', 'ms', 'us', or 'ns'.
-        """
-        self.name           = name
-        self.verbose        = verbose
-        self.precision      = precision
-        self._start_time    = None
-        self._elapsed_ns    = 0
-        self._laps_ns       = []
+    _laps_ns                : List[int]                         = field(default_factory=list, init=False)
+    _laps_names             : List[str]                         = field(default_factory=list, init=False)
+    _last_lap_anchor_ns     : Optional[int]                     = field(default=None, init=False)
+    _marks_ns               : Dict[str, int]                    = field(default_factory=dict, init=False)
 
-        self._unit_factors  = {
-            's' : 1e-9,
-            'ms': 1e-6,
-            'us': 1e-3,
-            'ns': 1.0
-        }
-        if precision not in self._unit_factors:
-            raise ValueError("Precision must be one of: 's', 'ms', 'us', 'ns'")
-        self.restart()
+    ################################################################################
 
-    def restart(self):
-        """Start or restart the timer."""
-        self._start_time = self.now()
+    def start(self) -> "Timer":
+        """Start (or resume) the timer; no-op if already running."""
+        if self._start_ns is None:
+            now             = _now_ns()
+            self._start_ns  = now
+            if self._last_lap_anchor_ns is None:
+                self._last_lap_anchor_ns = now
         return self
 
-    def stop(self):
-        """Stop the timer and return elapsed time in the selected unit."""
-        now = self.now()
-        if self.verbose:
-            print(f"{self.name or 'Timer'}: {self.format_time(now, self._start_time)}")
-        return self._to_unit(self._elapsed_ns)
-
-    def lap(self):
-        """Record a lap time and return it in the selected unit."""
-        now = self.now()
-        lap_time = now - self._start_time
-        self._laps_ns.append(lap_time)
-        return self._to_unit(lap_time)
-    
-    def elapsed_since(self, since):
-        now = self.now()
-        if isinstance(since, (int, float)):
-            return self._to_unit(now - since)
-        return self._to_unit(now - self.start)
-
-    ##################################
-    #! Properties
-    ##################################
-
-    @property
-    def start(self):
-        """Return the start time in nanoseconds."""
-        return self._start_time if self._start_time is not None else 0
-
-    @property
-    def laps(self):
-        """Return a list of recorded lap times in the selected unit."""
-        return [self._to_unit(lap) for lap in self._laps_ns]
-
-    @property
-    def elapsed(self):
-        """Return the total elapsed time (in selected unit), including current run if active."""
-        if self._start_time is not None:
-            now = self.now()
-            return self._to_unit(self._elapsed_ns + (now - self._start_time))
-        return self._to_unit(self._elapsed_ns)
-
-    ###################################
-
-    @staticmethod
-    def now():
-        return time.perf_counter_ns()
-
-    def reset(self):
-        """Reset the timer and all laps."""
-        self._start_time    = None
-        self._elapsed_ns    = 0
-        self._laps_ns       = []
-
-    def __enter__(self):
-        self.restart()
+    def pause(self) -> "Timer":
+        """Pause the timer, accumulating elapsed time."""
+        if self._start_ns is not None:
+            now                 = _now_ns()
+            self._elapsed_ns   += now - self._start_ns
+            self._start_ns      = None
+            self._paused        = True
         return self
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.stop()
+    def resume(self) -> "Timer":
+        """Resume after pause."""
+        if self._paused:
+            self._paused    = False
+            self._start_ns  = _now_ns()
+        return self
 
-    def __call__(self, func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            self.reset()
-            self.restart()
-            result      = func(*args, **kwargs)
-            elapsed     = self.stop()
-            if self.verbose:
-                print(f"{self.name or func.__name__} executed in {self.format_time(self._elapsed_ns)}")
-            return result
-        return wrapper
+    def stop(self) -> float:
+        """Stop and return elapsed time in seconds."""
+        self.pause()
+        self._stopped = True
+        return self.elapsed_s()
 
-    def _to_unit(self, ns):
-        """Convert nanoseconds to the selected unit."""
-        return ns * self._unit_factors[self.precision]
+    def reset(self) -> "Timer":
+        """Clear state (elapsed, laps, marks) and stop."""
+        self._start_ns              = None
+        self._elapsed_ns            = 0
+        self._last_lap_anchor_ns    = None
+        self._laps_ns.clear()
+        self._marks_ns.clear()
+        return self
 
-    def format_time(self, ns, ns_since=None):
-        """Return a formatted string based on the precision."""
-        unit = self.precision
-        if ns_since is not None and isinstance(ns_since, (int, float)):
-            ns = ns - ns_since
-        value = self._to_unit(ns)
-        return f"{value:.6f} {unit}"
+    ################################################################################
+
+    def lap(self, name: Optional[str] = None) -> float:
+        """
+        Record a lap (time since last lap or start) and return lap in seconds.
+        """
+        now         = _now_ns()
+        anchor      = self._last_lap_anchor_ns if self._last_lap_anchor_ns is not None else now
+        lap_ns      = now - anchor
+        self._laps_ns.append(lap_ns)
+        self._last_lap_anchor_ns = now
+        if name:
+            self._laps_names.append(name)
+            self._marks_ns[name] = now
+        else:
+            self._laps_names.append(f"lap{len(self._laps_ns)}")
+        return lap_ns / 1e9
+
+    ################################################################################
     
+    def mark(self, name: Optional[str] = None) -> None:
+        """
+        Create/update a named absolute anchor at current time. Later use since('name').
+        """
+        self._marks_ns[name] = _now_ns()
+
+    def since(self, name: Optional[str] = None, ts: Optional[int] = None) -> float:
+        """
+        Seconds elapsed since the named mark. Raises KeyError if mark not set.
+        """
+        if name is not None:
+            if name not in self._marks_ns:
+                raise KeyError(f"Mark '{name}' not found")
+            return (_now_ns() - self._marks_ns[name]) / 1e9
+        elif ts is not None:
+            return (_now_ns() - ts) / 1e9
+        raise ValueError("Either 'name' or 'ts' must be provided")
+
+    ################################################################################
+    #! queries 
+    ################################################################################
+    
+    def elapsed_ns(self) -> int:
+        """Total elapsed nanoseconds (includes current running span)."""
+        if self._start_ns is None:
+            return self._elapsed_ns
+        return self._elapsed_ns + (_now_ns() - self._start_ns)
+
+    def elapsed_ms(self) -> float:
+        """Elapsed milliseconds (float)."""
+        return self.elapsed_ns() / 1e6
+
+    def elapsed_us(self) -> float:
+        """Elapsed microseconds (float)."""
+        return self.elapsed_ns() / 1e3
+
+    def elapsed_s(self) -> float:
+        """Elapsed seconds (float)."""
+        return self.elapsed_ns() / 1e9
+
+    ################################################################################
+
+    def laps(self) -> Tuple[List[float], List[str]]:
+        """Recorded laps (seconds) and their names."""
+        return [ns / 1e9 for ns in self._laps_ns], list(self._laps_names)
+
+    ################################################################################
+    
+    def remaining_s(self, buffer_s: float = 0.0) -> Optional[float]:
+        """
+        If deadline_s is set, return remaining seconds (can be negative). Otherwise None.
+        """
+        if self.deadline_s is None:
+            return None
+        return self.deadline_s - buffer_s - self.elapsed_s()
+
+    ################################################################################
+    
+    def overtime(self, buffer_s: float = 0.0) -> bool:
+        """
+        True if elapsed >= deadline_s - buffer_s; False if no deadline is set.
+        """
+        rem = self.remaining_s(buffer_s)
+        return (rem is not None) and (rem <= 0.0)
+
+    @property
+    def state(self) -> TimerState:
+        if self._start_ns is not None:
+            return TimerState.RUNNING
+        if self._paused:
+            return TimerState.PAUSED
+        return TimerState.STOPPED
+
+    ################################################################################
+    #! formatting & reporting
+    ################################################################################
+
+    def _format_unit(self, seconds: float) -> Tuple[float, str]:
+        if self.unit == "auto":
+            if seconds >= 1.0:
+                return (seconds, "s")
+            ms = seconds * 1e3
+            if ms >= 1.0:
+                return (ms, "ms")
+            us = seconds * 1e6
+            if us >= 1.0:
+                return (us, "us")
+            return (seconds * 1e9, "ns")
+        elif self.unit == "s":
+            return (seconds, "s")
+        elif self.unit == "ms":
+            return (seconds * 1e3, "ms")
+        elif self.unit == "us":
+            return (seconds * 1e6, "us")
+        elif self.unit == "ns":
+            return (seconds * 1e9, "ns")
+        else:
+            raise ValueError("unit must be one of {'auto','s','ms','us','ns'}")
+
+    def format_elapsed(self) -> str:
+        v, u = self._format_unit(self.elapsed_s())
+        return f"{v:.6f} {u}"
+
+    ################################################################################
+
+    def report(self, include_laps: bool = True) -> str:
+        parts           = [f"{self.name or 'Timer'}: {self.format_elapsed()}"]
+        if include_laps and self._laps_ns:
+            laps_sec, laps_names    = self.laps()
+            laps_fmt                = ", ".join(f"{n}={t:.6f}s" for n, t in zip(laps_names, laps_sec))
+            parts.append(f"[laps: {laps_fmt}]")
+        if self.deadline_s is not None:
+            rem                     = self.remaining_s()
+            parts.append(f"[deadline rem: {rem:.3f}s]" if rem is not None else "[deadline rem: n/a]")
+        return " ".join(parts)
+
+    def _emit(self, msg: str, logger_args: Dict[str, Any] = None) -> None:
+        if self.logger is not None:
+            self.logger.info(msg, **(logger_args or {}))
+        elif self.verbose:
+            print(msg)
+
+    # -------- context manager --------
+
+    def __enter__(self) -> "Timer":
+        self.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self.pause()
+        self._emit(self.report(include_laps=True), logger_args=self.logger_args)
+
+    # -------- decorator (re-entrant, thread-safe) --------
+
+    @classmethod
+    def decorator(cls,
+                name            : Optional[str] = None,
+                logger          : Optional[logging.Logger] = None,
+                verbose         : bool = False,
+                unit            : str = "auto",
+                deadline_s      : Optional[float] = None,
+                synchronizer    : Optional[Callable[[Any], None]] = None):
+        """
+        Decorator for timing a function.
+
+        Usage:
+            @Timer.decorator("block", verbose=True)
+            def fn(...): ...
+
+        Parameters:
+            - name: 
+                The name of the timer (default: function name)
+            - logger: 
+                Optional logger for logging (default: None)
+            - verbose: 
+                If True, print timing info (default: False)
+            - unit: 
+                Time unit for reporting (default: "auto")
+            - deadline_s: 
+                Optional deadline in seconds (default: None)
+            - synchronizer: 
+                Optional synchronizer function (default: None)
+        """
+        def deco(func):
+            @wraps(func)
+            def wrapper(*args, **kwargs):
+                t = cls(name or func.__name__, logger=logger, verbose=verbose,
+                        unit=unit, deadline_s=deadline_s, synchronizer=synchronizer)
+                t.start()
+                try:
+                    res = func(*args, **kwargs)
+                    # Optional synchronization for lazy backends (e.g., JAX)
+                    if t.synchronizer is not None:
+                        try:
+                            t.synchronizer(res)
+                        except Exception:
+                            # Try tuple unpack
+                            if isinstance(res, tuple):
+                                for x in res:
+                                    try:
+                                        t.synchronizer(x)
+                                    except Exception:
+                                        pass
+                    return res
+                finally:
+                    t.pause()
+                    t._emit(t.report(include_laps=True), logger_args=t.logger_args)
+            return wrapper
+        return deco
+
 ################################################################################
-
-def timeit(fn, *args, **kwargs):
+# Utility: function timing with optional synchronizer (JAX, etc.)
+def timeit(fn: Callable, *args, synchronizer: Optional[Callable[[Any], None]] = None, **kwargs) -> Tuple[Any, float]:
     """
-    Measures the execution time of a function, optionally handling JAX DeviceArrays for accurate timing.
-    Args:
-        fn (callable):
-            The function to be timed.
-        *args:
-            Positional arguments to pass to the function.
-        **kwargs:
-            Keyword arguments to pass to the function.
-    Returns:
-        tuple: A tuple containing:
-            - res: The result returned by the function `fn`.
-            - float: The elapsed time in seconds.
-    Notes:
-        If the result is a JAX DeviceArray or a tuple containing DeviceArrays, 
-        the function waits for computation to finish using `block_until_ready()` 
-        to ensure accurate timing.
+    Measures wall time for a callable. If `synchronizer` is provided, it will be called
+    on the result (and on tuple elements) to force completion.
+    Returns (result, elapsed_seconds).
     """
-    
-    t0      = time.time()
-    res     = fn(*args, **kwargs)
-    # If JAX DeviceArray or tuple thereof, block until ready for accurate timing
-    if hasattr(res, "block_until_ready"):
-        res.block_until_ready()
-    elif isinstance(res, tuple):
-        for x in res:
-            if hasattr(x, "block_until_ready"):
-                x.block_until_ready()
-    return res, time.time() - t0
+    t0 = _now_ns()
+    res = fn(*args, **kwargs)
+    if synchronizer is not None:
+        try:
+            synchronizer(res)
+        except Exception:
+            if isinstance(res, tuple):
+                for x in res:
+                    try:
+                        synchronizer(x)
+                    except Exception:
+                        pass
+    dt = (_now_ns() - t0) / 1e9
+    return res, dt
 
 ################################################################################

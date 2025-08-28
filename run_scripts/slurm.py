@@ -1,13 +1,46 @@
 import sys
 import os
 import argparse
+from typing import Callable
 import numpy as np
 import pandas as pd
 import time
 import subprocess
 import psutil
+from contextlib import contextmanager
+from dataclasses import dataclass
 
-from general_python.common.flog import Logger, get_global_logger
+try:
+    from ..common.flog import Logger, get_global_logger
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    
+    def get_global_logger():
+        """Get the global logger instance"""
+        return logging.getLogger("SLURM")
+
+#########################################################
+
+@dataclass
+class SimulationParams:
+    data_dir            : str
+    seed                : int
+    rand_num            : int
+    worker_id           : int
+    # times
+    start_time          : int | float | None = None
+    job_time            : int | float | None = None
+
+    def copy(self):
+        return SimulationParams(
+            data_dir    =self.data_dir,
+            seed        =self.seed,
+            rand_num    =self.rand_num,
+            worker_id   =self.worker_id,
+            start_time  =self.start_time,
+            job_time    =self.job_time
+        )
 
 class SlurmMonitor:
     """SLURM job monitoring utilities"""
@@ -110,29 +143,102 @@ class SlurmMonitor:
     @staticmethod
     def is_overtime(limit=1000, start_time=None, job_time=None):
         """Check if remaining time is less than limit seconds"""
-        if not SlurmMonitor.is_slurm():
+        if not SlurmMonitor.is_slurm() and (start_time is None or job_time is None):
             return False
         
-        if start_time is not None:
-            elapsed_time = time.perf_counter() - start_time
-            if elapsed_time >= job_time - limit:
-                SlurmMonitor.logger.info(f"Elapsed time exceeds limit: {elapsed_time} seconds", lvl=3)
-                return True
+        # 1) Local stopwatch path
         if start_time is not None and job_time is not None:
-            remaining_time = job_time - (time.perf_counter() - start_time)
-            if remaining_time < limit:
-                SlurmMonitor.logger.info(f"Remaining time is less than limit: {remaining_time} seconds", lvl=3)
+            elapsed     = time.perf_counter() - start_time
+            remaining   = job_time - elapsed
+            SlurmMonitor.logger.info(f"Elapsed={elapsed:.1f}s, remaining={remaining:.1f}s, limit={limit:.1f}s", lvl=3)
+            if remaining < limit:
+                SlurmMonitor.logger.warning(f"Remaining time {remaining:.1f}s is below limit {limit:.1f}s", lvl=3)
                 return True
-        
-        #! Get remaining time from SLURM
-        remaining_time = SlurmMonitor.get_remaining_time()
-        
-        if remaining_time == -1:
             return False
-            
-        SlurmMonitor.logger.info(f"Remaining time in SLURM job: {remaining_time} seconds", lvl=3)
-        return remaining_time < limit
-    
+
+        # 2) SLURM path
+        remaining = SlurmMonitor.get_remaining_time()  # expected to return seconds, -1 on failure
+        if remaining == -1:
+            SlurmMonitor.logger.warning("Failed to get remaining time from SLURM", lvl=3)
+            return False
+
+        SlurmMonitor.logger.info(f"Remaining time in SLURM job: {remaining:.1f}s", lvl=3)
+        if remaining < limit:
+            SlurmMonitor.logger.warning(f"Remaining time {remaining:.1f}s is below limit {limit:.1f}s", lvl=3)
+            return True
+        return False
+
+    @staticmethod
+    @contextmanager
+    def is_overtime_scope(limit                 : float             = 1000.0,
+                        start_time              : float | None      = None,
+                        job_time                : float | None      = None,
+                        *,
+                        slurm_poll_interval     : float             = 30.0,
+                        on_trigger              : Callable | None   = None,
+                        raise_on_trigger        : bool              = False):
+        """
+        Yield a callable `should_stop()` to poll inside your loops.
+        - Caches SLURM remaining time for `slurm_poll_interval` seconds to avoid hammering scontrol.
+        - If overtime is detected: logs, optionally calls `on_trigger()`, and may raise SystemExit.
+        For instance, on_trigger could be used to send a notification or log an error. It could also
+        save the current state or progress to resume later.
+
+        Parameters:
+            limit (float):
+                The time limit in seconds.
+            start_time (float | None):
+                The start time of the job.
+            job_time (float | None):
+                The total time allocated for the job.
+            slurm_poll_interval (float):
+                The polling interval for SLURM jobs.
+            on_trigger (callable | None):
+                A callback function to call when overtime is detected.
+            raise_on_trigger (bool):
+                Whether to raise SystemExit when overtime is detected.
+        """
+        last_slurm_check = -1e30
+        cached_remaining = None
+
+        def _check_once() -> bool:
+            nonlocal last_slurm_check, cached_remaining
+            now = time.perf_counter()
+
+            # Prefer precise local stopwatch if available
+            if start_time is not None and job_time is not None:
+                remaining = job_time - (now - start_time)
+            else:
+                if not SlurmMonitor.is_slurm():
+                    return False
+                if cached_remaining is None or (now - last_slurm_check) >= slurm_poll_interval:
+                    cached_remaining = SlurmMonitor.get_remaining_time()
+                    last_slurm_check = now
+                # check SLURM
+                remaining = cached_remaining
+                if remaining == -1:
+                    SlurmMonitor.logger.warning("Failed to get remaining time from SLURM", lvl=3)
+                    return False
+
+            if remaining < limit:
+                SlurmMonitor.logger.warning(f"Remaining time {remaining:.1f}s < limit {limit:.1f}s", lvl=3)
+                if on_trigger:
+                    try:
+                        on_trigger()
+                    except Exception as e:
+                        SlurmMonitor.logger.error(f"on_trigger() failed: {e}", lvl=2)
+                if raise_on_trigger:
+                    raise SystemExit(0)
+                return True
+            return False
+
+        try:
+            yield _check_once
+        finally:
+            _check_once()
+
     #####################################################
     
+#########################################################
+#! EOF
 #########################################################

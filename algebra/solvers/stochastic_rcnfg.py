@@ -96,7 +96,7 @@ Two derivations support this result:
 1. **Lagrangian Multiplier Approach:**  
     The method minimizes ||δθ|| subject to O · δθ = ε by forming the Lagrangian:
 
-    L({δθₖ}, {α₍σ₎}) = ∑₍k₎ |δθₖ|² – [∑₍σ₎ α₍σ₎* (∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎) + c.c.]
+    L({δθₖ}, {\alpha₍σ₎}) = ∑₍k₎ |δθₖ|² – [∑₍σ₎ \alpha₍σ₎* (∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎) + c.c.]
 
 Solving the resulting equations leads to δθ = O\dag · (O · O\dag)⁻¹ · ε, which is equivalent to Eq. (5).
 

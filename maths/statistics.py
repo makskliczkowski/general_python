@@ -713,6 +713,34 @@ class HistogramAverage(Histogram):
         super().merge(other)
         self.bin_averages += other.bin_averages
     
+    def add(self, sums: np.ndarray, counts: np.ndarray) -> None:
+        """
+        Add precomputed sums and counts to the histogram averages and counts.
+        Parameters:
+            - sums: Array of sums to add to the bin averages.
+            - counts: Array of counts to add to the bin counts.
+        Raises:
+            - ValueError: If the shapes of sums or counts do not match the histogram's bin counts.
+        """
+        if sums.shape != self.bin_averages.shape or counts.shape != self.bin_counts.shape:
+            raise ValueError("Shapes of sums and counts must match the histogram's bin counts.")
+        self.bin_averages += sums
+        self.bin_counts   += counts
+    
+    def remove(self, sums: np.ndarray, counts: np.ndarray) -> None:
+        """
+        Remove precomputed sums and counts from the histogram averages and counts.
+        Parameters:
+            - sums: Array of sums to remove from the bin averages.
+            - counts: Array of counts to remove from the bin counts.
+        Raises:
+            - ValueError: If the shapes of sums or counts do not match the histogram's bin counts.
+        """
+        if sums.shape != self.bin_averages.shape or counts.shape != self.bin_counts.shape:
+            raise ValueError("Shapes of sums and counts must match the histogram's bin counts.")
+        self.bin_averages -= sums
+        self.bin_counts   -= counts
+    
 ################################################################################
 
 class Fraction:
