@@ -228,7 +228,7 @@ def corr_full(
         - "slater"/"bdg-normal":
             subtract I on the normal block.
         - "bdg-full":
-            subtract block-diag(I, I) on the 2L × 2L Nambu matrix.
+            subtract block-diag(I, I) on the 2L times 2L Nambu matrix.
     raw :
         - "slater" fast path using selection by boolean mask and computes 2·(W_occ^\dag W_occ).
         If False, uses the (2·occ-1) trick.
