@@ -9,7 +9,7 @@ import os
 import random
 import shutil
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Union, Iterator
+from typing import Callable, Iterable, List, Optional, Union, Iterator, Any
 PathLike = Union[str, Path]
 
 from general_python.common.flog import printV
@@ -35,12 +35,13 @@ class Directories(object):
     def __fspath__(self) -> str:
         return str(self.path)
     
-    def __len__(self) -> int:
+    def __len__(self) -> int | str:
         """
+        Return the number of items in the directory if it is a directory,
         """
         if self.path.is_dir():
             return self.size_human()
-        return len(self.path)
+        return self.path.stat().st_size
 
     #! Operators
 
@@ -228,6 +229,53 @@ class Directories(object):
             files.sort(key=sort_key)
 
         return files
+
+    def list_dirs(self,
+                *,
+                include_empty: bool = True,
+                relative: bool = False,
+                as_string: bool = False,
+                filters: List[Callable[[Path], bool]] = [],
+                sort_key: Optional[Callable[[Path], Any]] = None) -> List[Path]:
+        """
+        List directories in this directory.
+        - include_empty : if False, skip empty directories.
+        - filters       : a list of callables Path->bool; all must pass.
+        - sort_key      : key function for sorting.
+        """
+        try:
+            dirs = [p for p in self.path.iterdir() if p.is_dir()]
+        except FileNotFoundError:
+            return []
+        except PermissionError:
+            print(f"PermissionError: {self.path}")
+            return []
+        except OSError as e:
+            print(f"OSError: {self.path} - {e}")
+            return []
+        except Exception as e:
+            print(f"Unexpected error: {self.path} - {e}")
+            return []
+
+        if not include_empty:
+            dirs = [p for p in dirs if not any(p.iterdir())]
+
+        for f in filters:
+            try:
+                dirs = list(filter(f, dirs))
+            except Exception as e:
+                print(f"Error applying filter {f.__name__}: {e}")
+                continue
+
+        if sort_key:
+            dirs.sort(key=sort_key)
+
+        if relative:
+            dirs = [p.relative_to(self.path) for p in dirs]
+        
+        if as_string:
+            dirs = [str(p) for p in dirs]
+        return dirs
 
     def clear_empty(self) -> List[Path]:
         """

@@ -77,8 +77,8 @@ import scipy as sp
 #! Enviroment variable names
 QES_BACKEND             : str               = "QES_BACKEND"
 QES_FLOATING_POINT      : str               = "QES_FLOATING_POINT"
-QES_GLOBAL_SEED         : int               = "QES_GLOBAL_SEED"
-QES_NUM_CORES           : int               = "NUMEXPR_MAX_THREADS"
+QES_GLOBAL_SEED         : str               = "QES_GLOBAL_SEED"
+QES_NUM_CORES           : str               = "NUMEXPR_MAX_THREADS"
 
 num_cores                                   = os.cpu_count()
 os.environ[QES_NUM_CORES]                   = str(num_cores)
@@ -102,7 +102,8 @@ QES_USE_32BIT           : bool              = os.environ.get(QES_FLOATING_POINT,
 QES_NP_INT_TYPE         : Type              = np.int32 if QES_USE_32BIT else np.int64
 QES_NP_FLOAT_TYPE       : Type              = np.float32 if QES_USE_32BIT else np.float64
 QES_NP_CPX_TYPE         : Type              = np.complex64 if QES_USE_32BIT else np.complex128
-PREFER_JAX              : bool              = os.environ.get(QES_BACKEND, "jax").lower() != "numpy"
+# by default, use numpy
+PREFER_JAX              : bool              = os.environ.get(QES_BACKEND, "numpy").lower() != "numpy"           
 PREFER_32BIT            : bool              = os.environ.get(QES_FLOATING_POINT, "64bit").lower() in ["32bit", "32", "float32", "float"]
 PREFER_64BIT            : bool              = True if not PREFER_32BIT else False
 
@@ -122,7 +123,7 @@ if PREFER_JAX:
         # Set JAX global configuration by enabling 64-bit precision if available
         try:
             if PREFER_64BIT or not PREFER_32BIT:
-                jcfg.update("jax_enable_x64", True)
+                jax_config.update("jax_enable_x64", True)
             _log_message("JAX 64-bit precision enabled.", 1)
         except Exception as e:
             _log_message(f"Could not enable JAX 64-bit precision: {e}", 1)

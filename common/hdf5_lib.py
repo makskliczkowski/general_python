@@ -2,6 +2,7 @@ import sys
 # Adds higher directory to python modules path.
 
 from .directories import *
+from typing import List, Callable, Any
 import numpy as np
 import h5py
 import os
@@ -706,6 +707,26 @@ class HDF5Handler:
     ############### PUBLIC METHODS ################
     
     @staticmethod
+    def file_list_matching(directories          : Union[List, Directories, str],
+                        *args,                  # additional arguments to create the directories
+                        conditions              : List[Callable]    = [],
+                        check_hdf5_condition    : bool              = True):
+
+        if isinstance(directories, str) or isinstance(directories, Directories):
+            directories = [directories]
+
+        if check_hdf5_condition:
+            conditions = conditions + [lambda x: str(x).endswith('.h5') or str(x).endswith('.hdf5')]
+
+        # get all directories
+        directories_in  = [Directories(d, *args) for d in directories]
+        filelist        = [x for d in directories_in for x in d.list_files(filters = conditions)]
+        filelist        = sorted(filelist)
+        return filelist
+
+    ############## READ METHODS ################
+
+    @staticmethod
     def read_hdf5(file_path, keys=None, verbose=False, remove_bad=False, logger=None):
         """
         Read an HDF5 file and return a dictionary of datasets.
@@ -931,12 +952,6 @@ class HDF5Handler:
                             hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=dtype))
                     else:
                         hf.create_dataset(lbl, data=np.array(new_data[lbl], dtype=dtype))
-                        
-    ########################################################### CUTTER ##########################################################
-
-
-    ########################################################### CUTTER ##########################################################
-
     
     ######################################################### CHANGE H5 #########################################################
 
