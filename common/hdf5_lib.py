@@ -692,16 +692,16 @@ class HDF5Handler:
         Returns:
             list: A list of dataset keys (names) found within the group.
         """
-        datasetJAX_RND_DEFAULT_KEYs = []
+        dataset = []
 
-        def collectJAX_RND_DEFAULT_KEYs(obj):
+        def collects(obj):
             if isinstance(obj, h5py.Group):
                 for key, value in obj.items():
-                    collectJAX_RND_DEFAULT_KEYs(value)
+                    collects(value)
             else:
-                datasetJAX_RND_DEFAULT_KEYs.append(obj.name)
+                dataset.append(obj.name)
 
-        collectJAX_RND_DEFAULT_KEYs(group)
+        collects(group)
         return datasetJAX_RND_DEFAULT_KEYs
 
     ############### PUBLIC METHODS ################
