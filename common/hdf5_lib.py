@@ -710,7 +710,8 @@ class HDF5Handler:
     def file_list_matching(directories          : Union[List, Directories, str],
                         *args,                  # additional arguments to create the directories
                         conditions              : List[Callable]    = [],
-                        check_hdf5_condition    : bool              = True):
+                        check_hdf5_condition    : bool              = True,
+                        as_string               : bool              = True):
 
         if isinstance(directories, str) or isinstance(directories, Directories):
             directories = [directories]
@@ -722,6 +723,8 @@ class HDF5Handler:
         directories_in  = [Directories(d, *args) for d in directories]
         filelist        = [x for d in directories_in for x in d.list_files(filters = conditions)]
         filelist        = sorted(filelist)
+        if as_string:
+            filelist = [str(x) for x in filelist]
         return filelist
 
     ############## READ METHODS ################

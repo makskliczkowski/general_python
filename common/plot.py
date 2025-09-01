@@ -1018,22 +1018,46 @@ class Plotter:
     @staticmethod
     def plot(  ax, 
                 x, 
-                y, 
+                y,
                 ls          = '-',
                 lw          = 2.0,
                 color       = 'black',
+                # label 
                 label       = None,
-                zorder      = 5,
                 labelcond   = True,
+                # marker
+                marker      = None,
+                ms          = None,
+                # other
+                zorder      = 5,
                 **kwargs):
         '''
         plot the data
         '''
         if 'linestyle' in kwargs:
             ls = None
+            
+        if 'linewidth' in kwargs:
+            lw = None
+            
         if label is None or label == '':
             labelcond = False
-        ax.plot(x, y, ls = ls, lw = lw, color = color, label = label if labelcond else '', zorder = zorder, **kwargs)
+        
+        # use the defaults
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+            
+        if isinstance(ls, int):
+            ls = linestylesList[ls % len(linestylesList)]
+        
+        if isinstance(marker, int):
+            marker = markersList[marker % len(markersList)]
+        
+        ax.plot(x, y, 
+                ls      = ls, 
+                lw      = lw, 
+                color   = color, 
+                label   = label if labelcond else '', zorder = zorder, marker = marker, ms = ms, **kwargs)
 
     @staticmethod
     def fill_between(
