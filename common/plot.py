@@ -924,7 +924,7 @@ class Plotter:
     #################### L I N E S ####################
     
     @staticmethod
-    def hline(  ax, 
+    def hline(  ax      : mpl.axes.Axes,
                 val     : float,
                 ls      = '--',
                 lw      = 2.0,
@@ -936,9 +936,19 @@ class Plotter:
         '''
         horizontal line plotting
         '''
-        ax.axhline(val, ls = ls,  lw = lw, 
-                label = label if (label is not None and len(label) != 0 and labelcond) else None, 
-                color = color, 
+        
+        if isinstance(ls, int):
+            ls = linestylesList[ls % len(linestylesList)]
+
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+        
+        if label is None or label == '':
+            labelcond = False
+
+        ax.axhline(val, ls = ls,  lw = lw,
+                label = label if (label is not None and len(label) != 0 and labelcond) else None,
+                color = color,
                 zorder = zorder,
                 **kwargs)
     
@@ -955,12 +965,21 @@ class Plotter:
         '''
         vertical line plotting
         '''
+        if isinstance(ls, int):
+            ls = linestylesList[ls % len(linestylesList)]
+
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+
+        if label is None or label == '':
+            labelcond = False
+
         ax.axvline(val, 
-                ls = ls,  
-                lw = lw, 
-                label = label if (label is not None and len(label) != 0 and labelcond) else None, 
-                color = color,
-                zorder = zorder,
+                ls      = ls,  
+                lw      = lw, 
+                label   = label if (label is not None and len(label) != 0 and labelcond) else None, 
+                color   = color,
+                zorder  = zorder,
                 **kwargs)
     
     ################## S C A T T E R ##################
@@ -1005,7 +1024,13 @@ class Plotter:
         # override the color if it is provided in the kwargs
         if 'color' in kwargs:
             c = None
-        
+            
+        if isinstance(c, int):
+            c = colorsList[c % len(colorsList)]
+
+        if isinstance(marker, int):
+            marker = markersList[marker % len(markersList)]
+
         if label is None or label == '':
             labelcond = False    
         
