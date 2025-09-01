@@ -291,7 +291,7 @@ class HDF5Manager:
 
     @staticmethod
     def load_data_from_multiple_files(
-        file_paths            : List[str],
+        file_paths            : List[str] | list[str],
         dataset_keys          : Optional[List[str]] = None,
         sort_files            : bool = True,
         verbose               : bool = False) -> List[Dict[str, Any]]:
