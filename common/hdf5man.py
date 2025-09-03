@@ -715,46 +715,50 @@ class HDF5Manager:
 
         # collect
         for x in data:
-            if key not in x:
-                if throw_if_bad:
-                    raise KeyError(f"Key '{key}' not found in data item: {x}")
-                continue
+            try:
+                if key not in x:
+                    if throw_if_bad:
+                        raise KeyError(f"Key '{key}' not found in data item: {x}")
+                    continue
 
-            # unpack
-            arr = HDF5Manager._coerce_array(x[key]) if unpack else np.asarray(x[key])
-            
-            if arr.size == 0:
-                continue
-            
-            # normalize rank
-            if arr.ndim > 2:
-                # flatten trailing dims but keep leading realizations
-                arr = arr.reshape(arr.shape[0], -1)
+                # unpack
+                arr = HDF5Manager._coerce_array(x[key]) if unpack else np.asarray(x[key])
+                
+                if arr.size == 0:
+                    continue
+                
+                # normalize rank
+                if arr.ndim > 2:
+                    # flatten trailing dims but keep leading realizations
+                    arr = arr.reshape(arr.shape[0], -1)
 
-            if target_ndim is None:
-                target_ndim = 1 if arr.ndim == 1 else 2
-                if target_ndim == 2:
-                    target_dim1 = arr.shape[1]
-            else:
-                if target_ndim == 1:
-                    # allow 2D with dim=1 -> squeeze to 1D
-                    if arr.ndim == 2:
-                        if arr.shape[1] != 1:
-                            raise ValueError(f"Got 2D with dim={arr.shape[1]} but target is 1D.")
-                        arr = arr.reshape(-1)
-                else:  # target 2D
-                    if arr.ndim == 1:
-                        raise ValueError("Got 1D for some files and 2D for others; cannot infer dim.")
-                    if arr.shape[1] != target_dim1:
-                        raise ValueError(f"Inconsistent second dimension: {arr.shape[1]} vs {target_dim1}.")
-
-            arrays.append(arr.astype(float, copy=False))
+                if target_ndim is None:
+                    target_ndim = 1 if arr.ndim == 1 else 2
+                    if target_ndim == 2:
+                        target_dim1 = arr.shape[1]
+                else:
+                    if target_ndim == 1:
+                        # allow 2D with dim=1 -> squeeze to 1D
+                        if arr.ndim == 2:
+                            if arr.shape[1] != 1:
+                                raise ValueError(f"Got 2D with dim={arr.shape[1]} but target is 1D.")
+                            arr = arr.reshape(-1)
+                    else:  # target 2D
+                        if arr.ndim == 1:
+                            raise ValueError("Got 1D for some files and 2D for others; cannot infer dim.")
+                        if arr.shape[1] != target_dim1:
+                            raise ValueError(f"Inconsistent second dimension: {arr.shape[1]} vs {target_dim1}.")
+                arrays.append(arr)
+            except Exception as e:
+                _logger.error(f"Error processing data item {x}: {e}")
 
         if len(arrays) == 0:
             if throw_if_bad:
                 raise Exception("No samples found...")
             return np.array([], dtype=float)
-
+        if target_ndim == 1:
+            return np.asarray(arrays)
+        # it could be (N_rel_1, D), (N_rel_2, D), ...
         out = np.concatenate(arrays, axis=0)
         return out
 
