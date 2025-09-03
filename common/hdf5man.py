@@ -646,6 +646,123 @@ class HDF5Manager:
     # ---------------------------------
     
     @staticmethod
+    def _coerce_array(a: Any, axis_realization: int = 0) -> np.ndarray:
+        """
+        Coerce HDF5 dataset/list/scalar to a numeric ndarray.
+        
+        """
+        if a is None:
+            return np.array([], dtype=float)
+        
+        arr = np.asarray(a)
+        if arr.dtype == object:  # ragged: list of arrays/scalars
+            parts = []
+            for e in arr:
+                if e is None:
+                    continue
+                e = np.asarray(e)
+                if e.size == 0:
+                    continue
+                parts.append(e)
+            if not parts:
+                return np.array([], dtype=float)
+            
+            # all 1D or all 2D?
+            ndims = {p.ndim for p in parts}
+            if len(ndims) != 1:
+                raise ValueError("Mixed ranks in object array; cannot concatenate cleanly.")
+            
+            if parts[0].ndim == 1:
+                return np.concatenate([p.reshape(-1) for p in parts], axis=axis_realization)
+            elif parts[0].ndim == 2:
+                dset = {p.shape[1] for p in parts}
+                if len(dset) != 1:
+                    raise ValueError("Inconsistent second dimension in ragged 2D parts.")
+                return np.concatenate(parts, axis=axis_realization)
+            else:
+                raise ValueError("Only 1D or 2D arrays are supported.")
+            
+        # scalar -> (1,)
+        if arr.ndim == 0:
+            arr = arr.reshape(1)
+        return arr
+
+    @staticmethod
+    def process_data(data, key, throw_if_bad: bool = False, unpack = True) -> np.ndarray:
+        """
+        data: iterable of mappings/objects with `key` -> arraylike
+        Returns:
+            - 1D output if all inputs are 1D
+            - 2D output if all inputs are 2D (same dim)
+
+        Parameters:
+            - data:
+                iterable of mappings/objects with `key` -> arraylike
+            - key: 
+                key to extract data from each mapping/object
+            - throw_if_bad: 
+                whether to throw an error if no valid data is found
+            - unpack: 
+                whether to unpack nested arrays
+
+        Returns:
+            - 1D output if all inputs are 1D
+            - 2D output if all inputs are 2D (same dim)
+        """
+        arrays: List[np.ndarray]    = []
+        target_ndim                 = None
+        target_dim1                 = None
+
+        # collect
+        for x in data:
+            if key not in x:
+                if throw_if_bad:
+                    raise KeyError(f"Key '{key}' not found in data item: {x}")
+                continue
+
+            # unpack
+            arr = HDF5Manager._coerce_array(x[key]) if unpack else np.asarray(x[key])
+            
+            if arr.size == 0:
+                continue
+            
+            # normalize rank
+            if arr.ndim > 2:
+                # flatten trailing dims but keep leading realizations
+                arr = arr.reshape(arr.shape[0], -1)
+
+            if target_ndim is None:
+                target_ndim = 1 if arr.ndim == 1 else 2
+                if target_ndim == 2:
+                    target_dim1 = arr.shape[1]
+            else:
+                if target_ndim == 1:
+                    # allow 2D with dim=1 -> squeeze to 1D
+                    if arr.ndim == 2:
+                        if arr.shape[1] != 1:
+                            raise ValueError(f"Got 2D with dim={arr.shape[1]} but target is 1D.")
+                        arr = arr.reshape(-1)
+                else:  # target 2D
+                    if arr.ndim == 1:
+                        raise ValueError("Got 1D for some files and 2D for others; cannot infer dim.")
+                    if arr.shape[1] != target_dim1:
+                        raise ValueError(f"Inconsistent second dimension: {arr.shape[1]} vs {target_dim1}.")
+
+            arrays.append(arr.astype(float, copy=False))
+
+        if len(arrays) == 0:
+            if throw_if_bad:
+                raise Exception("No samples found...")
+            return np.array([], dtype=float)
+
+        out = np.concatenate(arrays, axis=0)
+        return out
+
+    # ---------------------------------
+    #! Data Processing Methods
+    # ---------------------------------
+
+    @staticmethod
     def clean_data_remove_zeros(
         matrix      : np.ndarray,
         axis        : int           = 0,

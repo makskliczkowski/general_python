@@ -1,4 +1,5 @@
 import itertools
+from math import fsum
 from typing import Tuple, Union, Optional, List
 
 try:
@@ -20,7 +21,7 @@ from matplotlib.patches import Polygon, Rectangle
 from matplotlib.transforms import Bbox
 from matplotlib.ticker import ScalarFormatter, NullFormatter
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-# from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, InsetPosition, mark_inset)
+from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, mark_inset)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib.legend import Legend
 from matplotlib.legend_handler import HandlerBase, HandlerPatch
@@ -94,7 +95,7 @@ except (TypeError, AttributeError, KeyError):
 
 #####################################
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
-colorsCycle                         =   itertools.cycle(list(mcolors.TABLEAU_COLORS))
+colorsCycle                         =   itertools.cycle(colorsList)
 colorsCyclePlastic                  =   itertools.cycle(list(["#E69F00", "#56B4E9", "#009E73", "#0072B2", "#D55E00", "#CC79A7", "#F0E442"]))
 colorsCycleBright                   =   itertools.cycle(list(mcolors.CSS4_COLORS))
 colorsCycleDark                     =   itertools.cycle(list(mcolors.BASE_COLORS))
@@ -995,8 +996,7 @@ class Plotter:
         zorder      =   5,
         labelcond   =   True,
         linewidths  =   1.0,
-        **kwargs,
-    ):
+        **kwargs):
         """
         Creates a scatter plot on the provided axis, styled for Nature-like plots.
 
@@ -1915,36 +1915,158 @@ class Plotter:
                   markerfirst   = markerfirst,
                   framealpha    = framealpha,
                   **kwargs)
-             
+
     ######### S U B A X S #########
 
     @staticmethod
-    def get_subplots(   nrows  =   1,
-                        ncols  =   1,
-                        sizex  =   10.,
-                        sizey  =   10.,
+    def get_subplots(   nrows       =   1,
+                        ncols       =   1,
+                        sizex       =   10.,                    # total width [in] OR list of per-col ratios
+                        sizey       =   10.,                    # total height [in] OR list of per-row ratios
+                        sizex_def   =   3,                      # inches per unit of sizex ratio (if sizex is a sequence)
+                        sizey_def   =   3,                      # inches per unit of sizey ratio (if sizey is a sequence)
+                        annot_x_pos =   None,                   # position for annotation - x
+                        annot_y_pos =   None,                   # position for annotation - y
                         **kwargs) -> Tuple[plt.Figure, List[plt.Axes]]:
-        figsize             = kwargs.get('figsize', (sizex, sizey))
-        kwargs['figsize']   = figsize
-        
-        if ncols == 1 and nrows == 1:
-            fig, ax = plt.subplots(nrows, ncols, **kwargs)
-            return fig, [ax]
-        elif (ncols == 1 and nrows > 1) or (nrows == 1 and ncols > 1):
-            return plt.subplots(nrows, ncols, **kwargs)
+        """
+        Flexible subplot factory that *always* returns (fig, flat_axes_list).
+
+        niceties (all optional, via kwargs):
+        - width_ratios/height_ratios via sizex/sizey if they are sequences
+        - hspace/wspace/left/right/top/bottom (mapped to gridspec_kw)
+        - constrained_layout=True by default (unless tight_layout is explicitly set)
+        - panel_labels=True or a list/tuple (strings) to annotate axes (A,B,C,...)
+        - grid=True to enable grid on all axes (use grid_kws for kwargs)
+        - despine=True to hide top/right spines, axis_off=True to turn entire axes off
+        - suptitle="...", suptitle_kws={...}
+        - dpi=..., sharex=..., sharey=..., subplot_kw={...}, gridspec_kw={...}
+        - post_hook=<callable(fig, axes_list)> for custom last-mile tweaks
+        """
+
+        # ---- Extract utility kwargs (do not pass to plt.subplots)
+        gridspec_kw   = dict(kwargs.pop('gridspec_kw', {}) or {})
+        subplot_kw    = dict(kwargs.pop('subplot_kw', {}) or {})
+        panel_labels  = kwargs.pop('panel_labels', None)         # True or list/tuple of labels
+        grid_on       = kwargs.pop('grid', False)
+        grid_kws      = dict(kwargs.pop('grid_kws', {}) or {})
+        despine       = kwargs.pop('despine', False)
+        axis_off      = kwargs.pop('axis_off', False)
+        suptitle      = kwargs.pop('suptitle', None)
+        suptitle_kws  = dict(kwargs.pop('suptitle_kws', {}) or {})
+        post_hook     = kwargs.pop('post_hook', None)            # type: Optional[PostHook]
+
+        # Use constrained_layout by default unless user opted for tight_layout or already set it
+        if 'constrained_layout' not in kwargs and not kwargs.get('tight_layout', False):
+            kwargs['constrained_layout'] = True
+
+        # Map spacing/bounds kwargs into gridspec_kw if provided
+        for k in ('hspace', 'wspace', 'left', 'right', 'top', 'bottom'):
+            if k in kwargs:
+                gridspec_kw[k] = kwargs.pop(k)
+
+        #! Figure size & ratios
+        width_ratios = height_ratios = None
+        # sizex can be total inches (number) or per-column *ratios* (sequence)
+        if isinstance(sizex, (list, tuple)):
+            if len(sizex) != ncols:
+                raise ValueError(f"sizex length {len(sizex)} != ncols {ncols}")
+            width_ratios    = list(sizex)
+            total_w         = sizex_def * fsum(width_ratios)
         else:
-            fig, ax = plt.subplots(nrows, ncols, **kwargs)
-            return fig, [axis for row in ax for axis in row]
-        
+            # If set to None, infer from defaults
+            total_w         = float(sizex if sizex is not None else sizex_def * ncols)
+
+        # sizey can be total inches (number) or per-row *ratios* (sequence)
+        if isinstance(sizey, (list, tuple)):
+            if len(sizey) != nrows:
+                raise ValueError(f"sizey length {len(sizey)} != nrows {nrows}")
+            height_ratios   = list(sizey)
+            total_h         = sizey_def * fsum(height_ratios)
+        else:
+            total_h         = float(sizey if sizey is not None else sizey_def * nrows)
+
+        if width_ratios is not None:
+            gridspec_kw['width_ratios']     = width_ratios
+        if height_ratios is not None:
+            gridspec_kw['height_ratios']    = height_ratios
+
+        figsize                             = kwargs.pop('figsize', (total_w, total_h))
+
+        #! Create
+        fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, gridspec_kw=gridspec_kw, subplot_kw=subplot_kw, **kwargs)
+
+        #! Normalize axes to a flat list, regardless of (1,1), (1,N), (M,1), (M,N)
+        if isinstance(ax, (list, tuple)):
+            axes_list = list(ax)
+        else:
+            try:
+                axes_list = ax.ravel().tolist()     # ndarray of Axes
+            except Exception:
+                axes_list = [ax]                    # single Axes
+
+        #! Optional cosmetics
+        if grid_on:
+            for a in axes_list:
+                a.grid(True, **grid_kws)
+
+        if despine:
+            for a in axes_list:
+                for side in ('top', 'right'):
+                    a.spines[side].set_visible(False)
+
+        if axis_off:
+            for a in axes_list:
+                a.axis('off')
+
+        #! Panel labels
+        if panel_labels is not None:
+            if panel_labels is True:
+                labels = [f'({str(chr(97+i))})' for i in range(len(axes_list))]   # a, b, c, ...
+            else:
+                labels = list(panel_labels)
+                if len(labels) != len(axes_list):
+                    raise ValueError("panel_labels length must match number of axes")
+            
+            if annot_x_pos is None:
+                annot_x_pos = [0.97] * len(axes_list)
+            elif isinstance(annot_x_pos, (int, float)):
+                annot_x_pos = [annot_x_pos] * len(axes_list)
+            elif isinstance(annot_x_pos, (list, tuple)) and len(annot_x_pos) == len(axes_list):
+                annot_x_pos = list(annot_x_pos)
+            else:
+                raise ValueError("annot_x_pos must be None, a number, or a list/tuple of the same length as axes_list")
+
+            if annot_y_pos is None:
+                annot_y_pos = [0.03] * len(axes_list)
+            elif isinstance(annot_y_pos, (int, float)):
+                annot_y_pos = [annot_y_pos] * len(axes_list)
+            elif isinstance(annot_y_pos, (list, tuple)) and len(annot_y_pos) == len(axes_list):
+                annot_y_pos = list(annot_y_pos)
+            else:
+                raise ValueError("annot_y_pos must be None, a number, or a list/tuple of the same length as axes_list")
+
+            for i, (lbl, a) in enumerate(zip(labels, axes_list)):
+                if annot_x_pos[i] is not None and annot_y_pos[i] is not None:
+                    a.annotate(lbl, xy=(annot_x_pos[i], annot_y_pos[i]), ha='left', va='top', fontweight='bold', fontsize='large', xycoords='axes fraction')
+
+        if suptitle is not None:
+            fig.suptitle(suptitle, **suptitle_kws)
+
+        #! Final user hook (receives fig and the flat list of axes)
+        if callable(post_hook):
+            post_hook(fig, axes_list)
+
+        return fig, axes_list
+
     ######### S A V I N G #########
 
     @staticmethod
     def save_fig(directory  :   str,
-                 filename   :   str,
-                 format     =   'pdf',
-                 dpi        =   200,
-                 adjust     =   True,
-                 **kwargs):
+                filename    :   str,
+                format      =   'pdf',
+                dpi         =   200,
+                adjust      =   True,
+                **kwargs):
         '''
         Save figure to a specific directory. 
         - directory : directory to save the file
@@ -1956,7 +2078,7 @@ class Plotter:
         if adjust:
             plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
         plt.savefig(directory + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
-        
+    
     ###############################
     
     @staticmethod
