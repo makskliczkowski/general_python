@@ -692,6 +692,7 @@ class HDF5Manager:
         """
         data: iterable of mappings/objects with `key` -> arraylike
         Returns:
+            - 0D output
             - 1D output if all inputs are 1D
             - 2D output if all inputs are 2D (same dim)
 
@@ -722,7 +723,8 @@ class HDF5Manager:
                     continue
 
                 # unpack
-                arr = HDF5Manager._coerce_array(x[key]) if unpack else np.asarray(x[key])
+                arr = np.asarray(x[key])
+                # arr = HDF5Manager._coerce_array(x[key]) if unpack else np.asarray(x[key])
                 
                 if arr.size == 0:
                     continue
@@ -733,7 +735,10 @@ class HDF5Manager:
                     arr = arr.reshape(arr.shape[0], -1)
 
                 if target_ndim is None:
-                    target_ndim = 1 if arr.ndim == 1 else 2
+                    if arr.ndim == 1:
+                        target_ndim = 1
+                    elif arr.ndim == 2:
+                        target_ndim = 2
                     if target_ndim == 2:
                         target_dim1 = arr.shape[1]
                 else:
@@ -756,13 +761,21 @@ class HDF5Manager:
             if throw_if_bad:
                 raise Exception("No samples found...")
             return np.array([], dtype=float)
+        
+
         if target_ndim == 1:
-            array = np.array([x for arr in arrays for x in arr], dtype=arrays[0].dtype)  # flatten
+            if unpack:
+                array = np.array([x for arr in arrays for x in arr], dtype=arrays[0].dtype)  # flatten
+            else:
+                array = np.asarray(arrays, dtype=arrays[0].dtype)
             return array
         
         # target_ndim == 2
         # it could be (N_rel_1, D), (N_rel_2, D), ...
-        out = np.concatenate(arrays, axis=0)
+        if unpack:
+            out = np.concatenate(arrays, axis=0)
+        else:
+            out = np.asarray(arrays, dtype=arrays[0].dtype)
         return out
 
     # ---------------------------------
