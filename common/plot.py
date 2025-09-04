@@ -1759,24 +1759,47 @@ class Plotter:
 
     @staticmethod
     def get_inset(ax, 
-                    position    = [0.0, 0.0, 1.0, 1.0], 
-                    add_box     = False, 
-                    box_alpha   = 0.5, 
-                    box_ext     = 0.02,
-                    facecolor   = 'white',
-                    zorder      = 1,
-                    **kwargs):
-        
-        ax2 = plt.axes((0, 0, 1, 1), **kwargs, zorder=zorder)
-        ip  = InsetPosition(ax, position)
-        ax2.set_axes_locator(ip)
-        
+                  position    = [0.0, 0.0, 1.0, 1.0], 
+                  add_box     = False, 
+                  box_alpha   = 0.5, 
+                  box_ext     = 0.02,
+                  facecolor   = 'white',
+                  zorder      = 1,
+                  **kwargs):
+        """
+        Create an inset axis within the given axis.
+
+        Parameters:
+        - ax: The parent axis.
+        - position: List of [x0, y0, width, height] for the inset axis in relative coordinates.
+        - add_box: Whether to add a semi-transparent box around the inset.
+        - box_alpha: Transparency of the box.
+        - box_ext: Extension of the box beyond the inset axis.
+        - facecolor: Face color of the box.
+        - zorder: Z-order of the inset axis.
+        - kwargs: Additional arguments passed to plt.axes.
+
+        Returns:
+        - ax2: The inset axis.
+        """
+        # Create the inset axis
+        bbox    = ax.get_position()
+        fig     = ax.figure
+        inset_position = [
+            bbox.x0 + position[0] * bbox.width,
+            bbox.y0 + position[1] * bbox.height,
+            position[2] * bbox.width,
+            position[3] * bbox.height,
+        ]
+        ax2 = fig.add_axes(inset_position, **kwargs, zorder=zorder)
+
         if add_box:
             # Add a semi-transparent white box around the inset
-            rect = Rectangle((0, 0), 1 + box_ext, 1 + box_ext, transform=ax2.transAxes, 
-                            facecolor=facecolor, edgecolor='none', alpha=box_alpha, zorder=zorder)
+            rect = Rectangle((-box_ext, -box_ext), 1 + 2 * box_ext, 1 + 2 * box_ext, 
+                             transform=ax2.transAxes, facecolor=facecolor, 
+                             edgecolor='none', alpha=box_alpha, zorder=zorder)
             ax2.add_patch(rect)
-        
+
         return ax2
     
     ##################### L O O K #####################
