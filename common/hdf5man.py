@@ -757,7 +757,10 @@ class HDF5Manager:
                 raise Exception("No samples found...")
             return np.array([], dtype=float)
         if target_ndim == 1:
-            return np.asarray(arrays)
+            array = np.array([x for arr in arrays for x in arr], dtype=arrays[0].dtype)  # flatten
+            return array
+        
+        # target_ndim == 2
         # it could be (N_rel_1, D), (N_rel_2, D), ...
         out = np.concatenate(arrays, axis=0)
         return out
