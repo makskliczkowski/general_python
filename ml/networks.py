@@ -8,9 +8,9 @@ This module has all the network implementations.
 
 from typing import Union, Optional, Any, Type
 from enum import Enum, unique, auto
-from general_python.ml.net_impl.net_general import GeneralNet, CallableNet
-from general_python.ml.net_impl.net_simple import SimpleNet
-from general_python.ml.net_impl.interface_net_flax import FlaxInterface
+from .net_impl.net_general import GeneralNet, CallableNet
+from .net_impl.net_simple import SimpleNet
+from .net_impl.interface_net_flax import FlaxInterface
 
 
 ######################################################################
