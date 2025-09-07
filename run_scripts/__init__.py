@@ -46,27 +46,34 @@ def calculate_realisations_per_parameter(parameters: list, n_realisations: str):
     - parameters      : list of parameters, e.g., list of sites
     - n_realisations  : str, either a single integer or a comma-separated list of integers
     '''
-    
-    # Parse n_realisations
-    n_reals = n_realisations.split(',')
-    
+
+    if not parameters:
+        raise ValueError("Parameters list cannot be empty")
+
+    # If comma-separated, split into list
+    if ',' in n_realisations:
+        n_realisations = n_realisations.split(',')
+    else:
+        n_realisations = [n_realisations] * len(parameters)
+        
     # Validate and convert
-    if all(x.strip().isdigit() for x in n_reals):
-        n_reals = [int(x.strip()) for x in n_reals]
-    elif len(n_reals) == 1 and n_reals[0].strip().isdigit():
-        n_reals = int(n_reals[0].strip())
+    if all(x.strip().isdigit() for x in n_realisations):
+        n_realisations = [int(x.strip()) for x in n_realisations]
+    elif len(n_realisations) == 1 and n_realisations[0].strip().isdigit():
+        n_realisations = int(n_realisations[0].strip())
+        n_realisations = [n_realisations] * len(parameters)
     else:
         raise ValueError("--number_of_realizations must be an integer or a comma-separated list of integers")
 
     # If they don't match, raise an error
-    if len(n_reals) != len(parameters):
+    if len(n_realisations) != len(parameters):
         raise ValueError("The number of realizations must match the number of parameters")
 
     # Convert to dictionary if it's a list
-    if isinstance(n_reals, list):
-        n_reals = {param: n_reals[i] for i, param in enumerate(parameters)}
+    if isinstance(n_realisations, list):
+        n_realisations = {param: n_realisations[i] for i, param in enumerate(parameters)}
     else:
-        n_reals = {param: n_reals for param in parameters}
-    return n_reals
+        n_realisations = {param: n_realisations for param in parameters}
+    return n_realisations
 
 ########################################################################################################################
