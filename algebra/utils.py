@@ -80,9 +80,17 @@ QES_FLOATING_POINT      : str               = "QES_FLOATING_POINT"
 QES_GLOBAL_SEED         : str               = "QES_GLOBAL_SEED"
 QES_NUM_CORES           : str               = "NUMEXPR_MAX_THREADS"
 
+#! os environment variables
+PY_JAX_AVAILABLE_STR    : str               = "PY_JAX_AVAILABLE"
+PY_NUM_CORES_STR        : str               = "PY_NUM_CORES"
+PY_FLOATING_POINT_STR   : str               = "PY_FLOATING_POINT"
+PY_BACKEND_STR          : str               = "PY_BACKEND"
+PY_GLOBAL_SEED_STR      : str               = "PY_GLOBAL_SEED"
+# ---------------------------------------------------------------------
+
 num_cores                                   = os.cpu_count()
 os.environ[QES_NUM_CORES]                   = str(num_cores)
-
+os.environ[PY_NUM_CORES_STR]                = str(num_cores)
 
 JIT                     : Callable          = lambda x: x # Default JIT function (identity)
 DEFAULT_SEED            : int               = 42
@@ -141,6 +149,7 @@ if PREFER_JAX:
         import jax.random as jrn
         
         JAX_AVAILABLE           = True
+        os.en
         jit                     = jax.jit # Use real JIT if JAX is available
         jcfg                    = jax_config
         _log_message("JAX backend available and successfully imported", 0)
@@ -976,7 +985,6 @@ try:
     if os.getenv("QES_BACKEND_INFO", "0") in ("1", "true", "True"):
         backend_mgr.print_info() # Print backend info
     
-
 except ImportError as e:
     log.error(f"Error importing backend modules: {e}")
     os._exit(1)  # Critical failure, exit immediately
@@ -986,6 +994,20 @@ except AttributeError as e:
 except Exception as e:
     log.error(f"Error printing backend info: {e}")
     os._exit(1)  # Critical failure, exit immediately
+
+try:
+    PY_JAX_AVAILABLE        : bool              = os.environ.get(PY_JAX_AVAILABLE_STR, "0") == "1"
+    PY_NUM_CORES            : int               = int(os.environ.get(PY_NUM_CORES_STR, "1"))
+    PY_FLOATING_POINT       : str               = os.environ.get(PY_FLOATING_POINT_STR, "float32")
+    PY_BACKEND              : str               = os.environ.get(PY_BACKEND_STR, "numpy")
+    PY_GLOBAL_SEED          : int               = int(os.environ.get(PY_GLOBAL_SEED_STR, "0"))
+except Exception as e:
+    log.error(f"Error reading environment variables: {e}")
+    PY_JAX_AVAILABLE        : bool              = False
+    PY_NUM_CORES            : int               = 1
+    PY_FLOATING_POINT       : str               = "float32"
+    PY_BACKEND              : str               = "numpy"
+    PY_GLOBAL_SEED          : int               = 0
 
 # ---------------------------------------------------------------------
 

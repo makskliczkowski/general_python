@@ -37,3 +37,36 @@ def calculate_optimal_workers(alphas, available_memory, memory_per_worker, max_c
         logger.info(f"Optimal number of workers: {optimal_workers}")
             
     return optimal_workers
+
+####################################################################
+
+def calculate_realisations_per_parameter(parameters: list, n_realisations: str):
+    '''
+    Calculate the number of realizations per parameter based on user input
+    - parameters      : list of parameters, e.g., list of sites
+    - n_realisations  : str, either a single integer or a comma-separated list of integers
+    '''
+    
+    # Parse n_realisations
+    n_reals = n_realisations.split(',')
+    
+    # Validate and convert
+    if all(x.strip().isdigit() for x in n_reals):
+        n_reals = [int(x.strip()) for x in n_reals]
+    elif len(n_reals) == 1 and n_reals[0].strip().isdigit():
+        n_reals = int(n_reals[0].strip())
+    else:
+        raise ValueError("--number_of_realizations must be an integer or a comma-separated list of integers")
+
+    # If they don't match, raise an error
+    if len(n_reals) != len(parameters):
+        raise ValueError("The number of realizations must match the number of parameters")
+
+    # Convert to dictionary if it's a list
+    if isinstance(n_reals, list):
+        n_reals = {param: n_reals[i] for i, param in enumerate(parameters)}
+    else:
+        n_reals = {param: n_reals for param in parameters}
+    return n_reals
+
+########################################################################################################################
