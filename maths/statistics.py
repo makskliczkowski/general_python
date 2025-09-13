@@ -647,10 +647,12 @@ class HistogramAverage(Histogram):
         If is_typical is True, exponentiate the normalized averages (useful if the averages
         represent logarithms).
         """
-        out         = self.bin_averages.copy()
-        nz          = self.bin_counts != 0
-        out[nz]    /= self.bin_counts[nz]
-        return np.exp(out) if is_typical else out
+        out             = self.bin_averages.copy()
+        nz              = self.bin_counts > 0
+        out[nz]        /= self.bin_counts[nz]
+        out[nz]         = np.exp(out[nz]) if is_typical else out[nz]
+        out[nz==False]  = 0.0
+        return out        
     
     ###############################################
     #! Reset
