@@ -290,7 +290,10 @@ class Timer:
                     if t.synchronizer is not None:
                         try:
                             t.synchronizer(res)
-                        except Exception:
+                        except ReferenceError as e:
+                            if logger is not None:
+                                logger.warning(f"Synchronizer skipped: underlying object vanished ({e})")
+                        except Exception as e:
                             # Try tuple unpack
                             if isinstance(res, tuple):
                                 for x in res:
@@ -298,6 +301,7 @@ class Timer:
                                         t.synchronizer(x)
                                     except Exception:
                                         pass
+                            
                     return res
                 finally:
                     t.pause()
