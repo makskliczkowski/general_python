@@ -2070,7 +2070,7 @@ class Plotter:
 
             for i, (lbl, a) in enumerate(zip(labels, axes_list)):
                 if annot_x_pos[i] is not None and annot_y_pos[i] is not None:
-                    a.annotate(lbl, xy=(annot_x_pos[i], annot_y_pos[i]), ha='left', va='top', fontweight='bold', fontsize='large', xycoords='axes fraction')
+                    a.annotate(lbl, xy=(annot_x_pos[i], annot_y_pos[i]), ha='left', va='top', fontweight='bold', fontsize='large', xycoords='axes fraction', zorder = 1000)
 
         if suptitle is not None:
             fig.suptitle(suptitle, **suptitle_kws)
