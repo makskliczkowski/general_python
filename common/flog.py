@@ -124,6 +124,9 @@ class Colors:
 #! PRINT THE OUTPUT WITH A GIVEN LEVEL
 ######################################################
 
+ENV_LOGGER_FILE     = 'PYLOGFILE'
+ENV_LOGGER_COLORS   = 'PYLOGCOLORS'
+
 class Logger:
     """
     Logger class for handling console and file logging with verbosity control.
@@ -162,6 +165,7 @@ class Logger:
         self.lvl                = Logger.LEVELS_R.get(lvl, logging.INFO) if isinstance(lvl, str) else lvl
         self.handler_added      = False
         self.use_console_ts     = use_ts_in_cmd
+        self.has_colors         = ENV_LOGGER_COLORS not in os.environ or os.environ[ENV_LOGGER_COLORS] != '0'
         
         # Set up logging: always show timestamp in console if use_ts_in_cmd is True
         self.logger             = logging.getLogger(__name__)
@@ -180,7 +184,7 @@ class Logger:
         self.logger.addHandler(ch)
         
         # Set the log file name
-        if logfile is not None and 'QES_LOGFILE' in os.environ and os.environ['QES_LOGFILE'] != '0':
+        if logfile is not None and ENV_LOGGER_FILE in os.environ and os.environ[ENV_LOGGER_FILE] != '0':
             self.logfile = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
             if append_ts:
                 self.logfile += f'_{self.now_str}'
@@ -230,7 +234,6 @@ class Logger:
             f.write('This is the log file for the current session.\n')
             f.write(f'Log file created on {self.now_str}.\n')
             f.write(f'Log level set to: {self.LEVELS[self.lvl]}.\n')
-            # f.write(f"Author: {os.getlogin()}\n")
             f.write(f"Author: {author}\n")
             f.write(f"Machine: {os.uname().nodename}\n")
             f.write(f"OS: {os.uname().sysname} {os.uname().release} {os.uname().version}\n")
@@ -353,7 +356,7 @@ class Logger:
         """
         if not verbose:
             return
-        if color is not None:
+        if color is not None and self.has_colors:
             msg = self.colorize(msg, color)
         self.logger.info(Logger.print(msg, lvl))
 
@@ -371,13 +374,13 @@ class Logger:
         """
         if not verbose:
             return
-        if color is not None:
+        if color is not None and self.has_colors:
             msg = self.colorize(msg, color)
         self.logger.debug(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
     
-    def warning(self, msg: str, lvl=0, verbose=True, color=None):
+    def warning(self, msg: str, lvl=0, verbose=True):
         """
         Log a warning message if verbosity is enabled.
 
@@ -388,13 +391,13 @@ class Logger:
         """
         if not verbose:
             return
-        if color is not None:   
-            msg = self.colorize(msg, color)
+        if self.has_colors:
+            msg = self.colorize(msg, 'yellow')
         self.logger.warning(Logger.print(msg, lvl))
 
     # --------------------------------------------------------------
 
-    def error(self, msg: str, lvl=0, verbose=True, color=None):
+    def error(self, msg: str, lvl=0, verbose=True):
         """
         Log an error message if verbosity is enabled.
 
@@ -406,8 +409,8 @@ class Logger:
         """
         if not verbose:
             return
-        if color is not None:
-            msg = self.colorize(msg, color)
+        if self.has_colors:
+            msg = self.colorize(msg, 'red')
         self.logger.error(Logger.print(msg, lvl))
         
     # --------------------------------------------------------------
