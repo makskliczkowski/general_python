@@ -64,7 +64,7 @@ This module contains the following submodules:
 # from . import binary
 # from . import directories
 # from . import hdf5_lib
-from general_python.common.flog import get_global_logger
+# from general_python.common.flog import get_global_logger
 
 ####################################################################################################
 

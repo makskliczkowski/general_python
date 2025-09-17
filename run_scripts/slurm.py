@@ -41,6 +41,12 @@ class SimulationParams:
             start_time  =self.start_time,
             job_time    =self.job_time
         )
+        
+    @staticmethod
+    def random_identifier(rng = None, seed = None, max_int = 1000000):
+        if rng is None:
+            np.random.default_rng(seed)    
+        return f"{rng.integers(0, max_int)}"
 
 class SlurmMonitor:
     """SLURM job monitoring utilities"""
@@ -137,6 +143,10 @@ class SlurmMonitor:
         except (Exception) as e:
             SlurmMonitor.logger.warning(f"Failed to get SLURM time info: {e}")
         return -1
+    
+    @staticmethod
+    def get_remaining_and_current_time():
+        return SlurmMonitor.get_remaining_time(), time.perf_counter()
     
     #####################################################
     

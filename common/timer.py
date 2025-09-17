@@ -232,7 +232,7 @@ class Timer:
         return " ".join(parts)
 
     def _emit(self, msg: str, logger_args: Dict[str, Any] = None) -> None:
-        if self.logger is not None:
+        if self.logger is not None and self.verbose:
             self.logger.info(msg, **(logger_args or {}))
         elif self.verbose:
             print(msg)
