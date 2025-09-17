@@ -88,7 +88,7 @@ def gap_ratio(en: np.ndarray,
             fraction                = 0.3,
             use_mean_lvl_spacing    = True
         ):
-    '''
+    r'''
     Calculate the gap ratio of the eigenvalues as:
         $\gamma = \frac{min(\Delta_n, \Delta_{n+1})}{max(\Delta_n, \Delta_{n+1})}$
     - en                    : eigenvalues

@@ -53,7 +53,7 @@ def _split_dims(state : Array, size_a: int, L: int | None) -> Tuple[int,int]:
 #! Numpy
 
 def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
-    """
+    r"""
     Computes the reduced density matrix \rho from a pure state vector using NumPy.
     Given a state vector representing a bipartite quantum system of dimensions (dimA, dimB),
     this function reshapes the state into a matrix of shape (dimA, dimB) using column-major
@@ -122,7 +122,7 @@ def schmidt_numpy( state : Array,
                     dimA    : int,
                     dimB    : int,
                     eig     : bool) -> Tuple[np.ndarray, np.ndarray]:
-    """
+    r"""
     Schmidt decomposition for a bipartite pure state |ψ⟩ \in H_A \otimes H_B.
 
     Returns
