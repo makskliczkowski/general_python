@@ -7,6 +7,7 @@ import os
 import numpy as np
 import time
 from typing import Dict, List, Optional, Union
+from pathlib import Path
 
 #########################################################
 try:
@@ -398,6 +399,7 @@ class SimulationParams:
             ap.add_argument(
                 '-d', '--save_dir',
                 type     = str,
+                default  = Path(os.getcwd()) / 'data',
                 required = False,
                 help     = 'Directory to save the data to. Defaults to current working directory if not provided.'
             )
