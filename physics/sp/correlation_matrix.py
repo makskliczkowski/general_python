@@ -318,7 +318,21 @@ def corr_full(
 
 @numba.njit
 def corr_single2_slater_wick(corr: np.ndarray, ns: int, j: int = 0, l: int = 0):
-    '''Compute the Wick contraction for a single Slater determinant.'''
+    '''
+    Compute the Wick contraction for a single Slater determinant.
+    Mathematically:
+    
+    C_wick[i,k] = -C[i,k] C[j,l] + C[i,l] C[j,k]
+    where C is the single-particle correlation matrix.
+    
+    or 
+    $$ 
+    C_{wick}^{(i,k)} = -C^{(i,k)} C^{(j,l)} + C^{(i,l)} C^{(j,k)}
+    $$
+    
+    for i,k,j,l = 0,...,ns-1. This is useful for computing two-body correlation functions:
+    ⟨c_i^† c_j^† c_l c_k⟩ = C_wick[i,k] = -C[i,k] C[j,l] + C[i,l] C[j,k]
+    '''
     
     C_wick = np.zeros_like(corr)
     for k in range(ns):
@@ -655,7 +669,7 @@ def _corr_from_statevector2_slater_jit(psi  : np.ndarray,
                                 ns          : int,
                                 j           : int = 0,
                                 l           : int = 0):
-    """
+    r"""
     Compute the correlation matrix from a state vector.
     This is:
     <c_i^\dag c_j^\dag c_k c_l> - fixing j and l

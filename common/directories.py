@@ -193,7 +193,7 @@ class Directories(object):
     def list_files(self,
                    *,
                 include_empty   :   bool                            = True,
-                filters         :   List[Callable[[Path], bool]]    = [],
+                filters         :   List[Callable[[Path], bool]]    = None,
                 sort_key        :   Optional[Callable[[Path], any]] = None) -> List[Path]:
         """
         List files (not directories) in this directory.
@@ -217,14 +217,18 @@ class Directories(object):
         
         if not include_empty:
             files = [p for p in files if p.stat().st_size > 0]
-
+        if filters is None:
+            filters = []
+        elif not isinstance(filters, list):
+            filters = [filters]
+        
         for f in filters:
             try:
                 files = list(filter(f, files))
             except Exception as e:
                 print(f"Error applying filter {f.__name__}: {e}")
                 continue
-
+            
         if sort_key:
             files.sort(key=sort_key)
 
