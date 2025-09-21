@@ -14,7 +14,16 @@ _logger = get_global_logger()
 
 #! HDF5Manager
 class HDF5Manager:
-
+    '''
+    A class encapsulating methods for reading, writing, and processing HDF5 files.
+    Methods include:
+        - load_file_data: Read data from a single HDF5 file.
+        - stream_key_from_loaded_files: Generator to yield specific dataset from loaded data.
+    '''
+    
+    # ---------------------------------
+    #! Data Processing Methods
+    
     @staticmethod
     def _get_all_dataset_paths(h5_group: h5py.Group) -> List[str]:
         """
@@ -62,7 +71,9 @@ class HDF5Manager:
             return None
 
     # ---------------------------------
-
+    #! Loading and Concatenation Methods
+    # ---------------------------------
+    
     @staticmethod
     def load_file_data(
         file_path               : str,
@@ -88,24 +99,17 @@ class HDF5Manager:
         """
         data: Dict[str, Any] = {}
         if not HDF5Manager._validate_file(file_path):
-            _logger.error(f"Invalid file: {file_path}")
             return data
-
         try:
             with h5py.File(file_path, "r") as hf:
-                
-                keys_to_read = dataset_keys
-                if not keys_to_read:
-                    keys_to_read = HDF5Manager._get_all_dataset_paths(hf)
-                    if verbose:
-                        _logger.info(f"Available dataset paths in {file_path}: {keys_to_read}")
-                
+                keys_to_read = dataset_keys or HDF5Manager._get_all_dataset_paths(hf)
+                if verbose:
+                    _logger.info(f"Available dataset paths in {file_path}: {keys_to_read}")
                 for key in keys_to_read:
-                    data_in   = HDF5Manager._read_data_key(hf, key)
+                    data_in = HDF5Manager._read_data_key(hf, key)
                     if data_in is not None:
                         data[key] = data_in
-            
-            data["filename"] = file_path # Add filename for context
+            data["filename"] = file_path # Add filename for context - useful for debugging
             return data
         except Exception as e:
             _logger.error(f"Error opening or reading HDF5 file {file_path}: {e}")
@@ -117,6 +121,12 @@ class HDF5Manager:
                 except OSError as oe:
                     _logger.error(f"Failed to remove corrupted file {file_path}: {oe}")
             return {}
+
+    @staticmethod
+    def read_hdf5(file_path, keys=None, verbose=False, remove_bad=False):
+        return HDF5Manager.load_file_data(file_path, dataset_keys=keys, verbose=verbose, remove_corrupted_file=remove_bad)
+
+    # ---------------------------------
 
     @staticmethod
     def stream_key_from_loaded_files(loaded_hdf5_data_list : List[Dict[str, Any]], key : str) -> Generator[np.ndarray, None, None]:
@@ -299,12 +309,158 @@ class HDF5Manager:
         Loads data from multiple HDF5 files into a list of dictionaries. Eager evaluation.
         (This was 'read_multiple_hdf5' before)
         """
-        return list(HDF5Manager.stream_data_from_multiple_files(
-            file_paths, dataset_keys, sort_files, verbose))
+        return list(HDF5Manager.stream_data_from_multiple_files(file_paths, dataset_keys, sort_files, verbose))
+
+    # ---------------------------------
+    #! Saving Methods
+    # ---------------------------------
+    
+    @staticmethod
+    def save_data_to_file(directory             : str, 
+                        filename                : str,
+                        data_to_save            : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
+                        target_shape            : Optional[Tuple[int, ...]] = None,
+                        dataset_names_config    : Optional[Union[List[str], str]] = None,
+                        overwrite               : bool = True):
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        
+        # Ensure filename has .h5 extension
+        base, ext = os.path.splitext(filename)
+        if ext.lower() not in [".h5", ".hdf5"]:
+            filename = base + ".h5"
+        
+        # Determine file mode
+        path = os.path.join(directory, filename)
+        mode = "w" if overwrite else "w-"
+        with h5py.File(path, mode) as hf:
+            if isinstance(data_to_save, dict):
+                for k, arr in data_to_save.items():
+                    dtype   = np.complex128 if np.iscomplexobj(arr) else np.float64
+                    arr     = np.array(arr, dtype=dtype)
+                    if target_shape:
+                        arr = arr.reshape(target_shape)
+                    hf.create_dataset(k, data=arr)
+            else:
+                if isinstance(data_to_save, np.ndarray):
+                    datasets = [data_to_save]
+                else:
+                    datasets = list(data_to_save)
+                names = HDF5Manager._generate_dataset_names(len(datasets), dataset_names_config)
+                
+                # Save each dataset
+                for n, arr in zip(names, datasets):
+                    dtype   = np.complex128 if np.iscomplexobj(arr) else np.float64
+                    arr     = np.array(arr, dtype=dtype)
+                    if target_shape:
+                        arr = arr.reshape(target_shape)
+                    hf.create_dataset(n, data=arr)
+    
+
+    @staticmethod
+    def append_data_to_file(directory                       : str,
+                            filename                        : str,
+                            new_data                        : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
+                            dataset_names_config            : Optional[Union[List[str], str]] = None,
+                            overwrite_existing_datasets     : bool = True,
+                            allow_dataset_creation          : bool = True):
+        # Ensure directory exists
+        base, ext = os.path.splitext(filename)
+        
+        if ext.lower() not in [".h5", ".hdf5"]:
+            filename = base + ".h5"
+        
+        # Open file in append mode or create if it doesn't exist
+        path = os.path.join(directory, filename)
+        if not os.path.exists(path):
+            return HDF5Manager.save_data_to_file(directory, filename, new_data, dataset_names_config=dataset_names_config)
+        
+        # Append or overwrite datasets
+        with h5py.File(path, "a") as hf:
+            if isinstance(new_data, dict):
+                items = new_data.items()
+            else:
+                if isinstance(new_data, np.ndarray):
+                    datasets = [new_data]
+                else:
+                    datasets = list(new_data)
+                names = HDF5Manager._generate_dataset_names(len(datasets), dataset_names_config)
+                items = zip(names, datasets)
+                
+            # Process each dataset
+            for k, arr in items:
+                arr = np.array(arr)
+                if k in hf:
+                    if overwrite_existing_datasets:
+                        del hf[k]
+                        hf.create_dataset(
+                            k,
+                            data=arr,
+                            maxshape=(None,) + arr.shape[1:]
+                            if arr.ndim > 0
+                            else (None,),
+                        )
+                    else:
+                        hf[k].resize(hf[k].shape[0] + arr.shape[0], axis=0)
+                        hf[k][-arr.shape[0] :] = arr
+                elif allow_dataset_creation:
+                    hf.create_dataset(
+                        k,
+                        data=arr,
+                        maxshape=(None,) + arr.shape[1:]
+                        if arr.ndim > 0
+                        else (None,),
+                    )
+
+    save_hdf5   = save_data_to_file 
+    append_hdf5 = append_data_to_file
 
     # ---------------------------------
     #! Folders
     # ---------------------------------
+
+    @staticmethod
+    def file_list_matching(directories          : Union[List, Directories, str],
+                        *args,                  # additional arguments to create the directories
+                        conditions              : List[Callable]    = [],
+                        check_hdf5_condition    : bool              = True,
+                        as_string               : bool              = True):
+        """
+        Returns a list of HDF5 files in the specified directories matching given conditions.
+        Args:
+            directories:
+                A list of directory paths (str) or Directories objects, or a single one.
+            *args:
+                Additional arguments passed to Directories constructor if directories are str.
+            conditions:
+                A list of callables that take a filename and return True if it matches the condition.
+            check_hdf5_condition:
+                If True (default), adds a condition to only include files ending with .h5 or .hdf5.
+            as_string:
+                If True (default), returns file paths as strings. If False, returns as Path objects.
+        Returns:
+            A sorted list of file paths matching the conditions.
+        """
+
+        if isinstance(directories, str) or isinstance(directories, Directories):
+            directories = [directories]
+
+        if not isinstance(conditions, list):
+            if callable(conditions):
+                conditions = [conditions]
+            else:
+                conditions = []
+
+        if check_hdf5_condition:
+            conditions = conditions + [lambda x: str(x).endswith('.h5') or str(x).endswith('.hdf5')]
+
+        # get all directories
+        directories_in  = [Directories(d, *args) for d in directories]
+        filelist        = [x for d in directories_in for x in d.list_files(filters = conditions)]
+        filelist        = sorted(filelist)
+        if as_string:
+            filelist = [str(x) for x in filelist]
+        return filelist
 
     @staticmethod
     def stream_data_from_multiple_folders(

@@ -9,12 +9,11 @@ import os
 import random
 import shutil
 from pathlib import Path
-from typing import Callable, Iterable, List, Optional, Union, Iterator, Any
-PathLike = Union[str, Path]
+from typing import Callable, Iterable, List, Optional, Union, Iterator, Any, Dict
 
-from general_python.common.flog import printV
-
-kPS = os.sep
+# Type alias for path-like objects
+PathLike    = Union[str, Path]
+kPS         = os.sep
 
 #######################################################################################################################
 
@@ -127,7 +126,31 @@ class Directories(object):
         """
         return str(self.path)
     
+    ################################################################################
+    #! Some standard filters
+    ################################################################################
     
+    @staticmethod
+    def f_h5(p: List[Path]) -> List[str]:
+        """Filter for .h5 files."""
+        return [str(x) for x in p if str(x).endswith('.h5')]
+    
+    @staticmethod
+    def f_csv(p: List[Path]) -> List[str]:
+        """Filter for .csv files."""
+        return [str(x) for x in p if str(x).endswith('.csv')]
+    
+    @staticmethod
+    def f_nonempty(p: List[Path]) -> List[str]:
+        """Filter for non-empty files."""
+        return [str(x) for x in p if x.stat().st_size > 0]
+    
+    @staticmethod
+    def f_contains(substr: str) -> Callable[[Path], bool]:
+        """Return a filter that checks if the filename contains a substring."""
+        def _filter(p: List[Path]) -> List[str]:
+            return [str(x) for x in p if substr in str(x)]
+        return _filter
     
     ################################################################################
     #! Construction / Navigation
@@ -443,8 +466,215 @@ class Directories(object):
                     for chunk in iter(lambda: file.read(4096), b""):
                         hash_md5.update(chunk)
         return hash_md5.hexdigest()
-    
 
+################################################################################
+
+class DirectoriesData:
+    """
+    Collects directories across multiple machines and stores them in dictionaries.
+    Only directories that exist are included in `existing`.
+    Example:
+    >>> dirs = DirectoriesData(
+    >>>     klimak_um_only_f=("/media/.../klimak_um_only_f_t100000/uniform", "503"),
+    >>>     klimak_all=("/media/.../klimak_um_plrb_all_t100000/uniform", "503"),
+    >>>     locally=("data_project/uniform", "local")
+    >>> )
+    """
+
+    def __init__(self, **dirs: str):
+        """
+        Initialize with named directory paths.
+        Each value can be either a string (path) or a tuple (path, machine).
+        """
+        
+        self.all: Dict[str, Directories] = {}
+        for name, spec in dirs.items():
+            if isinstance(spec, tuple):
+                path, machine = spec
+            else:
+                path, machine = spec, "default"
+            self.all[name] = (Directories(path), machine)
+
+        #! track existing directories
+        self.existing: Dict[str, Directories] = {
+            name: d for name, (d, _) in self.all.items() if os.path.exists(d)
+        }
+
+        #! track machines
+        self.machines: Dict[str, List[str]] = {}
+        for name, (d, machine) in self.all.items():
+            self.machines.setdefault(machine, []).append(name)
+
+    ############################################################
+
+    def get(self, name: str, only_existing: bool = True) -> Optional[Directories]:
+        """
+        Get a directory by name. Optionally restrict to existing ones.
+        
+        Parameters
+        ----------
+        name : str
+            The name of the directory to retrieve.
+        only_existing : bool, optional
+            If True, only return the directory if it exists. Default is True.
+        """
+        
+        if only_existing:
+            return self.existing.get(name)
+        return self.all.get(name)
+
+    ############################################################
+
+    def add(self, name: str, path: PathLike, machine: str = "default"):
+        """Add a new directory."""
+        self.all[name] = Directories(path, machine)
+        if self.all[name].exists():
+            self.existing[name] = self.all[name]
+        self.machines.setdefault(machine, []).append(name)
+    
+    def remove(self, name: str) -> None:
+        """Remove a directory entry by name."""
+        if name in self.all:
+            machine = self.all[name].machine
+            del self.all[name]
+            self.existing.pop(name, None)
+            if machine in self.machines and name in self.machines[machine]:
+                self.machines[machine].remove(name)
+                if not self.machines[machine]:
+                    del self.machines[machine]
+    
+    ############################################################
+
+    def _match(self, name: str, filters: list[Union[str, Callable[[str], bool]]]) -> bool:
+        """Check if a name matches any filter."""
+        for f in filters:
+            if isinstance(f, str):
+                if f in name:
+                    return True
+            elif callable(f):
+                if f(name):
+                    return True
+        return False
+    
+    def filter_names(self, filters: list[Union[str, Callable[[str], bool]]], only_existing: bool = True) -> list[str]:
+        """
+        Return names that match any filter.
+        Filters can be substrings or callables (e.g. regex matchers, lambdas).
+        """
+        source = self.existing if only_existing else self.all
+        return [name for name in source.keys() if self._match(name, filters)]
+
+    def filter_dirs(self, filters: list[Union[str, Callable[[str], bool]]], only_existing: bool = True) -> dict[str, Directories]:
+        """
+        Return {name: Directories} for names matching any filter.
+        Filters can be substrings or callables (e.g. regex matchers, lambdas).
+        """
+        source = self.existing if only_existing else self.all
+        return {name: d for name, d in source.items() if self._match(name, filters)}
+    
+    ############################################################
+
+    def list_existing(self) -> List[str]:
+        """List names of existing directories."""
+        return list(self.existing.keys())
+    
+    def list_existing_dirs(self) -> List[Directories]:
+        """List existing Directories objects."""
+        return list(self.existing.values())
+
+    def list_all(self) -> List[str]:
+        """List all directory names provided."""
+        return list(self.all.keys())
+
+    def list_all_dirs(self) -> List[Directories]:
+        """List all Directories objects provided."""
+        return list(self.all.values())
+
+    def list_machines(self) -> List[str]:
+        """List all machines."""
+        return list(self.machines.keys())
+
+    ############################################################
+
+    def on(self, machine: str, only_existing: bool = True) -> Dict[str, Directories]:
+        """
+        Get directories for a specific machine.
+        Parameters
+        ----------
+        machine : str
+            The machine name to filter directories.
+        only_existing : bool, optional
+            If True, only return existing directories. Default is True.
+        Returns
+        -------
+        Dict[str, Directories]
+            A dictionary of directory names to Directories objects.
+        Raises
+        -------
+        KeyError
+            If the machine is not known.
+        """
+        names = self.machines.get(machine, [])
+        if only_existing:
+            return {n: self.all[n] for n in names if n in self.existing}
+        return {n: self.all[n] for n in names}
+
+    ############################################################
+
+    def register_machine(self, machine: str):
+        """Ensure machine is known (for clarity, optional)."""
+        self.machines.setdefault(machine, [])
+
+    ############################################################
+
+    def __repr__(self):
+        return (
+            f"DirectoriesData(\n"
+            f"  machines={list(self.machines.keys())},\n"
+            f"  all={list(self.all.keys())},\n"
+            f"  existing={list(self.existing.keys())}\n"
+            f")"
+        )
+        
+    def __str__(self):
+        lines = ["DirectoriesData:"]
+        for name, d in self.all.items():
+            status = "exists" if d.exists() else "missing"
+            lines.append(f"  {name}: {d} [{status}]")
+        return "\n".join(lines)
+    
+    def __len__(self):
+        return len(self.all)
+    
+    def __getitem__(self, name: str) -> Directories:
+        return self.all[name]
+    
+    def __contains__(self, name: str) -> bool:
+        return name in self.all
+    
+    def __iter__(self):
+        return iter(self.all.items())
+
+    def __add__(self, other: "DirectoriesData") -> "DirectoriesData":
+        """Return a new DirectoriesData with merged contents."""
+        new = DirectoriesData(**{})  # empty
+        # copy self
+        for name, d in self.all.items():
+            new.add(name, str(d.path), d.machine)
+        # add from other
+        for name, d in other.all.items():
+            new.add(name, str(d.path), d.machine)
+        return new
+
+    def __iadd__(self, other: "DirectoriesData") -> "DirectoriesData":
+        """In-place merge of other into self."""
+        for name, d in other.all.items():
+            self.add(name, str(d.path), d.machine)
+        return self
+
+    def __radd__(self, other: "DirectoriesData") -> "DirectoriesData":
+        """Allow sum([...]) to work by reusing __add__."""
+        return self.__add__(other)
 
 ################################################################################
 #! EOF
