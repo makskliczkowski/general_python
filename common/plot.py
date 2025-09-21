@@ -2079,7 +2079,7 @@ class Plotter:
                 a.axis('off')
 
         #! Panel labels
-        if panel_labels is not None:
+        if panel_labels is not None and (panel_labels != False):
             if panel_labels is True:
                 labels = [f'({str(chr(97+i))})' for i in range(len(axes_list))]   # a, b, c, ...
             else:
