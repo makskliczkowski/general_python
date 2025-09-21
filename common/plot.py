@@ -631,63 +631,100 @@ class Plotter:
         return colorbars    
     
     @staticmethod
-    def add_colorbar_pos(fig, 
+    def add_colorbar_pos(fig,
                         cmap,
                         mapable,
                         pos,
-                        norm = None,
-                        vmin = None, 
-                        vmax = None,
-                        orientation = 'vertical', 
-                        xlabel      = '',
-                        xlabelcords = (0.5, -0.05),
-                        ylabel      = '',
-                        ylabelcords = (-0.05, 0.5),
-                        xticks      = None,
-                        yticks      = None,
-                        ):
-        '''
-        Add colorbar to the plot.
-        - fig :   figure to add the colorbar to
-        - cmap      :   colormap to use
-        - mapable   :   mapable object
-        - pos       :   position of the colorbar
-        - norm      :   normalization of the colorbar
-        - vmin      :   minimum value
-        - vmax      :   maximum value
-        - orientation:  orientation of the colorbar
-        - xlabel    :   xlabel for the colorbar
-        - xlabelcords:  coordinates of the xlabel
-        - ylabel    :   ylabel for the colorbar
-        - ylabelcords:  coordinates of the ylabel
-        - xticks    :   ticks for the x-axis
-        - yticks    :   ticks for the y-axis
-        '''
-        if norm is None:
-            norm = mpl.colors.Normalize(vmin = vmin if vmin is not None else np.min(mapable), 
-                                        vmax = vmax if vmax is not None else np.max(mapable))
+                        norm=None,
+                        vmin=None,
+                        vmax=None,
+                        orientation='vertical',
+                        xlabel='',
+                        xlabelcords=(0.5, -0.05),
+                        ylabel='',
+                        ylabelcords=(-0.05, 0.5),
+                        xticks=None,
+                        yticks=None,
+                        xtickspos=None,
+                        ytickspos=None,
+                        aspect=20,
+                        shrink=1.0) -> Tuple[mpl.colorbar.Colorbar, mpl.axes.Axes]:
+        """
+        Add a colorbar to the given figure.
+
+        Parameters
+        ----------
+        fig : matplotlib.figure.Figure
+            Figure to add the colorbar to.
+        cmap : str or Colormap
+            Colormap to use.
+        mapable : array-like or ScalarMappable
+            Data or existing ScalarMappable to normalize.
+        pos : list[float]
+            Position of the colorbar axes [left, bottom, width, height].
+        norm : Normalize, optional
+            Normalization for the colormap. If None, inferred from vmin/vmax or data.
+        vmin, vmax : float, optional
+            Value range for normalization (used if norm is None).
+        orientation : {'vertical', 'horizontal'}, default='vertical'
+            Orientation of the colorbar.
+        xlabel, ylabel : str
+            Labels for the colorbar.
+        xlabelcords, ylabelcords : tuple
+            Label coordinates.
+        xticks, yticks : list, optional
+            Tick locations for x/y axes of the colorbar.
+        xtickspos, ytickspos : str, optional
+            Position of ticks ('top'/'bottom'/'left'/'right').
+        aspect : int, default=20
+            Aspect ratio of the colorbar.
+        shrink : float, default=1.0
+            Fraction by which to shrink the colorbar.
         
-        sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
+        Returns
+        -------
+        cbar : Colorbar
+            The created colorbar.
+        cax : Axes
+            The colorbar axes.
+        """
         
-        # create axes 
-        cax     = fig.add_axes(pos)
-        cbar    = fig.colorbar(sm, cax = cax, aspect = 1, orientation = orientation)
-        
-        # set the labels
-        if xlabel != '':
+        # Handle normalization
+        if isinstance(mapable, mpl.cm.ScalarMappable):
+            sm = mapable
+            if norm is None:
+                norm = sm.norm
+        else:
+            if norm is None:
+                data = np.ravel(mapable)
+                norm = mpl.colors.Normalize(vmin=vmin if vmin is not None else np.nanmin(data),
+                                            vmax=vmax if vmax is not None else np.nanmax(data))
+            sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+            sm.set_array([])
+
+        # Create axes
+        cax = fig.add_axes(pos)
+        cbar = fig.colorbar(sm, cax=cax, orientation=orientation, aspect=aspect)
+
+        # Labels
+        if xlabel:
             cbar.ax.set_xlabel(xlabel)
-            cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
-        
-        if ylabel != '':
+            cbar.ax.xaxis.set_label_coords(*xlabelcords)
+        if ylabel:
             cbar.ax.set_ylabel(ylabel)
-            cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
-        
-        # set the ticks
+            cbar.ax.yaxis.set_label_coords(*ylabelcords)
+
+        # Ticks
         if xticks is not None:
             cbar.ax.set_xticks(xticks)
         if yticks is not None:
             cbar.ax.set_yticks(yticks)
+        if xtickspos is not None:
+            cbar.ax.xaxis.set_ticks_position(xtickspos)
+        if ytickspos is not None:
+            cbar.ax.yaxis.set_ticks_position(ytickspos)
+
+        return cbar, cax
     
     ###########################################################
     
