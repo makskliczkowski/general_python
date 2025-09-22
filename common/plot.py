@@ -19,7 +19,7 @@ import matplotlib.ticker as mticker
 from matplotlib import ticker
 from matplotlib.patches import Polygon, Rectangle
 from matplotlib.transforms import Bbox
-from matplotlib.ticker import ScalarFormatter, NullFormatter
+from matplotlib.ticker import FixedLocator, ScalarFormatter, NullFormatter, LogLocator, LogFormatterMathtext
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, mark_inset)
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -1458,6 +1458,29 @@ class Plotter:
             ax.xaxis.set_label_coords(inX, inY, **kwargs)
         if 'y' in which:
             ax.yaxis.set_label_coords(inX, inY, **kwargs)
+    
+    @staticmethod
+    def setup_log_y(ax: plt.Axes, ylims=(1e-12, 1e6), decade_step=4):
+        """Configure clean log-scale y ticks at powers of 10 with LaTeX-like labels."""
+        ax.set_yscale('log')
+        ax.set_ylim(*ylims)
+
+        # major ticks every `decade_step` decades (e.g. 1e-8, 1e-4, 1e0, 1e4)
+        lo, hi  = np.log10(ylims[0]), np.log10(ylims[1])
+        start   = int(np.ceil(lo / decade_step) * decade_step)
+        stop    = int(np.floor(hi / decade_step) * decade_step)
+        majors  = 10.0 ** np.arange(start, stop + 1, decade_step, dtype=float)
+
+        ax.yaxis.set_major_locator(FixedLocator(majors))
+        ax.yaxis.set_major_formatter(LogFormatterMathtext(base=10))  # shows 10^{n}
+
+        # minors at 2..9 within each decade
+        ax.yaxis.set_minor_locator(LogLocator(base=10.0, subs=range(2, 10)))
+        ax.yaxis.set_minor_formatter(NullFormatter())
+
+        # cosmetic tick lengths once (avoid mixing with Plotter if it already does this)
+        ax.tick_params(axis='y', which='major', length=4)
+        ax.tick_params(axis='y', which='minor', length=2)
     
     @staticmethod
     def set_smart_lim(
