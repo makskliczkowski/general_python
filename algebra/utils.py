@@ -148,10 +148,10 @@ if PREFER_JAX:
         import jax.scipy as jsp
         import jax.random as jrn
         
-        JAX_AVAILABLE           = True
-        os.en
-        jit                     = jax.jit # Use real JIT if JAX is available
-        jcfg                    = jax_config
+        JAX_AVAILABLE                       = True
+        os.environ[PY_JAX_AVAILABLE_STR]    = '1'
+        jit                                 = jax.jit # Use real JIT if JAX is available
+        jcfg                                = jax_config
         _log_message("JAX backend available and successfully imported", 0)
 
     except ImportError:
