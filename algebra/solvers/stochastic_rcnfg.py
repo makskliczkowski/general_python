@@ -1,4 +1,4 @@
-'''
+r'''
 file    : general_python/algebra/solvers/stochastic_rcnfg.py
 author  : Maksymilian Kliczkowski
 date    : 2025-04-01
@@ -12,35 +12,35 @@ Standard Stochastic Reconfiguration (SR) and Minimum-Step SR (MinSR)
 
 --------
 In variational Monte Carlo (VMC), the goal is to optimize the variational 
-parameters θ such that the variational wave function |Ψ(θ)⟩
+parameters θ such that the variational wave function |\psi(θ)⟩
 approaches the ground state of a given Hamiltonian.
 Both standard stochastic reconfiguration (SR)
 [and its efficient variant—minimum-step SR (MinSR) - see below] — aim to update 
 the parameters by approximately following an imaginary-time evolution:
 
-    |Ψ'⟩ = exp(-H · δτ) |Ψ(θ)⟩                              (Eq. 1)
+    |\psi'⟩ = exp(-H · δτ) |\psi(θ)⟩                              (Eq. 1)
 
 The update is performed by minimizing the Fubini-Study (FS)
-distance between the evolved state |Ψ'⟩ and the 
-variational state |Ψ(θ+δθ)⟩.
+distance between the evolved state |\psi'⟩ and the 
+variational state |\psi(θ+δθ)⟩.
 
 ## Fubini-Study Distance
 ----------------------
 For small changes δθ and a small time step δτ, the FS distance is expanded as:
 
-    d²(Ψ(θ+δθ), Ψ′) = ∑₍σ₎ | ∑₍k₎ O₍σ,k₎ · δθₖ - ε₍σ₎ |²    (Eq. 2)
+    d²(\psi(θ+δθ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ · δθₖ - ε₍\sigma₎ |²    (Eq. 2)
 
 with:
     
-    O₍σ,k₎ = (1/ψ₍σ₎) ∂ψ₍σ₎/∂θₖ – ⟨(1/ψ₍σ₎) ∂ψ₍σ₎/∂θₖ⟩,
+    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ - ⟨(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ⟩,
     
 computed over Ns Monte Carlo samples:
     
-    ε₍σ₎ = –δτ · (E^loc₍σ₎ – ⟨E^loc⟩)/√(Ns),
+    ε₍\sigma₎ = -δτ · (E^loc₍\sigma₎ - ⟨E^loc⟩)/√(Ns),
     
 where the local energy is given by:
 
-    E^loc₍σ₎ = ∑₍σ'₎ (ψ₍σ'₎/ψ₍σ₎) · H₍σ,σ'₎.
+    E^loc₍\sigma₎ = ∑₍\sigma'₎ (\psi₍\sigma'₎/\psi₍\sigma₎) · H₍\sigma,\sigma'₎.
 
 The minimization of this distance is equivalent to solving the linear equation:
 
@@ -56,7 +56,7 @@ This metric measures the change in the quantum state induced by a parameter upda
 and the FS distance can be 
 written as:
 
-    d²(Ψ(θ), Ψ(θ+δθ)) = δθ\dag · S · δθ                        (Eq. 5)
+    d²(\psi(θ), \psi(θ+δθ)) = δθ\dag · S · δθ                        (Eq. 5)
 
 The SR method then updates the variational parameters using the solution of the linear equation (Eq. 3). The 
 standard solution is obtained as:
@@ -96,7 +96,7 @@ Two derivations support this result:
 1. **Lagrangian Multiplier Approach:**  
     The method minimizes ||δθ|| subject to O · δθ = ε by forming the Lagrangian:
 
-    L({δθₖ}, {\alpha₍σ₎}) = ∑₍k₎ |δθₖ|² – [∑₍σ₎ \alpha₍σ₎* (∑₍k₎ O₍σ,k₎ · δθₖ – ε₍σ₎) + c.c.]
+    L({δθₖ}, {\alpha₍\sigma₎}) = ∑₍k₎ |δθₖ|² - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ · δθₖ - ε₍\sigma₎) + c.c.]
 
 Solving the resulting equations leads to δθ = O\dag · (O · O\dag)⁻¹ · ε, which is equivalent to Eq. (5).
 
