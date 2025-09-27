@@ -10,6 +10,7 @@ from typing import Union, Optional, Any, Type
 from enum import Enum, unique, auto
 from .net_impl.net_general import GeneralNet, CallableNet
 from .net_impl.net_simple import SimpleNet
+from .net_impl.interface_net_flax import FlaxInterface
 
 ######################################################################
 

@@ -375,7 +375,14 @@ class SolversTests:
                 return
 
     #! =============================================================================================
-    
+
 # --------------------------------------------------------------------------------------------------
 
-__all__ = ['AlgebraTests', 'run_algebra_tests', 'SolversTests']
+__all__ = [
+    "backend_mgr", "get_backend", "get_global_backend",
+    "ACTIVE_BACKEND_NAME", "ACTIVE_NP_MODULE", "ACTIVE_RANDOM",
+    "ACTIVE_SCIPY_MODULE", "ACTIVE_JIT", "ACTIVE_JAX_KEY",
+    "ACTIVE_INT_TYPE", "ACTIVE_FLOAT_TYPE", "ACTIVE_COMPLEX_TYPE",
+]
+
+# --------------------------------------------------------------------------------------------------

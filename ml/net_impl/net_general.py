@@ -153,6 +153,16 @@ class GeneralNet(ABC):
     # ---------------------------------------------------
     
     @property
+    def is_complex(self) -> bool:
+        """
+        Check if the network parameters are complex.
+        
+        Returns:
+            bool: True if the network parameters are complex, False otherwise.
+        """
+        return np.issubdtype(self._dtype, np.complexfloating)
+    
+    @property
     def dtype(self) -> np.dtype:
         """
         Get the data type of the network parameters.
@@ -195,6 +205,16 @@ class GeneralNet(ABC):
         return self._input_dim
     
     # ---
+    
+    @property
+    def is_holomorphic(self) -> bool | None:
+        """
+        Check if the network is holomorphic.
+        
+        Returns:
+            bool: True if the network is holomorphic, False otherwise. None if not set.
+        """
+        return self._holomorphic
     
     @property
     def holomorphic(self) -> bool | None:
