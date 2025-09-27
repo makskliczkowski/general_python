@@ -11,8 +11,6 @@ from numba import njit
 from functools import partial
 
 from general_python.algebra.utils import maybe_jit, get_backend, JIT, Array
-import general_python.algebra.linalg_sparse as sparse 
-import general_python.algebra.utils as utils
 
 # -----------------------------------------------------------------
 

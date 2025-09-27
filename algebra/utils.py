@@ -34,7 +34,6 @@ Provides:
 
 # Import the required modules
 import os
-import sys
 import inspect
 import logging
 import random as py_random
@@ -1064,6 +1063,17 @@ class BackendManager:
         """
         return jrn.split(root_key, n) if JAX_AVAILABLE else [None] * n
 
+def pad_array(x, target_size: int, pad_value, *, backend=None):
+    xp  = backend or (jnp if (JAX_AVAILABLE and is_jax_array(x)) else np)
+    out = xp.full((target_size,), pad_value, dtype=x.dtype)
+    if xp is np:
+        out[:x.shape[0]] = x
+        return out
+    # JAX path
+    return out.at[:x.shape[0]].set(x)
+
+# ---------------------------------------------------------------------
+
 # ---------------------------------------------------------------------
 # ONE-TIME INITIALIZATION LOGIC
 #
@@ -1204,8 +1214,8 @@ def _qes_initialize_utils():
 # initialization function is called only once.
 # ---------------------------------------------------------------------
 
-if "PY_UTILS_INIT_DONE" not in globals() or PY_UTILS_INIT_DONE_STR not in os.environ:
-    PY_UTILS_INIT_DONE = True  # Mark as done immediately
+if "PY_UTILS_INIT_DONE" not in globals() or (PY_UTILS_INIT_DONE_STR not in os.environ or os.environ[PY_UTILS_INIT_DONE_STR] != '1'):
+    PY_UTILS_INIT_DONE = True # Mark as done immediately
     try:
         _qes_initialize_utils()
     except Exception as e:
@@ -1219,15 +1229,4 @@ else:
     
 # ---------------------------------------------------------------------
 #! EOF
-# ---------------------------------------------------------------------
-
-def pad_array(x, target_size: int, pad_value, *, backend=None):
-    xp  = backend or (jnp if (JAX_AVAILABLE and is_jax_array(x)) else np)
-    out = xp.full((target_size,), pad_value, dtype=x.dtype)
-    if xp is np:
-        out[:x.shape[0]] = x
-        return out
-    # JAX path
-    return out.at[:x.shape[0]].set(x)
-
 # ---------------------------------------------------------------------

@@ -65,7 +65,11 @@ class DirectSolver(Solver):
     # --------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
         Returns a lambda function wrapping the static `DirectSolver.solve`.
 
@@ -269,7 +273,11 @@ class DirectInvSolver(Solver):
         self._symmetric = False
 
     @staticmethod
-    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """ 
         Returns a lambda function wrapping the static `DirectInvSolver.solve`. 
         """
@@ -384,7 +392,11 @@ class DirectScipy(Solver):
         self._symmetric = False
 
     @staticmethod
-    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """ Returns a lambda wrapping `DirectScipy.solve`. """
         if backend_module is not np:
             raise SolverError(SolverErrorMsg.BACKEND_MISMATCH, f"{SolverType.SCIPY_DIRECT.name} requires NumPy.")
@@ -507,7 +519,11 @@ class DirectJaxScipy(Solver):
     # --------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """ Returns a lambda function wrapping the static `DirectJaxScipy.solve`. """
         if backend_module is not jnp:
             raise SolverError(SolverErrorMsg.BACKEND_MISMATCH, f"{SolverType.SCIPY_DIRECT.name} (JAX) requires JAX backend.")

@@ -25,13 +25,10 @@ import time
 import numpy as np
 import numba
 
-from typing import List, Optional, Union
+from typing import Optional
 from general_python.algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
-from general_python.algebra.utils import (
-    get_backend, maybe_jit, is_traced_jax,
-    DEFAULT_NP_INT_TYPE, JAX_AVAILABLE,
-    get_global_logger, BACKEND_REPR, BACKEND_DEF_SPIN
-)
+from general_python.algebra.utils import (get_backend, maybe_jit, is_traced_jax,
+    DEFAULT_NP_INT_TYPE, JAX_AVAILABLE, BACKEND_REPR, BACKEND_DEF_SPIN)
 from general_python.common.tests import GeneralAlgebraicTest
 
 ####################################################################################################

@@ -8,7 +8,6 @@ date        : 2025-03-10
 # import us
 import numpy as np
 import general_python.ml.net_impl.utils.net_init_np as numpy
-import general_python.algebra.utils as alg_utils
 from general_python.algebra.utils import JAX_AVAILABLE
 
 if JAX_AVAILABLE:

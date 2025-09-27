@@ -22,17 +22,15 @@ import time
 
 # -----------------------------------------------------------------------------------------------
 
-from general_python.algebra import linalg
-from general_python.algebra import solver
-from general_python.algebra import preconditioners
-from general_python.algebra import ode
-from general_python.algebra.solvers import SolverType, generate_test_mat_vec, choose_solver
-from general_python.algebra.preconditioners import choose_precond, Preconditioner
+# from general_python.algebra import linalg
+# from general_python.algebra import solver
+# from general_python.algebra import preconditioners
+# from general_python.algebra import ode
+from .solvers import SolverType, generate_test_mat_vec, choose_solver
+from .preconditioners import choose_precond, Preconditioner
 
-from general_python.common.plot import MatrixPrinter
-from general_python.common.flog import get_global_logger as get_logger
-
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend, maybe_jit
+from ..common.plot import MatrixPrinter
+from ..common.flog import get_global_logger as get_logger
 
 # ##################################################################################################
 # Test the algebra module
@@ -44,6 +42,7 @@ class AlgebraTests:
     '''
     This is a class that implements the test for algebra module in Python.
     '''
+    from general_python.algebra.utils import get_backend, maybe_jit
     
     def __init__(self, backend="default"):
         ''' Load the algebra module and set the backend. '''

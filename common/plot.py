@@ -1097,11 +1097,21 @@ class Plotter:
         plot the data
         '''
         if 'linestyle' in kwargs:
-            ls = None
+            ls = kwargs['linestyle']
+            kwargs.pop('linestyle')
             
         if 'linewidth' in kwargs:
-            lw = None
+            lw = kwargs['linewidth']
+            kwargs.pop('linewidth')
+
+        if 'markersize' in kwargs:
+            ms = kwargs['markersize']
+            kwargs.pop('markersize')
             
+        if 'color' in kwargs:
+            color = kwargs['color']
+            kwargs.pop('color')
+        
         if label is None or label == '':
             labelcond = False
         
