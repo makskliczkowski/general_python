@@ -48,7 +48,7 @@ separately and then combine them appropriately.
 
 import numpy as np
 import numba
-from typing import Union, Callable, Optional, Any, Tuple
+from typing import Callable, Optional, Any, Tuple
 
 # from general python utils
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend

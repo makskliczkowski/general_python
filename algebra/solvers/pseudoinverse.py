@@ -216,7 +216,7 @@ class PseudoInverseSolver(Solver):
     # --------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
         """
         Returns the core pseudo-inverse solve function, potentially compiled.
 
