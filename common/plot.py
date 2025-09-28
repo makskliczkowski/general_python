@@ -1491,7 +1491,30 @@ class Plotter:
         # cosmetic tick lengths once (avoid mixing with Plotter if it already does this)
         ax.tick_params(axis='y', which='major', length=4)
         ax.tick_params(axis='y', which='minor', length=2)
-    
+
+    @staticmethod
+    def setup_log_x(ax: plt.Axes, xlims=(1e-12, 1e6), decade_step=4):
+        """Configure clean log-scale x ticks at powers of 10 with LaTeX-like labels."""
+        ax.set_xscale('log')
+        ax.set_xlim(*xlims)
+
+        # major ticks every `decade_step` decades (e.g. 1e-8, 1e-4, 1e0, 1e4)
+        lo, hi  = np.log10(xlims[0]), np.log10(xlims[1])
+        start   = int(np.ceil(lo / decade_step) * decade_step)
+        stop    = int(np.floor(hi / decade_step) * decade_step)
+        majors  = 10.0 ** np.arange(start, stop + 1, decade_step, dtype=float)
+
+        ax.xaxis.set_major_locator(FixedLocator(majors))
+        ax.xaxis.set_major_formatter(LogFormatterMathtext(base=10))  # shows 10^{n}
+
+        # minors at 2..9 within each decade
+        ax.xaxis.set_minor_locator(LogLocator(base=10.0, subs=range(2, 10)))
+        ax.xaxis.set_minor_formatter(NullFormatter())
+
+        # cosmetic tick lengths once (avoid mixing with Plotter if it already does this)
+        ax.tick_params(axis='x', which='major', length=4)
+        ax.tick_params(axis='x', which='minor', length=2)
+
     @staticmethod
     def set_smart_lim(
         ax,
@@ -1530,7 +1553,8 @@ class Plotter:
             else:
                 d_lim   = xlim
             ax.set_xlim(d_lim)
-
+        return d_lim
+    
     #################### L A B E L ####################
     
     # @staticmethod

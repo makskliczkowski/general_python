@@ -177,8 +177,8 @@ if JAX_AVAILABLE:
     def loss_centered_jax_modified_ratios(  loss        : jnp.ndarray,
                                             loss_m      : jnp.ndarray,
                                             betas       : jnp.ndarray,
-                                            ratios_exc  : jnp.ndarray,
-                                            ratios_low  : jnp.ndarray
+                                            r_el        : jnp.ndarray,
+                                            r_le        : jnp.ndarray
                                             ) -> jnp.ndarray:
         # loss_c  = loss - loss_m
         # samples = loss.shape[0]
@@ -191,23 +191,18 @@ if JAX_AVAILABLE:
         #     loss_c     +=   (r_excited - m_excited) * ((beta / samples) * m_lower)
         # return loss_c
         
-        # center the loss
-        loss_c      = loss - loss_m
-        n           = loss.shape[0]
+        # center the base loss
+        loss_c      = loss - loss_m  # shape [n]
 
         # per-beta means over the sample axis
-        m_low       = jnp.mean(ratios_low, axis=1)  # shape [n_betas]
-        m_exc       = jnp.mean(ratios_exc, axis=1)  # shape [n_betas]
+        r_el_mean   = jnp.mean(r_el, axis=1)          # shape [n_betas]
+        r_le_mean   = jnp.mean(r_le, axis=1)          # shape [n_betas]
 
-        # deviations of excited ratios - centering
-        delta_exc   = ratios_exc - m_exc[:, None]   # shape [n_betas, n]
+        # centered r_le along sample axis
+        delta_r_le  = r_le - r_le_mean[:, None]      # shape [n_betas, n]
 
-        # scale factor for each beta
-        scales      = betas * (m_low / n)           # shape [n_betas]
-
-        # contract over the beta‐dimension
-        # result has shape [n], same as loss
-        corr        = jnp.einsum('i,ij->j', scales, delta_exc)
+        # per-sample correction: sum_j beta_j * (r_le_j - mean(r_le_j)) * mean(r_el_j)
+        corr        = jnp.sum(betas[:, None] * delta_r_le * r_el_mean[:, None], axis=0) # shape [n]
         return loss_c + corr
 
     # @jax.jit
@@ -326,20 +321,24 @@ if JAX_AVAILABLE:
         return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
 
     # @jax.jit
-    def solve_jax_prepare_modified_ratios(loss, var_deriv, betas, ratios_exc, ratios_low):
+    def solve_jax_prepare_modified_ratios(loss, var_deriv, betas, r_el, r_le):
         """
         Prepares centered loss and derivative tensors for stochastic optimization using JAX.
         Args:
             loss (jnp.ndarray):
                 Array of loss values with shape (n_samples, ...).
+                Penalty is: \sum _j beta_j <r_el><r_le>
             var_deriv (jnp.ndarray):
                 Array of variational derivatives with shape (n_samples, full_size).
+                Penalty is: \sum _j beta_j [<r_el> * (r_le - <r_le>)]
             betas (Any):
                 Parameters used for centering the loss (passed to loss_centered_jax).
-            ratios_exc (Any):
-                Excitation ratios used in loss centering.
-            ratios_low (Any):
-                Lower ratios used in loss centering.
+            r_el (Any):
+                Ratio lower to excited states - <psi_w_low(s)/psi_w(s)>_w, evaluated on the most excited state.
+                This is the ratios evaluated on the most excited state <psi_w_low(s)/psi_w(s)>_w
+            r_le (Any):
+                Ratio excited to lower states - <psi_w(s)/psi_low(s)>_low, evaluated on the lower states.
+                This is the ratios evaluated on the lower states <psi_w(s)/psi_low(s)>_low
         Returns:
             tuple:
                 loss_c (jnp.ndarray): Centered loss tensor.
@@ -351,7 +350,8 @@ if JAX_AVAILABLE:
     
         n_samples       = loss.shape[0]
         loss_m          = jnp.mean(loss, axis=0)
-        loss_c          = loss_centered_jax(loss, loss_m, betas, ratios_exc, ratios_low)
+        # standard centered loss
+        loss_c          = loss_centered_jax_modified_ratios(loss, loss_m, betas, r_el, r_le)
 
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
