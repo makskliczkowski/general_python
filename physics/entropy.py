@@ -288,7 +288,7 @@ class EntropyPredictions:
         - L : system size
         - f : filling
         '''
-        return L * ((f - 1.0) * np.log(1.0 - f) + f * ((n - 1.0) * np.log(1.0 - n) - n * np.log(n) - 1)) + (f * (1.0 - f + n * (1.0 - n))) / (12 * (1.0 - f) * (1.0 - n) * n * V)
+        return L * ((f - 1.0) * np.log(1.0 - f) + f * ((n - 1.0) * np.log(1.0 - n) - n * np.log(n) - 1)) + (f * (1.0 - f + n * (1.0 - n))) / (12 * (1.0 - f) * (1.0 - n) * n * L)
 
     ################################# MB CHAOS ##############################
 

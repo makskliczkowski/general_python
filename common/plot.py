@@ -1108,9 +1108,9 @@ class Plotter:
             ms = kwargs['markersize']
             kwargs.pop('markersize')
             
-        if 'color' in kwargs:
-            color = kwargs['color']
-            kwargs.pop('color')
+        if 'c' in kwargs:
+            color = kwargs['c']
+            kwargs.pop('c')
         
         if label is None or label == '':
             labelcond = False
@@ -2044,6 +2044,7 @@ class Plotter:
                         sizey_def   =   3,                      # inches per unit of sizey ratio (if sizey is a sequence)
                         annot_x_pos =   None,                   # position for annotation - x
                         annot_y_pos =   None,                   # position for annotation - y
+                        panel_labels=   False,
                         **kwargs) -> Tuple[plt.Figure, List[plt.Axes]]:
         """
         Flexible subplot factory that *always* returns (fig, flat_axes_list).
