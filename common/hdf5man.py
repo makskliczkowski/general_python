@@ -79,41 +79,51 @@ class HDF5Manager:
         file_path               : str,
         dataset_keys            : Optional[List[str]]   = None,
         verbose                 : bool                  = False,
-        remove_corrupted_file   : bool                  = False) -> Dict[str, Any]:
+        remove_corrupted_file   : bool                  = False,
+        strict_keys             : bool                  = True) -> Dict[str, Any]:
         """
         Reads data from an HDF5 file.
 
-        Args:
-            file_path:  
-                Path to the HDF5 file.
-            dataset_keys:
-                Specific dataset keys (full paths) to read. If None, all datasets are read.
-            verbose:
-                If True, log detailed information.
-            remove_corrupted_file:
-                If True, attempt to remove the file if it's corrupted.
-        Returns:
-            A dictionary with dataset paths as keys and numpy arrays as values.
-            Includes a 'filename' key with the path to the HDF5 file.
-            Returns an empty dictionary on failure.
+        - If `dataset_keys` is provided:
+            * strict_keys=True  -> skip file entirely if any key is missing
+            * strict_keys=False -> load only available keys
         """
         data: Dict[str, Any] = {}
         if not HDF5Manager._validate_file(file_path):
             return data
+
         try:
             with h5py.File(file_path, "r") as hf:
-                keys_to_read = dataset_keys or HDF5Manager._get_all_dataset_paths(hf)
+                keys_available = HDF5Manager._get_all_dataset_paths(hf)
+                keys_to_read   = dataset_keys or keys_available
+
+                # strict key check
+                if dataset_keys and strict_keys:
+                    missing = [k for k in dataset_keys if k not in keys_available]
+                    if missing:
+                        if verbose:
+                            _logger.warning(f"Skipping file {file_path}: missing keys {missing}")
+                        return {}
+
                 if verbose:
-                    _logger.info(f"Available dataset paths in {file_path}: {keys_to_read}")
+                    _logger.info(f"Reading {len(keys_to_read)} datasets from {file_path}")
+
                 for key in keys_to_read:
-                    data_in = HDF5Manager._read_data_key(hf, key)
-                    if data_in is not None:
-                        data[key] = data_in
-            data["filename"] = file_path # Add filename for context - useful for debugging
+                    if key in keys_available:
+                        data_in = HDF5Manager._read_data_key(hf, key)
+                        if data_in is not None:
+                            data[key] = data_in
+                    elif not strict_keys:
+                        if verbose:
+                            _logger.debug(f"Key {key} not found in {file_path}, skipping.")
+
+            if data:  # only attach filename if some data loaded
+                data["filename"] = file_path
             return data
+
         except Exception as e:
             _logger.error(f"Error opening or reading HDF5 file {file_path}: {e}")
-            if remove_corrupted_file and ("truncated" in str(e).lower() or "doesn't exist" in str(e).lower()): # Be cautious with file removal
+            if remove_corrupted_file and ("truncated" in str(e).lower() or "doesn't exist" in str(e).lower()):
                 _logger.warning(f"Attempting to remove corrupted file: {file_path}")
                 try:
                     os.remove(file_path)
@@ -271,10 +281,12 @@ class HDF5Manager:
 
     @staticmethod
     def stream_data_from_multiple_files(
-        file_paths            : List[str],
-        dataset_keys          : Optional[List[str]] = None,
-        sort_files            : bool = True,
-        verbose               : bool = False) -> Generator[Dict[str, Any], None, None]:
+            file_paths      : List[str],
+            dataset_keys    : Optional[List[str]] = None,
+            sort_files      : bool = True,
+            verbose         : bool = False,
+            strict_keys     : bool = True,     # pass-through
+        ) -> Generator[Dict[str, Any], None, None]:
         """
         Streams data dictionary (from 'load_file_data') for each HDF5 file found in specified paths.
 
@@ -295,7 +307,7 @@ class HDF5Manager:
         for file_path in file_paths:
             if verbose:
                 _logger.info(f"Processing file: {file_path}")
-            data = HDF5Manager.load_file_data(file_path, dataset_keys, verbose=verbose)
+            data = HDF5Manager.load_file_data(file_path, dataset_keys, verbose=verbose, strict_keys=strict_keys)
             if data: # Only yield if data was successfully loaded
                 yield data
 
@@ -844,95 +856,132 @@ class HDF5Manager:
         return arr
 
     @staticmethod
-    def process_data(data, key, throw_if_bad: bool = False, unpack = True) -> np.ndarray:
+    def process_data(
+        data,
+        keys                : str | list[str] | tuple[str, ...],
+        throw_if_bad        : bool = False,
+        unpack              : bool = True,
+        expected_ndim       : int | None = None,
+        expected_dim0       : int | None = None,
+        expected_dim1       : int | None = None,
+        return_skipped      : bool = False) -> np.ndarray | tuple[np.ndarray, list[str]]:
         """
-        data: iterable of mappings/objects with `key` -> arraylike
-        Returns:
-            - 0D output
-            - 1D output if all inputs are 1D
-            - 2D output if all inputs are 2D (same dim)
+        Collects arrays from iterable of mappings and concatenates them robustly.
 
         Parameters:
-            - data:
-                iterable of mappings/objects with `key` -> arraylike
-            - key: 
-                key to extract data from each mapping/object
+            - data
+                iterable of dict-like objects
+            - keys: 
+                key or list of possible keys to try (first available is used)
             - throw_if_bad: 
-                whether to throw an error if no valid data is found
+                whether to throw if no valid arrays are found
             - unpack: 
-                whether to unpack nested arrays
+                whether to flatten nested arrays along first axis
+            - expected_ndim: 
+                enforce specific ndim (1 or 2). If None, auto-infer from first valid array.
+                This is stricter than just checking consistency.
+            - expected_dim0: 
+                enforce first dimension length (skip mismatches)
+            - expected_dim1: 
+                enforce second dimension length (skip mismatches)
+            - return_skipped: 
+                if True, return (array, skipped_filenames)
 
         Returns:
-            - 1D output if all inputs are 1D
-            - 2D output if all inputs are 2D (same dim)
+            - ndarray (default)
+            - (ndarray, skipped_filenames) if return_skipped=True
+        
+        Example:
+        >>> energies = HDF5Manager.process_data(data, "energies")
+        >>> energies = HDF5Manager.process_data(data, ["energies", "E"], expected_ndim=1)
+        >>> obs = HDF5Manager.process_data(data, "observables", expected_ndim=2, expected_dim1=4)
         """
-        arrays: List[np.ndarray]    = []
-        target_ndim                 = None
-        target_dim1                 = None
+        if isinstance(keys, str):
+            keys = [keys]
 
-        # collect
-        for x in data:
+        arrays: list[np.ndarray]    = []
+        target_dtype                = None
+        target_ndim                 = expected_ndim
+        target_dim1                 = expected_dim1
+        skipped: list[str]          = []
+
+        for idx, x in enumerate(data):
+            fname = x.get("filename", f"<item {idx}>")
             try:
-                if key not in x:
-                    if throw_if_bad:
-                        raise KeyError(f"Key '{key}' not found in data item: {x}")
+                # find a matching key
+                found_key = next((k for k in keys if k in x), None)
+                if found_key is None:
+                    skipped.append(fname)
                     continue
 
-                # unpack
-                arr = np.asarray(x[key])
-                # arr = HDF5Manager._coerce_array(x[key]) if unpack else np.asarray(x[key])
-                
+                arr = np.asarray(x[found_key])
                 if arr.size == 0:
+                    skipped.append(fname)
                     continue
-                
+
                 # normalize rank
                 if arr.ndim > 2:
-                    # flatten trailing dims but keep leading realizations
                     arr = arr.reshape(arr.shape[0], -1)
 
+                # enforce ndim
+                if expected_ndim is not None and arr.ndim != expected_ndim:
+                    skipped.append(fname)
+                    continue
+
                 if target_ndim is None:
-                    if arr.ndim == 1:
-                        target_ndim = 1
-                    elif arr.ndim == 2:
-                        target_ndim = 2
+                    target_ndim = arr.ndim
                     if target_ndim == 2:
                         target_dim1 = arr.shape[1]
-                else:
-                    if target_ndim == 1:
-                        # allow 2D with dim=1 -> squeeze to 1D
-                        if arr.ndim == 2:
-                            if arr.shape[1] != 1:
-                                raise ValueError(f"Got 2D with dim={arr.shape[1]} but target is 1D.")
-                            arr = arr.reshape(-1)
-                    else:  # target 2D
-                        if arr.ndim == 1:
-                            raise ValueError("Got 1D for some files and 2D for others; cannot infer dim.")
-                        if arr.shape[1] != target_dim1:
-                            raise ValueError(f"Inconsistent second dimension: {arr.shape[1]} vs {target_dim1}.")
+
+                # consistency checks
+                if target_ndim == 1:
+                    if arr.ndim == 2:
+                        if arr.shape[1] != 1:
+                            skipped.append(fname)
+                            continue
+                        arr = arr.reshape(-1)
+                elif target_ndim == 2:
+                    if arr.ndim != 2:
+                        skipped.append(fname)
+                        continue
+                    if target_dim1 is not None and arr.shape[1] != target_dim1:
+                        skipped.append(fname)
+                        continue
+
+                if expected_dim0 is not None and arr.shape[0] != expected_dim0:
+                    skipped.append(fname)
+                    continue
+                
+                if expected_dim1 is not None and arr.ndim > 1 and arr.shape[1] != expected_dim1:
+                    skipped.append(fname)
+                    continue
+
+                if target_dtype is None:
+                    target_dtype = arr.dtype
+                    
                 arrays.append(arr)
+
             except Exception as e:
-                _logger.error(f"Error processing data item {x}: {e}")
+                _logger.error(f"Error processing {fname}: {e}")
+                skipped.append(fname)
 
-        if len(arrays) == 0:
+        if not arrays:
             if throw_if_bad:
-                raise Exception("No samples found...")
-            return np.array([], dtype=float)
-        
-
-        if target_ndim == 1:
-            if unpack:
-                array = np.array([x for arr in arrays for x in arr], dtype=arrays[0].dtype)  # flatten
-            else:
-                array = np.asarray(arrays, dtype=arrays[0].dtype)
-            return array
-        
-        # target_ndim == 2
-        # it could be (N_rel_1, D), (N_rel_2, D), ...
-        if unpack:
-            out = np.concatenate(arrays, axis=0)
+                raise ValueError(f"No valid data found for keys {keys}")
+            result = np.array([], dtype=float)
         else:
-            out = np.asarray(arrays, dtype=arrays[0].dtype)
-        return out
+            if target_ndim == 1:
+                if unpack:
+                    result = np.array([x for arr in arrays for x in arr], dtype=target_dtype)
+                else:
+                    result = np.array(arrays, dtype=target_dtype)
+            else:  # target_ndim == 2
+                if unpack:
+                    result = np.concatenate(arrays, axis=0)
+                else:
+                    result = np.array(arrays, dtype=target_dtype)
+
+        return (result, skipped) if return_skipped else result
 
     # ---------------------------------
     #! Data Processing Methods

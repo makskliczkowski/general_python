@@ -492,6 +492,16 @@ class SlurmMonitor:
     #####################################################
     
     @staticmethod
+    def get_memory_used():
+        try:
+            mem_info = psutil.Process().memory_info()
+            logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')
+        except Exception as e:
+            pass
+    
+    #####################################################
+    
+    @staticmethod
     def get_remaining_time():
         """Get remaining time in seconds, returns -1 if not available"""
         if not SlurmMonitor.is_slurm():
