@@ -10,7 +10,7 @@ import warnings
 import inspect
 from typing import Union, Any, Tuple, Callable
 from abc import ABC, abstractmethod
-from general_python.algebra.utils import get_backend, JAX_AVAILABLE
+from QES.general_python.algebra.utils import get_backend, JAX_AVAILABLE
 from scipy.integrate import solve_ivp
 
 if JAX_AVAILABLE:

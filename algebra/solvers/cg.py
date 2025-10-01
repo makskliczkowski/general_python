@@ -677,17 +677,20 @@ class CgSolverScipy(Solver):
             def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
                 sol = jax.scipy.sparse.linalg.cg(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
                 return SolverResult(x=sol[0], converged=sol[1], iterations=maxiter, residual_norm=None)
-            func = solver_func            
+            func = solver_func
+            
         elif backend_module is np:
             def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
                 sol = spsla.cg(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
                 return SolverResult(x=sol[0], converged=sol[1], iterations=maxiter, residual_norm=None)
             func = solver_func
+            
         else:
             raise ValueError(f"Unsupported backend module for CG: {backend_module}")
-        return Solver._solver_wrap_compiled(backend_module, func,
-                                use_matvec, use_fisher, use_matrix, sigma)
-        
+        return Solver._solver_wrap_compiled(backend_module, func, use_matvec, use_fisher, use_matrix, sigma)
+    
+    # --------------------------------------------------
+    
     @staticmethod
     def solve(
             matvec          : MatVecFunc,

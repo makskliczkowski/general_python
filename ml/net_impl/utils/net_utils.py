@@ -1,4 +1,4 @@
-'''
+r'''
 file    : general_python/ml/net_impl/utils/net_utils.py
 author  : Maksymilian Kliczkowski
 date    : 2025-03-01
@@ -46,14 +46,16 @@ you need to compute the derivatives with respect to Re(θ) and Im(θ)
 separately and then combine them appropriately.
 '''
 
-import numpy as np
+import os
 import numba
-from typing import Union, Callable, Optional, Any, Tuple
+import numpy as np
+from typing import Callable, Optional, Any, Tuple
 
+_JAX_AVAILABLE = os.environ.get("PY__JAX_AVAILABLE", "1") == "1"
 # from general python utils
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
+from general_python.algebra.utils import get_backend
 import general_python.ml.net_impl.utils.net_utils_np as numpy
-if JAX_AVAILABLE:
+if _JAX_AVAILABLE:
     import general_python.ml.net_impl.utils.net_utils_jax as jaxpy
 
 #########################################################################
@@ -95,7 +97,7 @@ def create_batches( data,
     >>> This means that batch is appended in front of the data.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         data = np.asarray(data)
         return numpy.create_batches_np(data, batch_size)
     return jaxpy.create_batches_jax(data, batch_size)
@@ -127,7 +129,7 @@ def eval_batched(batch_size : int,
         The concatenated results of the function applied to each batch.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.eval_batched_np(batch_size, func, params, data)
     return jaxpy.eval_batched_jax(batch_size, func, params, data)
 
@@ -162,7 +164,7 @@ def flat_gradient(fun: Any, params: Any, arg: Any,
     A flattened complex gradient (jnp.ndarray or np.ndarray).
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.flat_gradient_np(fun, params, arg, analytical)
     return jaxpy.flat_gradient_jax(fun, params, arg, analytical)
 
@@ -172,7 +174,7 @@ def flat_gradient_cpx_nonholo(fun: Any, params: Any, arg: Any,
     Compute a flattened complex gradient for non-holomorphic networks using either JAX or NumPy.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.flat_gradient_cpx_nonholo_np(fun, params, arg, analytical)
     return jaxpy.flat_gradient_cpx_nonholo_jax(fun, params, arg, analytical)
 
@@ -182,7 +184,7 @@ def flat_gradient_real(fun: Any, params: Any, arg: Any,
     Compute a flattened real gradient using either JAX or NumPy.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.flat_gradient_real_np(fun, params, arg, analytical)
     return jaxpy.flat_gradient_real_jax(fun, params, arg, analytical)
 
@@ -192,7 +194,7 @@ def flat_gradient_holo(fun: Any, params: Any, arg: Any,
     Compute a flattened gradient for holomorphic networks using either JAX or NumPy.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.flat_gradient_holo_np(fun, params, arg, analytical)
     return jaxpy.flat_gradient_holo_jax(fun, params, arg, analytical)
 
@@ -202,7 +204,7 @@ def dict_gradient(fun: Any, params: Any, arg: Any,
     Compute a dictionary of complex gradients using either JAX or NumPy.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.dict_gradient_np(fun, params, arg, analytical)
     return jaxpy.dict_gradient_jax(fun, params, arg, analytical)
 
@@ -212,7 +214,7 @@ def dict_gradient_real(fun: Any, params: Any, arg: Any,
     Compute a dictionary of real gradients using either JAX or NumPy.
     """
     backend = get_backend(backend)
-    if backend == np or not JAX_AVAILABLE:
+    if backend == np or not _JAX_AVAILABLE:
         return numpy.dict_gradient_real_np(fun, params, arg, analytical)
     return jaxpy.dict_gradient_real_jax(fun, params, arg, analytical)
 

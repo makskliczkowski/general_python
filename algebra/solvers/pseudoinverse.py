@@ -32,7 +32,8 @@ References:
     - Golub, G. H., & Van Loan, C. F. (2013). Matrix Computations (4th ed.). JHU Press. Chapter 5.
 '''
 
-from typing import Optional, Callable, Union, Any, NamedTuple, Type, Tuple
+from typing import Optional, Callable, Union, Any, Type, Tuple
+from functools import partial
 import numpy as np
 import inspect
 
@@ -195,6 +196,10 @@ class PseudoInverseSolver(Solver):
                         matvec_func=matvec_func, sigma=sigma, is_gram=is_gram)
         self._symmetric = False # Works for non-symmetric
 
+    # --------------------------------------------------
+    #! Instance Helpers
+    # --------------------------------------------------
+
     def _form_gram_matrix(self) -> Array:
         """
         Forms the Gram matrix A = (Sp @ S) / N if the configuration is set for Gram matrix computation.
@@ -216,7 +221,11 @@ class PseudoInverseSolver(Solver):
     # --------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+    def get_solver_func(backend_module  : Any,
+                        use_matvec      : bool = True,
+                        use_fisher      : bool = False,
+                        use_matrix      : bool = False,
+                        sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
         Returns the core pseudo-inverse solve function, potentially compiled.
 
@@ -228,17 +237,20 @@ class PseudoInverseSolver(Solver):
         Returns:
             StaticSolverFunc: Callable wrapping the core pinv logic.
         """
+        func: Callable = None
+        
+        # Get the appropriate core logic function (compiled if possible)
         if backend_module is jnp:
             if _pinv_solve_logic_jax_compiled is None:
                 raise ImportError("JAX pinv function not available/compiled.")
-            # Return a lambda adapting the compiled core logic to the StaticSolverFunc signature
-            
-            # @jax.jit
-            def tmp_fun(matvec = None, b = None, x0 = None, tol = None, maxiter = None, precond_apply = None, backend_mod = None, **kwargs):
+
+            @partial(jax.jit, static_argnums = (0, 5))
+            def tmp_fun(matvec = None, b = None, x0 = None, tol = None, maxiter = None, precond_apply = None, **kwargs):
                 # JAX pinv logic
                 inverse_solution = _pinv_solve_logic_jax_compiled(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol)
-                return inverse_solution
-            return tmp_fun
+                return SolverResult(x=inverse_solution, converged=True, iterations=1, residual_norm=0.0)
+            func = tmp_fun
+
         elif backend_module is np:
             if _pinv_solve_logic_numba_compiled is None: # Should point to wrapper or python func
                 print("Warning: Numba pinv function not available, using plain Python logic.")
@@ -251,6 +263,10 @@ class PseudoInverseSolver(Solver):
                 SolverResult(*core_func(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol, backend_mod=np), converged=True, iterations=1)
         else:
             raise ValueError(f"Unsupported backend module for PseudoInverseSolver: {backend_module}")
+        
+        return Solver._solver_wrap_compiled(backend_module, func, use_matvec, use_fisher, use_matrix, sigma)
+
+    # --------------------------------------------------
 
     @staticmethod
     def solve(

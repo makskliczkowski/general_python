@@ -82,16 +82,16 @@ def list_available_modules():
 
 # ---------------------------------------------------------------------
 
-# Import all modules for documentation and access
-from . import algebra
-from . import common
-from . import lattices
-from . import maths
-try:
-    from . import ml
-except ImportError:
-    # ML module might fail during documentation builds due to sklearn dependencies
-    pass
-from . import physics
+# # Import all modules for documentation and access
+# from . import algebra
+# from . import common
+# from . import lattices
+# from . import maths
+# try:
+#     from . import ml
+# except ImportError:
+#     # ML module might fail during documentation builds due to sklearn dependencies
+#     pass
+# from . import physics
 
 # ---------------------------------------------------------------------

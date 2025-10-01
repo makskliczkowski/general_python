@@ -28,7 +28,6 @@ except ImportError:
 
 from typing import Union, Tuple, Optional, Callable
 from functools import partial
-
 from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 
 # Initialize JAX_RND_DEFAULT_KEY
@@ -273,7 +272,7 @@ if JAX_AVAILABLE:
                 - array
                     An array of the specified shape drawn from a normal distribution.        
         '''
-        return jrand.normal(key, shape=shape, dtype=dtype) * std + mean
+        return random_jp.normal(key, shape=shape, dtype=dtype) * std + mean
 else:
     def __normal_jax(key, shape, dtype, mean, std):
         return None
@@ -331,7 +330,7 @@ def __exponential_np(rng, scale, size):
 if JAX_AVAILABLE:
     @jax.jit
     def __exponential_jax(key, shape, scale, dtype):
-        return jrand.exponential(key, shape=shape, dtype=dtype) * scale
+        return random_jp.exponential(key, shape=shape, dtype=dtype) * scale
 else:
     def __exponential_jax(key, shape, scale, dtype):
         return None
@@ -366,7 +365,7 @@ def __poisson_np(rng, lam, size):
 if JAX_AVAILABLE:
     @jax.jit
     def __poisson_jax(key, shape, lam, dtype):
-        return jrand.poisson(key, lam=lam, shape=shape, dtype=dtype)
+        return random_jp.poisson(key, lam=lam, shape=shape, dtype=dtype)
 else:
     def __poisson_jax(key, shape, lam, dtype):
         return None
@@ -398,7 +397,7 @@ def __gamma_np(rng, a, scale, size):
 if JAX_AVAILABLE:
     @jax.jit
     def __gamma_jax(key, shape, a, scale, dtype):
-        return jrand.gamma(key, a, shape=shape, dtype=dtype) * scale
+        return random_jp.gamma(key, a, shape=shape, dtype=dtype) * scale
 else:
     def __gamma_jax(key, shape, a, scale, dtype):
         return None
@@ -431,12 +430,12 @@ if JAX_AVAILABLE:
     @jax.jit
     def _beta_jax(key, shape, a, b, dtype):
         try:
-            return jrand.beta(key, a, b, shape=shape, dtype=dtype)
+            return random_jp.beta(key, a, b, shape=shape, dtype=dtype)
         except AttributeError as e:
             # Fall back to the gamma approach: X ~ Gamma(a,1), Y ~ Gamma(b,1) => X/(X+Y) ~ Beta(a,b)
-            key1, key2 = jrand.split(key)
-            x = jrand.gamma(key1, a, shape=shape, dtype=dtype)
-            y = jrand.gamma(key2, b, shape=shape, dtype=dtype)
+            key1, key2 = random_jp.split(key)
+            x = random_jp.gamma(key1, a, shape=shape, dtype=dtype)
+            y = random_jp.gamma(key2, b, shape=shape, dtype=dtype)
             return x / (x + y)
 else:
     def _beta_jax(key, shape, a, b, dtype):
@@ -544,9 +543,9 @@ if JAX_AVAILABLE:
         -------
         '''
         a = jnp.asarray(a)
-        return jrand.choice(key, a, shape=shape, replace=True)
+        return random_jp.choice(key, a, shape=shape, replace=True)
         # Generate random indices and select elements from the array)
-        # idx = jrand.randint(key, shape=(size,) if isinstance(size, int) else size,
+        # idx = random_jp.randint(key, shape=(size,) if isinstance(size, int) else size,
                                 # minval=0, maxval=a.shape[0])
         # return jnp.take(a, idx)
 

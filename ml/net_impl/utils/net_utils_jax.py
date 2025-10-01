@@ -806,7 +806,8 @@ if JAX_AVAILABLE:
                         sample_probas,
                         logprobas_in,
                         logproba_fun,
-                        parameters):
+                        parameters,
+                        batch_size: int = 1):
         """
         Applies a transformation function to each state and computes a locally
         weighted estimate as described in [2108.08631].
@@ -819,6 +820,7 @@ if JAX_AVAILABLE:
             - sample_probas: Array of sampling probabilities (matching the leading dimensions of states).
             - logprobas_in: Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
             - logproba_fun: Callable that computes the log-probabilities for given states S.
+            - batch_size: Size of batches to process states in - dummy for now.
             
         Returns:
             - estimates: The per-state estimates.

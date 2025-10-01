@@ -884,7 +884,7 @@ class MinresQLPSolver(Solver):
     # -------------------------------------------------------------------------
 
     @staticmethod
-    def get_solver_func(backend_module: Any) -> StaticSolverFunc:
+    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
         """
         Returns the JAX or NumPy MINRES-QLP core logic function.
         """

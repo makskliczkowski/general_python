@@ -26,10 +26,9 @@ Note:
 """
 
 import numpy as np
-import numba
 from functools import partial
 import general_python.ml.net_impl.net_general as _net_general
-from typing import Optional, Tuple, Callable
+from typing import Optional, Tuple
 
 # import from general python module
 from general_python.algebra.utils import JAX_AVAILABLE, get_backend

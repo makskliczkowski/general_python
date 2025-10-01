@@ -55,8 +55,10 @@ _SOLVER_TYPE_TO_CLASS_MAP: dict[SolverType, Type[Solver]] = {
 
 # -----------------------------------------------------------------------------
 
-def choose_solver(solver_id: Union[str, int, SolverType, Type[Solver]],
-                  **kwargs) -> Solver:
+def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
+                sigma           : Optional[float] = None,
+                *args,
+                **kwargs) -> Solver:
     """
     Factory function to select and instantiate a solver based on identifier.
 

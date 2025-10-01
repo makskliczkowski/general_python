@@ -12,7 +12,6 @@ from .net_impl.net_general import GeneralNet, CallableNet
 from .net_impl.net_simple import SimpleNet
 from .net_impl.interface_net_flax import FlaxInterface
 
-
 ######################################################################
 
 class Networks(Enum):
@@ -27,7 +26,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any]],
                 input_shape     : Optional[tuple]   = None,
                 backend         : Optional[str]     = None,
                 dtype                               = None,
-                *args, **kwargs) -> Any:
+                *args, **kwargs) -> GeneralNet:
     """
     Choose and instantiate a network based on the provided type.
 
@@ -100,4 +99,4 @@ def choose_network(network_type : Union[str, Networks, Type[Any]],
 
     raise ValueError(f"Unknown network type: {network_type}")
 
-######################################################################## 
+######################################################################

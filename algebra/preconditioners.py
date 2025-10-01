@@ -91,19 +91,19 @@ class PreconditionersTypeSym(Enum):
     """
     Enumeration of specific symmetric preconditioner types.
     """
-    IDENTITY            = auto()
-    JACOBI              = auto()
-    INCOMPLETE_CHOLESKY = auto()
-    COMPLETE_CHOLESKY   = auto()
-    SSOR                = auto()
+    IDENTITY            = 0
+    JACOBI              = 1
+    INCOMPLETE_CHOLESKY = 2
+    COMPLETE_CHOLESKY   = 3
+    SSOR                = 4
 
 @unique
 class PreconditionersTypeNoSym(Enum):
     """
     Enumeration of specific potentially non-symmetric preconditioner types.
     """
-    IDENTITY            = auto() # Identity is also symmetric
-    INCOMPLETE_LU       = auto()
+    IDENTITY            = 0
+    INCOMPLETE_LU       = 1
     # Add others like Gauss-Seidel etc.
     
 # ---------------------------------------------------------------------
@@ -1543,9 +1543,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
 #! Choose wisely
 # =====================================================================
 
-def _resolve_precond_type(
-    precond_id: Any
-    ) -> Union[PreconditionersTypeSym, PreconditionersTypeNoSym]:
+def _resolve_precond_type(precond_id: Any) -> Union[PreconditionersTypeSym, PreconditionersTypeNoSym]:
     """
     Helper to convert string/int/Enum id to a specific Enum member. 
     
@@ -1569,6 +1567,7 @@ def _resolve_precond_type(
                 precond_type            = PreconditionersTypeNoSym[precond_id]
             except KeyError as e:
                 raise ValueError(f"Unknown preconditioner name: '{precond_id}'.") from e
+
     elif isinstance(precond_id, int):
         try:
             precond_type                = PreconditionersTypeSym(precond_id)
@@ -1629,6 +1628,17 @@ def _get_precond_class_and_defaults(precond_type: Union[PreconditionersTypeSym, 
                 raise NotImplementedError("IncompleteLU preconditioner not implemented yet.")
             case _:
                 raise ValueError(f"Non-Symmetric type {precond_type} not handled.")
+    elif isinstance(precond_type, (int)):
+        # 0 or 1 only for now
+        if precond_type == 0:
+            target_class            = IdentityPreconditioner
+            defaults['is_positive_semidefinite'] = True
+        elif precond_type == 1:
+            target_class            = JacobiPreconditioner
+        else:
+            raise ValueError(f"Unknown preconditioner integer value: {precond_type}.")
+    elif precond_type is None:
+        raise ValueError("Preconditioner type could not be resolved (None).")
     else:
         raise TypeError("Internal error: Invalid precond_type.")
 
