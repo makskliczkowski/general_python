@@ -40,14 +40,18 @@ import random as py_random
 import multiprocessing
 from functools import wraps
 from contextlib import contextmanager
-from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List, Dict, Literal
+from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List, Dict, Literal, TYPE_CHECKING
 from dataclasses import dataclass
 
 # ---------------------------------------------------------------------
-#! Try to import the global logger
+#! Global logger placeholder (resolved lazily through qes_globals)
 # ---------------------------------------------------------------------
 
-log : 'Logger' = None
+if TYPE_CHECKING: # pragma: no cover - import only for type checking   
+    from QES.general_python.common.flog import Logger
+
+from typing import Optional
+log: Optional["Logger"] = None  # Assigned during _qes_initialize_utils via qes_globals
 
 # ---------------------------------------------------------------------
 
@@ -1099,12 +1103,13 @@ def _qes_initialize_utils():
 
     # 1. Setup Logger
     try:
-        from ..common.flog import get_global_logger
-        log = get_global_logger()
-    except ImportError:
+        # Centralized singleton access (avoids duplicate banner prints)
+        from QES.qes_globals import get_logger
+        log = get_logger()
+    except Exception:
         logging.basicConfig(level=logging.INFO)
         log = logging.getLogger(__name__)
-        log.info("QES global logger not found. Using standard logging.")
+        log.info("Fallback standard logger initialized (qes_globals unavailable).")
 
     _log_message("Initializing QES.general_python.algebra.utils...")
 

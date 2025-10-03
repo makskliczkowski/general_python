@@ -71,9 +71,9 @@ def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
     
     # reshape as (dimA, dimB) and call BLAS gemm \rho = ψ ψ\dag
     if dimA <= dimB:
-        psi = state.reshape(dimA, dimB, order="F") # column‑major
+        psi = state.reshape(dimA, dimB, order="F") # column-major
     else:
-        psi = state.reshape(dimB, dimA, order="F") # column‑major
+        psi = state.reshape(dimB, dimA, order="F") # column-major
     return psi @ psi.conj().T
 
 def rho_mask(state : np.ndarray,

@@ -492,11 +492,14 @@ class SlurmMonitor:
     #####################################################
     
     @staticmethod
-    def get_memory_used():
+    def get_memory_used(logger: Optional[Logger] = None):
         try:
             mem_info = psutil.Process().memory_info()
-            logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')
+            if logger:
+                logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')
         except Exception as e:
+            if logger:
+                logger.warning(f"Failed to get memory info: {e}")
             pass
     
     #####################################################

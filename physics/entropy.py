@@ -509,7 +509,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     
     log_base = np.log(base)
     
-    #! von‑Neumann entropy (q == 1)
+    #! von-Neumann entropy (q == 1)
     if np.abs(q - 1.0) < 1e-12:
         s = 0.0
         LOG_TWO = np.log(2.0)
