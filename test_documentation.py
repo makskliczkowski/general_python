@@ -46,26 +46,26 @@ def test_key_functionality():
     
     try:
         # Test algebra utilities
-        from general_python.algebra import utils
+        from .algebra import utils
         backend = utils.get_global_backend()
         print(f"✓ Backend manager working: {utils.backend_mgr.name}")
         
         # Test lattices
-        from general_python.lattices import SquareLattice, LatticeBC
+        from .lattices import SquareLattice, LatticeBC
         lattice = SquareLattice(dim=2, lx=4, ly=4, lz=1, bc=LatticeBC.PBC)
         print(f"✓ SquareLattice created: {lattice.Ns} sites")
         
         # Test common utilities
-        from general_python.common import Directories
+        from .common import Directories
         print("✓ Common utilities accessible")
         
         # Test maths
-        from general_python.maths import math_utils
+        from .maths import math_utils
         print("✓ Math utilities accessible")
         
         # Test ml and physics modules exist
-        import general_python.ml
-        import general_python.physics
+        from . import ml
+        from . import physics
         print("✓ ML and Physics modules accessible")
         
         return True

@@ -13,10 +13,10 @@ from functools import partial
 
 try:
     # Base Interface (essential)
-    from general_python.ml.net_impl.interface_net_flax import FlaxInterface
-    from general_python.ml.net_impl.activation_functions import log_cosh_jnp
-    from general_python.ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    from ....ml.net_impl.interface_net_flax import FlaxInterface
+    from ....ml.net_impl.activation_functions import log_cosh_jnp
+    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 except ImportError as e:
     print(f"Error importing QES base modules: {e}")
     class FlaxInterface:

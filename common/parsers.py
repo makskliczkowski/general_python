@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, U
 
 import pandas as pd
 from warnings import simplefilter
-from general_python.common.flog import get_global_logger
+from ..common.flog import get_global_logger
 
 # ─────────────────────────────────────────────────────────────────────────────
 # suppress pandas PerformanceWarning

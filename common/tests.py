@@ -7,7 +7,7 @@ import unittest
 import time
 from typing import Union, Callable
 from abc import ABC, abstractmethod
-from general_python.common.flog import get_global_logger
+from ..common.flog import get_global_logger
 
 class GeneralTests:
     '''
@@ -134,7 +134,7 @@ class GeneralAlgebraicTest(GeneralTests):
         Adds the backend to the tests 
         May be overridden by the child class...
         '''
-        from general_python.algebra.utils import get_backend
+        from ..algebra.utils import get_backend
         if isinstance(backend, str):
             self.backend = get_backend(backend)
         else:

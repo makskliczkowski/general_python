@@ -7,8 +7,8 @@ Contains the general lattice class and its children for different lattice types.
 """
 
 # Import the necessary modules
-from general_python.common import hdf5_lib as HDF5Mod
-from general_python.common import directories as DirectoriesMod
+from ..common import hdf5_lib as HDF5Mod
+from ..common import directories as DirectoriesMod
 # from general_python.algebra import utils as alg_utils
 
 # Import the necessary modules

@@ -6,9 +6,9 @@ author      : Maksymilian Kliczkowski
 from typing import Optional, Callable
 import numpy as np
 
-from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
-from general_python.algebra.preconditioners import Preconditioner
+from ...algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
+from ...algebra.utils import JAX_AVAILABLE, get_backend
+from ...algebra.preconditioners import Preconditioner
 
 # -----------------------------------------------------------------------------
 

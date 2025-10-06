@@ -53,10 +53,10 @@ from typing import Callable, Optional, Any, Tuple
 
 _JAX_AVAILABLE = os.environ.get("PY__JAX_AVAILABLE", "1") == "1"
 # from general python utils
-from general_python.algebra.utils import get_backend
-import general_python.ml.net_impl.utils.net_utils_np as numpy
+from ....algebra.utils import get_backend
+from .... import ml.net_impl.utils.net_utils_np as numpy
 if _JAX_AVAILABLE:
-    import general_python.ml.net_impl.utils.net_utils_jax as jaxpy
+    from .... import ml.net_impl.utils.net_utils_jax as jaxpy
 
 #########################################################################
 #! BATCHES

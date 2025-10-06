@@ -6,8 +6,8 @@
 import numpy as np
 import numba
 from typing import Optional, Union, List
-from general_python.algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
-from general_python.algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
+from ...algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
+from ...algebra.utils import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE
 
 _BAD_BINARY_SEARCH_STATE = -1
 

@@ -5,7 +5,7 @@ from scipy.special import polygamma
 from scipy.special import erf, erfinv
 from scipy.optimize import curve_fit
 from scipy.linalg import svd
-from general_python.maths.statistics import Fraction
+from ..maths.statistics import Fraction
 
 # gap ratio average values
 rgoe        = 0.5307

@@ -28,7 +28,7 @@ except ImportError:
 
 from typing import Union, Tuple, Optional, Callable
 from functools import partial
-from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
+from ..algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 
 # Initialize JAX_RND_DEFAULT_KEY
 JAX_RND_DEFAULT_KEY = None

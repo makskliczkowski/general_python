@@ -16,7 +16,7 @@ try:
 except ImportError as e:
     numba_njit = lambda x: x
     
-from general_python.algebra.utils import (
+from ...algebra.utils import (
     DEFAULT_NP_INT_TYPE,
     DEFAULT_NP_FLOAT_TYPE,
     DEFAULT_JP_INT_TYPE,
@@ -375,8 +375,8 @@ def test(size           : int   = 12,
         state_a_mask    : int   = 0x66 + 1,
         nsamples        : int   = 1) -> None:
     
-    from general_python.common.binary import int2binstr
-    from general_python.common.flog import Logger
+    from ...common.binary import int2binstr
+    from ...common.flog import Logger
     import time 
     logger = Logger(append_ts=True)
 

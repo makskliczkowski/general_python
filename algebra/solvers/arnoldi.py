@@ -8,9 +8,9 @@ from typing import Optional, Callable, Tuple
 import numpy as np
 
 # Inherit from Solver to reuse setup, though its role is different
-from general_python.algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
-from general_python.algebra.utils import get_backend
-from general_python.algebra.preconditioners import Preconditioner
+from ...algebra.solver import SolverType, Solver, SolverError, SolverErrorMsg
+from ...algebra.utils import get_backend
+from ...algebra.preconditioners import Preconditioner
 
 # ##############################################################################
 # Arnoldi Iteration Class

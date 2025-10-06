@@ -15,10 +15,10 @@ import numba
 from enum import Enum, unique
 
 from typing import Optional, Union, Tuple
-from general_python.algebra.utils import JAX_AVAILABLE
+from ...algebra.utils import JAX_AVAILABLE
 
 #! jax
-import general_python.algebra.utilities.hafnian_jax as jnp
+from ...algebra.utilities import hafnian_jax as jnp
 
 #############################################################################
 #! Hafnians (bosonic Gaussians)

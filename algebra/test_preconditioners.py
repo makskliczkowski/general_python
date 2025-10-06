@@ -11,7 +11,7 @@ import scipy.sparse as sps
 import scipy.sparse.linalg as spsla
 
 # Get the code to test
-from general_python.algebra.preconditioners import (Preconditioner,
+from ..algebra.preconditioners import (Preconditioner,
                                                     IdentityPreconditioner,
                                                     JacobiPreconditioner,
                                                     CholeskyPreconditioner,
@@ -24,7 +24,7 @@ from general_python.algebra.preconditioners import (Preconditioner,
                                                     Array,
                                                     JAX_AVAILABLE,
                                                     get_backend)
-from general_python.algebra.solver import Solver, SolverResult
+from ..algebra.solver import Solver, SolverResult
 
 # Conditionally import JAX
 if JAX_AVAILABLE:

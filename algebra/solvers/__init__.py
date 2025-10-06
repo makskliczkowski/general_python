@@ -11,17 +11,17 @@ from typing import Union, Optional, Any, Type
 from enum import Enum, auto, unique
 
 # Import base classes and types from solver.py (assuming it's in the parent directory or path)
-from general_python.algebra.solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
+from ...algebra.solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
 
 # Import concrete solver implementations
-from general_python.algebra.solvers.cg import CgSolver, CgSolverScipy
-from general_python.algebra.solvers.direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
-from general_python.algebra.solvers.pseudoinverse import PseudoInverseSolver
-from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
+from ...algebra.solvers.cg import CgSolver, CgSolverScipy
+from ...algebra.solvers.direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
+from ...algebra.solvers.pseudoinverse import PseudoInverseSolver
+from ...algebra.solvers.minres_qlp import MinresQLPSolver
 
 # Import utility and preconditioner chooser
-from general_python.algebra.utils import get_backend, JAX_AVAILABLE
-from general_python.algebra.preconditioners import Preconditioner, choose_precond
+from ...algebra.utils import get_backend, JAX_AVAILABLE
+from ...algebra.preconditioners import Preconditioner, choose_precond
 
 # -----------------------------------------------------------------------------
 #! Helper function: choose_solver

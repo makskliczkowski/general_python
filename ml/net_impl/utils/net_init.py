@@ -7,13 +7,13 @@ date        : 2025-03-10
 
 # import us
 import numpy as np
-import general_python.ml.net_impl.utils.net_init_np as numpy
-from general_python.algebra.utils import JAX_AVAILABLE
+from .... import ml.net_impl.utils.net_init_np as numpy
+from ....algebra.utils import JAX_AVAILABLE
 
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
-    import general_python.ml.net_impl.utils.net_init_jax as jaxpy
+    from .... import ml.net_impl.utils.net_init_jax as jaxpy
     
 from typing import Optional, Tuple, Callable
 from enum import Enum, unique, auto

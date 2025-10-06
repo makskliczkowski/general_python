@@ -34,8 +34,8 @@ from enum import Enum, auto, unique                 # for enumerations
 
 # -----------------------------------------------------------------------------
 
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend, maybe_jit, Array
-from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
+from ..algebra.utils import JAX_AVAILABLE, get_backend, maybe_jit, Array
+from ..algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 try:
     if JAX_AVAILABLE:

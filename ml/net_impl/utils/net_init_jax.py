@@ -13,7 +13,7 @@ from flax import linen as nn
 
 
 # from general_python utilities
-from general_python.ml.net_impl.net_general import GeneralNet
+from ....ml.net_impl.net_general import GeneralNet
 
 ######################################################################
 #! HE INITIALIZATION

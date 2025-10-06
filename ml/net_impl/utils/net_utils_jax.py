@@ -7,7 +7,7 @@ date    : 2025-03-01
 
 # from general python utils
 from typing import Any, Callable, Dict, List, Tuple, NamedTuple, Optional
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+from ....algebra.utils import JAX_AVAILABLE, get_backend, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 from functools import partial
 
 if JAX_AVAILABLE:

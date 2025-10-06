@@ -62,9 +62,9 @@ from flax import linen as nn
 from jax.tree_util import tree_flatten, tree_map
 
 # from general_python utilities
-from general_python.ml.net_impl.net_general import GeneralNet
-from general_python.ml.net_impl.activation_functions import get_activation
-from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, Array
+from ...ml.net_impl.net_general import GeneralNet
+from ...ml.net_impl.activation_functions import get_activation
+from ...algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, Array
 
 ########################################################################
 #! GENERIC FLAX NETWORK INTERFACE

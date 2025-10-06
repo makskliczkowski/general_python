@@ -24,7 +24,7 @@ Import the backend manager and utilities:
 
 .. code-block:: python
 
-    from QES.general_python.algebra.utils import get_backend, backend_mgr, maybe_jit
+    from ..algebra.utils import get_backend, backend_mgr, maybe_jit
     xp = backend_mgr.np  # NumPy or JAX numpy
     rng = backend_mgr.default_rng
     @maybe_jit
@@ -66,7 +66,7 @@ from dataclasses import dataclass
 # ---------------------------------------------------------------------
 
 if TYPE_CHECKING: # pragma: no cover - import only for type checking   
-    from QES.general_python.common.flog import Logger
+    from ..common.flog import Logger
 
 from typing import Optional
 log: Optional["Logger"] = None  # Assigned during _qes_initialize_utils via qes_globals

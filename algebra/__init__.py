@@ -42,7 +42,7 @@ class AlgebraTests:
     '''
     This is a class that implements the test for algebra module in Python.
     '''
-    from general_python.algebra.utils import get_backend, maybe_jit
+    from ..algebra.utils import get_backend, maybe_jit
     
     def __init__(self, backend="default"):
         ''' Load the algebra module and set the backend. '''

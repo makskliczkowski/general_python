@@ -17,7 +17,7 @@ from .lattice   import (
 from .square    import SquareLattice
 from .hexagonal import HexagonalLattice
 from .honeycomb import HoneycombLattice
-from general_python.common.plot import colorsCycle
+from ..common.plot import colorsCycle
 
 # Export the lattice classes
 __all__ = ["Lattice", "SquareLattice", "HexagonalLattice", "HoneycombLattice"]

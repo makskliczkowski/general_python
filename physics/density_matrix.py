@@ -15,7 +15,10 @@ except ImportError as e:
 from scipy.linalg import svd, eigh
 from typing import Union, List, Callable, Tuple
 
-from general_python.algebra.utils import Array
+try:
+    from ..algebra.utils import Array
+except ImportError as e:
+    raise ImportError("Problem with importing utilities. Check if QES is installed properly") from e
 
 ###############################################################################
 #! Helper functions
@@ -323,6 +326,6 @@ else:
 
 #! JAX if available
 try:
-    import general_python.physics.density_matrix_jax as jnp
+    from ..physics import density_matrix_jax as jnp
 except ImportError:
     jnp = np

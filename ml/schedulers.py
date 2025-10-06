@@ -8,7 +8,7 @@ import enum
 import inspect
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union, Type, Dict, Any, Callable
-from general_python.common.flog import Logger
+from ..common.flog import Logger
 import numpy as np
 
 # ##############################################################################

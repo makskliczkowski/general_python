@@ -16,7 +16,7 @@ import numpy as np
 from typing import Optional, Tuple, Callable
 from functools import partial
 
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
+from ...algebra.utils import JAX_AVAILABLE, get_backend
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     from jax import random

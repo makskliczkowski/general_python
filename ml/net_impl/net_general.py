@@ -9,8 +9,8 @@ import numpy as np
 import numba
 from typing import Optional, Tuple, Callable, List, Union
 from abc import ABC, abstractmethod
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend, Array
-from general_python.common.flog import get_global_logger, Logger
+from ...algebra.utils import JAX_AVAILABLE, get_backend, Array
+from ...common.flog import get_global_logger, Logger
 
 if JAX_AVAILABLE:
     import jax
