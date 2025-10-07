@@ -6,11 +6,11 @@ date    : 2025-03-10
 """
 
 import numpy as np
-import general_python.ml.net_impl.net_general as _net_general
+from .... import ml.net_impl.net_general as _net_general
 from typing import Optional, Tuple, Callable, Any
 
 # import from general python module
-from general_python.algebra.utils import JAX_AVAILABLE
+from ....algebra.utils import JAX_AVAILABLE
 
 if not JAX_AVAILABLE:
     raise ImportError("JAX is not available. Please install JAX to use this module.")
@@ -22,8 +22,8 @@ from jax import random
 import flax.linen as nn
 
 # import the initializers
-from general_python.ml.net_impl.utils.net_init_jax import complex_he_init, real_he_init
-from general_python.ml.net_impl.interface_net_flax import FlaxInterface
+from ....ml.net_impl.utils.net_init_jax import complex_he_init, real_he_init
+from ....ml.net_impl.interface_net_flax import FlaxInterface
 
 ##########################################################
 #! EXAMPLE FLAX MODULE

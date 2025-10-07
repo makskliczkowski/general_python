@@ -2,12 +2,12 @@
 
 import time
 from typing import List, Optional
-from general_python.algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
+from ...algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
 
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax
-    from general_python.algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE
+    from ...algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE
 
     def reverse_byte(b : int):
         """

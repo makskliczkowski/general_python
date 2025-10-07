@@ -48,12 +48,12 @@ from typing import Optional, Callable, Union, Any, Tuple, Type
 from functools import partial
 import numpy as np
 
-from general_python.algebra.solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
+from ...algebra.solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc)
-from general_python.algebra.preconditioners import Preconditioner, PreconitionerApplyFun
+from ...algebra.preconditioners import Preconditioner, PreconitionerApplyFun
 
 # Import backend specifics and compilation tools
-from general_python.algebra.utils import JAX_AVAILABLE
+from ...algebra.utils import JAX_AVAILABLE
 
 if JAX_AVAILABLE:
     try:

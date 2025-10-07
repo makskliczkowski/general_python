@@ -6,9 +6,9 @@ activation function parameters. The module supports both JAX and NumPy backends,
 flexible use in different environments.
 '''
 
-import general_python.ml.net_impl.utils.net_init as net_init
-import general_python.ml.net_impl.utils.net_init_jax as jaxpy
-import general_python.ml.net_impl.utils.net_init_np as numpy
+from .... import ml.net_impl.utils.net_init as net_init
+from .... import ml.net_impl.utils.net_init_jax as jaxpy
+from .... import ml.net_impl.utils.net_init_np as numpy
 
 __all__ = [
     'net_init',

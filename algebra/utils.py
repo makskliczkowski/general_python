@@ -1,36 +1,54 @@
-# file        :   general_python/algebra/utils.py
-# author      :   Maksymilian Kliczkowski
-# copyright   :   (c) 2025, Maksymilian Kliczkowski
 
-'''
-This module provides utilities for importing the linear algebra backend,
-including NumPy and JAX, and managing their configurations.
+"""
+general_python.algebra.utils
+===========================
 
-- It includes functions for checking backend availability, setting random seeds,
-and handling JIT compilation.
+Author: Maks Kliczkowski
+Email: maxgrom97@gmail.com
+Date: 01.10.25
 
-- It also provides a BackendManager class for managing the backend state,
-including the random module and SciPy functionalities.
+This module provides utilities for importing and managing the linear algebra backend (NumPy/JAX),
+random number generation, JIT compilation, and backend configuration for the QES package.
 
-- It is designed to be used in a flexible and extensible manner,
-allowing for easy switching between backends.
-
-- The module also includes functions for padding arrays and checking if an array is JAX-traced.
-
-- The module is designed to be used in a flexible and extensible manner,
-allowing for easy switching between backends.
-
-Provides:
-- BackendManager: 
-    Class to detect and manage the active backend (NumPy/JAX),
-    including linear algebra, random number generation, and SciPy modules.
+Features
+--------
+- BackendManager: Class to detect and manage the active backend (NumPy/JAX), including linear algebra, random number generation, and SciPy modules.
 - Functions to retrieve backend components (`get_backend`, `get_global_backend`).
 - Global access to the active backend via the `backend_mgr` instance.
-- Utilities for JIT compilation (`maybe_jit`), hardware info (`get_hardware_info`),
-    and array padding (`pad_array`).
+- Utilities for JIT compilation (`maybe_jit`), hardware info (`get_hardware_info`), and array padding (`pad_array`).
 - Clear version reporting and backend status printing.
 
-'''
+Usage
+-----
+Import the backend manager and utilities:
+
+.. code-block:: python
+
+    from ..algebra.utils import get_backend, backend_mgr, maybe_jit
+    xp = backend_mgr.np  # NumPy or JAX numpy
+    rng = backend_mgr.default_rng
+    @maybe_jit
+    def my_func(x):
+        return xp.sum(x)
+
+Testing
+-------
+To run tests for this module and the QES package:
+
+.. code-block:: bash
+
+    pytest
+    # or
+    python -m unittest discover -s Python/test
+
+Test coverage includes:
+- Singleton identity and initialization
+- Operator algebra correctness
+- Monte Carlo sampling
+- NQS training and evaluation
+
+See the `test/` directory for details.
+"""
 
 # Import the required modules
 import os
@@ -48,7 +66,7 @@ from dataclasses import dataclass
 # ---------------------------------------------------------------------
 
 if TYPE_CHECKING: # pragma: no cover - import only for type checking   
-    from QES.general_python.common.flog import Logger
+    from ..common.flog import Logger
 
 from typing import Optional
 log: Optional["Logger"] = None  # Assigned during _qes_initialize_utils via qes_globals

@@ -27,12 +27,12 @@ Note:
 
 import numpy as np
 from functools import partial
-import general_python.ml.net_impl.net_general as _net_general
+from ...ml.net_impl import net_general as _net_general
 from typing import Optional, Tuple
 
 # import from general python module
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend
-from general_python.ml.net_impl.activation_functions import get_activation
+from ...algebra.utils import JAX_AVAILABLE, get_backend
+from ...ml.net_impl.activation_functions import get_activation
 
 if JAX_AVAILABLE:
     import jax

@@ -6,8 +6,8 @@ import os
 import numpy as np
 import h5py
 from typing import List, Dict, Any, Optional, Union, Generator, Tuple, Callable
-from general_python.common.flog import Logger, get_global_logger
-from general_python.common.directories import Directories
+from ..common.flog import Logger, get_global_logger
+from ..common.directories import Directories
 
 #! Logger
 _logger = get_global_logger()

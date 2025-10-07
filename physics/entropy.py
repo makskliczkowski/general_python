@@ -11,15 +11,15 @@ It includes analytical and semi-analytical formulas for entanglement entropy, in
 
 # Adds higher directory to python modules path.
 from enum import Enum, unique
-from general_python.common.hdf5_lib import *
+from ..common.hdf5_lib import *
 from scipy.special import digamma, polygamma, binom, psi
 import numpy as np
 import numba
 import math
 
-from general_python.algebra.utils import JAX_AVAILABLE, Array
+from ..algebra.utils import JAX_AVAILABLE, Array
 if JAX_AVAILABLE:
-    from general_python.physics import entropy_jax as entropy_jax
+    from ..physics import entropy_jax as entropy_jax
 else:
     entropy_jax = None
     

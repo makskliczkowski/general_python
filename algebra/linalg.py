@@ -10,7 +10,7 @@ import scipy as sp
 from numba import njit
 from functools import partial
 
-from general_python.algebra.utils import maybe_jit, get_backend, JIT, Array
+from ..algebra.utils import maybe_jit, get_backend, JIT, Array
 
 # -----------------------------------------------------------------
 

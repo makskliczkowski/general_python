@@ -16,10 +16,10 @@ from typing import Tuple, Callable, Optional, Any, Sequence, Union
 import math
 
 try:
-    from general_python.ml.net_impl.interface_net_flax import FlaxInterface
-    from general_python.ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from general_python.ml.net_impl.activation_functions import get_activation_jnp
-    from general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
+    from ....ml.net_impl.interface_net_flax import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.activation_functions import get_activation_jnp
+    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
     print(f"Error importing QES base modules: {e}")
     class FlaxInterface:

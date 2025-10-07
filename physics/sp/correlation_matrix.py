@@ -36,7 +36,7 @@ import numpy as np
 import numba
 from torch import mode
 
-from general_python.algebra.utils import JAX_AVAILABLE, Array
+from ...algebra.utils import JAX_AVAILABLE, Array
 
 __all__ = [
     "corr_single",

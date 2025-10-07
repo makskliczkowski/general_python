@@ -26,20 +26,20 @@ import numpy as np
 import numba
 
 from typing import Optional
-from general_python.algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
-from general_python.algebra.utils import (get_backend, maybe_jit, is_traced_jax,
+from ..algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
+from ..algebra.utils import (get_backend, maybe_jit, is_traced_jax,
     DEFAULT_NP_INT_TYPE, JAX_AVAILABLE, BACKEND_REPR, BACKEND_DEF_SPIN)
-from general_python.common.tests import GeneralAlgebraicTest
+from ..common.tests import GeneralAlgebraicTest
 
 ####################################################################################################
 if JAX_AVAILABLE:
-    import general_python.common.embedded.binary_jax as jaxpy
+    from ..common.embedded import binary_jax as jaxpy
 else:
     jaxpy = None
     
 #! extraction
-import general_python.common.embedded.bit_extract as extract
-import general_python.common.embedded.binary_search as bin_search
+from ..common.embedded import bit_extract as extract
+from ..common.embedded import binary_search as bin_search
 
 ####################################################################################################
 #! Global functions

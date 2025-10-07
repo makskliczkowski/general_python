@@ -142,8 +142,8 @@ from functools import partial
 
 from abc import ABC, abstractmethod
 
-from general_python.algebra.utils import JAX_AVAILABLE, get_backend, Array
-import general_python.algebra.solver as solver_utils
+from ...algebra.utils import JAX_AVAILABLE, get_backend, Array
+from ...algebra import solver as solver_utils
 
 #####################################
 
