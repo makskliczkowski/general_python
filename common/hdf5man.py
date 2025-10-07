@@ -864,6 +864,7 @@ class HDF5Manager:
         expected_ndim       : int | None = None,
         expected_dim0       : int | None = None,
         expected_dim1       : int | None = None,
+        expected_first_val  : Any = None,
         return_skipped      : bool = False) -> np.ndarray | tuple[np.ndarray, list[str]]:
         """
         Collects arrays from iterable of mappings and concatenates them robustly.
@@ -903,6 +904,7 @@ class HDF5Manager:
         target_dtype                = None
         target_ndim                 = expected_ndim
         target_dim1                 = expected_dim1
+        target_first_val            = expected_first_val
         skipped: list[str]          = []
 
         for idx, x in enumerate(data):
@@ -918,6 +920,18 @@ class HDF5Manager:
                 if arr.size == 0:
                     skipped.append(fname)
                     continue
+                
+                if target_first_val is not None:
+                    if arr.ndim == 0:
+                        first_val = arr.item()
+                    elif arr.ndim >= 1 and arr.shape[0] > 0:
+                        first_val = arr.flat[0]
+                    else:
+                        skipped.append(fname)
+                        continue
+                    if not np.isclose(first_val, target_first_val):
+                        skipped.append(fname)
+                        continue
 
                 # normalize rank
                 if arr.ndim > 2:
