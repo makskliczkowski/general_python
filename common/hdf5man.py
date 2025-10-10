@@ -344,6 +344,11 @@ class HDF5Manager:
         
         # Determine file mode
         path = os.path.join(directory, filename)
+        
+        if overwrite and os.path.exists(path):
+            _logger.debug(f"Overwriting existing file: {path}")
+            os.remove(path)
+        
         mode = "w" if overwrite else "w-"
         with h5py.File(path, mode) as hf:
             if isinstance(data_to_save, dict):
