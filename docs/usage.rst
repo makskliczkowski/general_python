@@ -114,7 +114,7 @@ Perform quantum state manipulations and calculations:
     
     backend = get_global_backend()
     
-    # Create a quantum state (example: |+⟩ state)
+    # Create a quantum state (example: |+> state)
     psi = backend.array([1, 1]) / backend.sqrt(2)
     
     # Calculate density matrix

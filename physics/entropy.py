@@ -471,7 +471,7 @@ def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> floa
         float: The Tsallis entropy of the input distribution.
 
     References:
-        - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479–487 (1988).
+        - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479-487 (1988).
     """
     if 1.0 - threshold < q < 1.0 + threshold:
         return vn_entropy(lam)
@@ -549,7 +549,7 @@ def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     out : float or np.ndarray
         Scalar entropy if input was 1D, else 1D array of length m.
     """
-    # reshape 1D → 2D(n,1)
+    # reshape 1D -> 2D(n,1)
     if states.ndim == 1:
         S = states.reshape(states.shape[0], 1)
         single = True

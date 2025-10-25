@@ -45,7 +45,7 @@ __license__         = "MIT"
 MODULE_DESCRIPTION  = "Shared scientific utilities: algebra backends, logging, lattices, maths, ML, physics."
 
 # List of available modules (not imported by default)
-__all__     = ["algebra", "common", "lattices", "maths", "ml", "physics"]
+__all__             = ["algebra", "common", "lattices", "maths", "ml", "physics", "random", "random_matrices"]
 
 # Description of modules
 def get_module_description(module_name):
@@ -86,12 +86,37 @@ def list_available_modules():
 
 # Lazy import subpackages on attribute access (PEP 562)
 def __getattr__(name):  # pragma: no cover - simple indirection
+    # Convenience aliases
+    if name == "random":
+        return importlib.import_module(".algebra.ran_wrapper", __name__)
+    if name == "random_matrices":
+        return importlib.import_module(".algebra.ran_matrices", __name__)
     if name in __all__:
         return importlib.import_module(f".{name}", __name__)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 def __dir__():  # pragma: no cover
     return sorted(list(globals().keys()) + __all__)
+
+
+def list_capabilities():
+    """Summarize core capabilities across subpackages.
+
+    Returns a dictionary with keys: random, random_matrices, modules.
+    """
+    caps = {}
+    try:
+        rw = __getattr__("random")
+        caps["random"] = rw.list_capabilities()
+    except Exception:
+        caps["random"] = {}
+    try:
+        rm = __getattr__("random_matrices")
+        caps["random_matrices"] = rm.list_capabilities()
+    except Exception:
+        caps["random_matrices"] = {}
+    caps["modules"] = list_available_modules()
+    return caps
 
 # ---------------------------------------------------------------------
 

@@ -27,6 +27,7 @@ import time
 # from general_python.algebra import preconditioners
 # from general_python.algebra import ode
 from .solvers import SolverType, generate_test_mat_vec, choose_solver
+from .solvers.backend_ops import get_backend_ops, BackendOps, default_ops
 from .preconditioners import choose_precond, Preconditioner
 
 from ..common.plot import MatrixPrinter
@@ -379,9 +380,12 @@ class SolversTests:
 
 __all__ = [
     "backend_mgr", "get_backend", "get_global_backend",
+    # Global singletons
     "ACTIVE_BACKEND_NAME", "ACTIVE_NP_MODULE", "ACTIVE_RANDOM",
     "ACTIVE_SCIPY_MODULE", "ACTIVE_JIT", "ACTIVE_JAX_KEY",
     "ACTIVE_INT_TYPE", "ACTIVE_FLOAT_TYPE", "ACTIVE_COMPLEX_TYPE",
+    # Backend ops helpers
+    "get_backend_ops", "BackendOps", "default_ops",
 ]
 
 # --------------------------------------------------------------------------------------------------

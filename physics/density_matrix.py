@@ -126,7 +126,7 @@ def schmidt_numpy( state : Array,
                     dimB    : int,
                     eig     : bool) -> Tuple[np.ndarray, np.ndarray]:
     r"""
-    Schmidt decomposition for a bipartite pure state |ψ⟩ \in H_A \otimes H_B.
+    Schmidt decomposition for a bipartite pure state |ψ> \in H_A \otimes H_B.
 
     Returns
     -------

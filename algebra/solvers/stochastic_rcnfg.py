@@ -12,31 +12,31 @@ Standard Stochastic Reconfiguration (SR) and Minimum-Step SR (MinSR)
 
 --------
 In variational Monte Carlo (VMC), the goal is to optimize the variational 
-parameters θ such that the variational wave function |\psi(θ)⟩
+parameters θ such that the variational wave function |\psi(θ)>
 approaches the ground state of a given Hamiltonian.
 Both standard stochastic reconfiguration (SR)
 [and its efficient variant—minimum-step SR (MinSR) - see below] — aim to update 
 the parameters by approximately following an imaginary-time evolution:
 
-    |\psi'⟩ = exp(-H · δτ) |\psi(θ)⟩                              (Eq. 1)
+    |\psi'> = exp(-H · δτ) |\psi(θ)>                              (Eq. 1)
 
 The update is performed by minimizing the Fubini-Study (FS)
-distance between the evolved state |\psi'⟩ and the 
-variational state |\psi(θ+δθ)⟩.
+distance between the evolved state |\psi'> and the 
+variational state |\psi(θ+δθ)>.
 
 ## Fubini-Study Distance
 ----------------------
 For small changes δθ and a small time step δτ, the FS distance is expanded as:
 
-    d²(\psi(θ+δθ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ · δθₖ - ε₍\sigma₎ |²    (Eq. 2)
+    d^2(\psi(θ+δθ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ · δθₖ - \varepsilon₍\sigma₎ |^2    (Eq. 2)
 
 with:
     
-    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ - ⟨(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ⟩,
+    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ - ⟨(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ>,
     
 computed over Ns Monte Carlo samples:
     
-    ε₍\sigma₎ = -δτ · (E^loc₍\sigma₎ - ⟨E^loc⟩)/√(Ns),
+    \varepsilon₍\sigma₎ = -δτ · (E^loc₍\sigma₎ - ⟨E^loc>)/\sqrt(Ns),
     
 where the local energy is given by:
 
@@ -44,7 +44,7 @@ where the local energy is given by:
 
 The minimization of this distance is equivalent to solving the linear equation:
 
-    O · δθ = ε                                              (Eq. 3)
+    O · δθ = \varepsilon                                              (Eq. 3)
 
 ## Standard Stochastic Reconfiguration (SR)
 ------------------------------------------
@@ -56,18 +56,18 @@ This metric measures the change in the quantum state induced by a parameter upda
 and the FS distance can be 
 written as:
 
-    d²(\psi(θ), \psi(θ+δθ)) = δθ\dag · S · δθ                        (Eq. 5)
+    d^2(\psi(θ), \psi(θ+δθ)) = δθ\dag · S · δθ                        (Eq. 5)
 
 The SR method then updates the variational parameters using the solution of the linear equation (Eq. 3). The 
 standard solution is obtained as:
 
-    δθ = S⁻¹ · O\dag · ε                                       (Eq. 6)
+    δθ = S⁻¹ · O\dag · \varepsilon                                       (Eq. 6)
 
 This approach requires computing and inverting the matrix S,
 which is of size NₚxNₚ (Nₚ is the number of 
 variational parameters). When Nₚ is large,
 the inversion becomes computationally expensive with a typical 
-cost scaling of O(Nₚ³), or O(Nₚ²·Nₛ + Nₚ³) when iterative solvers are employed.
+cost scaling of O(Nₚ³), or O(Nₚ^2·Nₛ + Nₚ³) when iterative solvers are employed.
 Moreover, for deep networks 
 with Nₚ ≫ Nₛ (the number of Monte Carlo samples),
 the matrix S is rank-deficient (its rank is at most Nₛ), 
@@ -86,24 +86,24 @@ condition—i.e. selecting, among all solutions of Eq. (3),
 the one with the smallest ||δθ||—the MinSR update is 
 given by:
 
-    δθ = O\dag · T⁻¹ · ε                                  (Eq. 5)
+    δθ = O\dag · T⁻¹ · \varepsilon                                  (Eq. 5)
 
 This formulation avoids the costly inversion of the full S matrix.
 The inversion is now only on the smaller T matrix, 
-reducing the computational complexity to approximately O(Nₚ·Nₛ² + Nₛ³).
+reducing the computational complexity to approximately O(Nₚ·Nₛ^2 + Nₛ³).
 Two derivations support this result:
 
 1. **Lagrangian Multiplier Approach:**  
-    The method minimizes ||δθ|| subject to O · δθ = ε by forming the Lagrangian:
+    The method minimizes ||δθ|| subject to O · δθ = \varepsilon by forming the Lagrangian:
 
-    L({δθₖ}, {\alpha₍\sigma₎}) = ∑₍k₎ |δθₖ|² - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ · δθₖ - ε₍\sigma₎) + c.c.]
+    L({δθₖ}, {\alpha₍\sigma₎}) = ∑₍k₎ |δθₖ|^2 - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ · δθₖ - \varepsilon₍\sigma₎) + c.c.]
 
-Solving the resulting equations leads to δθ = O\dag · (O · O\dag)⁻¹ · ε, which is equivalent to Eq. (5).
+Solving the resulting equations leads to δθ = O\dag · (O · O\dag)⁻¹ · \varepsilon, which is equivalent to Eq. (5).
 
 2. **Pseudo-Inverse Method:**  
-By showing that the least-squares minimum-norm solution of O · δθ = ε is given by:
+By showing that the least-squares minimum-norm solution of O · δθ = \varepsilon is given by:
 
-    δθ = O\dag · (O · O\dag)⁻¹ · ε,
+    δθ = O\dag · (O · O\dag)⁻¹ · \varepsilon,
 
 and using properties of the pseudo-inverse,
 one establishes the equivalence (O · O\dag)⁻¹ = T⁻¹, thereby recovering 

@@ -61,13 +61,13 @@ if JAX_AVAILABLE:
         """
         N = len(order)                          # total number of qubits
 
-        # reshape: 1-D → N-D tensor (row-major)
+        # reshape: 1-D -> N-D tensor (row-major)
         psi_nd = jnp.reshape(state, (2,) * N)   # JAX supports only row-major
 
         # mimic Fortran-order semantics
         #   For a (2,2,…,2) tensor, Fortran layout is equivalent to
         #   row-major layout with *reversed* axis numbering.
-        perm = tuple(N - 1 - o for o in order)  # map Fortran axes → C axes
+        perm = tuple(N - 1 - o for o in order)  # map Fortran axes -> C axes
 
         # reorder qubits and flatten back to matrix
         psi_perm = jnp.transpose(psi_nd, perm)

@@ -12,7 +12,7 @@ notebook cell.  All helper names start with `display_…` to make tab-completion
 useful.
 
 The module does **not** depend on your project-specific `bin_mod`; if you have a
-custom integer→binary converter just pass it as the optional `to_bin`
+custom integer->binary converter just pass it as the optional `to_bin`
 parameter.
 """
 
@@ -113,11 +113,11 @@ def _format_coeff(c: complex | float) -> str:
         return str(c)
 
 # ---------------------------------------------------------------------------
-#! |ψ⟩  and  ⟨ψ|  helpers
+#! |ψ>  and  ⟨ψ|  helpers
 # ---------------------------------------------------------------------------
 
 def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
-    r"""LaTeX code for a computational-basis ket |(int) b...⟩.
+    r"""LaTeX code for a computational-basis ket |(int) b...>.
 
     Example
     -------
@@ -180,14 +180,14 @@ def display_operator_action(op_tex    : str,
                             to_bin    : Callable[[int, int], str] | None = None
                             ) -> None:
     r"""
-    Show the action  Ô₍site₎ |ψ⟩ = Σₖ cₖ |φₖ⟩  (or 0).
+    Show the action  Ô₍site₎ |ψ> = Σₖ cₖ |φₖ>  (or 0).
 
     Parameters
     ----------
     op_tex : str
         LaTeX operator label without subscript, e.g. ``'c^\\dagger'``.
     site : int | tuple[int,…]
-        Site index (or indices) → subscript in Ô₍site₎.
+        Site index (or indices) -> subscript in Ô₍site₎.
     in_state : int | ndarray | list[int]
         Input basis state or wave-function label shown on the LHS.
     ns : int
@@ -230,7 +230,7 @@ def display_operator_action(op_tex    : str,
         if len(out_list) != len(coeff_list):
             raise ValueError("out_state and coeff must have equal length")
 
-        # build Σ_k c_k |φ_k⟩
+        # build \sum _k c_k |φ_k>
         terms = []
         for c, s in zip(coeff_list, out_list):
             if c == 0:            # skip zero amplitudes
@@ -251,7 +251,7 @@ def superposition(terms : Sequence[Tuple[complex, int]],
                 ns      : int,
                 *, 
                 to_bin  : Callable[[int, int], str] | None = None) -> str:
-    """Return LaTeX for Σₖ aₖ |k⟩ given *(coeff, state)* pairs."""
+    """Return LaTeX for Σₖ aₖ |k> given *(coeff, state)* pairs."""
     parts: List[str] = []
     to_bin = _default_to_bin if to_bin is None else to_bin
     for amp, st in terms:

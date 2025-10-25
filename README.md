@@ -23,6 +23,8 @@ A comprehensive Python library providing utilities for scientific computing, par
 - Tools for creating and manipulating lattice geometries
 - Support for square, hexagonal, and honeycomb lattices
 - Neighbor finding and lattice navigation
+- Tenpy-inspired visualisation utilities for real/reciprocal space, Brillouin zones, and boundary conditions
+- Jupyter demo (`Python/test/lattices/lattice_visualization_demo.ipynb`) showcasing these plotting helpers
 - Common lattice operations for condensed matter physics
 
 ### 🧠 **Machine Learning**

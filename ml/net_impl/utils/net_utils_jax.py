@@ -960,7 +960,7 @@ if JAX_AVAILABLE:
 
             chunk   = batch_kernel(bs_s, bs_lp, bs_sp)       # (batch_size,)
 
-            # write chunk → carry using dynamic_update_slice
+            # write chunk -> carry using dynamic_update_slice
             carry   = lax.dynamic_update_slice(carry, chunk, (start,))
             return carry, None
 

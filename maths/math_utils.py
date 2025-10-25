@@ -8,7 +8,6 @@ Imports:
 - scipy.interpolate.BSpline
 
 Functions:
-- CUE_QR
 - Fitter
 - FitterParams
 
@@ -17,8 +16,6 @@ Version : 0.1.0
 Author  : Maksymilian Kliczkowski
 License : MIT
 '''
-
-from .__random__ import *
 
 # fitting and distributions
 from scipy.optimize import curve_fit as fit

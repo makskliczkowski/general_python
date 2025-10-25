@@ -17,10 +17,11 @@ from enum import Enum, auto, unique
 from ..solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
 
 # Import concrete solver implementations
-from .cg import CgSolver, CgSolverScipy
+from .cg import CgSolver
 from .direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
 from .pseudoinverse import PseudoInverseSolver
 from .minres_qlp import MinresQLPSolver
+from .minres import MinresSolverScipy, MinresSolver
 
 # Import utility and preconditioner chooser
 from ..utils import get_backend, JAX_AVAILABLE
@@ -42,14 +43,14 @@ _SOLVER_TYPE_TO_CLASS_MAP: dict[SolverType, Type[Solver]] = {
     # Iterative Solvers
     #! symmetric
     SolverType.CG               : CgSolver,
+    SolverType.MINRES           : MinresSolver,         # Native MINRES (WIP - prefer SCIPY_MINRES)
     SolverType.MINRES_QLP       : MinresQLPSolver,
-    # SolverType.MINRES: MinresSolver, # Add when implemented
     #! general
     # SolverType.GMRES: GmresSolver, # Add when implemented
 
     # Iterative Solvers (SciPy Wrappers)
-    SolverType.SCIPY_CG         : CgSolverScipy,
-    # SolverType.SCIPY_MINRES: MinresScipy, # Add when implemented
+    # SolverType.SCIPY_CG         : CgSolverScipy,  # Not implemented yet
+    SolverType.SCIPY_MINRES     : MinresSolverScipy,
     # SolverType.SCIPY_GMRES: GmresScipy, # Add when implemented
 
     # Others
@@ -226,9 +227,9 @@ __all__ = [
     'Solver', 'SolverResult', 'SolverError', 'SolverErrorMsg', 'SolverType',
     'Array', 'MatVecFunc', 'StaticSolverFunc',
     # Concrete Solver Classes
-    'CgSolver', 'CgSolverScipy',
+    'CgSolver',
     'DirectSolver', 'DirectScipy', 'DirectJaxScipy', 'DirectInvSolver',
-    'PseudoInverseSolver',
+    'PseudoInverseSolver', 'MinresSolverScipy',
     # Factory function
     'choose_solver',
     # Testing utility
@@ -254,4 +255,6 @@ __description__ = """
                 linear algebra problems.
                 """
 
+# -----------------------------------------------------------------------------
+#! EOF
 # -----------------------------------------------------------------------------

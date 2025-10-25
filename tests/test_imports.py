@@ -27,16 +27,23 @@ def test_root_imports_lazy():
 # -------------------------------------------------------------------
 
 def test_math_utils_exports():
-    from general_python.maths.math_utils import CUE_QR, Fitter, FitterParams
-    assert callable(CUE_QR)
-    # basic sanity: returns unitary-like matrix for small n
+    # math_utils should expose Fitter APIs but not random matrices
+    from general_python.maths.math_utils import Fitter, FitterParams
+    assert hasattr(Fitter, 'fit_linear')
+    assert isinstance(FitterParams(None, None, None), FitterParams)
+
+
+def test_cue_qr_from_ran_matrices():
+    # CUE_QR now lives in algebra.ran_matrices
     import numpy as np
-    U = CUE_QR(3)
-    # check shapes
+    from general_python.algebra.ran_matrices import CUE_QR
+    assert callable(CUE_QR)
+    
+    U       = CUE_QR(3, simple=False)
     assert U.shape == (3, 3)
-    # numerical unitarity check
-    ident = U.conj().T @ U
-    assert np.allclose(ident, np.eye(3), atol=1e-7)
+    
+    ident   = U.conj().T @ U
+    assert np.allclose(ident, np.eye(3), atol=1e-9)
 
 # -------------------------------------------------------------------
 

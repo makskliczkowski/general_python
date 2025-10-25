@@ -31,6 +31,7 @@ import numpy as np
 # Add sparse imports at the top of the file
 import scipy.sparse as sps
 import scipy.sparse.linalg as spsla
+import scipy.linalg as sla
 
 from ..algebra.utils import JAX_AVAILABLE, get_backend, Array
 from ..common.flog import get_global_logger, Logger
@@ -41,6 +42,7 @@ try:
     if JAX_AVAILABLE:
         import jax
         import jax.numpy as jnp
+        import jax.scipy as jsp
     else:
         jnp   = None
         jax   = None # Define jax as None if not available
@@ -271,11 +273,17 @@ class Preconditioner(ABC):
         '''
         Returns the potentially JIT-compiled function `apply(r)`.
         Uses precomputed data stored by the last call to `set()`.
+        Raises RuntimeError if called before `set()` to match test expectations.
         '''
+        # Ensure precomputed data exists before returning apply function
+        if self._precomputed_data_instance is None:
+            raise RuntimeError("Preconditioner apply function could not be initialized before set().")
+        
         if self._apply_func_instance is None:
             self._update_instance_apply_func()
             if self._apply_func_instance is None: # If still None, raise error
                 raise RuntimeError("Preconditioner apply(r) function failed to initialize.")
+            
         return self._apply_func_instance
     
     def get_apply_mat(self, **default_setup_kwargs) -> Callable[[Array, Array, float], Array]:
@@ -519,7 +527,8 @@ class Preconditioner(ABC):
     def _get_precomputed_data_instance(self) -> Dict[str, Any]:
         """Instance: Returns the stored precomputed data."""
         if self._precomputed_data_instance is None:
-            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
+            # Include standardized substring expected by tests
+            raise RuntimeError(f"Preconditioner data not available - ({self._name}) not set up. Call set() first.")
         return self._precomputed_data_instance
     
     # -----------------------------------------------------------------
@@ -640,6 +649,15 @@ class IdentityPreconditioner(Preconditioner):
         """Static Apply Kernel for Identity."""
         return backend_mod.asarray(r) # Ensure correct backend type
 
+    # Convenience static/class apply used in tests
+    @staticmethod
+    def apply(r: Array, backend_mod: Any, sigma: float = 0.0, **precomputed_data: Any) -> Array:
+        """
+        Static apply convenience wrapper used by tests.
+        Mirrors the signature expected in test files.
+        """
+        return IdentityPreconditioner._apply_kernel(r=r, backend_mod=backend_mod, sigma=sigma, **precomputed_data)
+
     def _set_standard(self, a: Array, sigma: float, **kwargs):
         self._precomputed_data_instance = self.__class__._setup_standard_kernel(a, sigma, self._backend, **kwargs)
         self._update_instance_apply_func()
@@ -722,6 +740,7 @@ class JacobiPreconditioner(Preconditioner):
                                 backend_mod     : Any, 
                                 tol_small       : float, 
                                 zero_replacement: float) -> Array:
+
         """
         Static helper to compute inverse diagonal safely.
         Handles small values and avoids division by zero.
@@ -789,6 +808,18 @@ class JacobiPreconditioner(Preconditioner):
         )
         return {'inv_diag': inv_diag}
 
+    # Backwards-compat alias expected by tests (instance method using internal backend and tolerances)
+    def _compute_inv_diag(self, diag_a: Array, sigma: float) -> Array:
+        return JacobiPreconditioner._static_compute_inv_diag(
+            diag_a, sigma, self._backend, self._TOLERANCE_SMALL, self._zero
+        )
+
+    # Convenience static apply used in tests
+    @staticmethod
+    def apply(r: Array, backend_mod: Any, sigma: float = 0.0, **precomputed_data: Any) -> Array:
+        """Static apply wrapper matching test signature."""
+        return JacobiPreconditioner._apply_kernel(r=r, backend_mod=backend_mod, sigma=sigma, **precomputed_data)
+
     @staticmethod
     def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
         '''
@@ -844,6 +875,15 @@ class JacobiPreconditioner(Preconditioner):
         '''
         base_repr = super().__repr__()
         return f"{base_repr[:-1]}, tol_small={self._TOLERANCE_SMALL})"
+
+    # Expose zero_replacement for tests/consumers expecting that name
+    @property
+    def zero_replacement(self) -> float:
+        return self._zero
+
+    @zero_replacement.setter
+    def zero_replacement(self, value: float):
+        self._zero = value
     
     # -----------------------------------------------------------------
 
@@ -916,7 +956,13 @@ class CholeskyPreconditioner(Preconditioner):
         print(f"({CholeskyPreconditioner._name}) Performing Cholesky decomposition...")
         try:
             a_reg = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
-            l_factor = be.linalg.cholesky(a_reg, lower=True)
+            # Use appropriate Cholesky per backend
+            if be is np:
+                l_factor = sla.cholesky(a_reg, lower=True, check_finite=False)
+            elif jnp is not None and be is jnp:
+                l_factor = jsp.linalg.cholesky(a_reg, lower=True)
+            else:
+                l_factor = be.linalg.cholesky(a_reg)
             print(f"({CholeskyPreconditioner._name}) Cholesky decomposition successful.")
         except Exception as e:
             print(f"({CholeskyPreconditioner._name}) Cholesky decomposition failed: {e}")
@@ -986,9 +1032,15 @@ class CholeskyPreconditioner(Preconditioner):
             use_conj = be.iscomplexobj(l)
             lh = be.conjugate(l).T if use_conj else l.T
             # Forward substitution: Solve L y = r
-            y = be.linalg.solve_triangular(l, r, lower=True, check_finite=False)
+            if be is np:
+                y = sla.solve_triangular(l, r, lower=True, check_finite=False)
+            else:
+                y = jsp.linalg.solve_triangular(l, r, lower=True)
             # Backward substitution: Solve L^H z = y
-            z = be.linalg.solve_triangular(lh, y, lower=False, check_finite=False, trans='N')  # trans='N' assumes lh is already transposed correctly
+            if be is np:
+                z = sla.solve_triangular(lh, y, lower=False, check_finite=False)
+            else:
+                z = jsp.linalg.solve_triangular(lh, y, lower=False)
             return z
         except Exception as e:
             print(f"({CholeskyPreconditioner._name}) Cholesky triangular solve failed during apply: {e}")
@@ -1146,6 +1198,30 @@ class SSORPreconditioner(Preconditioner):
     #! Setup Methods
     # -----------------------------------------------------------------
     
+    @staticmethod
+    def _setup_standard_kernel(a: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup for SSOR: compute D (diag of A+sigma I), and strict L, U parts.
+        Returns dict with keys: d_diag, L, U, omega
+        """
+        be          = backend_mod
+        omega       = kwargs.get('omega', 1.0)
+        a_reg       = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
+        diag_a_reg  = be.diag(a_reg)
+        L           = be.tril(a_reg, k=-1)
+        U           = be.triu(a_reg, k=1)
+        return {'d_diag': diag_a_reg, 'L': L, 'U': U, 'omega': omega}
+
+    @staticmethod
+    def _setup_gram_kernel(s: Array, sp: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup for SSOR from Gram factors by forming A = Sp @ S / n.
+        """
+        be          = backend_mod
+        n           = float(s.shape[0]) if s.shape[0] > 0 else 1.0
+        a_gram      = (sp @ s) / n
+        return SSORPreconditioner._setup_standard_kernel(a_gram, sigma, be, **kwargs)
+    
     def _set_standard(self, a: Array, sigma: float):
         """ 
         Sets up SSOR from matrix A = D + L + U.
@@ -1203,8 +1279,8 @@ class SSORPreconditioner(Preconditioner):
         n       = float(s.shape[0])
         if n <= 0.0:
             n = 1.0
-        
-        print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for SSOR setup (N={N}).")
+
+        print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for SSOR setup (N={n}).")
         a_gram  = (sp @ s) / n
         self._set_standard(a_gram, sigma)
 
@@ -1227,73 +1303,58 @@ class SSORPreconditioner(Preconditioner):
         }
 
     # --- Static Apply ---
-@staticmethod
-def apply(r                 : Array,
-        sigma               : float,
-        backend_mod         : Any, # Renamed for clarity
-        d_diag              : Array, L: Array, U: Array, omega: float) -> Array: # Pass d_diag
-    '''
-    Static apply method for SSOR: forward and backward triangular solves.
-    Solves Mz = r where M = (D/w + L) D^{-1} (D/w + U) / (w(2-w)).
-    This implementation directly performs the forward and backward solves
-    associated with Mz = r, which corresponds to:
-    1. Solve (D/omega + L) y_temp = r          (Forward sweep)
-    2. Solve (D/omega + U) z = D y_temp / omega (Backward sweep)
+    @staticmethod
+    def _apply_kernel(r         : Array,
+            backend_mod         : Any,
+            sigma               : float,
+            **precomputed_data) -> Array:
+        """
+        Static apply method for SSOR: forward and backward triangular solves.
+        Solves Mz = r where M = (D/w + L) D^{-1} (D/w + U) / (w(2-w)).
+        This implementation directly performs the forward and backward solves
+        associated with Mz = r, which corresponds to:
+            1. Solve (D/omega + L) y_temp = r          (Forward sweep)
+            2. Solve (D/omega + U) z = D y_temp / omega (Backward sweep)
 
-    Args:
-        r (Array):
-            The residual vector.
-        sigma (float):
-            Regularization (used during setup).
-        backend_mod (Any):
-            The backend numpy-like module.
-        d_diag (Array):
-            Precomputed diagonal of A+sigma*I.
-        L (Array):
-            Precomputed strictly lower part of A+sigma*I.
-        U (Array):
-            Precomputed strictly upper part of A+sigma*I.
-        omega (float):
-            Relaxation parameter.
+        Precomputed data: d_diag, L, U, omega
 
-    Returns:
-        Array: The preconditioned vector M^{-1}r (which is z).
-    '''
-    if d_diag is None or L is None or U is None:
-        print("Warning: SSOR factors missing in apply, returning original vector.")
-        return r
+        Returns: The preconditioned vector M^{-1}r (z).
+        """
+        d_diag = precomputed_data.get('d_diag')
+        L      = precomputed_data.get('L')
+        U      = precomputed_data.get('U')
+        omega  = precomputed_data.get('omega', 1.0)
+        if d_diag is None or L is None or U is None:
+            print("Warning: SSOR factors missing in apply, returning original vector.")
+            return r
 
-    be = backend_mod # Use the shorter alias
+        be = backend_mod # Use the shorter alias
 
-    # Construct diagonal matrix D from d_diag
-    d = be.diag(d_diag)
+        # 1. Forward sweep: Solve (D/omega + L) y_temp = r
+        try:
+            # Ensure d_diag/omega doesn't contain zeros; setup already handles small diagonals
+            diag_scaled         = d_diag / omega
+            m_fwd               = be.diag(diag_scaled) + L
+            if be is np:
+                y_temp          = sla.solve_triangular(m_fwd, r, lower=True, check_finite=False)
+            else:
+                y_temp          = jsp.linalg.solve_triangular(m_fwd, r, lower=True)
 
-    # Check for complex type might still be needed if backend requires specific handling
-    # use_conj = be.iscomplexobj(L) # Check if necessary for solve_triangular
+            # 2. Backward sweep setup: rhs_bwd = (D/omega) * y_temp (element-wise via diag_scaled)
+            rhs_bwd             = diag_scaled * y_temp
 
-    # 1. Forward sweep: Solve (D/omega + L) y_temp = r
-    #    Matrix for forward solve: m_fwd = D/omega + L
-    try:
-        # Ensure d_diag/omega doesn't contain zeros where L is also zero (though unlikely for SPD)
-        # Add small epsilon for safety if needed, but relies on setup handling zeros.
-        diag_scaled         = d_diag / omega
-        m_fwd               = be.diag(diag_scaled) + L
-        y_temp              = be.linalg.solve_triangular(m_fwd, r, lower=True, check_finite=False)
+            # 3. Backward sweep: Solve (D/omega + U) z = rhs_bwd
+            m_bwd               = be.diag(diag_scaled) + U
+            if be is np:
+                z               = sla.solve_triangular(m_bwd, rhs_bwd, lower=False, check_finite=False)
+            else:
+                z               = jsp.linalg.solve_triangular(m_bwd, rhs_bwd, lower=False)
 
-        # 2. Intermediate step: Calculate right-hand-side for backward solve: rhs_bwd = D y_temp / omega
-        #    This is equivalent to (diag(D)/omega) * y_temp element-wise
-        rhs_bwd             = diag_scaled * y_temp # Element-wise multiplication
-
-        # 3. Backward sweep: Solve (D/omega + U) z = rhs_bwd
-        #    Matrix for backward solve: m_bwd = D/omega + U
-        m_bwd               = be.diag(diag_scaled) + U
-        z                   = be.linalg.solve_triangular(m_bwd, rhs_bwd, lower=False, check_finite=False)
-
-        return z
-    except Exception as e:
-        # Catch potential LinAlgError if triangular matrices are singular
-        print(f"SSOR triangular solve failed during apply: {e}")
-        return r # Return original vector if solve fails
+            return z
+        except Exception as e:
+            # Catch potential LinAlgError if triangular matrices are singular
+            print(f"SSOR triangular solve failed during apply: {e}")
+            return r # Return original vector if solve fails
     # -----------------------------------------------------------------
     #! String Representation
     # -----------------------------------------------------------------
@@ -1560,11 +1621,12 @@ def _resolve_precond_type(precond_id: Any) -> Union[PreconditionersTypeSym, Prec
     # Check if precond_id is None
     precond_type = None
     if isinstance(precond_id, str):
+        name = precond_id.strip().replace('-', '_').replace(' ', '_').upper()
         try:
-            precond_type                = PreconditionersTypeSym[precond_id]
+            precond_type                = PreconditionersTypeSym[name]
         except KeyError as e:
             try:
-                precond_type            = PreconditionersTypeNoSym[precond_id]
+                precond_type            = PreconditionersTypeNoSym[name]
             except KeyError as e:
                 raise ValueError(f"Unknown preconditioner name: '{precond_id}'.") from e
 
@@ -1579,8 +1641,8 @@ def _resolve_precond_type(precond_id: Any) -> Union[PreconditionersTypeSym, Prec
     elif isinstance(precond_id, (PreconditionersTypeSym, PreconditionersTypeNoSym)):
         precond_type                    = precond_id
     else:
-        return None
-        # raise TypeError(f"Unsupported type for precond_id: {type(precond_id)}. Expected Enum, str, or int.")
+        # Unsupported identifier type
+        raise TypeError(f"Unsupported type for precond_id: {type(precond_id)}. Expected Enum, str, or int.")
     return precond_type
 
 # =====================================================================
@@ -1644,6 +1706,8 @@ def _get_precond_class_and_defaults(precond_type: Union[PreconditionersTypeSym, 
 
     return target_class, defaults
 
+# =====================================================================
+#! Main Factory Function
 # =====================================================================
 
 def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:

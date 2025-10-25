@@ -5,6 +5,11 @@ This module provides a wrapper for random number generation functions. The wrapp
 allows for the use of different backends and provides a common interface for generating
 random numbers. The module also provides a helper function to generate random test
 matrices and vectors for testing solvers.
+
+File    : QES/general_python/algebra/ran_wrapper.py
+Version : 0.1.0
+Author  : Maksymilian Kliczkowski
+Email   : maxgrom97@gmail.com
 '''
 
 import numpy as np
@@ -26,7 +31,7 @@ except ImportError:
 
 # -----------------------------------------------------------------------------
 
-from typing import Union, Tuple, Optional, Callable
+from typing import Union, Tuple, Optional, Callable, Dict
 from functools import partial
 from ..algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
 
@@ -42,6 +47,46 @@ if JAX_AVAILABLE:
     JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42)  # Default seed
 else:
     JAX_RND_DEFAULT_KEY = None
+
+###############################################################################
+#! Registry for RNGs and Random Generators
+###############################################################################
+
+class RandomRegistry:
+    """Simple registry to manage RNG factories and random generators.
+
+    - rng_factories         : name -> callable(seed) -> (rng_module, rng_key)
+    - matrix_generators     : name -> callable(...)
+    - distributions     : name -> callable(...)
+    """
+    def __init__(self) -> None:
+        self.rng_factories: Dict[str, Callable[[Optional[int]], Tuple[object, Optional[object]]]] = {}
+        self.matrix_generators: Dict[str, Callable[..., object]] = {}
+        self.distributions: Dict[str, Callable[..., object]] = {}
+
+    def register_rng(self, name: str, factory: Callable[[Optional[int]], Tuple[object, Optional[object]]]):
+        """ Register a new RNG factory. """
+        self.rng_factories[name] = factory
+
+    def register_matrix(self, name: str, func: Callable[..., object]):
+        """ Register a new matrix generator. """
+        self.matrix_generators[name] = func
+
+    def register_distribution(self, name: str, func: Callable[..., object]):
+        """ Register a new distribution. """
+        self.distributions[name] = func
+
+    def list_capabilities(self) -> Dict[str, Tuple[str, ...]]:
+        """ List available RNGs, matrix generators, and distributions. """
+        return {
+            "rngs"          : tuple(self.rng_factories.keys()),
+            "matrices"      : tuple(self.matrix_generators.keys()),
+            "distributions" : tuple(self.distributions.keys()),
+        }
+
+# -----------------------------------------------------------------------------
+
+_registry = RandomRegistry()
 
 ###############################################################################
 #! Random number generator initialization
@@ -553,7 +598,7 @@ else:
     def choice_jax(key, a, shape):
         return None
 
-def choice(a    :   'array-like',
+def choice(a,
         shape   :   Union[Tuple, int],
         replace =   True,
         p       =   None,
@@ -699,16 +744,21 @@ def random_matrix(shape, typek : RMT, backend="default", dtype=None):
     
     if typek == RMT.COE:
         mat = COE(shape)
+        
     elif typek == RMT.GUE:
         mat = GUE(shape)
+        
     elif typek == RMT.GOE:
         a   = np.random.normal(0, 1, size=shape)
         mat = (a + a.T) / np.sqrt(2)
         # mat = GOE(shape)
+        
     elif typek == RMT.CRE:
         mat = CRE(shape)
+        
     elif typek == RMT.CUE:
         mat = CUE(shape)
+        
     else:
         raise ValueError("Invalid random matrix type.")
 
@@ -787,3 +837,56 @@ def random_vector(shape, typek: str, backend="default", dtype = None, separator 
         raise ValueError("Invalid random vector type.")
     
 ##############################################################################
+#! Registry defaults
+##############################################################################
+
+# Register defaults in the registry
+_registry.register_rng("numpy", lambda seed=None: (npr.default_rng(seed), None))
+if JAX_AVAILABLE:
+    _registry.register_rng("jax", lambda seed=None: (random_jp, random_jp.PRNGKey(42 if seed is None else seed)))
+
+_registry.register_matrix("GOE", goe)
+_registry.register_matrix("GUE", gue)
+_registry.register_matrix("COE", coe)
+_registry.register_matrix("CRE", cre)
+_registry.register_matrix("CUE", cue)
+
+_registry.register_distribution("uniform", uniform)
+_registry.register_distribution("normal", normal)
+_registry.register_distribution("poisson", poisson)
+_registry.register_distribution("gamma", gamma)
+_registry.register_distribution("beta", beta)
+_registry.register_distribution("integers", randint)
+_registry.register_distribution("choice", choice)
+_registry.register_distribution("shuffle", shuffle)
+
+# -----------------------------------------------------------------------------
+#! Registry exposure functions
+# -----------------------------------------------------------------------------
+
+def list_capabilities() -> Dict[str, Tuple[str, ...]]:
+    """Expose registry capabilities."""
+    return _registry.list_capabilities()
+
+def get_info() -> Dict[str, object]:
+    """Return a summary of randomness capabilities and default state."""
+    return {
+        "default_backend": DEFAULT_BACKEND,
+        "jax_available": bool(JAX_AVAILABLE),
+        "capabilities": list_capabilities(),
+    }
+
+__all__ = [
+    # Seed and RNG management
+    "initialize", "set_global_seed", "handle_rng", "default_dtype",
+    # Distributions
+    "uniform", "normal", "exponential", "poisson", "gamma", "beta", "randint", "choice", "shuffle", "shuffle_indices",
+    # Random matrices and vectors
+    "RMT", "random_matrix", "goe", "gue", "coe", "cre", "cue", "random_vector",
+    # Registry and discovery
+    "list_capabilities", "get_info",
+]
+
+# -----------------------------------------------------------------------------
+#! End of file
+# -----------------------------------------------------------------------------
