@@ -15,10 +15,10 @@ import numba
 from enum import Enum, unique
 
 from typing import Optional, Union, Tuple
-from ...algebra.utils import JAX_AVAILABLE
+from ..utils import JAX_AVAILABLE
 
 #! jax
-from ...algebra.utilities import pfaffian_jax as jnp
+from ..utilities import pfaffian_jax as jnp
 
 ################################################################################################################
 

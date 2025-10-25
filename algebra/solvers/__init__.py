@@ -1,6 +1,9 @@
 '''
-file:       general_python/algebra/solvers/__init__.py
-author:     Maksymilian Kliczkowski
+Solver module for various linear algebra solvers.
+
+File        : general_python/algebra/solvers/__init__.py
+Author      : Maksymilian Kliczkowski
+License     : MIT
 
 Initialization file for the solvers module. Exports solver classes,
 the SolverType enum, and the choose_solver factory function.
@@ -11,17 +14,17 @@ from typing import Union, Optional, Any, Type
 from enum import Enum, auto, unique
 
 # Import base classes and types from solver.py (assuming it's in the parent directory or path)
-from ...algebra.solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
+from ..solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
 
 # Import concrete solver implementations
-from ...algebra.solvers.cg import CgSolver, CgSolverScipy
-from ...algebra.solvers.direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
-from ...algebra.solvers.pseudoinverse import PseudoInverseSolver
-from ...algebra.solvers.minres_qlp import MinresQLPSolver
+from .cg import CgSolver, CgSolverScipy
+from .direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
+from .pseudoinverse import PseudoInverseSolver
+from .minres_qlp import MinresQLPSolver
 
 # Import utility and preconditioner chooser
-from ...algebra.utils import get_backend, JAX_AVAILABLE
-from ...algebra.preconditioners import Preconditioner, choose_precond
+from ..utils import get_backend, JAX_AVAILABLE
+from ..preconditioners import Preconditioner, choose_precond
 
 # -----------------------------------------------------------------------------
 #! Helper function: choose_solver

@@ -49,15 +49,15 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/general_python"
-Documentation = "https://general-python.readthedocs.io/"
-Repository = "https://github.com/yourusername/general_python.git"
-Issues = "https://github.com/yourusername/general_python/issues"
+Homepage        = "https://github.com/yourusername/general_python"
+Documentation   = "https://general-python.readthedocs.io/"
+Repository      = "https://github.com/yourusername/general_python.git"
+Issues          = "https://github.com/yourusername/general_python/issues"
+
+[tool.setuptools]
+py-modules      = []
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["*"]
-exclude = ["docs*", "tests*", "*.tests", "*.tests.*"]
-
-[tool.setuptools.package-dir]
-"" = "."
+where           = ["src"]
+include         = ["general_python*"]
+exclude         = ["tests*", "docs*"]

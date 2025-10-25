@@ -47,16 +47,20 @@ A comprehensive Python library providing utilities for scientific computing, par
 
 ## Installation
 
-```bash
-pip install -e .
-```
-
-Or for development:
+### From Source (Recommended for Development)
 
 ```bash
 git clone <repository-url>
 cd general_python
 pip install -e .
+```
+
+The package uses a **src-layout** with symlinks for editable installs. The `src/general_python/` directory is auto-generated during installation and should not be committed to version control.
+
+### From PyPI
+
+```bash
+pip install general-python-utils
 ```
 
 ## Quick Start

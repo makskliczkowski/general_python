@@ -26,19 +26,23 @@ Examples:
 >>> from general_python.lattices import square
 >>> lattice = square.SquareLattice(4, 4)
 
-Version: 0.1.0
-Author: Maksymilian Kliczkowski
-License: MIT
+File    : QES/general_python/__init__.py
+Version : 0.1.0
+Author  : Maksymilian Kliczkowski
+License : MIT
 """
 
 import sys
 import importlib
 
 # Package metadata
-__version__ = "0.1.0"
-__author__  = "Maksymilian Kliczkowski"
-__email__   = "maksymilian.kliczkowski@pwr.edu.pl"
-__license__ = "MIT"
+__version__         = "0.1.0"
+__author__          = "Maksymilian Kliczkowski"
+__email__           = "maksymilian.kliczkowski@pwr.edu.pl"
+__license__         = "MIT"
+
+# Description used by QES.registry
+MODULE_DESCRIPTION  = "Shared scientific utilities: algebra backends, logging, lattices, maths, ML, physics."
 
 # List of available modules (not imported by default)
 __all__     = ["algebra", "common", "lattices", "maths", "ml", "physics"]
@@ -80,6 +84,15 @@ def list_available_modules():
     """
     return __all__
 
+# Lazy import subpackages on attribute access (PEP 562)
+def __getattr__(name):  # pragma: no cover - simple indirection
+    if name in __all__:
+        return importlib.import_module(f".{name}", __name__)
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+def __dir__():  # pragma: no cover
+    return sorted(list(globals().keys()) + __all__)
+
 # ---------------------------------------------------------------------
 
 # # Import all modules for documentation and access
@@ -94,4 +107,6 @@ def list_available_modules():
 #     pass
 # from . import physics
 
+# ---------------------------------------------------------------------
+#! EOF
 # ---------------------------------------------------------------------

@@ -38,15 +38,15 @@ import numpy as np
 import inspect
 
 # Assuming these are correctly imported from the solver module
-from ...algebra.solver import (
+from ..solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc
 )
 # Preconditioner import might not be strictly needed here
-from ...algebra.preconditioners import Preconditioner
+from ..preconditioners import Preconditioner
 
 # Backend/Compilation tools
-from ...algebra.utils import JAX_AVAILABLE, get_backend
+from ..utils import JAX_AVAILABLE, get_backend
 try:
     import jax
     import jax.numpy as jnp

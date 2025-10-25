@@ -75,12 +75,12 @@ import enum
 import inspect
 
 # Base Solver classes and types
-from ...algebra.solver import (
+from ..solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc, _sym_ortho)
 # Utilities and Preconditioners
-from ...algebra.utils import JAX_AVAILABLE, get_backend
-from ...algebra.preconditioners import Preconditioner, PreconitionerApplyFun
+from ..utils import JAX_AVAILABLE, get_backend
+from ..preconditioners import Preconditioner, PreconitionerApplyFun
 
 # JAX imports
 try:

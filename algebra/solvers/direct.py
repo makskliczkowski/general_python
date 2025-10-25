@@ -12,13 +12,13 @@ from typing import Optional, Callable, Union, Any, NamedTuple, Type
 import numpy as np
 import inspect
 
-from ...algebra.solver import (
+from ..solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc
 )
-from ...algebra.preconditioners import Preconditioner
+from ..preconditioners import Preconditioner
 
-from ...algebra.utils import JAX_AVAILABLE, get_backend
+from ..utils import JAX_AVAILABLE, get_backend
 try:
     import jax
     import jax.numpy as jnp

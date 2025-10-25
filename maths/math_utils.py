@@ -1,8 +1,29 @@
+'''
+Math utilities for various mathematical operations, fittings, and distributions.
+It includes functions for finding maxima, nearest values, and fitting data to various models.
+
+Imports:
+- scipy.optimize.curve_fit
+- scipy.interpolate.splrep
+- scipy.interpolate.BSpline
+
+Functions:
+- CUE_QR
+- Fitter
+- FitterParams
+
+File    : QES/general_python/maths/math_utils.py
+Version : 0.1.0
+Author  : Maksymilian Kliczkowski
+License : MIT
+'''
+
 from .__random__ import *
+
+# fitting and distributions
 from scipy.optimize import curve_fit as fit
 from scipy.interpolate import splrep, BSpline
 from scipy import interpolate
-
 from scipy.stats import poisson, norm, expon, gaussian_kde
 from scipy.special import gamma
 
@@ -11,11 +32,14 @@ import pandas as pd
 
 import math
 import numpy as np
+
+# Optional JAX support without import-time side effects
 try:
-    import jax.numpy as jnp
-except ImportError as e:
-    print('JAX is not installed. Some functionalities will not work.')
-    pass
+    import jax.numpy as jnp     # type: ignore
+    _JAX_AVAILABLE = True
+except Exception:               # pragma: no cover - optional dependency
+    jnp = None                  # type: ignore
+    _JAX_AVAILABLE = False
 
 TWOPI       = math.pi * 2
 PI          = math.pi
@@ -32,8 +56,11 @@ def find_maximum_idx(x):
         return x.idxmax(axis=1)
     elif isinstance(x, np.ndarray):
         return np.argmax(x, axis=1)
-    elif isinstance(x, jnp.ndarray):
-        return jnp.argmax(x, axis=1)
+    elif _JAX_AVAILABLE:
+        try:
+            return jnp.argmax(x, axis=1)
+        except Exception:
+            raise TypeError("Unsupported JAX array type or shape for argmax")
     else:
         raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
     
@@ -48,8 +75,11 @@ def find_nearest_val(x, val, col):
         return x.loc[(x[col]-val).abs().idxmin()]
     elif isinstance(x, np.ndarray):
         return np.array((np.abs(x - val)).argmin())
-    elif isinstance(x, jnp.ndarray):
-        return jnp.array((jnp.abs(x - val)).argmin())
+    elif _JAX_AVAILABLE:
+        try:
+            return jnp.array((jnp.abs(x - val)).argmin())
+        except Exception:
+            raise TypeError("Unsupported JAX array type for nearest value computation")
     else:
         raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
 
@@ -68,8 +98,11 @@ def find_nearest_idx(x, val : float, **kwargs):
         return (x[col]-val).abs().idxmin()
     elif isinstance(x, np.ndarray):
         return (np.abs(x - val)).argmin()
-    elif isinstance(x, jnp.ndarray):
-        return jnp.array((jnp.abs(x - val)).argmin())
+    elif _JAX_AVAILABLE:
+        try:
+            return jnp.array((jnp.abs(x - val)).argmin())
+        except Exception:
+            raise TypeError("Unsupported JAX array type for nearest index computation")
     else:
         raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
     
@@ -329,12 +362,12 @@ class Fitter:
 
     @staticmethod
     def gen_cauchy(x, v = 1.0, gamma = 1.0, alpha = 1.0, beta = 1.0):
-        '''
+        r'''
         Generalized Cauchy distribution
         - v is the normalization factor
         - \alpha is the stability parameter, often referred to as the shape parameter,
-        - β is the scale parameter,
-        - γ is a scale parameter related to the width of the distribution.
+        - \beta is the scale parameter,
+        - \gamma is a scale parameter related to the width of the distribution.
         '''
         return v * gamma * (1 + (x * gamma / beta)**2) ** (-(alpha + 1) / 2)
     
