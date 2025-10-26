@@ -66,14 +66,14 @@ class Hafnian:
         return res
 
     # ------------------------------------------------------------------
-    #! b) Gray-code loop (Clifford–Tonucci)  --  O(2^m m²)
+    #! b) Gray-code loop (Clifford-Tonucci)  --  O(2^m m^2)
     # ------------------------------------------------------------------
     @classmethod
     @numba.jit(nopython=True, cache=True)
     def _hafnian_gray(cls, A):
         """
         Computes the hafnian of a symmetric matrix A using the Gray code loop
-        (Clifford–Tonucci algorithm). Complexity: O(2^m * m^2), where n=2m.
+        (Clifford-Tonucci algorithm). Complexity: O(2^m * m^2), where n=2m.
 
         Reference:
         - Clifford, P., & Tonucci, R. (2020). "A fast recursive algorithm for the hafnian of a general complex matrix".

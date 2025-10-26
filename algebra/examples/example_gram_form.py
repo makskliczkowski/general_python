@@ -52,7 +52,7 @@ def create_gram_problem(n_samples, n_params, rank_deficient=False):
             Target vector (n_samples,)
     """
     # S represents log-derivative or overlap derivatives
-    # In NQS: S[i,j] = ∂log ψ/∂θ_j evaluated at sample i
+    # In NQS: S[i,j] = ∂log \psi /∂θ_j evaluated at sample i
     S = np.random.randn(n_samples, n_params) + 1j * np.random.randn(n_samples, n_params)
     
     if rank_deficient:
@@ -131,12 +131,12 @@ def example_tdvp_time_step():
     
     # In TDVP, we solve for parameter updates:
     # S dt/dθ = -∂E/∂θ
-    # where S_ij = <∂ψ/∂θ_i | ∂ψ/∂θ_j> (quantum geometric tensor)
+    # where S_ij = <∂\psi /∂θ_i | ∂\psi /∂θ_j> (quantum geometric tensor)
     
     n_params = 30
     
     # Create overlap matrix S (typically from <O_i O_j*> - <O_i><O_j*>)
-    # where O_i = ∂log ψ/∂θ_i
+    # where O_i = ∂log \psi /∂θ_i
     n_samples = 500
     O = np.random.randn(n_samples, n_params) + 1j * np.random.randn(n_samples, n_params)
     
@@ -349,7 +349,7 @@ def example_complex_gram():
     S_dag           = S.conj().T
     forces          = S_dag @ Sp
     result          = solve_func(s=S, s_p=S_dag, b=forces, x0=None, tol=1e-7, maxiter=None, precond_apply=None)
-    
+
     print(f"\nResults:")
     print(f"  Converged: {result.converged}")
     print(f"  Iterations: {result.iterations}")
@@ -388,5 +388,5 @@ if __name__ == "__main__":
     print("2. Equivalent to least-squares: min ||Sp - S p||^2 ")
     print("3. Always use regularization (ε ∼ 1e-4) for numerical stability")
     print("4. Works naturally with complex matrices (quantum wavefunctions)")
-    print("5. S is typically log-derivatives (∂log ψ/∂θ) from MC samples")
+    print("5. S is typically log-derivatives (∂log \psi /∂θ) from MC samples")
     print("\nNext: See example_with_preconditioners.py for acceleration")

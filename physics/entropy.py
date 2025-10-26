@@ -180,7 +180,7 @@ class EntropyPredictions:
 
             Notes:
             This implements the Page value calculation for systems with U(1) charge conservation,
-            following the formula: 〈SA〉N = ∑(dA dB / dN)[〈SA〉 + ψ(dN + 1) - ψ(dA dB + 1)]
+            following the formula: 〈SA〉N = ∑(dA dB / dN)[〈SA〉 + \psi (dN + 1) - \psi (dA dB + 1)]
             """
             
             if La <= 0 or Lb <= 0:

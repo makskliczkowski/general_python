@@ -2,26 +2,7 @@
 file:       general_python/algebra/solver.py
 author:     Maksymilian Kliczkowski
 
-Defines the abstract interface and helper structures for solving linear systems
-
-$$
-Ax = b,
-$$
-
-potentially using preconditioning
-
-$$
-M^{-1}Ax = M^{-1}b \rm {[left]},
-$$
-
-or
-
-$$
-A M^{-1} y = b, x = M^{-1}y \rm {[right]},
-$$ 
-
-Supports different backends (NumPy, JAX) and promotes a static-method-based
-interface for solver algorithms, allowing for easier compilation (e.g., JIT).
+Defines the abstract interface and helper structures for solving linear systems ($Ax = b$), potentially using left preconditioning ($M^{-1}Ax = M^{-1}b$) or right preconditioning ($A M^{-1} y = b,\ x = M^{-1}y$).  Supports different backends (NumPy, JAX) and promotes a static-method-based interface for solver algorithms, allowing for easier compilation (e.g., JIT).
 '''
 
 import numpy as np
@@ -156,11 +137,9 @@ class SolverResult(NamedTuple):
 class Solver(ABC):
     '''
     Abstract base class for linear system solvers
-    
-    $$
-    Ax = b.
-    $$
-    
+
+    Targets problems of the form $Ax = b$.
+
     Primarily defines the static interface `solve` that concrete algorithm
     implementations (like CG, MINRES) must provide.
 

@@ -61,6 +61,10 @@ class HoneycombLattice(Lattice):
         self._a1 = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
         self._a2 = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
         self._a3 = np.array([0, 0, self.c])
+        self._basis = np.array([
+            np.array([0.0, 0.0, 0.0]),
+            np.array([0.0, self.a, 0.0]),
+        ])
 
         # Compute lattice properties.
         self.calculate_coordinates()
@@ -92,9 +96,13 @@ class HoneycombLattice(Lattice):
     def get_real_vec(self, x: int, y: int, z: int):
         """
         Returns the real-space vector for a given (x, y, z) coordinate.
-        (Here we use a simple linear combination of the primitive vectors.)
         """
-        return x * self._a1[0] + y * self._a2[1] + z * self._a3[2]
+        cell_x = x
+        # coordinates are stored as (x, 2*y + sublattice, z)
+        cell_y = y // 2
+        sub = y % 2
+        base = cell_x * self._a1 + cell_y * self._a2
+        return base + self._basis[sub] + z * self._a3
 
     def get_norm(self, x: int, y: int, z: int):
         """
@@ -175,18 +183,16 @@ class HoneycombLattice(Lattice):
         """
         Calculates the real-space vectors for each site.
         """
-        
-        self.rvectors = np.zeros((self.Ns, 3))
-        for i in range(self.Ns):
-            # y will give us the move to the right as well 
-            x, y, z = self.coordinates[i]
-            
-            self.rvectors[i] = (x + y // 2) * (self._a1 - self._a2) + y * (self._a1 + self._a2) + z * self._a3
-        
-        # self.rvectors = np.array([
-        #     self.get_real_vec(x, y, z)
-        #     for x in range(self.Lx) for y in range(self.Ly) for z in range(self.Lz)
-        # ])
+        rv = np.zeros((self.Ns, 3))
+        idx = 0
+        for z in range(self.Lz):
+            for y in range(self.Ly):
+                for x in range(self.Lx):
+                    cell_offset = x * self._a1 + y * self._a2 + z * self._a3
+                    for sub in range(2):
+                        rv[idx] = cell_offset + self._basis[sub]
+                        idx += 1
+        self.rvectors = rv
 
     ################################### NEIGHBORHOOD CALCULATORS #######################################
 
@@ -333,7 +339,7 @@ class HoneycombLattice(Lattice):
         Here we simply use the Euclidean norm of the coordinate as a symmetry measure.
         In a more advanced implementation, this might account for sublattice or other symmetries.
         """
-        self.norm_sym = {i: self.get_norm(*coord) for i, coord in enumerate(self.coordinates)}
+        self.norm_sym = {i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns)}
 
     ################################### SYMMETRY & INDEXING #######################################
 

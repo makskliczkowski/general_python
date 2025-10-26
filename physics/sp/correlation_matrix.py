@@ -3,14 +3,14 @@ general_python/physics/sp/correlation_matrix.py
 =====================
 
 This module provides functions to construct the single-particle correlation matrix 
-C_ij = ⟨ψ|cᵢ ^\dag  cⱼ|ψ⟩ for various types of quantum many-body states:
+C_ij = <\psi |c_i ^\dag  c_j|\psi > for various types of quantum many-body states:
 
 Functions
 ---------
 - `corr_single`: Computes the correlation matrix for a single Slater determinant 
     specified by an occupation bit-string.
 - `corr_superposition`: Computes the correlation matrix for a linear combination 
-    of Slater determinants, |ψ⟩ = Σ_k aₖ |mₖ⟩.
+    of Slater determinants, |\psi > = \sum _k a_k |m_k>.
 - `corr_from_state_vector`: Computes the correlation matrix for an arbitrary 
     many-body state given as a state vector (general but less efficient).
 
@@ -88,11 +88,11 @@ def corr_single(
             if True, uses selection by boolean mask and computes 2·(W_occ^\dag W_occ).
         If False, uses `pref = 2·occ - 1` trick.
     mode : {"slater","bdg-normal","bdg-full"}
-        - "slater"     : C = ⟨c_i^\dag c_j⟩ (La\times La).
-        - "bdg-normal" : N = ⟨c_i^\dag c_j⟩ for BdG (La\times La).
+        - "slater"     : C = <c_i^\dag c_j> (La\times La).
+        - "bdg-normal" : N = <c_i^\dag c_j> for BdG (La\times La).
         - "bdg-full"   : Nambu G =
-                        [[ ⟨c^\dag c⟩, ⟨c^\dag c^\dag⟩ ],
-                        [ ⟨c   c⟩, ⟨c   c^\dag⟩ ]]  of shape (2La\times 2La).
+                        [[ <c^\dag c>, <c^\dag c^\dag> ],
+                        [ <c   c>, <c   c^\dag> ]]  of shape (2La\times 2La).
     stacked_uv : bool
         If True in BdG modes, interpret W_A as vertically stacked [U_A; V_A].
 
@@ -106,9 +106,9 @@ def corr_single(
     ---------------------------
     Let c = U a + V a^\dag, with U,V \in C^{La\times Ls} (we use U_A,V_A as (Ls,La) row-major in orbitals; see below).
     For diagonal quasiparticle occupations f = diag(f_q), the standard equal-time correlations are
-        N ≡ ⟨c^\dag c⟩  = U f U^\dag + V (I - f) V^\dag,
-        F ≡ ⟨c   c⟩  = U (I - f) V^T + V f U^T,
-        Ṅ ≡ ⟨c   c^\dag⟩ = U (I - f) U^\dag + V f V^\dag = I - N.
+        N ≡ <c^\dag c>  = U f U^\dag + V (I - f) V^\dag,
+        F ≡ <c   c>  = U (I - f) V^T + V f U^T,
+        Ṅ ≡ <c   c^\dag> = U (I - f) U^\dag + V f V^\dag = I - N.
     Implementation uses row-major (orbitals q) storage: U_A has shape (Ls, La), so
         N = (U_A^\dag · f · U_A) + (V_A^\dag · (1-f) · V_A),
         computed efficiently without forming diag(f) via column-wise scaling of U_A^\dag and V_A^\dag.
@@ -233,11 +233,11 @@ def corr_full(
         - "slater" fast path using selection by boolean mask and computes 2·(W_occ^\dag W_occ).
         If False, uses the (2·occ-1) trick.
     mode : {"slater","bdg-normal","bdg-full"}
-        - "slater"     : returns C = ⟨c^\dag c⟩, shape (L, L).
-        - "bdg-normal" : returns N = ⟨c^\dag c⟩ for BdG, shape (L, L).
+        - "slater"     : returns C = <c^\dag c>, shape (L, L).
+        - "bdg-normal" : returns N = <c^\dag c> for BdG, shape (L, L).
         - "bdg-full"   : returns Nambu G =
-                        [[ ⟨c^\dag c⟩, ⟨c^\dag c^\dag⟩ ],
-                        [ ⟨c   c⟩, ⟨c   c^\dag⟩ ]] of shape (2L, 2L).
+                        [[ <c^\dag c>, <c^\dag c^\dag> ],
+                        [ <c   c>, <c   c^\dag> ]] of shape (2L, 2L).
     stacked_uv :
         If True in BdG modes, interpret W as vertically stacked [U; V].
 
@@ -331,7 +331,7 @@ def corr_single2_slater_wick(corr: np.ndarray, ns: int, j: int = 0, l: int = 0):
     $$
     
     for i,k,j,l = 0,...,ns-1. This is useful for computing two-body correlation functions:
-    ⟨c_i^† c_j^† c_l c_k⟩ = C_wick[i,k] = -C[i,k] C[j,l] + C[i,l] C[j,k]
+    <c_i^\dag c_j^\dag c_l c_k> = C_wick[i,k] = -C[i,k] C[j,l] + C[i,l] C[j,k]
     '''
     
     C_wick = np.zeros_like(corr)
@@ -474,7 +474,7 @@ def corr_superposition(
             q1, q2 = np.nonzero(diff)[0]    # the two differing orbitals
             
             # The ± sign from fermionic exchange:
-            #   if |m⟩ has q1 occupied and |n⟩ has q1 empty  -> annihilate at q1
+            #   if |m> has q1 occupied and |n> has q1 empty  -> annihilate at q1
             #   otherwise the opposite.
             # We encode this in the prefactor below.
 
@@ -753,7 +753,7 @@ def corr_from_statevector(psi               : np.ndarray,
                         order               : int  = 2,
                         **kwargs) -> np.ndarray:
     """
-    ψ-based correlators matching corr_single's conventions.
+    \psi -based correlators matching corr_single's conventions.
 
     Parameters
     ----------
@@ -809,7 +809,7 @@ if JAX_AVAILABLE:
         occ                 : jnp.ndarray,  # (Ls,)
         subtract_identity   : bool = True) -> jnp.ndarray:
         """
-        JAX kernel – one line of XLA-fused linear algebra.
+        JAX kernel - one line of XLA-fused linear algebra.
         """
         occ_f   = occ.astype(W_A.dtype)
         C       = (jnp.conjugate(W_A).T * occ_f) @ W_A

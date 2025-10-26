@@ -113,7 +113,7 @@ def _format_coeff(c: complex | float) -> str:
         return str(c)
 
 # ---------------------------------------------------------------------------
-#! |ψ>  and  ⟨ψ|  helpers
+#! |\psi >  and  <\psi |  helpers
 # ---------------------------------------------------------------------------
 
 def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
@@ -130,7 +130,7 @@ def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None)
     return fr"\left|{to_bin((state + 1) // 2, ns)}\right\rangle"
 
 def bra(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
-    r"""LaTeX code for the bra ⟨ψ| corresponding to :pyfunc:`ket`."""
+    r"""LaTeX code for the bra <\psi | corresponding to :pyfunc:`ket`."""
     return ket(state, ns, to_bin=to_bin).replace(r"\\left|", r"\\left\langle").replace(r"\\right\\rangle", r"\\right|")
 
 # ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ def display_operator_action(op_tex    : str,
                             to_bin    : Callable[[int, int], str] | None = None
                             ) -> None:
     r"""
-    Show the action  Ô₍site₎ |ψ> = Σₖ cₖ |φₖ>  (or 0).
+    Show the action  Ô₍site₎ |\psi > = Σₖ cₖ |φₖ>  (or 0).
 
     Parameters
     ----------

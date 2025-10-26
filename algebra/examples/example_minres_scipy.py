@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""
+MINRES Solver (SciPy) - Example
+
+This example demonstrates the MINRES (Minimum Residual) solver for symmetric
+indefinite linear systems. MINRES is more robust than CG when the matrix is
+symmetric but not positive-definite.
+
+Mathematical Problem:
+    Solve Ax = b where A is symmetric (but may have negative eigenvalues)
+
+MINRES minimizes the residual norm ||Ax - b|| over Krylov subspaces and is
+suitable for saddle-point problems and indefinite systems common in quantum mechanics.
+"""
+
+import numpy as np
+from QES.general_python.algebra import solvers
+
+# ----------------------------------------------------------------------------
+#! Helper functions for creating test matrices
+# ----------------------------------------------------------------------------
+
+def create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.3):
+    """
+    Create a symmetric indefinite matrix with controlled spectrum.
+    
+    Indefinite means the matrix has both positive and negative eigenvalues.
+    Such systems arise in:
+    - Saddle point problems
+    - Constrained optimization (Lagrange multipliers)
+    - Time-dependent quantum systems
+    
+    Args:
+        n: Matrix dimension
+        neg_eigenvalue_fraction: Fraction of eigenvalues that are negative
+        
+    Returns:
+        n\timesn symmetric indefinite matrix
+    """
+    n_neg = int(n * neg_eigenvalue_fraction)
+    n_pos = n - n_neg
+    
+    # Create spectrum with both positive and negative eigenvalues
+    eigenvalues = np.concatenate([
+        -np.linspace(0.1, 5.0, n_neg),  # Negative eigenvalues
+        np.linspace(0.1, 5.0, n_pos)    # Positive eigenvalues
+    ])
+    np.random.shuffle(eigenvalues)
+    
+    # Create random orthogonal matrix
+    Q, _    = np.linalg.qr(np.random.randn(n, n))
+    
+    # A = Q @ diag(eigenvalues) @ Q^T
+    A       = Q @ np.diag(eigenvalues) @ Q.T
+    
+    # Ensure perfect symmetry
+    A       = 0.5 * (A + A.T)
+    
+    return A
+
+# ----------------------------------------------------------------------------
+#! Example usages of MINRES solver
+# ----------------------------------------------------------------------------
+
+def example_basic_indefinite():
+    """Basic MINRES solve on indefinite system."""
+    print("=" * 70)
+    print("Example 1: Symmetric Indefinite System")
+    print("=" * 70)
+    
+    # Problem setup
+    n           = 100
+    A           = create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.3)
+    x_true      = np.random.randn(n)
+    b           = A @ x_true
+    
+    # Check spectrum
+    eigenvalues = np.linalg.eigvalsh(A)
+    n_negative  = np.sum(eigenvalues < 0)
+    
+    print(f"Problem size: {n}")
+    print(f"Eigenvalue range: [{eigenvalues.min():.2f}, {eigenvalues.max():.2f}]")
+    print(f"Negative eigenvalues: {n_negative}/{n}")
+    print(f"Matrix is {'INDEFINITE' if n_negative > 0 else 'POSITIVE-DEFINITE'}")
+    
+    # Solve using MINRES
+    solver      = solvers.choose_solver(solver_id='scipy_minres', sigma=0.0)
+    solve_func  = solver.get_solver_func(
+                    backend_module  = np,
+                    use_matvec      = False,
+                    use_fisher      = False,
+                    use_matrix      = True,
+                    sigma           = 0.0
+                )
+    result      = solve_func(a=A, b=b, x0=None, tol=1e-10, maxiter=None, precond_apply=None)
+    
+    # Check solution
+    error       = np.linalg.norm(result.x - x_true)
+    residual    = np.linalg.norm(A @ result.x - b)
+
+    print(f"\nResults:")
+    print(f"  Converged: {result.converged}")
+    print(f"  Iterations: {result.iterations}")
+    
+    res_norm_str = f"{result.residual_norm:.2e}" if result.residual_norm is not None else "N/A"
+    print(f"  Residual norm: {res_norm_str}")
+    print(f"  Solution error: {error:.2e}")
+    print(f"  True residual: {residual:.2e}")
+    
+    return result
+
+# ----------------------------------------------------------------------------
+# Example 2: CG vs MINRES
+# ---------------------------------------------------------------------------
+
+def example_cg_vs_minres():
+    """Compare CG (fails) vs MINRES (succeeds) on indefinite system."""
+    
+    print("\n" + "=" * 70)
+    print("Example 2: Why MINRES for Indefinite Systems?")
+    print("=" * 70)
+    
+    from QES.general_python.algebra.solvers import CgSolver
+    
+    n           = 50
+    A           = create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.4)
+    b           = np.random.randn(n)
+    
+    eigenvalues = np.linalg.eigvalsh(A)
+    n_negative  = np.sum(eigenvalues < 0)
+    
+    print(f"Problem size: {n}")
+    print(f"Negative eigenvalues: {n_negative}/{n} (system is INDEFINITE)")
+    
+    # Try CG (designed for SPD matrices)
+    print(f"\nAttempting CG solver:")
+    try:
+        solver_cg       = solvers.choose_solver(solver_id='cg', sigma=0.0)
+        solve_func_cg   = solver_cg.get_solver_func(
+                                backend_module  = np,
+                                use_matvec      = False,
+                                use_fisher      = False,
+                                use_matrix      = True,
+                                sigma           = 0.0
+                            )
+        result_cg       = solve_func_cg(a=A, b=b, x0=None, tol=1e-10, maxiter=1000, precond_apply=None)
+        print(f"  Converged: {result_cg.converged}")
+        print(f"  Iterations: {result_cg.iterations}")
+        print(f"  Residual: {result_cg.residual_norm:.2e}")
+        if not result_cg.converged:
+            print(f"  CG failed to converge (expected for indefinite systems)")
+    except Exception as e:
+        print(f"  (x) CG failed with error: {e}")
+    
+    # Use MINRES (designed for symmetric indefinite)
+    print(f"\nUsing MINRES solver:")
+    solver_minres       = solvers.choose_solver(solver_id='scipy_minres', sigma=0.0)
+    solve_func_minres   = solver_minres.get_solver_func(
+                            backend_module  = np,
+                            use_matvec      = False,
+                            use_fisher      = False,
+                            use_matrix      = True,
+                            sigma           = 0.0
+                        )
+    result_minres       = solve_func_minres(a=A, b=b, x0=None, tol=1e-10, maxiter=None, precond_apply=None)
+    print(f"  Converged: {result_minres.converged}")
+    print(f"  Iterations: {result_minres.iterations}")
+    print(f"  Residual: {result_minres.residual_norm:.2e}")
+    print(f"  v MINRES successfully solved the indefinite system")
+    
+    return result_minres
+
+# ----------------------------------------------------------------------------
+# Example 3: Saddle-Point Problem
+# ---------------------------------------------------------------------------
+
+def example_saddle_point():
+    """Solve a saddle-point problem (common in constrained optimization)."""
+    print("\n" + "=" * 70)
+    print("Example 3: Saddle-Point Problem")
+    print("=" * 70)
+    
+    # Saddle-point system:
+    # [A   B^T] [x]   [f]
+    # [B   0  ] [λ] = [g]
+    #
+    # where:
+    # - A is symmetric positive-definite (n\timesn)
+    # - B is constraint matrix (m\timesn)
+    # - λ is Lagrange multiplier
+    # - The system matrix is symmetric but indefinite
+    
+    n = 30  # Primal variables
+    m = 10  # Constraints
+    
+    # Create problem
+    A = create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.0)  # Make A SPD
+    A = A + 2.0 * np.eye(n)  # Ensure positive-definite
+    B = np.random.randn(m, n)
+    
+    # Build saddle-point system
+    K = np.block([
+        [A, B.T],
+        [B, np.zeros((m, m))]
+    ])
+    
+    # Right-hand side
+    f   = np.random.randn(n)
+    g   = np.random.randn(m)
+    rhs = np.concatenate([f, g])
+    
+    print(f"System size: {n+m} ({n} primal + {m} constraints)")
+    print(f"Matrix structure: Saddle-point (indefinite)")
+    
+    # Check that system is indeed indefinite
+    eigenvalues = np.linalg.eigvalsh(K)
+    n_negative  = np.sum(eigenvalues < -1e-10)
+    print(f"Negative eigenvalues: {n_negative}/{n+m}")
+    
+    # Solve with MINRES
+    solver      = solvers.choose_solver(solver_id='scipy_minres', sigma=0.0)
+    solve_func  = solver.get_solver_func(
+                            backend_module  = np,
+                            use_matvec      = False,
+                            use_fisher      = False,
+                            use_matrix      = True,
+                            sigma           = 0.0
+                        )
+    result      = solve_func(a=K, b=rhs, x0=None, tol=1e-8, maxiter=None, precond_apply=None)
+    
+    print(f"\nResults:")
+    print(f"  Converged: {result.converged}")
+    print(f"  Iterations: {result.iterations}")
+    print(f"  Residual: {result.residual_norm:.2e}")
+    
+    # Extract solution components
+    x_sol = result.x[:n]
+    lambda_sol = result.x[n:]
+    
+    # Verify constraint satisfaction
+    constraint_residual = np.linalg.norm(B @ x_sol - g)
+    print(f"  Constraint residual: {constraint_residual:.2e}")
+    
+    return result
+
+
+def example_tolerance_control():
+    """MINRES with different tolerance settings."""
+    print("\n" + "=" * 70)
+    print("Example 4: Tolerance Control")
+    print("=" * 70)
+    
+    n = 60
+    A = create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.2)
+    b = np.random.randn(n)
+    
+    print(f"Problem size: {n}")
+    
+    tolerances = [1e-4, 1e-6, 1e-8, 1e-10]
+    
+    print(f"\nSolving with different tolerances:")
+    print(f"{'Tolerance':<12} {'Iterations':<12} {'Residual':<15} {'Converged'}")
+    print("-" * 60)
+    
+    solver      = solvers.choose_solver(solver_id='scipy_minres', sigma=0.0)
+    solve_func  = solver.get_solver_func(
+                            backend_module  = np,
+                            use_matvec      = False,
+                            use_fisher      = False,
+                            use_matrix      = True,
+                            sigma           = 0.0
+                        )
+    
+    for tol in tolerances:
+        result = solve_func(a=A, b=b, x0=None, tol=tol, maxiter=None, precond_apply=None)
+        print(f"{tol:<12.2e} {result.iterations:<12} {result.residual_norm:<15.2e} {result.converged}")
+    
+    print("\nObservation: Tighter tolerance -> more iterations")
+
+# ---------------------------------------------------------------------------
+# Example 5: Matrix-Free MINRES
+# ---------------------------------------------------------------------------
+
+def example_matvec_form():
+    """Matrix-free MINRES using matvec function."""
+    print("\n" + "=" * 70)
+    print("Example 5: Matrix-Free MINRES")
+    print("=" * 70)
+    
+    n = 100
+    A = create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.25)
+    b = np.random.randn(n)
+    
+    print(f"Problem size: {n}")
+    print(f"Memory for explicit matrix: {A.nbytes / 1024:.1f} KB")
+    
+    # Define matrix-vector product without forming A explicitly
+    def matvec(v):
+        return A @ v  # In practice, this would be computed directly
+    
+    # Solve using matvec form
+    solver      = solvers.choose_solver(solver_id='scipy_minres', sigma=0.0)
+    solve_func  = solver.get_solver_func(
+                    backend_module  =   np,
+                    use_matvec      =   True,  # Matrix-free
+                    use_fisher      =   False,
+                    use_matrix      =   False,
+                    sigma           =   0.0
+                )
+    result = solve_func(matvec, b, x0=None, tol=1e-10, maxiter=None, precond_apply=None)
+    
+    print(f"\nResults (matrix-free):")
+    print(f"  Converged: {result.converged}")
+    print(f"  Iterations: {result.iterations}")
+    print(f"  Residual: {result.residual_norm:.2e}")
+    print(f"\nBenefit: No need to store full matrix (useful for large systems)")
+    
+    return result
+
+
+if __name__ == "__main__":
+    print("\n" + "=" * 70)
+    print("MINRES SOLVER (SciPy) - EXAMPLES")
+    print("=" * 70)
+    
+    # Run all examples
+    example_basic_indefinite()
+    example_cg_vs_minres()
+    example_saddle_point()
+    example_tolerance_control()
+    example_matvec_form()
+    
+    print("\n" + "=" * 70)
+    print("All examples completed!")
+    print("=" * 70)
+    print("\nKey Takeaways:")
+    print("1. MINRES works for symmetric indefinite systems (CG requires SPD)")
+    print("2. Ideal for saddle-point problems and constrained optimization")
+    print("3. SciPy implementation is production-ready and robust")
+    print("4. Supports both explicit matrix and matrix-free (matvec) forms")
+    print("5. Tolerance control trades accuracy for iteration count")
+    print("\nNext: See example_gram_form.py for TDVP/NQS applications")
+
+# -------------------------------------------------------------------------------
+#! End of file
+# -------------------------------------------------------------------------------

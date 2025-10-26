@@ -60,7 +60,7 @@ def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
     Computes the reduced density matrix \rho from a pure state vector using NumPy.
     Given a state vector representing a bipartite quantum system of dimensions (dimA, dimB),
     this function reshapes the state into a matrix of shape (dimA, dimB) using column-major
-    order (Fortran order), and then computes the density matrix \rho = ψ ψ\dag.
+    order (Fortran order), and then computes the density matrix \rho = \psi  \psi \dag.
     Args:
         state (Array):
             The state vector of the composite quantum system.
@@ -72,7 +72,7 @@ def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
         Array: The density matrix \rho of shape (dimA, dimA).
     """
     
-    # reshape as (dimA, dimB) and call BLAS gemm \rho = ψ ψ\dag
+    # reshape as (dimA, dimB) and call BLAS gemm \rho = \psi  \psi \dag
     if dimA <= dimB:
         psi = state.reshape(dimA, dimB, order="F") # column-major
     else:
@@ -126,7 +126,7 @@ def schmidt_numpy( state : Array,
                     dimB    : int,
                     eig     : bool) -> Tuple[np.ndarray, np.ndarray]:
     r"""
-    Schmidt decomposition for a bipartite pure state |ψ> \in H_A \otimes H_B.
+    Schmidt decomposition for a bipartite pure state |\psi > \in H_A \otimes H_B.
 
     Returns
     -------
