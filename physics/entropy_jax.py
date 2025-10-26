@@ -142,7 +142,7 @@ if JAX_AVAILABLE:
         Compute the single-particle correlation entropy for a set of eigenvalues.
 
         This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for q≠1)
-        associated with the eigenvalues of a correlation matrix. The eigenvalues λ are assumed to be in [-1, 1].
+        associated with the eigenvalues of a correlation matrix. The eigenvalues \lambda are assumed to be in [-1, 1].
         The probabilities are defined as \( p = \frac{1}{2}(1 + \lambda) \).
 
         Formulas:

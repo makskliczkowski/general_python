@@ -220,8 +220,12 @@ class ArnoldiEigensolver:
         # Transform eigenvectors back to original space (Ritz vectors)
         # eigenvector of A ≈ V @ eigenvector of H
         eigenvectors = V @ selected_evecs_H
+        # Normalize columns for numerical stability
+        norms = np.linalg.norm(eigenvectors, axis=0)
+        norms[norms == 0] = 1.0
+        eigenvectors = eigenvectors / norms
         
-        # Compute residual norms: ||A v - λ v||
+        # Compute residual norms: ||A v - \lambda v||
         residual_norms = np.zeros(len(selected_evals), dtype=float)
         for i, (lam, vec) in enumerate(zip(selected_evals, eigenvectors.T)):
             residual = matvec(vec) - lam * vec
@@ -233,6 +237,7 @@ class ArnoldiEigensolver:
         result = EigenResult(
             eigenvalues=selected_evals,
             eigenvectors=eigenvectors,
+            subspacevectors=V,
             iterations=max_iter,
             converged=converged,
             residual_norms=residual_norms
@@ -318,6 +323,10 @@ class ArnoldiEigensolver:
         
         # Transform eigenvectors back
         eigenvectors = V @ selected_evecs_H
+        # Normalize columns
+        col_norms = jnp.linalg.norm(eigenvectors, axis=0)
+        col_norms = jnp.where(col_norms == 0, 1.0, col_norms)
+        eigenvectors = eigenvectors / col_norms
         
         # Compute residual norms
         residual_norms = jnp.array([
@@ -330,6 +339,7 @@ class ArnoldiEigensolver:
         result = EigenResult(
             eigenvalues=np.array(selected_evals),
             eigenvectors=np.array(eigenvectors),
+            subspacevectors=np.array(V),
             iterations=actual_iters,
             converged=bool(converged),
             residual_norms=np.array(residual_norms)

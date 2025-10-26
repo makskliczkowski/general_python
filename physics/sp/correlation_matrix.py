@@ -36,7 +36,10 @@ import numpy as np
 import numba
 from torch import mode
 
-from general_python.algebra.utils import JAX_AVAILABLE, Array
+try:
+    from ...algebra.utils import JAX_AVAILABLE, Array
+except ImportError:
+    raise ImportError("Utilities package is required to use correlation_matrix module.")
 
 __all__ = [
     "corr_single",

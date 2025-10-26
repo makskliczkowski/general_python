@@ -594,6 +594,54 @@ class Lattice(ABC):
         """
         return self._flux.phase(direction, winding=winding)
 
+    def boundary_phase_from_winding(self, wx: int, wy: int, wz: int) -> complex:
+        """
+        Return total complex boundary phase accumulated from winding numbers.
+        """
+        phase = 1.0 + 0j
+        if wx != 0:
+            phase *= self.boundary_phase(LatticeDirection.X, winding=wx)
+        if wy != 0:
+            phase *= self.boundary_phase(LatticeDirection.Y, winding=wy)
+        if wz != 0:
+            phase *= self.boundary_phase(LatticeDirection.Z, winding=wz)
+        return phase
+
+    def bond_winding(self, i: int, j: int) -> tuple[int, int, int]:
+        """
+        Compute how many times a bond (i -> j) crosses the periodic boundary
+        in each lattice direction.
+        
+        Returns (wx, wy, wz), where each entry is 0 if no crossing,
+        +1 if wrapped positively, -1 if wrapped negatively.
+        
+        Parameters:
+        -----------
+        i : int
+            Index of the starting lattice site.
+        j : int
+            Index of the ending lattice site.
+        Returns:
+        --------
+        tuple[int, int, int]
+            A tuple indicating the winding numbers (wx, wy, wz) for the bond from site i to site j.
+        """
+        x1, y1, z1  = self.get_coordinates(i)
+        x2, y2, z2  = self.get_coordinates(j)
+        wx          = 0
+        wy          = 0
+        wz          = 0
+
+        # detect wrapping based on system size
+        if abs(x2 - x1) > self.Lx // 2:                     # assume even sizes, we wrap when crossing half the system
+            wx = -1 if x2 > x1 else +1
+        if self.dim > 1 and abs(y2 - y1) > self.Ly // 2:    # assume even sizes, we wrap when crossing half the system
+            wy = -1 if y2 > y1 else +1
+        if self.dim > 2 and abs(z2 - z1) > self.Lz // 2:    # assume even sizes, we wrap when crossing half the system
+            wz = -1 if z2 > z1 else +1
+
+        return (wx, wy, wz)
+
     # ------------------------------------------------------------------
     #! Boundary helpers
     # ------------------------------------------------------------------
@@ -663,7 +711,7 @@ class Lattice(ABC):
         '''
         x, y, z = self.site_diff(i, j)
         return np.sqrt(x**2 + y**2 + z**2)
-    
+
     # -----------------------------------------------------------------------------
     #! DFT MATRIX
     # -----------------------------------------------------------------------------

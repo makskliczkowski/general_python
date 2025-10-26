@@ -67,7 +67,7 @@ This approach requires computing and inverting the matrix S,
 which is of size NₚxNₚ (Nₚ is the number of 
 variational parameters). When Nₚ is large,
 the inversion becomes computationally expensive with a typical 
-cost scaling of O(Nₚ³), or O(Nₚ^2·Nₛ + Nₚ³) when iterative solvers are employed.
+cost scaling of O(Nₚ^3 ), or O(Nₚ^2·Nₛ + Nₚ^3 ) when iterative solvers are employed.
 Moreover, for deep networks 
 with Nₚ ≫ Nₛ (the number of Monte Carlo samples),
 the matrix S is rank-deficient (its rank is at most Nₛ), 
@@ -90,7 +90,7 @@ given by:
 
 This formulation avoids the costly inversion of the full S matrix.
 The inversion is now only on the smaller T matrix, 
-reducing the computational complexity to approximately O(Nₚ·Nₛ^2 + Nₛ³).
+reducing the computational complexity to approximately O(Nₚ·Nₛ^2 + Nₛ^3 ).
 Two derivations support this result:
 
 1. **Lagrangian Multiplier Approach:**  

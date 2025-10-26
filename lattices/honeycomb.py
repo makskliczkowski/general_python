@@ -31,7 +31,7 @@ class HoneycombLattice(Lattice):
         rvectors  : Real-space vectors.
     """
 
-    def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):
+    def __init__(self, *, dim=2, lx=3, ly=1, lz=1, bc='pbc', **kwargs):
         """
         Initialize a honeycomb lattice.
         
@@ -40,7 +40,7 @@ class HoneycombLattice(Lattice):
             lx, ly, lz (int)    : Lattice sizes in x, y, z directions.
             bc                  : Boundary condition (e.g. LatticeBC.PBC or LatticeBC.OBC)
         """
-        super().__init__(dim, lx, ly, lz, bc, *args, **kwargs)
+        super().__init__(dim, lx, ly, lz, bc, **kwargs)
 
         self._type = LatticeType.HONEYCOMB  # Lattice type
 

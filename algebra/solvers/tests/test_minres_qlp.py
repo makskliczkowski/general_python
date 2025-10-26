@@ -44,7 +44,7 @@ def test_minres_qlp_basic():
     assert result.converged, "MINRES-QLP should converge for SPD system"
     assert error < 1e-6, f"Solution error {error:.2e} too large"
     assert residual < 1e-6, f"Residual {residual:.2e} too large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_minres_qlp_indefinite():
@@ -76,7 +76,7 @@ def test_minres_qlp_indefinite():
     
     assert error < 1e-5, f"Solution error {error:.2e} too large"
     assert residual < 1e-5, f"Residual {residual:.2e} too large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_minres_qlp_with_shift():
@@ -85,7 +85,7 @@ def test_minres_qlp_with_shift():
     print("TEST 3: MINRES-QLP with shift [SKIPPED - shift handling needs fix]")
     print("="*60)
     print("⚠ Shift parameter interacts with matvec creation; needs API refinement")
-    print("✓ SKIPPED\n")
+    print("(ok)  SKIPPED\n")
     return
     
     # NOTE: This test is skipped because the current API applies shift twice:
@@ -121,7 +121,7 @@ def test_minres_qlp_with_shift():
     
     assert error < 1e-5, f"Solution error {error:.2e} too large"
     assert residual < 1e-5, f"Residual {residual:.2e} too large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_minres_qlp_matvec():
@@ -157,7 +157,7 @@ def test_minres_qlp_matvec():
     
     assert error < 1e-5, f"Solution error {error:.2e} too large"
     assert residual < 1e-5, f"Residual {residual:.2e} too large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_minres_qlp_x0():
@@ -193,7 +193,7 @@ def test_minres_qlp_x0():
     assert result.converged, "Should converge with good initial guess"
     assert error < 1e-5, f"Solution error {error:.2e} too large"
     assert residual < 1e-6, f"Residual {residual:.2e} too large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 if __name__ == "__main__":
@@ -212,10 +212,10 @@ if __name__ == "__main__":
         print("ALL TESTS PASSED!")
         print("="*60)
     except AssertionError as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n(x) TEST FAILED: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"\n✗ UNEXPECTED ERROR: {e}")
+        print(f"\n(x) UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

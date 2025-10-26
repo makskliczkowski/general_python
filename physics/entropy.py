@@ -488,7 +488,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     Parameters
     ----------
     lam : np.ndarray
-        Array of eigenvalues (λ), each in the interval [-1, 1].
+        Array of eigenvalues (\lambda), each in the interval [-1, 1].
     q : float
         Entropy order parameter. If q == 1, computes the von Neumann entropy; otherwise, computes the Rényi entropy.
     base : float, optional
@@ -500,10 +500,10 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     Notes
     -----
     - For q == 1, the function computes the von Neumann entropy:
-          S = -Σ [p * log(p) + (1-p) * log(1-p)]
-      where p = 0.5 * (1 + λ).
+          S = -\Sigma  [p * log(p) + (1-p) * log(1-p)]
+      where p = 0.5 * (1 + \lambda).
     - For q ≠ 1, the function computes the Rényi entropy:
-          S_q = (1 / (1-q)) * Σ log(p^q + (1-p)^q)
+          S_q = (1 / (1-q)) * \Sigma  log(p^q + (1-p)^q)
     - The entropy is normalized by the logarithm of the specified base.
     """
     

@@ -18,17 +18,20 @@ class EigenResult(NamedTuple):
             Computed eigenvalues (sorted by magnitude or value)
         eigenvectors: 
             Corresponding eigenvectors as columns
+        subspacevectors: 
+            Basis vectors of the subspace used (for iterative methods)
         iterations: 
             Number of iterations performed (None for direct methods)
         converged: 
             Whether the solver converged successfully
         residual_norms: 
-            Residual norms ||A v - λ v|| for each eigenpair (optional)
+            Residual norms ||A v - \lambda v|| for each eigenpair (optional)
     """
     eigenvalues     : NDArray
     eigenvectors    : NDArray
-    iterations      : Optional[int] = None
-    converged       : bool = True
+    subspacevectors : Optional[NDArray] = None
+    iterations      : Optional[int]     = None
+    converged       : bool              = True
     residual_norms  : Optional[NDArray] = None
 
     def __repr__(self):

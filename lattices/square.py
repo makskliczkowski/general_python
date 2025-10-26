@@ -17,9 +17,13 @@ import numpy as np
 class SquareLattice(Lattice):
     '''
     Square Lattice Class for 1D, 2D, and 3D lattices. The lattice vectors are defined as:
-    a = [1, 0, 0], b = [0, 1, 0], c = [0, 0, 1]
+    - a = [1, 0, 0],
+    - b = [0, 1, 0],
+    - c = [0, 0, 1]
     and the reciprocal lattice vectors are:
-    a* = [2*pi, 0, 0], b* = [0, 2*pi, 0], c* = [0, 0, 2*pi]
+    - a* = [2*pi, 0, 0], 
+    - b* = [0, 2*pi, 0], 
+    - c* = [0, 0, 2*pi]
     '''
 
     def __init__(self, dim, lx, ly=1, lz=1, bc=LatticeBC.PBC, **kwargs):

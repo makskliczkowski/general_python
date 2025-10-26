@@ -16,7 +16,7 @@ try:
 except ImportError as e:
     numba_njit = lambda x: x
     
-from general_python.algebra.utils import (
+from QES.general_python.algebra.utils import (
     DEFAULT_NP_INT_TYPE,
     DEFAULT_NP_FLOAT_TYPE,
     DEFAULT_JP_INT_TYPE,

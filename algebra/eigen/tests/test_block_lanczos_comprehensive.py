@@ -60,7 +60,7 @@ def test_block_lanczos_basic():
         assert error < 1e-4, f"Converged but eigenvalue error {error:.2e} too large"
     else:
         assert error < 1.0, f"Eigenvalue error {error:.2e} unexpectedly large (should be < 1.0)"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_block_lanczos_varying_block_sizes():
@@ -92,7 +92,7 @@ def test_block_lanczos_varying_block_sizes():
         else:
             assert error < 2.0, f"Block size {bs}: error {error:.2e} unexpectedly large"
     
-    print("\n✓ PASSED\n")
+    print("\n(ok)  PASSED\n")
 
 
 def test_block_lanczos_largest():
@@ -126,7 +126,7 @@ def test_block_lanczos_largest():
         assert error < 1e-4, f"Converged but eigenvalue error {error:.2e} too large"
     else:
         assert error < 1.0, f"Eigenvalue error {error:.2e} unexpectedly large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_block_lanczos_solve_overrides():
@@ -161,7 +161,7 @@ def test_block_lanczos_solve_overrides():
         assert error < 1e-3, f"Converged but eigenvalue error {error:.2e} too large"
     else:
         assert error < 2.0, f"Eigenvalue error {error:.2e} unexpectedly large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_block_lanczos_basis_transforms():
@@ -212,7 +212,7 @@ def test_block_lanczos_basis_transforms():
         assert error < 1e-3, f"Converged but eigenvalue error {error:.2e} too large with transforms"
     else:
         assert error < 2.0, f"Eigenvalue error {error:.2e} unexpectedly large with transforms"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_block_lanczos_matvec():
@@ -247,7 +247,7 @@ def test_block_lanczos_matvec():
         assert error < 1e-4, f"Converged but eigenvalue error {error:.2e} too large with matvec"
     else:
         assert error < 1.0, f"Eigenvalue error {error:.2e} unexpectedly large with matvec"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_block_lanczos_jax():
@@ -294,7 +294,7 @@ def test_block_lanczos_jax():
         assert error < 1e-4, f"JAX converged but eigenvalue error {error:.2e} too large"
     else:
         assert error < 1.0, f"JAX eigenvalue error {error:.2e} unexpectedly large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 def test_block_lanczos_jax_vs_numpy():
@@ -342,7 +342,7 @@ def test_block_lanczos_jax_vs_numpy():
     
     # Backends should produce similar results
     assert diff < 1e-4, f"NumPy/JAX difference {diff:.2e} too large"
-    print("✓ PASSED\n")
+    print("(ok)  PASSED\n")
 
 
 if __name__ == "__main__":
@@ -364,10 +364,10 @@ if __name__ == "__main__":
         print("ALL TESTS PASSED!")
         print("="*60)
     except AssertionError as e:
-        print(f"\n✗ TEST FAILED: {e}")
+        print(f"\n(x) TEST FAILED: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"\n✗ UNEXPECTED ERROR: {e}")
+        print(f"\n(x) UNEXPECTED ERROR: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

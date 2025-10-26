@@ -258,7 +258,7 @@ class BlockLanczosEigensolver:
 
             A_jnp = jnp.asarray(A)
             which_flag = 0 if eff_which == 'smallest' else 1
-            sel_evals, evecs, aiter, res_norms, conv = core(
+            sel_evals, evecs, aiter, res_norms, conv, Vtrim = core(
                 A_jnp,
                 V0_j,
                 int(n), int(p), int(eff_k), float(eff_tol), int(eff_max_iter), int(which_flag), bool(eff_reorth)
@@ -268,6 +268,7 @@ class BlockLanczosEigensolver:
             return EigenResult(
                 eigenvalues     =   np.asarray(sel_evals),
                 eigenvectors    =   np.asarray(evecs),
+                subspacevectors =   np.asarray(Vtrim),
                 iterations      =   int(np.asarray(aiter)),
                 converged       =   bool(np.asarray(conv)),
                 residual_norms  =   np.asarray(res_norms)
@@ -415,6 +416,10 @@ class BlockLanczosEigensolver:
 
         # Ritz vectors in the original space
         eigenvectors        = V @ selected_evecs_H
+        # Normalize columns for stability
+        norms = np.linalg.norm(eigenvectors, axis=0)
+        norms[norms == 0] = 1.0
+        eigenvectors = eigenvectors / norms
         
         # Compute residual norms
         residual_norms      = np.zeros(len(selected_evals))
@@ -434,6 +439,7 @@ class BlockLanczosEigensolver:
         return EigenResult(
             eigenvalues     =   selected_evals,
             eigenvectors    =   eigenvectors,
+            subspacevectors =   V,
             iterations      =   actual_iter,
             converged       =   converged,
             residual_norms  =   residual_norms
@@ -516,7 +522,7 @@ class BlockLanczosEigensolver:
             res_vmap        = jax.vmap(resnorm, in_axes=(1, 0))
             res_norms       = res_vmap(evecs, sel_evals)
             conv            = jnp.all(res_norms < tol_in)
-            return sel_evals, evecs, aiter, res_norms, conv
+            return sel_evals, evecs, aiter, res_norms, conv, Vtrim
 
         cls._JAX_CORE = jax.jit(core, static_argnums=(2,3,4,6,7,8))
         return cls._JAX_CORE

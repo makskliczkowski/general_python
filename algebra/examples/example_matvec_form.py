@@ -197,7 +197,7 @@ def example_quantum_hamiltonian():
     print("Example 4: Quantum Hamiltonian (Matrix-Free)")
     print("=" * 70)
     
-    # Spin chain Hamiltonian: H = -J Σ_i (σ^x_i σ^x_{i+1} + σ^y_i σ^y_{i+1})
+    # Spin chain Hamiltonian: H = -J \Sigma _i (σ^x_i σ^x_{i+1} + σ^y_i σ^y_{i+1})
     # Acting on state vector in computational basis
     
     n_spins = 10  # Chain length

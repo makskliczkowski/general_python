@@ -773,7 +773,8 @@ def popcount(n : int, spin : bool = BACKEND_DEF_SPIN, backend : str = 'default')
         int: The number of 1-bits in the binary representation of the input integer.
     """
     if isinstance(n, int):
-        return n.bit_count('1')
+        # Python's int.bit_count() returns the number of set bits; no argument required
+        return n.bit_count()
     return int(_popcount_spin(n, backend) if spin else _popcount_nspin(n, backend))
     
 

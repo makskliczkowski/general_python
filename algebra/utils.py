@@ -1,5 +1,4 @@
-
-"""
+r"""
 general_python.algebra.utils
 ===========================
 
@@ -69,7 +68,7 @@ if TYPE_CHECKING: # pragma: no cover - import only for type checking
     from ..common.flog import Logger
 
 from typing import Optional
-log: Optional["Logger"] = None  # Assigned during _qes_initialize_utils via qes_globals
+log: Optional["Logger"]                     = None  # Assigned during _qes_initialize_utils via qes_globals
 
 # ---------------------------------------------------------------------
 

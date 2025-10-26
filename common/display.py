@@ -180,7 +180,7 @@ def display_operator_action(op_tex    : str,
                             to_bin    : Callable[[int, int], str] | None = None
                             ) -> None:
     r"""
-    Show the action  Ô₍site₎ |\psi > = Σₖ cₖ |φₖ>  (or 0).
+    Show the action  Ô₍site₎ |\psi > = \Sigma ₖ cₖ |φₖ>  (or 0).
 
     Parameters
     ----------
@@ -251,7 +251,7 @@ def superposition(terms : Sequence[Tuple[complex, int]],
                 ns      : int,
                 *, 
                 to_bin  : Callable[[int, int], str] | None = None) -> str:
-    """Return LaTeX for Σₖ aₖ |k> given *(coeff, state)* pairs."""
+    """Return LaTeX for \Sigma ₖ aₖ |k> given *(coeff, state)* pairs."""
     parts: List[str] = []
     to_bin = _default_to_bin if to_bin is None else to_bin
     for amp, st in terms:

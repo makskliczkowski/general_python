@@ -120,7 +120,7 @@ def example_rank_deficient():
     n               = 50
     rank            = 30  # < n
     
-    # A = U @ Σ @ V^T with only `rank` non-zero singular values
+    # A = U @ \Sigma  @ V^T with only `rank` non-zero singular values
     U, _            = np.linalg.qr(np.random.randn(n, n))
     V, _            = np.linalg.qr(np.random.randn(n, n))
     sigma           = np.zeros(n)

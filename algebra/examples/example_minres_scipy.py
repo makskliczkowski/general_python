@@ -182,12 +182,12 @@ def example_saddle_point():
     
     # Saddle-point system:
     # [A   B^T] [x]   [f]
-    # [B   0  ] [λ] = [g]
+    # [B   0  ] [\lambda] = [g]
     #
     # where:
     # - A is symmetric positive-definite (n\timesn)
     # - B is constraint matrix (m\timesn)
-    # - λ is Lagrange multiplier
+    # - \lambda is Lagrange multiplier
     # - The system matrix is symmetric but indefinite
     
     n = 30  # Primal variables
