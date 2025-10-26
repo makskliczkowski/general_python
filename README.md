@@ -12,6 +12,7 @@ A comprehensive Python library providing utilities for scientific computing, par
 - Eigenvalue/eigenvector computations
 - Preconditioners for iterative solvers
 - ODE solving utilities
+- Mathematical and API summary: `algebra/README.md`
 
 ### 🎲 **Mathematics & Random Numbers**
 - High-quality pseudorandom number generators
@@ -39,6 +40,7 @@ A comprehensive Python library providing utilities for scientific computing, par
 - Entropy calculations
 - Eigenstate analysis
 - Quantum operator utilities
+- Mathematical and module map: `physics/README.md`
 
 ### 🛠️ **Common Utilities**
 - File and directory management
@@ -46,6 +48,7 @@ A comprehensive Python library providing utilities for scientific computing, par
 - Plotting and visualization tools
 - Logging and debugging utilities
 - Binary operations and bit manipulation
+- Detailed module map: `common/README.md`
 
 ## Installation
 

@@ -38,7 +38,7 @@ treating the real and imaginary parts as independent variables. This results
 in a gradient that generally has extra
 degrees of freedom compared to the holomorphic case and requires more care in its computation.
 
-For example, if you have a wave function ansatz ψ(s;θ),
+For example, if you have a wave function ansatz \psi (s;θ),
 where θ is complex, a holomorphic ansatz would allow
 you to compute derivatives with respect to θ directly.
 However, if the ansatz is non-holomorphic,

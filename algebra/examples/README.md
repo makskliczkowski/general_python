@@ -77,6 +77,8 @@ Special form for TDVP/NQS: Solve $(S^\dagger S)p = S^\dagger r$ for $p$.
 
 ## See Also
 
+- `../README.md` - Algebra package overview and module map
 - `solvers/README.md` - Solver implementation details
+- `../eigen/README.md` - Krylov eigensolver summary
 - `PRECONDITIONERS.md` - Preconditioner documentation
 - `test_tdvp_nqs_compat.py` - TDVP/NQS compatibility tests

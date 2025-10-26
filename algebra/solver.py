@@ -102,7 +102,6 @@ class SolverErrorMsg(Enum):
     COMPILATION_NA      = 113
     
     def __str__(self):
-        # Simple default string conversion
         return self.name.replace('_', ' ').title()
 
     def __repr__(self):
@@ -141,6 +140,14 @@ class SolverResult(NamedTuple):
     converged       : bool
     iterations      : int
     residual_norm   : Optional[float]
+    
+    def __repr__(self):
+        return (f"SolverResult(x=Array(shape={self.x.shape}, dtype={self.x.dtype}), "
+                f"converged={self.converged}, iterations={self.iterations}, "
+                f"residual_norm={self.residual_norm})")
+        
+    def __str__(self):
+        return f'converged={self.converged}, iterations={self.iterations}, residual_norm={self.residual_norm}'
 
 # -----------------------------------------------------------------------------
 #! General Solver Abstract Base Class
@@ -285,7 +292,8 @@ class Solver(ABC):
         Requires all inputs explicitly. Concrete implementations (e.g., `CgSolver.solve`)
         contain the actual algorithm for the specified backend.
 
-        Args:
+        Parameters:
+        -----------
             matvec:
                 Function implementing the matrix-vector product A @ x.
                 Must be compatible with `backend_module`.
@@ -346,14 +354,26 @@ class Solver(ABC):
             **kwargs
 
         If use_matvec=False, the returned wrapper will accept:
-          - if use_fisher=True: s, s_p, b, x0, *, tol, maxiter, precond_apply, **kwargs
-          - if use_fisher=False: a, b, x0, *, tol, maxiter, precond_apply, **kwargs
+          - if use_fisher=True  : s, s_p, b, x0, *, tol, maxiter, precond_apply, **kwargs
+          - if use_fisher=False : a, b, x0, *, tol, maxiter, precond_apply, **kwargs
         '''
         if use_matvec:
-            # Assume callable_comp is already appropriately jitted or handled
-            return callable_comp
+            # For matvec form, still need a wrapper to handle x0=None and maxiter=None
+            if backend_module == np:
+                def wrapper_np_matvec(matvec, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
+                    x0_init = np.zeros_like(b) if x0 is None else x0
+                    max_it  = len(b) if maxiter is None else maxiter
+                    return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond_apply, **kwargs)
+                return wrapper_np_matvec
+            else:
+                @partial(jax.jit, static_argnames=static_argnames_tuple)
+                def wrapper_jax_matvec(matvec, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
+                    x0_init = jnp.zeros_like(b) if x0 is None else x0
+                    max_it  = b.shape[0] if maxiter is None else maxiter
+                    return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond_apply, **kwargs)
+                return wrapper_jax_matvec
 
-        # --- Define which arguments to the wrapper MUST be static for JAX ---
+        #! Define which arguments to the wrapper MUST be static for JAX
         # - Functions passed as arguments: 'precond_apply'
         # - Control parameters often treated as static: 'tol', 'maxiter'
         # - We also need to make kwargs static if we pass them through **kwargs
@@ -378,8 +398,10 @@ class Solver(ABC):
                 def wrapper_np_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     # Create the matvec function (or matrix if use_matrix=True implies that)
                     matvec  = Solver.create_matvec_from_fisher_np(s, s_p, sigma=sigma, create_full=use_matrix)
-                    precond = lambda r, **kwargs: precond_apply(r=r, s=s, sp=s_p, **kwargs) if precond_apply else None
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
+                    precond = (lambda r: precond_apply(r)) if precond_apply is not None else None
+                    x0_init = np.zeros_like(b) if x0 is None else x0
+                    max_it  = len(b) if maxiter is None else maxiter
+                    return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond, **kwargs)
                 
                 # Numba requires default for optional function args
                 wrapper_np_fisher.__defaults__  = (None,) # For precond_apply
@@ -390,8 +412,12 @@ class Solver(ABC):
                 def wrapper_jax_fisher(s, s_p, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     # Create the matvec function (or matrix)
                     matvec  = Solver.create_matvec_from_fisher_jax(s, s_p, sigma=sigma, create_full=use_matrix)
-                    precond = (lambda r, **kwargs: precond_apply(r=r, s=s, sp=s_p, **kwargs)) if precond_apply else None
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
+                    precond = (lambda r: precond_apply(r)) if precond_apply is not None else None
+                    x0_init = jnp.zeros_like(b) if x0 is None else x0
+                    max_it  = b.shape[0] if maxiter is None else maxiter
+                    return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond, **kwargs)
+                
+                # JAX handles Optional better than Numba typically
                 _the_wrapper = wrapper_jax_fisher
                 
         else:
@@ -399,23 +425,40 @@ class Solver(ABC):
                 # @np.njit
                 def wrapper_np_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     matvec  = Solver.create_matvec_from_matrix_np(a, sigma=sigma)
-                    precond = (lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs)) if precond_apply else None
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
-                wrapper_np_matrix.__defaults__ = (None,)
-                _the_wrapper = wrapper_np_matrix
+                    precond = (lambda r: precond_apply(r)) if precond_apply is not None else None
+                    x0_init = np.zeros_like(b) if x0 is None else x0
+                    max_it  = len(b) if maxiter is None else maxiter
+                    # Pass the original matrix as 'A' for direct-style solvers; fallback if unsupported
+                    try:
+                        return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond, A=a, **kwargs)
+                    except TypeError:
+                        return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond, **kwargs)
+                    
+                # Numba requires default for optional function args
+                wrapper_np_matrix.__defaults__  = (None,)
+                _the_wrapper                    = wrapper_np_matrix
             else:
                 # JAX version
                 @partial(jax.jit, static_argnames=static_argnames_tuple)
                 def wrapper_jax_matrix(a, b, x0, *, tol, maxiter, precond_apply=None, **kwargs):
                     matvec  = Solver.create_matvec_from_matrix_jax(a, sigma=sigma)
-                    precond = (lambda r, **kwargs: precond_apply(r=r, a=a, **kwargs)) if precond_apply else None
-                    return callable_comp(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond, **kwargs)
+                    precond = (lambda r: precond_apply(r)) if precond_apply is not None else None
+                    x0_init = jnp.zeros_like(b) if x0 is None else x0
+                    max_it  = b.shape[0] if maxiter is None else maxiter
+                    # Pass the original matrix as 'A' for direct-style solvers; fallback if unsupported
+                    try:
+                        return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond, A=a, **kwargs)
+                    except TypeError:
+                        return callable_comp(matvec, b, x0_init, tol=tol, maxiter=max_it, precond_apply=precond, **kwargs)
+                # JAX version
                 _the_wrapper = wrapper_jax_matrix
 
         # Add a default for precond_apply=None in the signature for clarity
         # (though JAX handles Optional better than Numba typically)
         _the_wrapper.__defaults__ = (None,) * len(static_argnames_tuple) # Set defaults for static args if needed, though keyword-only args handle None ok
         return _the_wrapper
+    
+    # -------------------------------------------------------------------------
     
     @staticmethod
     def decide_solver_func(backend_module,
@@ -459,14 +502,18 @@ class Solver(ABC):
             return Solver.get_solver_func(backend_module, True, False, False, sigma)
         
         if a is not None:
-            return Solver.get_solver_func(backend_module, False, False, True, sigma)
+            return Solver.get_solver_func(backend_module, False, False, True, sigma)            # matrix
         elif s is not None:
             if s_p is not None:
-                return Solver.get_solver_func(backend_module, False, True, False, sigma)
+                return Solver.get_solver_func(backend_module, False, True, False, sigma)        # fisher
             else:
-                return Solver.get_solver_func(backend_module, False, True, True, sigma)
+                return Solver.get_solver_func(backend_module, False, True, True, sigma)         # fisher + matrix
         else:
             raise RuntimeError("Cannot parse the solver function, all options are None...")
+    
+    # -------------------------------------------------------------------------
+    #! Static method to run the solver function
+    # -------------------------------------------------------------------------
     
     @staticmethod
     def run_solver_func(
@@ -564,6 +611,10 @@ class Solver(ABC):
         '''
         return numba.njit(func)
     
+    # -------------------------------------------------------------------------
+    #! Static Helpers for Creating MatVec Functions
+    # -------------------------------------------------------------------------
+    
     @staticmethod
     def _compile_helper(func: Callable, backend_module: Any) -> Callable:
         """
@@ -591,6 +642,7 @@ class Solver(ABC):
                 print(f"Warning: Numba not available, cannot compile function {func_name} for NumPy.")
                 return func
             print(f"(Solver) Numba compiling function {func_name}...")
+            
             try:
                 return Solver._compile_helper_np(func)
             except numba.NumbaError as e:
@@ -602,24 +654,39 @@ class Solver(ABC):
         else:
             return func # Unknown backend
     
+    # -------------------------------------------------------------------------
+
     @staticmethod
-    def create_matvec_from_matrix_jax(
-            a               : Array,
-            sigma           : Optional[float]   = None) -> MatVecFunc:
+    def create_matvec_from_matrix_jax(a: Array, sigma: Optional[float] = None) -> MatVecFunc:
         """
         Static Helper:
             Creates matvec function `x -> (A + sigma*I) @ x`.
+        
+        Parameters:
+        -----------
+            a (Array):
+                The matrix (dense or sparse compatible with JAX).
+            sigma (float, optional):
+                Optional regularization parameter.
+        Returns:
+        --------
+            MatVecFunc:
+                The matrix-vector product function.        
         """
 
         mat_op = jnp.asarray(a)
+        
         if sigma is not None and sigma != 0:
             #! Should Precompute A + sigma*I (potential memory cost for large A)?
-            effective_a = mat_op + sigma * jnp.eye(mat_op.shape[0], dtype=mat_op.dtype)
+            
+            effective_a = mat_op + sigma * np.eye(mat_op.shape[0], dtype=mat_op.dtype)
+            
             def matvec(x: Array) -> Array:
                 '''
                 Multiply a vector x by a matrix A
                 '''
                 return jnp.dot(effective_a, jnp.asarray(x))
+            
             return Solver._compile_helper_jax(matvec)
         else:
             def matvec(x) -> Array:
@@ -627,18 +694,25 @@ class Solver(ABC):
             return Solver._compile_helper_jax(matvec)
 
     @staticmethod
-    def create_matvec_from_matrix_np(
-            a               : Array,
-            sigma           : Optional[float]   = None) -> MatVecFunc:
+    def create_matvec_from_matrix_np(a: Array, sigma: Optional[float] = None) -> MatVecFunc:
         """
         Static Helper:
             Creates matvec function `x -> (A + sigma*I) @ x`.
+        Parameters:
+            a (Array):
+                The matrix (dense or sparse compatible with NumPy).
+            sigma (float, optional):
+                Optional regularization parameter.
+        Returns:
+            MatVecFunc:
+                The matrix-vector product function.
         """
 
         mat_op = np.asarray(a)
+        
         if sigma is not None and sigma != 0:
             #! Should Precompute A + sigma*I (potential memory cost for large A)?
-            effective_a = mat_op + sigma * jnp.eye(mat_op.shape[0], dtype=mat_op.dtype)
+            effective_a = mat_op + sigma * np.eye(mat_op.shape[0], dtype=mat_op.dtype)
             def matvec(x: Array) -> Array:
                 '''
                 Multiply a vector x by a matrix A
@@ -676,6 +750,7 @@ class Solver(ABC):
         # take the module
         mat_op = backend_module.asarray(a)
 
+        #? Sigma path 
         if sigma is not None and sigma != 0:
             #! Should Precompute A + sigma*I (potential memory cost for large A)?
             # effective_a = mat_op + sigma * backend_module.eye(mat_op.shape[0], dtype=mat_op.dtype)
@@ -690,8 +765,13 @@ class Solver(ABC):
         else:
             def matvec(x: Array) -> Array:
                 return backend_module.dot(mat_op, backend_module.asarray(x))
+            
             print(f"Created matvec from matrix (no regularization) using {backend_module.__name__}")
         return Solver._compile_helper(matvec, backend_module) if compile_func else matvec
+    
+    # -------------------------------------------------------------------------
+    #! Static Helpers for Creating MatVec Functions from Fisher Information
+    # -------------------------------------------------------------------------
     
     @staticmethod
     def create_matvec_from_fisher_jax(
@@ -725,10 +805,12 @@ class Solver(ABC):
 
         n = s.shape[0]
         if create_full:
-            return Solver.create_matvec_from_matrix_jax(s @ s_p / n, sigma)
+            # Create full Gram matrix: S\dag S where s=S [n_samples, n_params], s_p=S\dag [n_params, n_samples]
+            return Solver.create_matvec_from_matrix_jax(s_p @ s / n, sigma)
 
         s_op        = jnp.asarray(s)
         sp_op       = jnp.asarray(s_p)
+        
         if sigma is not None and sigma != 0:
             def matvec(x: Array) -> Array:
                 x_arr                   = jnp.asarray(x)
@@ -772,7 +854,8 @@ class Solver(ABC):
         
         n = s.shape[0]
         if create_full:
-            return Solver.create_matvec_from_matrix_np(s @ s_p / n, sigma)
+            # Create full Gram matrix: S\dag S where s=S [n_samples, n_params], s_p=S\dag [n_params, n_samples]
+            return Solver.create_matvec_from_matrix_np(s_p @ s / n, sigma)
 
         s_op        = np.asarray(s)
         sp_op       = np.asarray(s_p)
@@ -855,7 +938,9 @@ class Solver(ABC):
     def _form_gram_matrix(self) -> Array:
         """
         Forms the Gram matrix A = (Sp @ S) / N if the configuration is set for Gram matrix computation.
+        
         Returns:
+        --------
             Array: The computed Gram matrix.
         Raises:
             SolverError: If the required components for Gram matrix computation are not set.
@@ -866,6 +951,7 @@ class Solver(ABC):
             if n_size > 0:
                 norm_factor = float(n_size) if n_size > 0 else 1.0
                 return (self._conf_sp @ self._conf_s) / norm_factor
+            
             # otherwise, return without division
             return (self._conf_sp @ self._conf_s)
         else:
@@ -894,28 +980,32 @@ class Solver(ABC):
                 If the provided preconditioner is not of a valid type.
         """
 
-        
+        # Initialize the preconditioner apply function
         precond_apply_func: Optional[Callable[[Array], Array]] = None
         # Can be Instance, Callable, None, 'default'
-        actual_precond_source           = precond
+        actual_precond_source = precond
 
-        # check if is string
+        # check if is 'default' string
         if actual_precond_source == 'default':
-            actual_precond_source       = None
+            actual_precond_source = None
 
+        # Check type and process accordingly
         if isinstance(actual_precond_source, Preconditioner):
             # Ensure preconditioner uses the same backend
             if actual_precond_source.backend_str != self.backend_str:
                 print(f"Warning: Preconditioner backend '{actual_precond_source.backend_str}' "
                     f"differs from solver backend '{self.backend_str}'. Resetting preconditioner.")
                 actual_precond_source.reset_backend(self._backend)
+                
             # Use the instance's compiled apply function
-            precond_apply_func          = actual_precond_source
+            precond_apply_func = actual_precond_source
         elif callable(actual_precond_source):
             # Assume it's the correct r -> M^{-1}r function
-            precond_apply_func          = actual_precond_source
+            precond_apply_func = actual_precond_source
+            
         elif actual_precond_source is not None:
             raise TypeError(f"Invalid 'precond' type: {type(actual_precond_source)}. Expected Preconditioner, Callable, None, or 'default'.")
+        
         return precond_apply_func
     
     def _check_matvec_solve(self,
@@ -946,6 +1036,10 @@ class Solver(ABC):
         else:
             raise SolverError(SolverErrorMsg.MATVEC_FUNC_NOT_SET, "Instance needs matvec func or matrices.")
         return matvec_func
+
+    # -------------------------------------------------------------------------
+    #! Instance Method to Run the Solver
+    # -------------------------------------------------------------------------
 
     def solve_instance(self,
                     b               : Array,
@@ -1040,7 +1134,8 @@ class Solver(ABC):
         self._last_iterations           = result.iterations
         self._last_residual_norm        = result.residual_norm
 
-        print(f"({self.__class__.__name__}) Instance solve finished. Converged: {result.converged}, Iterations: {result.iterations}, Residual Norm: {result.residual_norm:.4e}")
+        rn_str                          = f"{result.residual_norm:.4e}" if (result.residual_norm is not None) else "N/A"
+        print(f"({self.__class__.__name__}) Instance solve finished. Converged: {result.converged}, Iterations: {result.iterations}, Residual Norm: {rn_str}")
         return result
 
     # -------------------------------------------------------------------------
@@ -1048,58 +1143,31 @@ class Solver(ABC):
     # -------------------------------------------------------------------------
     
     @property
-    def solution(self) -> Optional[Array]:
-        ''' What is the last solution? '''
-        return self._last_solution
-    
+    def solution(self) -> Optional[Array]:      return self._last_solution
     @property
-    def converged(self) -> Optional[bool]:
-        ''' Is it converged solution? '''
-        return self._last_converged
-    
+    def converged(self) -> Optional[bool]:      return self._last_converged
     @property
-    def iterations(self) -> Optional[int]:
-        ''' How many iterations? '''
-        return self._last_iterations
-    
+    def iterations(self) -> Optional[int]:      return self._last_iterations
     @property
-    def residual_norm(self) -> Optional[float]:
-        ''' What is the quality of the last result? '''
-        return self._last_residual_norm
+    def residual_norm(self) -> Optional[float]: return self._last_residual_norm
 
     # -------------------------------------------------------------------------
     #! Properties for Configuration (Read-only access)
     # -------------------------------------------------------------------------
     
     @property
-    def backend_str(self) -> str:
-        ''' Default backend string '''
-        return self._backend_str
-    
+    def backend_str(self) -> str:               return self._backend_str
     @property
-    def dtype(self) -> Type:
-        ''' Default type of the arrays '''
-        return self._dtype
-    
+    def dtype(self) -> Type:                    return self._dtype
     @property
-    def default_eps(self) -> float:
-        ''' Default error epsilon '''
-        return self._default_eps
-    
+    def default_eps(self) -> float:             return self._default_eps
     @property
-    def default_maxiter(self) -> int:
-        ''' Default maximal number of iterations '''
-        return self._default_maxiter
+    def default_maxiter(self) -> int:           return self._default_maxiter
 
     # -------------------------------------------------------------------------
 
-    def __repr__(self) -> str:
-        ''' Returns the name and configuration of the solver. '''
-        return f"{self.__class__.__name__}(type={self._solver_type.name if self._solver_type else 'Unknown'}, backend='{self.backend_str}')"
-
-    def __str__(self) -> str:
-        ''' Returns the name of the solver. '''
-        return self.__repr__()
+    def __repr__(self) -> str:                  return f"{self.__class__.__name__}(type={self._solver_type.name if self._solver_type else 'Unknown'}, backend='{self.backend_str}')"
+    def __str__(self) -> str:                   return self.__repr__()
 
 # -----------------------------------------------------------------------------
 
@@ -1141,7 +1209,7 @@ def sym_ortho(a, b, backend: str = "default"):
         [ c  s ] [ a ] = [ r ]
         [ s -c ] [ b ]   [ 0 ]
     
-    For real inputs, r = sqrt(a² + b²) is nonnegative.
+    For real inputs, r = sqrt(a^2 + b^2) is nonnegative.
     For complex inputs, r preserves the phase of a (if b==0) or b (if a==0),
     and the reflectors are computed in a stable manner.
     
@@ -1158,7 +1226,7 @@ def sym_ortho(a, b, backend: str = "default"):
         (c, s, r) : tuple of scalars
             The computed reflection parameters satisfying:
                 c = a / r   and   s = b / r,
-            with r = sqrt(a² + b²) for real numbers (or the appropriately phased value for complex).
+            with r = sqrt(a^2 + b^2) for real numbers (or the appropriately phased value for complex).
     """
     # Select the numerical backend: jax.numpy if "jax" is chosen; otherwise, NumPy.
     
