@@ -1,4 +1,4 @@
-"""
+r"""
 Block Lanczos Eigenvalue Solver
 
 Implements the Block Lanczos algorithm for finding multiple extremal eigenvalues
@@ -146,7 +146,7 @@ class BlockLanczosEigensolver:
         Returns:
             EigenResult with k eigenvalues and eigenvectors
         """
-        # Apply overrides
+                # Apply overrides
         eff_k           = k if k is not None else self.k
         eff_block       = block_size if block_size is not None else self.block_size
         eff_which       = which if which is not None else self.which
@@ -369,7 +369,7 @@ class BlockLanczosEigensolver:
             beta_blocks.append(B_j)
             
             # Store next block
-            if (j + 1) * p < max_dim:
+            if (j + 2) * p <= max_dim:
                 V[:, (j+1)*p:(j+2)*p]   = V_next
                 V_prev                  = V_j.copy()
                 B_prev                  = B_j.copy()
