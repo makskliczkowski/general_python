@@ -204,26 +204,29 @@ class LanczosEigensolver:
         else:
             raise ValueError("Either A or matvec must be provided")
         
+        
         # Determine max iterations
         # Default: Use min(n, max(50, 3*k)) for better convergence
+        self.max_iter = max_iter if max_iter is not None else self.max_iter
         if self.max_iter is not None:
             max_iter = self.max_iter
         else:
             max_iter = min(n, max(50, 3 * self.k))
         max_iter = min(max_iter, n)  # Cannot exceed dimension
         
-        # Set other parameters
-        self.tol                = tol if tol is not None else self.tol
-        self.reorthogonalize    = reorthogonalize if reorthogonalize is not None else self.reorthogonalize
-        self.reorth_tol         = reorth_tol if reorth_tol is not None else self.tol
-        self.k                  = k if k is not None else self.k
-        self.which              = which if which is not None else self.which
-
         # Use appropriate backend
         if self.backend == 'numpy':
-            return self._lanczos_numpy(_matvec, n, v0, max_iter, k=self.k, reorthogonalize=self.reorthogonalize, reorth_tol=self.reorth_tol)
+            return LanczosEigensolver._lanczos_numpy(_matvec, n, v0, max_iter, 
+                                        k               = k if k is not None else self.k,
+                                        which           = which,
+                                        reorthogonalize = reorthogonalize,
+                                        reorth_tol      = reorth_tol)
         else:  # jax
-            return self._lanczos_jax(_matvec, n, v0, max_iter, k=self.k, reorthogonalize=self.reorthogonalize, reorth_tol=self.reorth_tol)
+            return LanczosEigensolver._lanczos_jax(_matvec, n, v0, max_iter,
+                                        k               = k if k is not None else self.k,
+                                        which           = which,
+                                        reorthogonalize = reorthogonalize,
+                                        reorth_tol      = reorth_tol)
     
     # ------------------------------------------------------------------------------------
     
@@ -232,8 +235,8 @@ class LanczosEigensolver:
                     n               : int,
                     v0              : Optional[NDArray],
                     max_iter        : int,
-                    k               : int,
                     *,
+                    k               : int   = 6,
                     which           : Literal['smallest', 'largest', 'both'] = 'smallest',
                     reorthogonalize : bool  = True,
                     reorth_tol      : float = 1e-12,

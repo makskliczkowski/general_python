@@ -278,11 +278,10 @@ class TestLanczosComplex:
     
     def test_complex_hermitian(self):
         """Test Hermitian (complex symmetric) matrix."""
+        np.random.seed(42)
         n           = 60
         k           = 5
-
         # Create Hermitian matrix
-        np.random.seed(42)
         A           = np.random.randn(n, n) + 1j * np.random.randn(n, n)
         A           = 0.5 * (A + A.T.conj())  # Make Hermitian
         

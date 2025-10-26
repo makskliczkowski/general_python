@@ -175,7 +175,6 @@ def choose_eigensolver(
         
         if A is None:
             raise ValueError("Exact diagonalization requires explicit matrix A")
-        
         return solver.solve(A)
     
     elif method == 'lanczos':
@@ -192,7 +191,7 @@ def choose_eigensolver(
         else:
             solver = LanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
-        return solver.solve(A=A, matvec=matvec, n=n)
+        return solver.solve(A=A, matvec=matvec, n=n, k=k)
     
     elif method == 'arnoldi':
         # Arnoldi for general matrices
