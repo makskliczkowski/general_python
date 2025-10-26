@@ -21,7 +21,7 @@ print(f"Partition function: {Z}, Internal energy: {U}, Heat capacity: {C_V}")
 
 ## Spectral Function Example
 
-This example computes the retarded Green's function $G(\omega)$ and the spectral function $A(\omega) = -1/\pi \operatorname{Im} G(\omega)$ for a simple diagonal Hamiltonian at $\omega=0.5$.
+This example computes the retarded Green's function $G(\omega)$ and the spectral function $A(\omega) = -1/\pi \mathrm{Im}\, G(\omega)$ for a simple diagonal Hamiltonian at $\omega=0.5$.
 
 ```python
 from general_python.physics.spectral import dos, greens, spectral_function

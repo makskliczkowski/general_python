@@ -4,10 +4,10 @@ The `general_python.algebra` package collects deterministic linear-algebra and r
 
 ## Core Problem Statements
 - **Linear systems** — Solve $A x = b$ with optional left/right preconditioning $M^{-1} A x = M^{-1} b$ or $A M^{-1} y = b$, $x = M^{-1} y$.
-- **Eigenproblems** — Approximate $(A - \lambda I) v = 0$ through Krylov bases $\mathcal{K}_k(A, v_0) = \operatorname{span}\{v_0, A v_0, \dots, A^{k-1} v_0\}$.
+- **Eigenproblems** — Approximate $(A - \lambda I) v = 0$ through Krylov bases $\mathcal{K}_k(A, v_0) = \mathrm{span}\{v_0, A v_0, \dots, A^{k-1} v_0\}$.
 - **Matrix factorizations** — Compute Pfaffians and Hafnians of structured matrices:
-  - Pfaffian for an antisymmetric $A \in \mathbb{C}^{2n \times 2n}$ satisfies $\operatorname{pf}(A)^2 = \det(A)$.
-  - Hafnian for a symmetric $B \in \mathbb{C}^{2n \times 2n}$ is $\operatorname{haf}(B) = \sum_{M \in \mathcal{M}_{2n}} \prod_{(i,j) \in M} B_{i j}$ with the sum over perfect matchings $M$.
+  - Pfaffian for an antisymmetric $A \in \mathbb{C}^{2n \times 2n}$ satisfies $\mathrm{pf}(A)^2 = \det(A)$.
+  - Hafnian for a symmetric $B \in \mathbb{C}^{2n \times 2n}$ is $\mathrm{haf}(B) = \sum_{M \in \mathcal{M}_{2n}} \prod_{(i,j) \in M} B_{i j}$ with the sum over perfect matchings $M$.
 - **Random ensembles** — Sample matrices from Gaussian orthogonal/unitary ensembles (GOE/GUE), circular orthogonal/unitary ensembles (COE/CUE), etc., with well-defined Haar or Ginibre constructions.
 - **Initial value problems** — Integrate $\dot{y}(t) = f(t, y)$ via explicit solver interfaces with adaptive backends.
 
