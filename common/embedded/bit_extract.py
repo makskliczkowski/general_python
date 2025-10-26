@@ -393,13 +393,13 @@ def test(size           : int   = 12,
     logger.info(f"State B mask = ({state_b_mask}) {int2binstr(state_b_mask, L)}")
 
     # ---------------------------------------------------------------------
-    # Pre-compute the *vector* form (list of bit positions, high→low order)
+    # Pre-compute the *vector* form (list of bit positions, high->low order)
     # that the vector extractor needs.  We cache them once per test-run.
     # ---------------------------------------------------------------------
     pos_a = [i for i in range(L) if (state_a_mask >> (L - 1 - i)) & 1]
     pos_b = [i for i in range(L) if (state_b_mask >> (L - 1 - i)) & 1]
 
-    pos_a.sort(reverse=True) # high → low  (requirement of extract_vnb)
+    pos_a.sort(reverse=True) # high -> low  (requirement of extract_vnb)
     pos_b.sort(reverse=True)
 
     shifts_a = np.array([L - 1 - p for p in pos_a], dtype=np.uint64)
@@ -426,23 +426,23 @@ def test(size           : int   = 12,
         t0              = time.perf_counter()
         packed_A        = extract(state, state_a_mask)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  A scalar-mask : {int2binstr(packed_A, La)}   [{dt:.1f} µs]")
+        logger.info(f"  A scalar-mask : {int2binstr(packed_A, La)}   [{dt:.1f} \mus]")
 
         t0              = time.perf_counter()
         packed_B        = extract(state, state_b_mask)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  B scalar-mask : {int2binstr(packed_B, Lb)}   [{dt:.1f} µs]")
+        logger.info(f"  B scalar-mask : {int2binstr(packed_B, Lb)}   [{dt:.1f} \mus]")
 
         # ---- vector-mask extractor --------------------------------------
         t0              = time.perf_counter()
         packed_A_vec    = extract_vnb(state, shifts_a)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  A vector-mask : {int2binstr(packed_A_vec, La)}   [{dt:.1f} µs]")
+        logger.info(f"  A vector-mask : {int2binstr(packed_A_vec, La)}   [{dt:.1f} \mus]")
 
         t0              = time.perf_counter()
         packed_B_vec    = extract_vnb(state, shifts_b)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  B vector-mask : {int2binstr(packed_B_vec, Lb)}   [{dt:.1f} µs]")
+        logger.info(f"  B vector-mask : {int2binstr(packed_B_vec, Lb)}   [{dt:.1f} \mus]")
 
         # ---- sanity check -----------------------------------------------
         assert packed_A == packed_A_vec, "Mismatch for subsystem A!"

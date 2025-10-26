@@ -3,16 +3,14 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "general-python-utils"
-version = "0.1.0"
-description = "A comprehensive Python library for mathematical computations, machine learning, and physics simulations"
-authors = [
-    {name = "Maksymilian Kliczkowski", email = "makskliczkowski@example.com"}
-]
-license = {text = "MIT"}
-readme = "README.md"
+name            = "general-python-utils"
+version         = "0.1.0"
+description     = "A comprehensive Python library for mathematical computations, machine learning, and physics simulations"
+authors         = [{ name = "Maksymilian Kliczkowski", email = "maxgrom97@gmail.com" }]
+license         = {text = "MIT"}
+readme          = "README.md"
 requires-python = ">=3.8"
-classifiers = [
+classifiers     = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -56,8 +54,8 @@ Issues          = "https://github.com/yourusername/general_python/issues"
 
 [tool.setuptools]
 py-modules      = []
+packages        = ["general_python"]
 
-[tool.setuptools.packages.find]
-where           = ["src"]
-include         = ["general_python*"]
-exclude         = ["tests*", "docs*"]
+[tool.setuptools.package-dir]
+""              = "."
+general_python  = "."
