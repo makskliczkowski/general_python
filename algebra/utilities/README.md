@@ -3,16 +3,8 @@
 The `general_python.algebra.utilities` package implements Pfaffian and Hafnian evaluators for structured matrices that appear in Gaussian-state simulations and combinatorial enumeration.  NumPy and JAX variants share the same numerical algorithms.
 
 ## Definitions
-- **Pfaffian**: For an antisymmetric matrix $A \in \mathbb{C}^{2n \times 2n}$,
-  $$
-  \mathrm{pf}(A) = \frac{1}{2^n n!} \sum_{\sigma \in S_{2n}} \mathrm{sgn}(\sigma) \prod_{j=1}^{n} A_{\sigma(2j-1),\, \sigma(2j)},
-  $$
-  and satisfies $\mathrm{pf}(A)^2 = \det(A)$.
-- **Hafnian**: For a symmetric matrix $B \in \mathbb{C}^{2n \times 2n}$,
-  $$
-  \mathrm{haf}(B) = \sum_{M \in \mathcal{M}_{2n}} \prod_{(i,j) \in M} B_{i j},
-  $$
-  where $\mathcal{M}_{2n}$ is the set of perfect matchings.  Hafnians count pairings in bosonic Gaussian states.
+- **Pfaffian**: For an antisymmetric matrix $A \in \mathbb{C}^{2n \times 2n}$, $\mathrm{pf}(A) = \frac{1}{2^n n!} \sum_{\sigma \in S_{2n}} \mathrm{sgn}(\sigma) \prod_{j=1}^{n} A_{\sigma(2j-1),\, \sigma(2j)}$, and it satisfies $\mathrm{pf}(A)^2 = \det(A)$.
+- **Hafnian**: For a symmetric matrix $B \in \mathbb{C}^{2n \times 2n}$, $\mathrm{haf}(B) = \sum_{M \in \mathcal{M}_{2n}} \prod_{(i,j) \in M} B_{i j}$, where $\mathcal{M}_{2n}$ is the set of perfect matchings.  Hafnians count pairings in bosonic Gaussian states.
 
 ## Module Map
 | Path | Functionality | Numerical approach |

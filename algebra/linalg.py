@@ -241,7 +241,7 @@ def overlap(a: Array,
             O: Array,   # or any object supporting O @ x
             b: Array = None) -> Array:
     """
-    Compute ⟨a|O|b> for vectors or matrices of Column states.
+    Compute <a|O|b> for vectors or matrices of Column states.
 
     Parameters
     ----------
@@ -255,9 +255,9 @@ def overlap(a: Array,
     Returns
     -------
     overlaps : scalar, or ndarray
-        If both `a` and `b` are 1D, returns a single complex scalar ⟨a|O|b>.
+        If both `a` and `b` are 1D, returns a single complex scalar <a|O|b>.
         If one argument is 1D and the other is 2D, returns a 1D array of length n or m.
-        If both are 2D, returns an (n \times m) matrix whose (i,j) entry is ⟨a_i|O|b_j>.
+        If both are 2D, returns an (n \times m) matrix whose (i,j) entry is <a_i|O|b_j>.
     """
     # ensure 2D column‐matrix form
     if b is None:
@@ -297,16 +297,16 @@ def overlap_diag(a  : Array,
                 O   : Array,
                 b   : Array = None) -> Array:
     """
-    Compute only the diagonal elements ⟨a_i|O|b_i> for column-states.
+    Compute only the diagonal elements <a_i|O|b_i> for column-states.
 
     If `a` and `b` are both 1D (shape (dim,)), returns the scalar
-        ⟨a|O|b>.
+        <a|O|b>.
 
     If `a` and `b` are both 2D with shape (dim, n), returns a 1D array `r`
     of length n with
-        r[i] = ⟨a_i|O|b_i> = ∑_k conj(a[k,i]) · (O @ b[:,i])[k].
+        r[i] = <a_i|O|b_i> = ∑_k conj(a[k,i]) · (O @ b[:,i])[k].
 
-    If `b` is None, it defaults to `a`, giving ⟨a_i|O|a_i> for each i.
+    If `b` is None, it defaults to `a`, giving <a_i|O|a_i> for each i.
 
     """
     return overlap(a, O, b).diagonal()
@@ -332,7 +332,7 @@ def overlap_diag(a  : Array,
     # apply operator to each column of b_mat
     Ob = O @ b_mat if hasattr(O, "__matmul__") else O.dot(b_mat)  # (dim, n)
 
-    # elementwise multiply and sum over basis index: ⟨a_i|O|b_i>
+    # elementwise multiply and sum over basis index: <a_i|O|b_i>
     diag_r = np.einsum('ik,ki->i', np.conj(a_mat), Ob)  # (n,)
 
     # unwrap scalar case

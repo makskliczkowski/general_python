@@ -26,6 +26,25 @@ from ..algebra.preconditioners import (Preconditioner,
                                                     get_backend)
 from ..algebra.solver import Solver, SolverResult
 
+# ---------------------------------------------------------------------
+# Compatibility helper for backend retrieval and ndarray conversion
+
+def _compat_backend_module(backend_name: str):
+    """
+    Return a backend module (numpy or jax.numpy) with a .to_numpy helper.
+    Accepts both new get_backend (module or tuple) and older variants.
+    """
+    mod = get_backend(backend_name)
+    if isinstance(mod, tuple):
+        backend_module = mod[0]
+    else:
+        backend_module = mod
+    # ensure to_numpy exists
+    if not hasattr(backend_module, 'to_numpy'):
+        import numpy as _np
+        setattr(backend_module, 'to_numpy', lambda x: _np.asarray(x))
+    return backend_module
+
 # Conditionally import JAX
 if JAX_AVAILABLE:
     try:
@@ -100,7 +119,7 @@ def fixture_matrix_data(fixture_backend):
             - The backend module (e.g., numpy or jax.numpy).
     """
     bcknd            = fixture_backend
-    backend_module, _ = get_backend(bcknd)
+    backend_module   = _compat_backend_module(bcknd)
     np_dtype         = np.float64 # Use float64 for numpy tests for precision
 
     # --- Define NumPy Matrices First ---
@@ -377,7 +396,7 @@ class TestPreconditioners:
     def test_jacobi_preconditioner_zero_diag(self, fixture_backend):
         """ Tests JacobiPreconditioner handling of zero/small diagonal elements. """
         bcknd                       = fixture_backend
-        backend_module, _           = get_backend(bcknd)
+        backend_module              = _compat_backend_module(bcknd)
         np_dtype                    = np.float64
         # Matrix with a zero on diagonal
         a_zero_diag                 = backend_module.asarray(np.array([[1.0, 2.0], [3.0, 0.0]], dtype=np_dtype))
@@ -563,7 +582,7 @@ class TestPreconditioners:
         bcknd   = fixture_backend
         precond = JacobiPreconditioner(backend=bcknd)
         # Need a dummy vector compatible with the backend
-        be, _   = get_backend(bcknd)
+        be      = _compat_backend_module(bcknd)
         r_dummy = be.asarray(np.array([1.0, 2.0]))
 
         # Check internal data retrieval before set

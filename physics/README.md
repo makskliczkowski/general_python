@@ -7,10 +7,7 @@
 - **Canonical ensemble**: the partition function is $Z(\beta) = \sum_n e^{-\beta E_n}$ with inverse temperature $\beta = 1/(k_B T)$.  Thermal averages obey $\langle O \rangle_\beta = Z(\beta)^{-1} \sum_n O_{nn} e^{-\beta E_n}$.
 - **Density matrices**: given a pure bipartite state $|\psi\rangle$, reduced states are $\rho_A = \mathrm{Tr}_B |\psi\rangle \langle \psi|$.  Von Neumann entropy is $S(\rho_A) = -\mathrm{Tr}(\rho_A \log \rho_A)$ and Rényi-$\alpha$ entropy is $S_\alpha(\rho_A) = (1-\alpha)^{-1} \log \mathrm{Tr}(\rho_A^\alpha)$.
 - **Spectral data**: retarded Green's functions $G(\omega) = [(\omega + i \eta)I - H]^{-1}$ produce spectral densities $A(\omega) = -\pi^{-1}\mathrm{Im}\, G(\omega)$.  Densities of states are $D(\omega) = \sum_n \delta(\omega - E_n)$ with controllable broadening.
-- **Dynamical response**: the spin structure factor is $S(\mathbf{q},\omega) = \sum_{f,i} \rho_i |\langle f|S_\mathbf{q}|i\rangle|^2 \delta(\omega - (E_f - E_i))$.  The susceptibility implemented in `response/susceptibility.py` evaluates
-  $$
-  \chi(\mathbf{q}, \omega) = \sum_{f,i} \frac{|\langle f|O_\mathbf{q}|i\rangle|^2 (\rho_i - \rho_f)}{\omega + E_i - E_f + i \eta}.
-  $$
+- **Dynamical response**: the spin structure factor is $S(\mathbf{q},\omega) = \sum_{f,i} \rho_i |\langle f|S_\mathbf{q}|i\rangle|^2 \delta(\omega - (E_f - E_i))$.  The susceptibility implemented in `response/susceptibility.py` evaluates $\chi(\mathbf{q}, \omega) = \sum_{f,i} \frac{|\langle f|O_\mathbf{q}|i\rangle|^2 (\rho_i - \rho_f)}{\omega + E_i - E_f + i \eta}$.
 - **Correlation matrices**: for quadratic fermions the single-particle correlator obeys $C_{i j} = \langle \psi| c_i^\dagger c_j |\psi\rangle$, with subsystem restrictions $C_A = W_A^\dagger \mathrm{diag}(n) W_A$.
 
 ## Module Inventory

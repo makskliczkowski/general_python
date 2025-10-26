@@ -32,11 +32,11 @@ For small changes δθ and a small time step δτ, the FS distance is expanded a
 
 with:
     
-    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ - ⟨(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ>,
+    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ - <(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ>,
     
 computed over Ns Monte Carlo samples:
     
-    \varepsilon₍\sigma₎ = -δτ · (E^loc₍\sigma₎ - ⟨E^loc>)/\sqrt(Ns),
+    \varepsilon₍\sigma₎ = -δτ · (E^loc₍\sigma₎ - <E^loc>)/\sqrt(Ns),
     
 where the local energy is given by:
 

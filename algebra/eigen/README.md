@@ -4,21 +4,9 @@ The `general_python.algebra.eigen` package implements Krylov-based eigensolvers 
 
 ## Problem Statements
 
-- **Hermitian spectra**: Given $H = H^\dagger$, construct Lanczos bases $\mathcal{K}_k(H, v_0)$ with short-term recurrences
-  $$
-  H v_j = \beta_{j-1} v_{j-1} + \alpha_j v_j + \beta_j v_{j+1},
-  $$
-  leading to tridiagonal $T_k$ whose Ritz pairs $(\theta_i, y_i)$ approximate $(\lambda_i, x_i)$ via $x_i \approx V_k y_i$.
-- **General (non-Hermitian) spectra**: The Arnoldi iteration builds an orthonormal basis obeying
-  $$
-  A V_k = V_k H_k + h_{k+1,k} v_{k+1} e_k^\top,
-  $$
-  where $H_k$ is upper Hessenberg.  Ritz vectors $x_i \approx V_k y_i$ deliver approximate eigenpairs and residual $\|A x_i - \theta_i x_i\|_2 = |h_{k+1,k}|\, |e_k^\top y_i|$.
-- **Block Krylov spaces**: Block-Lanczos propagates multiple start vectors $W \in \mathbb{C}^{n \times b}$ to capture clustered eigenvalues and degeneracies.  The block recurrence
-  $$
-  A Q_j = Q_{j-1} B_j^\top + Q_j A_j + Q_{j+1} B_{j+1}
-  $$
-  yields block tridiagonal projected matrices solved in `block_lanczos.py`.
+- **Hermitian spectra**: Given $H = H^\dagger$, construct Lanczos bases $\mathcal{K}_k(H, v_0)$ with short-term recurrences $H v_j = \beta_{j-1} v_{j-1} + \alpha_j v_j + \beta_j v_{j+1}$, leading to tridiagonal $T_k$ whose Ritz pairs $(\theta_i, y_i)$ approximate $(\lambda_i, x_i)$ via $x_i \approx V_k y_i$.
+- **General (non-Hermitian) spectra**: The Arnoldi iteration builds an orthonormal basis obeying $A V_k = V_k H_k + h_{k+1,k} v_{k+1} e_k^\top$, where $H_k$ is upper Hessenberg.  Ritz vectors $x_i \approx V_k y_i$ deliver approximate eigenpairs and residual $\|A x_i - \theta_i x_i\|_2 = |h_{k+1,k}|\, |e_k^\top y_i|$.
+- **Block Krylov spaces**: Block-Lanczos propagates multiple start vectors $W \in \mathbb{C}^{n \times b}$ to capture clustered eigenvalues and degeneracies.  The block recurrence $A Q_j = Q_{j-1} B_j^\top + Q_j A_j + Q_{j+1} B_{j+1}$ yields block tridiagonal projected matrices solved in `block_lanczos.py`.
 
 ## Module Map
 

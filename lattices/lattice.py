@@ -1,25 +1,30 @@
 """
-Contains the general lattice class and its children for different lattice types. 
-@Author: Maksymilian Kliczkowski
-@Email: maksymilian.kliczkowski@pwr.edu.pl
-@Date: 2025-02-01
+Contains the general lattice class hierarchy and helpers.
 
+This module defines the base :class:`Lattice` API used across QES, together with
+utility routines for boundary handling and symmetry metadata.
+
+Currently, up to 3-spatial dimensions are supported...
+
+File    : QES/general_python/lattices/lattice.py
+Author  : Maksymilian Kliczkowski
+Date    : 2025-02-01
 """
 
-# Import the necessary modules
-from ..common import hdf5_lib as HDF5Mod
-from ..common import directories as DirectoriesMod
-# from general_python.algebra import utils as alg_utils
-
-# Import the necessary modules
+from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from enum import Enum, auto, unique                 # for enumerations
+from typing import Dict, Mapping, Optional, Tuple, Union, Any
 
 import numpy as np
 import scipy.sparse as sp
-from enum import Enum, auto, unique                 # for enumerations
-from typing import Union, Callable, Tuple, List     # type hints for the functions and methods
 
-#############################################################################################################
+from ..common import hdf5_lib as HDF5Mod
+from ..common import directories as DirectoriesMod
+
+# -----------------------------------------------------------------------------------------------------------
+# LATTICE ENUMERATIONS
+# -----------------------------------------------------------------------------------------------------------
 
 class LatticeDirection(Enum):
     '''
@@ -35,11 +40,11 @@ class LatticeBC(Enum):
     '''
     Enumeration for the boundary conditions in the lattice model.
     '''
-    PBC = auto()    # Periodic Boundary Conditions
-    OBC = auto()    # Open Boundary Conditions      
-    MBC = auto()    # Mixed Boundary Conditions     - periodic in X direction, open in Y direction
-    SBC = auto()    # Special Boundary Conditions   - periodic in Y direction, open in X direction
-    
+    PBC         = auto()    # Periodic Boundary Conditions
+    OBC         = auto()    # Open Boundary Conditions      
+    MBC         = auto()    # Mixed Boundary Conditions     - periodic in X direction, open in Y direction
+    SBC         = auto()    # Special Boundary Conditions   - periodic in Y direction, open in X direction
+
 # -----------------------------------------------------------------------------------------------------------
 
 class LatticeType(Enum):
@@ -49,17 +54,110 @@ class LatticeType(Enum):
     SQUARE      = auto()    # Square lattice
     HEXAGONAL   = auto()    # Hexagonal lattice
     HONEYCOMB   = auto()    # Honeycomb lattice
+    GRAPH       = auto()    # Generic graph lattice (adjacency-defined)
 
 ############################################## GENERAL LATTICE ##############################################
 
-def handle_boundary_conditions(bc):
+@dataclass(frozen=True)
+class BoundaryFlux:
+    """
+    Collection of magnetic fluxes piercing lattice boundary loops.
+
+    The value associated with a direction is interpreted as the phase 
+    ``phi``
+    (in radians) acquired upon wrapping around the boundary once along that
+    direction. The corresponding hopping phase factor is ``exp(1j * phi)``.
+    
+    The fluxes are stored as a mapping from :class:`LatticeDirection` to corresponding
+    complex phase values.
+    
+    Options for specifying fluxes include:
+    - Uniform flux in all directions (single float value).
+    - Direction-specific fluxes (mapping from direction to float).
+    - Zero flux (empty mapping).
+    
+    Physically, these fluxes correspond to magnetic fluxes threading
+    the holes of a torus formed by periodic boundary conditions.
+    
+    Example:
+    >>> flux = BoundaryFlux({LatticeDirection.X: np.pi/2, LatticeDirection.Y: np.pi})
+    >>> flux.phase(LatticeDirection.X)
+    (6.123233995736766e-17+1j)
+    >>> flux.phase(LatticeDirection.Y)
+    (-1+0j)
+    
+    For non-abelian gauge fields, more complex structures are needed.
+    """
+    
+    values  : Mapping[LatticeDirection, float]
+
+    def phase(self, direction: LatticeDirection, winding: int = 1) -> complex:
+        """
+        Return ``exp(1j * winding * phi_direction)``.
+        
+        Parameters:
+        -----------
+        direction : LatticeDirection
+            The lattice direction for which to get the phase factor.
+        winding : int, optional
+            The winding number for the phase factor. Defaults to 1.
+        """
+        phi = float(self.values.get(direction, 0.0))
+        return np.exp(1j * winding * phi)
+
+def _normalize_flux_dict(flux: Optional[Union[float, Mapping[Union[str, LatticeDirection], float]]]) -> BoundaryFlux:
+    """
+    Normalize flux input into a :class:`BoundaryFlux` instance.
+    
+    Parameters:
+    -----------
+    flux : float or Mapping[Union[str, LatticeDirection], float] or None
+        If a float, interpreted as uniform flux in all directions.
+        If a mapping, keys can be either :class:`LatticeDirection` members
+        or their string names (case-insensitive).  Values are fluxes in radians.
+        If None, interpreted as zero flux in all directions.
+    """
+    if flux is None:
+        return BoundaryFlux({})
+    
+    if isinstance(flux, (int, float)):
+        phi = float(flux)
+        return BoundaryFlux({direction: phi for direction in LatticeDirection})
+    
+    if isinstance(flux, Mapping):
+        out: Dict[LatticeDirection, float] = {}
+        
+        # parse mapping
+        for key, value in flux.items():
+            
+            if isinstance(key, LatticeDirection):
+                direction = key
+                
+            elif isinstance(key, str):
+                try:
+                    direction = LatticeDirection[key.upper()]
+                except KeyError as exc:
+                    raise ValueError(f"Unknown lattice direction '{key}' for flux specification.") from exc
+            else:
+                raise TypeError(f"Unsupported flux key type: {type(key)!r}")
+            out[direction] = float(value)
+        return BoundaryFlux(out)
+    raise TypeError(f"Unsupported flux specification of type {type(flux)!r}.")
+
+# -----------------------------------------------------------------------------------------------------------
+#! HELPER FUNCTIONS
+# -----------------------------------------------------------------------------------------------------------
+
+def handle_boundary_conditions(bc: Any):
     """
     Handles and normalizes the input for boundary conditions.
     Parameters:
+    -----------
         bc (str, LatticeBC, or None):
             The boundary condition to handle. Can be a string
             ("pbc", "obc", "mbc", "sbc"), an instance of LatticeBC, or None.
     Returns:
+    --------
         LatticeBC: The corresponding LatticeBC enum value for the given boundary condition.
     Raises:
         ValueError: If the provided boundary condition is not recognized.
@@ -107,13 +205,15 @@ def handle_dim(lx, ly, lz):
 
 Backend = np
 
+# -----------------------------------------------------------------------------------------------------------
+
 class Lattice(ABC):
     '''
     General Lattice class. This class contains the general lattice model.
     It is an abstract class and is not meant to be instantiated. It is meant to be inherited by other classes.
-                
-    check the boundary conditions
-    the lattice sites, no matter the lattice type are indexed from 0 to Ns - 1
+
+    The lattice sites, no matter the lattice type are indexed from 0 to Ns - 1. Importantly,
+    it can include multiple top
     Example:
     1D:
         - 1D lattice with 10 sites, site 0 has nearest neighbors 1 and 9 (PBC)
@@ -155,26 +255,54 @@ class Lattice(ABC):
             6 -> 7 -> 8
     '''
     
-    _BAD_LATTICE_SITE = None
+    _BAD_LATTICE_SITE   = None
+    _DFT_LIMIT_SITES    = 100 
+    
+    # ---------------------------------------------
+    #! INITIALIZATION
+    # ---------------------------------------------
+    
     @property
     def bad_lattice_site(self):
         ''' Bad lattice site '''
         return self._BAD_LATTICE_SITE
     
-    # Lattice constants
-    a = 1
-    b = 1
-    c = 1
+    # Lattice constants - physical units where applicable
+    a           = 1
+    b           = 1
+    c           = 1
+    unit_length = 1     # unit length in Angstroms - helper for physical calculations
 
     def __init__(self, 
-                dim     = None,
-                lx      = 1,
-                ly      = 1,
-                lz      = 1,
-                bc      = None,
-                adj_mat = None,
+                dim     : int           = None,
+                lx      : int           = 1,
+                ly      : int           = 1,
+                lz      : int           = 1,
+                bc      : str           = None,             # boundary conditions
+                adj_mat : np.ndarray    = None,             # can be controlled by the user for generic graphs
+                flux    : np.ndarray    = None,             # flux piercing the boundaries
                 *args,
                 **kwargs):
+        '''
+        General Lattice class. This class contains the general lattice model.
+        
+        Parameters
+        ----------
+        dim : int, optional
+            Dimension of the lattice (1, 2, or 3). If None, inferred from lx, ly, lz.
+        lx : int, optional
+            Length of the lattice in the x-direction.
+        ly : int, optional
+            Length of the lattice in the y-direction.
+        lz : int, optional
+            Length of the lattice in the z-direction.
+        bc : str, optional
+            Boundary conditions (e.g., 'PBC', 'OBC').
+        adj_mat : np.ndarray, optional
+            Adjacency matrix for the lattice.
+        flux : np.ndarray, optional
+            Flux piercing the boundaries.
+        '''
         
         self._dim           = handle_dim(lx, ly, lz)[0] if dim is None else dim
         self._bc            = handle_boundary_conditions(bc)
@@ -182,10 +310,15 @@ class Lattice(ABC):
         self._ly            = ly
         self._lz            = lz
         self._lxly          = lx * ly
+        self._lxlz          = lx * lz
+        self._lylz          = ly * lz
         self._lxlylz        = lx * ly * lz
         self._ns            = lx * ly * lz                  # Number of sites - set only initially as it is implemented in the children
         self._type          = LatticeType.SQUARE
         self._adj_mat       = adj_mat
+        
+        # flux piercing the boundaries - for topological models
+        self._flux          = _normalize_flux_dict(flux)
         super().__init__(*args, **kwargs)
         
         # neighbors
@@ -221,18 +354,17 @@ class Lattice(ABC):
     def __str__(self):
         ''' String representation of the lattice '''
         return "General Lattice"
-    
-    # -----------------------------------------------------------------------------
-    
+        
     def __repr__(self):
         ''' Representation of the lattice '''
         return f"{self._type.name},{self._bc.name},d={self._dim},Ns={self._ns},Lx={self._lx},Ly={self._ly},Lz={self._lz}"
     
     # -----------------------------------------------------------------------------
     
-    def init(self):
+    def init(self, verbose: bool = False, *, force_dft: bool = False):
         """
         Initializes the lattice object by calculating coordinates, reciprocal vectors, and neighbor lists.
+        
         This method performs the following steps:
         1. Calculates the real-space coordinates, r-vectors, and k-vectors of the lattice.
         2. If the number of sites (`self.Ns`) is less than 100, computes the discrete Fourier transform (DFT) matrix.
@@ -246,11 +378,17 @@ class Lattice(ABC):
         """
 
         self.calculate_coordinates()
+        if verbose: print(" Lattice: Calculated coordinates.")
+        
         self.calculate_r_vectors()
-        self.calculate_k_vectors()
+        if verbose: print(" Lattice: Calculated r-vectors.")
 
-        if self.Ns < 100:
+        self.calculate_k_vectors()
+        if verbose: print(" Lattice: Calculated k-vectors.")
+
+        if self.Ns < Lattice._DFT_LIMIT_SITES or force_dft:
             self.calculate_dft_matrix()
+            if verbose: print(" Lattice: Calculated DFT matrix.")
 
         if self._adj_mat is not None:
             Ns                  = self._adj_mat.shape[0]
@@ -287,281 +425,222 @@ class Lattice(ABC):
             self._nn_forward    = [[j for j in nn_list[i] if j>i] for i in range(Ns)]
             self._nnn           = nnn_list
             self._nnn_forward   = [[j for j in nnn_list[i] if j>i] for i in range(Ns)]
+            if verbose: print(" Lattice: Calculated neighbors from adjacency matrix.")
+            if verbose: print(" Lattice: Calculated forward neighbors from adjacency matrix.")
+            if verbose: print(" Lattice: Calculated next-nearest neighbors from adjacency matrix.")
+            if verbose: print(" Lattice: Calculated forward next-nearest neighbors from adjacency matrix.")
         else:
             self.calculate_nn()
+            if verbose: print(" Lattice: Calculated nearest neighbors.")
             self.calculate_nnn()
+            if verbose: print(" Lattice: Calculated next-nearest neighbors.")
+        
         self.calculate_norm_sym()
+        if verbose: print(" Lattice: Calculated normalization/symmetry.")
     
     ################################### GETTERS ###################################
     
     @property
-    def lx(self):
-        ''' Number of sites in the x direction '''
-        return self._lx
-    
+    def lx(self):           return self._lx
+    @property
+    def Lx(self):           return self._lx
     @lx.setter
-    def lx(self, value):
-        self._lx = value
-    
-    @property
-    def Lx(self):
-        ''' Number of sites in the x direction '''
-        return self._lx
-    
+    def lx(self, value):    self._lx = value; self._lxly = self._lx * self._ly; self._lxlylz = self._lxly * self._lz; self._lxlz = self._lx * self._lz
     @Lx.setter
-    def Lx(self, value):
-        self._lx = value
+    def Lx(self, value):    self._lx = value; self._lxly = self._lx * self._ly; self._lxlylz = self._lxly * self._lz; self._lxlz = self._lx * self._lz
     
     @property
-    def ly(self):
-        ''' Number of sites in the y direction '''
-        return self._ly
-    
+    def ly(self):           return self._ly
+    @property
+    def Ly(self):           return self._ly
     @ly.setter
-    def ly(self, value):
-        self._ly = value
-    
-    @property
-    def Ly(self):
-        ''' Number of sites in the y direction '''
-        return self._ly
-    
+    def ly(self, value):    self._ly = value; self._lxly = self._lx * self._ly; self._lxlylz = self._lxly * self._lz; self._lylz = self._ly * self._lz
     @Ly.setter
-    def Ly(self, value):
-        self._ly = value
-    
-    @property
-    def lz(self):
-        ''' Number of sites in the z direction '''
-        return self._lz
-    
-    @lz.setter
-    def lz(self, value):
-        self._lz = value
-    
-    @property
-    def Lz(self):
-        ''' Number of sites in the z direction '''
-        return self._lz
-    
-    @Lz.setter
-    def Lz(self, value):
-        self._lz = value
-    
-    @property
-    def lxly(self):
-        ''' Number of sites in the x and y directions '''
-        return self._lxly
-    
-    @lxly.setter
-    def lxly(self, value):
-        self._lxly = value
-    
-    @property
-    def lxlylz(self):
-        ''' Number of sites in the x, y and z directions '''
-        return self._lxlylz
-    
-    @lxlylz.setter
-    def lxlylz(self, value):
-        self._lxlylz = value
-    
-    @property
-    def dim(self):
-        ''' Dimension of the lattice '''
-        return self._dim
-    
-    @dim.setter
-    def dim(self, value):
-        self._dim = value
-    
-    @property
-    def ns(self):
-        ''' Number of sites '''
-        return self._ns
-    
-    @property
-    def sites(self):
-        ''' Number of sites '''
-        return self._ns
-    
-    @ns.setter
-    def ns(self, value):
-        self._ns = value
-    
-    @property
-    def Ns(self):
-        ''' Number of sites '''
-        return self._ns
-    
-    @Ns.setter
-    def Ns(self, value):
-        self._ns = value
-    
-    @property
-    def a1(self):
-        ''' Real space vector a1 '''
-        return self._a1
-    
-    @a1.setter
-    def a1(self, value):
-        self._a1 = value
-    
-    @property
-    def a2(self):
-        ''' Real space vector a2 '''
-        return self._a2
-    
-    @a2.setter
-    def a2(self, value):
-        self._a2 = value
-    
-    @property
-    def a3(self):
-        ''' Real space vector a3 '''
-        return self._a3
-    
-    @a3.setter
-    def a3(self, value):
-        self._a3 = value
-    
-    @property
-    def k1(self):
-        ''' Inverse space vector k1 '''
-        return self._k1
-    
-    @k1.setter
-    def k1(self, value):
-        self._k1 = value
-    
-    @property
-    def k2(self):
-        ''' Inverse space vector k2 '''
-        return self._k2
-    
-    @k2.setter
-    def k2(self, value):
-        self._k2 = value
-    
-    @property
-    def k3(self):
-        ''' Inverse space vector k3 '''
-        return self._k3
-    
-    @k3.setter
-    def k3(self, value):
-        self._k3 = value
-    
-    @property
-    def dft(self):
-        ''' Discrete Fourier Transform matrix '''
-        return self._dft
-    
-    @dft.setter
-    def dft(self, value):
-        self._dft = value
-    
-    @property
-    def nn(self):
-        ''' Nearest neighbors '''
-        return self._nn
-    
-    @nn.setter
-    def nn(self, value):
-        self._nn = value
-    
-    @property
-    def nn_forward(self):
-        ''' Nearest neighbors forward '''
-        return self._nn_forward
-    
-    @nn_forward.setter
-    def nn_forward(self, value):
-        self._nn_forward = value
+    def Ly(self, value):    self._ly = value; self._lxly = self._lx * self._ly; self._lxlylz = self._lxly * self._lz; self._lylz = self._ly * self._lz
 
     @property
-    def nnn(self):
-        ''' Next nearest neighbors '''
-        return self._nnn
+    def lz(self):           return self._lz
+    @property
+    def Lz(self):           return self._lz
+    @lz.setter
+    def lz(self, value):    self._lz = value; self._lxlylz = self._lxly * self._lz; self._lylz = self._ly * self._lz; self._lxlz = self._lx * self._lz
+    @Lz.setter
+    def Lz(self, value):    self._lz = value; self._lxlylz = self._lxly * self._lz; self._lylz = self._ly * self._lz; self._lxlz = self._lx * self._lz
+
+    @property
+    def lxly(self):         return self._lxly
+    @property
+    def lxlz(self):         return self._lxlz
+    @property
+    def lylz(self):         return self._lylz
+    @property
+    def lxlylz(self):       return self._lxlylz
     
+    @property
+    def dim(self):          return self._dim
+    @dim.setter
+    def dim(self, value):   self._dim = value
+    
+    @property
+    def ns(self):           return self._ns
+    @property
+    def Ns(self):            return self._ns
+    @property
+    def sites(self):        return self._ns
+    
+    @ns.setter
+    def ns(self, value):    self._ns = value
+    @Ns.setter
+    def Ns(self, value):    self._ns = value
+
+    # -----------------------------------------------------------------------------
+    #! Physical 
+    # -----------------------------------------------------------------------------
+    
+    @property
+    def a1(self):           return self._a1
+    @a1.setter
+    def a1(self, value):    self._a1 = value
+    
+    @property
+    def a2(self):           return self._a2
+    @a2.setter
+    def a2(self, value):    self._a2 = value
+
+    @property
+    def a3(self):           return self._a3
+    @a3.setter
+    def a3(self, value):    self._a3 = value
+
+    # -----------------------------------------------------------------------------
+    # Inverse space vectors
+    # -----------------------------------------------------------------------------
+
+    @property
+    def k1(self):           return self._k1
+    @k1.setter
+    def k1(self, value):    self._k1 = value
+    
+    @property
+    def k2(self):           return self._k2
+    @k2.setter
+    def k2(self, value):    self._k2 = value
+    
+    @property
+    def k3(self):           return self._k3
+    @k3.setter
+    def k3(self, value):    self._k3 = value
+    
+    @property
+    def dft(self):                  return self._dft
+    @dft.setter
+    def dft(self, value):           self._dft = value
+    
+    @property
+    def nn(self):                   return self._nn
+    @nn.setter
+    def nn(self, value):            self._nn = value
+
+    @property
+    def nn_forward(self):           return self._nn_forward
+    @nn_forward.setter
+    def nn_forward(self, value):    self._nn_forward = value
+
+    @property
+    def nnn(self):                  return self._nnn
     @nnn.setter
-    def nnn(self, value):
-        self._nnn = value
+    def nnn(self, value):           self._nnn = value
     
     @property
-    def nnn_forward(self):
-        ''' Next nearest neighbors forward '''
-        return self._nnn_forward
-    
+    def nnn_forward(self):          return self._nnn_forward
     @nnn_forward.setter
-    def nnn_forward(self, value):
-        self._nnn_forward = value
+    def nnn_forward(self, value):   self._nnn_forward = value
     
     @property
-    def coordinates(self):
-        ''' Real space coordinates '''
-        return self._coords
-    
+    def coordinates(self):          return self._coords
     @coordinates.setter
-    def coordinates(self, value):
-        self._coords = value
+    def coordinates(self, value):   self._coords = value
     
     @property
-    def kvectors(self):
-        ''' Inverse space vectors '''
-        return self._kvectors
-    
+    def kvectors(self):             return self._kvectors
     @kvectors.setter
-    def kvectors(self, value):
-        self._kvectors = value
+    def kvectors(self, value):      self._kvectors = value
     
     @property
-    def rvectors(self):
-        ''' Real space vectors '''
-        return self._rvectors
-    
+    def rvectors(self):             return self._rvectors
     @rvectors.setter
-    def rvectors(self, value):
-        self._rvectors = value
+    def rvectors(self, value):      self._rvectors = value
     
     @property
-    def bc(self):
-        ''' Boundary conditions '''
-        return self._bc
-    
+    def bc(self):                   return self._bc
     @bc.setter
-    def bc(self, value):
-        self._bc = value
+    def bc(self, value):            self._bc = value
+    
+    # ------------------------------------------------------------------
+    #! Boundary fluxes
+    # ------------------------------------------------------------------
     
     @property
-    def typek(self):
-        ''' Lattice type '''
-        return self._type
+    def flux(self) -> BoundaryFlux: 
+        return self._flux
     
+    @flux.setter
+    def flux(self, value: Optional[Union[float, Mapping[Union[str, LatticeDirection], float]]]):
+        self._flux = _normalize_flux_dict(value)
+
+    def boundary_phase(self, direction: LatticeDirection, winding: int = 1) -> complex:
+        """
+        Return the complex phase accumulated after crossing the boundary along ``direction``.
+        """
+        return self._flux.phase(direction, winding=winding)
+
+    # ------------------------------------------------------------------
+    #! Boundary helpers
+    # ------------------------------------------------------------------
+
+    def periodic_flags(self) -> Tuple[bool, bool, bool]:
+        """
+        Return booleans indicating whether (x, y, z) directions are periodic.
+        """
+        match self._bc:
+            case LatticeBC.PBC:
+                return True, True, True
+            case LatticeBC.OBC:
+                return False, False, False
+            case LatticeBC.MBC:
+                return True, False, False
+            case LatticeBC.SBC:
+                return False, True, False
+            case _:
+                raise ValueError(f"Unsupported boundary condition {self._bc!r}")
+
+    def is_periodic(self, direction: LatticeDirection) -> bool:
+        """
+        Check if a given direction has periodic boundary conditions.
+        """
+        flags = self.periodic_flags()
+        index = {LatticeDirection.X: 0, LatticeDirection.Y: 1, LatticeDirection.Z: 2}[direction]
+        return bool(flags[index])
+    
+    @property
+    def typek(self):                return self._type
     @typek.setter
-    def type(self, value):
-        self._type = value
+    def typek(self, value):         self._type = value
     
     @property
-    def spatial_norm(self):
-        ''' Spatial norm '''
-        return self._spatial_norm
-    
+    def spatial_norm(self):         return self._spatial_norm
     @spatial_norm.setter
-    def spatial_norm(self, value):
-        self._spatial_norm = value
-    
+    def spatial_norm(self, value):  self._spatial_norm = value
+
     # -----------------------------------------------------------------------------
     
     @abstractmethod
-    def site_index(self, x : int, y : int, z : int):
-        '''
-        Returns the site index given the coordinates
-        '''
-        pass
-    
+    def site_index(self, x : int, y : int, z : int): pass
+
     # -----------------------------------------------------------------------------
-    
+    #! SITE HELPERS
+    # -----------------------------------------------------------------------------
+
     def site_diff(self, i : Union[int, tuple], j : Union[int, tuple]):
         '''
         Returns the site difference between sites
@@ -573,9 +652,7 @@ class Lattice(ABC):
         x1, y1, z1 = self.get_coordinates(i) if isinstance(i, int) else i 
         x2, y2, z2 = self.get_coordinates(j) if isinstance(j, int) else j
         return (x2 - x1, y2 - y1, z2 - z1)
-    
-    # -----------------------------------------------------------------------------
-    
+        
     def site_distance(self, i : Union[int, tuple], j : Union[int, tuple]):
         '''
         Returns the site distance between sites
@@ -587,6 +664,8 @@ class Lattice(ABC):
         x, y, z = self.site_diff(i, j)
         return np.sqrt(x**2 + y**2 + z**2)
     
+    # -----------------------------------------------------------------------------
+    #! DFT MATRIX
     # -----------------------------------------------------------------------------
     
     def calculate_dft_matrix(self, phase = False):
@@ -630,6 +709,8 @@ class Lattice(ABC):
                     phase_x[:, None] * phase_y[:, None] * phase_z[:, None])
         return self._dft
     
+    # -----------------------------------------------------------------------------
+    #! NEAREST NEIGHBORS
     # -----------------------------------------------------------------------------
     
     def get_nei(self, site: int, **kwargs):
@@ -699,6 +780,10 @@ class Lattice(ABC):
             return self._sbc_neighbor(site, direction, corr_len)
         return (site + corr_len) % self._lxlylz
 
+    # -----------------------------------------------------------------------------
+    #! BOUNDARY CONDITIONS HELPERS
+    # -----------------------------------------------------------------------------
+
     def _pbc_neighbor(self, site, direction, corr_len):
         if direction == LatticeDirection.X:
             return (site + corr_len) % self._lx
@@ -763,7 +848,7 @@ class Lattice(ABC):
         pass
     
     # -----------------------------------------------------------------------------
-    #! Virtual methods for neighbors
+    #! NEAREST NEIGHBORS HELPERS
     # -----------------------------------------------------------------------------
     
     def wrong_nei(self, nei):
@@ -850,7 +935,7 @@ class Lattice(ABC):
         return self._nnn[site][num]
     
     # -----------------------------------------------------------------------------
-    #! Virtual methods for forward neighbors
+    #! FORWARD NEAREST NEIGHBORS HELPERS
     # -----------------------------------------------------------------------------
     
     def get_nn_forward_num(self, site : int):
@@ -878,6 +963,8 @@ class Lattice(ABC):
         pass
     
     # -----------------------------------------------------------------------------
+    #! FORWARD NEXT NEAREST NEIGHBORS HELPERS
+    # -----------------------------------------------------------------------------
     
     def get_nnn_forward_num(self, site : int):
         '''
@@ -903,6 +990,8 @@ class Lattice(ABC):
         '''
         pass
     
+    # -----------------------------------------------------------------------------
+    #! GENERAL NEIGHBORS HELPERS
     # -----------------------------------------------------------------------------
     
     def neighbors(self, site: int, order=1):
@@ -951,41 +1040,12 @@ class Lattice(ABC):
     #! Standard getters
     # -----------------------------------------------------------------------------
 
-    def get_coordinates(self, *args):
-        '''
-        For a given site return the real space coordinates
-        '''
-        if len(args) == 0:
-            return self.coordinates
-        else:
-            return self.coordinates[args[0]]
-        
-    def get_k_vectors(self, *args):
-        '''
-        Returns the k-vectors at lattice site i or all of them
-        '''
-        if len(args) == 0:
-            return self.kvectors
-        else:
-            return self.kvectors[args[0]]
-    
-    def get_site_diff(self, i, j):
-        '''
-        Returns the site difference between sites
-        - i - i'th lattice site
-        - j - j'th lattice site
-        '''
-        return self.get_coordinates(j) - self.get_coordinates(i)
-    
-    def get_r_vectors(self,*args):
-        '''
-        Returns the real vector at lattice site i or all of them
-        '''
-        if len(args) == 0:
-            return self.rvectors
-        else:
-            return self.rvectors[args[0]]
-        
+    def get_coordinates(self, *args):           return self.coordinates if len(args) == 0 else self.coordinates[args[0]]
+    def get_r_vectors(self,*args):              return self.rvectors if len(args) == 0 else self.rvectors[args[0]]
+    def get_k_vectors(self, *args):             return self.kvectors if len(args) == 0 else self.kvectors[args[0]]
+    def get_site_diff(self, i: int, j: int):    return self.get_coordinates(j) - self.get_coordinates(i)
+    def get_k_vec_idx(self, sym = False):       pass
+
     def get_dft(self, *args):
         '''
         Returns the DFT matrix
@@ -999,12 +1059,6 @@ class Lattice(ABC):
             # return element
             return self.dft[args[0], args[1]]
     
-    def get_k_vec_idx(self, sym = False):
-        '''
-        Returns the indices of kvectors if symmetries are to be concerned
-        '''
-        pass
-
     # -----------------------------------------------------------------------------
     #! Spatial information
     # -----------------------------------------------------------------------------
@@ -1086,36 +1140,13 @@ class Lattice(ABC):
     #! Nearest neighbors
     # -----------------------------------------------------------------------------
     
-    def _calculate_nn_pbc(self):
-        '''
-        Calculates the nearest neighbors for periodic boundary conditions
-        '''
-        return self.calculate_nn_in(True, True, True)
-    
-    def _calculate_nn_obc(self):
-        '''
-        Calculates the nearest neighbors for open boundary conditions
-        '''
-        return self.calculate_nn_in(False, False, False)
-    
-    def _calculate_nn_mbc(self):
-        '''
-        Calculates the nearest neighbors for mixed boundary conditions
-        '''
-        return self.calculate_nn_in(True, False, False)
-    
-    def _calculate_nn_sbc(self):
-        '''
-        Calculates the nearest neighbors for special boundary conditions
-        '''
-        return self.calculate_nn_in(False, True, False)
+    def _calculate_nn_pbc(self):        return self.calculate_nn_in(True, True, True)
+    def _calculate_nn_obc(self):        return self.calculate_nn_in(False, False, False)
+    def _calculate_nn_mbc(self):        return self.calculate_nn_in(True, False, False)
+    def _calculate_nn_sbc(self):        return self.calculate_nn_in(False, True, False)
     
     @abstractmethod
-    def calculate_nn_in(self, pbcx : bool, pbcy : bool, pbcz : bool):
-        '''
-        Calculates the nearest neighbors based on the boundary conditions
-        '''
-        pass
+    def calculate_nn_in(self, pbcx : bool, pbcy : bool, pbcz : bool): pass
 
     def calculate_nn(self):
         '''
@@ -1143,36 +1174,13 @@ class Lattice(ABC):
     #! Next nearest neighbors
     # -----------------------------------------------------------------------------
     
-    def _calculate_nnn_pbc(self):
-        '''
-        Calculates the next nearest neighbors for periodic boundary conditions
-        '''
-        return self.calculate_nnn_in(True, True, True)
-    
-    def _calculate_nnn_obc(self):
-        '''
-        Calculates the next nearest neighbors for open boundary conditions
-        '''
-        return self.calculate_nnn_in(False, False, False)
-        
-    def _calculate_nnn_mbc(self):
-        '''
-        Calculates the next nearest neighbors for mixed boundary conditions
-        '''
-        return self.calculate_nnn_in(True, False, False)
-    
-    def _calculate_nnn_sbc(self):
-        '''
-        Calculates the next nearest neighbors for special boundary conditions
-        '''
-        return self.calculate_nnn_in(False, True, False)
+    def _calculate_nnn_pbc(self):       return self.calculate_nnn_in(True, True, True)
+    def _calculate_nnn_obc(self):       return self.calculate_nnn_in(False, False, False)
+    def _calculate_nnn_mbc(self):       return self.calculate_nnn_in(True, False, False)
+    def _calculate_nnn_sbc(self):       return self.calculate_nnn_in(False, True, False)
     
     @abstractmethod
-    def calculate_nnn_in(self, pbcx : bool, pbcy : bool, pbcz : bool):
-        '''
-        Calculates the next nearest neighbors based on the boundary conditions
-        '''
-        pass
+    def calculate_nnn_in(self, pbcx : bool, pbcy : bool, pbcz : bool): pass
     
     def calculate_nnn(self):
         '''
@@ -1310,7 +1318,103 @@ class Lattice(ABC):
                 nei_in = self.get_nn_forward(i, j)
                 print_nei(f"Neighbor {j} of site {i}: {nei_in}", lvl = 2, color = 'blue')
 
-            
+    # -----------------------------------------------------------------------------
+    #! Presentation helpers (text / plots)
+    # -----------------------------------------------------------------------------
+
+    def summary_string(self, *, precision: int = 3) -> str:
+        """
+        Return a textual summary of lattice metadata.
+        """
+        from .visualization import format_lattice_summary
+
+        return format_lattice_summary(self, precision=precision)
+
+    def real_space_table(self, *, max_rows: int = 10, precision: int = 3) -> str:
+        """
+        Return a formatted table of real-space vectors.
+        """
+        from .visualization import format_real_space_vectors
+
+        return format_real_space_vectors(self, max_rows=max_rows, precision=precision)
+
+    def reciprocal_space_table(self, *, max_rows: int = 10, precision: int = 3) -> str:
+        """
+        Return a formatted table of reciprocal-space vectors.
+        """
+        from .visualization import format_reciprocal_space_vectors
+
+        return format_reciprocal_space_vectors(self, max_rows=max_rows, precision=precision)
+
+    def brillouin_zone_overview(self, *, precision: int = 3) -> str:
+        """
+        Return a textual overview of the sampled Brillouin zone.
+        """
+        from .visualization import format_brillouin_zone_overview
+
+        return format_brillouin_zone_overview(self, precision=precision)
+
+    def describe(self, *, 
+                precision               : int = 3,
+                max_rows                : int = 10,
+                include_vectors         : bool = True,
+                include_reciprocal      : bool = True,
+                include_brillouin_zone  : bool = True) -> str:
+        """
+        Combine multiple presentation helpers into a single multi-section string.
+        """
+        sections: list[str] = [self.summary_string(precision=precision)]
+
+        if include_vectors:
+            sections.append("Real-space vectors:\n" + self.real_space_table(max_rows=max_rows, precision=precision))
+
+        if include_reciprocal:
+            sections.append(
+                "Reciprocal-space vectors:\n" + self.reciprocal_space_table(max_rows=max_rows, precision=precision)
+            )
+
+        if include_brillouin_zone:
+            sections.append("Brillouin zone:\n" + self.brillouin_zone_overview(precision=precision))
+
+        return "\n\n".join(sections)
+
+    # -----------------------------------------------------------------------------
+    #! PLOTTING HELPERS
+    # -----------------------------------------------------------------------------
+
+    def plot_real_space(self, **kwargs):
+        """
+        Convenience wrapper returning the matplotlib figure and axes for a real-space scatter plot.
+        """
+        from .visualization import plot_real_space
+        return plot_real_space(self, **kwargs)
+
+    def plot_reciprocal_space(self, **kwargs):
+        """
+        Convenience wrapper returning the matplotlib figure and axes for a reciprocal-space scatter plot.
+        """
+        from .visualization import plot_reciprocal_space
+
+        return plot_reciprocal_space(self, **kwargs)
+
+    def plot_brillouin_zone(self, **kwargs):
+        """
+        Convenience wrapper returning the matplotlib figure and axes for a Brillouin zone plot.
+        """
+        from .visualization import plot_brillouin_zone
+
+        return plot_brillouin_zone(self, **kwargs)
+
+    def plot_structure(self, **kwargs):
+        """
+        Visualise lattice connectivity with boundary condition annotations.
+        """
+        from .visualization import plot_lattice_structure
+
+        return plot_lattice_structure(self, **kwargs)
+
+#############################################################################################################
+#! SAVE LATTICE HELPERS
 #############################################################################################################
 
 def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
@@ -1347,4 +1451,6 @@ def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
         return True
     return False
     
+#############################################################################################################
+#! END OF FILE
 #############################################################################################################
