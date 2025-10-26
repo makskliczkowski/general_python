@@ -50,6 +50,19 @@ A comprehensive Python library providing utilities for scientific computing, par
 - Binary operations and bit manipulation
 - Detailed module map: `common/README.md`
 
+## Documentation Map
+
+- [`algebra/README.md`](algebra/README.md) — scope of linear algebra, random ensembles, IVPs, and backend rules.
+- [`algebra/solvers/README.md`](algebra/solvers/README.md) — iterative/direct solver catalogue and convergence criteria.
+- [`algebra/eigen/README.md`](algebra/eigen/README.md) — Arnoldi, Lanczos, and block-Lanczos algorithms with residual controls.
+- [`algebra/examples/README.md`](algebra/examples/README.md) — runnable scripts illustrating solver usage patterns.
+- [`physics/README.md`](physics/README.md) — thermodynamics, spectral/response functions, and correlation matrix tooling.
+- [`common/README.md`](common/README.md) — bitstring, filesystem, plotting, and diagnostic helpers shared across packages.
+- [`common/embedded/README.md`](common/embedded/README.md) — low-level kernels that power the binary utilities.
+- [`BACKEND_INTEGRATION.md`](BACKEND_INTEGRATION.md) — backend (NumPy/JAX) compatibility notes for solvers and eigensolvers.
+- [`PRECONDITIONERS.md`](PRECONDITIONERS.md) — catalogue of supported preconditioners with mathematical guarantees.
+- [`DOCUMENTATION_SUMMARY.md`](DOCUMENTATION_SUMMARY.md) — high-level overview of the entire `general_python` package.
+
 ## Installation
 
 ### From Source (Recommended for Development)
