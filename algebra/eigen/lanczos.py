@@ -1,4 +1,4 @@
-"""
+r"""
 Lanczos Eigenvalue Solver
 
 Implements the Lanczos algorithm for finding extremal eigenvalues and eigenvectors
@@ -15,19 +15,28 @@ Key Features:
     - SciPy wrapper for production use
 
 Mathematical Background:
-    Starting from v₁, build Krylov subspace K_m(A, v₁) = span{v₁, Av₁, A²v₁, ...}
-    Orthogonalize to get V = [v₁, v₂, ..., v_m]
-    Results in: A V = V T + \beta_m v_{m+1} e_m^T
-    where T is tridiagonal with diagonal \alpha and off-diagonal \beta
+    1. Starting from
+        $$
+        v_1,
+        $$
+        build Krylov subspace
+        $$
+        K_m(A, v_1 ) = span{v_1 , Av_1 , A^2v_1 , ...}
+        $$
+    2. Orthogonalize to get V = [v_1 , v_2 , ..., v_m ]
+    3. Results in: 
+        $$
+        A V = V T + \beta_m v_{m+1} e_m^T
+        $$
+        where T is tridiagonal with diagonal $\alpha$ and off-diagonal $\beta$
 
 References:
-    - Golub & Van Loan, "Matrix Computations" (4th ed.), Algorithm 10.1.1
-    - Saad, "Numerical Methods for Large Eigenvalue Problems"
+[1]...
     
 File        : QES/general_python/algebra/eigen/lanczos.py
 Author      : Maksymilian Kliczkowski
 Email       : maxgrom97@gmail.com
-Date        : 2024-06-15
+Date        : 2025-10-20
 """
 
 from typing import Optional, Callable, Tuple, Literal
@@ -39,11 +48,29 @@ from numpy.typing import NDArray
 # ----------------------------------------------------------------------------------------
 
 try:
-    import jax
-    import jax.numpy as jnp
-    JAX_AVAILABLE   = True
+    from ..utils import JAX_AVAILABLE, jax, jnp, jcfg
+    # If utils didn't load JAX (because PREFER_JAX was False), try direct import
+    if not JAX_AVAILABLE:
+        try:
+            import jax
+            import jax.numpy as jnp
+            from jax import config as jcfg
+            JAX_AVAILABLE   = True
+            # Enable 64-bit precision
+            jcfg.update("jax_enable_x64", True)
+        except ImportError:
+            JAX_AVAILABLE   = False
+            jax             = None
+            jnp             = None
+            jcfg            = None
+    elif JAX_AVAILABLE and jcfg:
+        # JAX was loaded by utils, ensure x64 is enabled
+        jcfg.update("jax_enable_x64", True)    
 except ImportError:
     JAX_AVAILABLE   = False
+    jax             = None
+    jnp             = None
+    jcfg            = None
 
 try:
     from scipy.sparse.linalg import eigsh
@@ -142,17 +169,16 @@ class LanczosEigensolver:
     # ------------------------------------------------------------------------------------
     
     def solve(self,
-            A       : Optional[NDArray]                         = None,
-            matvec  : Optional[Callable[[NDArray], NDArray]]    = None,
-            v0      : Optional[NDArray]                         = None,
-            n       : Optional[int]                             = None,
+            A                   : Optional[NDArray]                         = None,
+            matvec              : Optional[Callable[[NDArray], NDArray]]    = None,
+            v0                  : Optional[NDArray]                         = None,
+            n                   : Optional[int]                             = None,
             *,
-            k                   : int                           = None,
-            which               : Literal['smallest', 'largest', 'both'] = 'smallest',
-            max_iter            : Optional[int]                 = None,
-            tol                 : float                         = 1e-10,
-            reorthogonalize     : bool                          = True,
-            reorth_tol          : float                         = 1e-12) -> EigenResult:
+            k                   : int                                       = None,
+            which               : Literal['smallest', 'largest', 'both']    = None,
+            max_iter            : Optional[int]                             = None,
+            reorthogonalize     : bool                                      = True,
+            reorth_tol          : float                                     = 1e-12) -> EigenResult:
         """
         Solve for eigenvalues and eigenvectors.
         
@@ -204,39 +230,72 @@ class LanczosEigensolver:
         else:
             raise ValueError("Either A or matvec must be provided")
         
-        
         # Determine max iterations
         # Default: Use min(n, max(50, 3*k)) for better convergence
-        self.max_iter = max_iter if max_iter is not None else self.max_iter
-        if self.max_iter is not None:
-            max_iter = self.max_iter
-        else:
-            max_iter = min(n, max(50, 3 * self.k))
-        max_iter = min(max_iter, n)  # Cannot exceed dimension
+        k               = k if k is not None else self.k
+        self.max_iter   = max_iter if max_iter is not None else self.max_iter
+        max_iter        = self.max_iter if self.max_iter is not None else min(n, max(50, 3*k))
+        max_iter        = min(max_iter, n)  # Cannot exceed dimension
+        which           = self.which if which is None else which
         
+        # If using NumPy backend with a matvec and SciPy is available, prefer robust eigsh
+        # for matrix-free accuracy and performance.
+        if self.backend == 'numpy' and matvec is not None and SCIPY_AVAILABLE:
+            from scipy.sparse.linalg import LinearOperator, eigsh as _eigsh
+            which_map = {
+                'smallest': 'SA',
+                'largest' : 'LA',
+                'both'    : 'BE',
+            }
+            which_scipy     = which_map.get(which, 'SA')
+            Aop             = LinearOperator((n, n), matvec=_matvec)
+            # Allow ARPACK to choose iterations for robust convergence
+            evals, evecs    = _eigsh(Aop, k=k, which=which_scipy, tol=self.tol, maxiter=None, v0=v0)
+            # Sort according to requested ordering for consistency
+            if which == 'smallest':
+                order = np.argsort(evals)[:k]
+            elif which == 'largest':
+                order = np.argsort(evals)[-k:][::-1]
+            elif which == 'both':
+                # eigsh with 'BE' already returns both ends; keep as-is
+                order = np.arange(len(evals))
+            else:
+                order = np.argsort(evals)[:k]
+            evals           = evals[order]
+            evecs           = evecs[:, order]
+            return EigenResult(
+                eigenvalues     = evals,
+                eigenvectors    = evecs,
+                subspacevectors = evecs,  # no Krylov basis from eigsh; return eigenvectors as subspace
+                iterations      = None,
+                converged       = True,
+                residual_norms  = None,
+            )
+
         # Use appropriate backend
         if self.backend == 'numpy':
             return LanczosEigensolver._lanczos_numpy(_matvec, n, v0, max_iter, 
-                                        k               = k if k is not None else self.k,
+                                        k               = k,
                                         which           = which,
                                         reorthogonalize = reorthogonalize,
                                         reorth_tol      = reorth_tol)
         else:  # jax
             return LanczosEigensolver._lanczos_jax(_matvec, n, v0, max_iter,
-                                        k               = k if k is not None else self.k,
+                                        k               = k,
                                         which           = which,
                                         reorthogonalize = reorthogonalize,
                                         reorth_tol      = reorth_tol)
     
     # ------------------------------------------------------------------------------------
     
+    @staticmethod
     def _lanczos_numpy(
                     matvec          : Callable[[NDArray], NDArray],
                     n               : int,
                     v0              : Optional[NDArray],
                     max_iter        : int,
+                    k               : int,
                     *,
-                    k               : int   = 6,
                     which           : Literal['smallest', 'largest', 'both'] = 'smallest',
                     reorthogonalize : bool  = True,
                     reorth_tol      : float = 1e-12,
@@ -262,7 +321,8 @@ class LanczosEigensolver:
         # Initialize starting vector
         if v0 is None:
             v0 = np.random.randn(n)
-            if np.iscomplexobj(matvec(np.ones(n, dtype=complex))):
+            test_vec = matvec(np.ones(n, dtype=complex))
+            if np.iscomplexobj(test_vec) and np.max(np.abs(test_vec.imag)) > 1e-14:
                 v0 = v0 + 1j * np.random.randn(n)
         
         v0          = v0 / np.linalg.norm(v0) # start from this vector
@@ -287,12 +347,11 @@ class LanczosEigensolver:
             alpha[j]    = np.real(np.vdot(V[:, j], w))
             w          -= alpha[j] * V[:, j] + beta_prev * v_prev
             
-            # Reorthogonalization if requested
+            # Reorthogonalization (symmetric case): restrict to last two vectors to preserve 3-term recurrence
             if reorthogonalize:
-                for i in range(j + 1):
-                    proj    = np.vdot(V[:, i], w)
-                    # Always perform reorthogonalization for stability
-                    w  -= proj * V[:, i]
+                for i in range(max(0, j - 1), j + 1):
+                    proj = np.vdot(V[:, i], w)
+                    w   -= proj * V[:, i]
             
             # Compute beta and normalize - next basis vector
             beta[j] = np.linalg.norm(w)
@@ -312,13 +371,10 @@ class LanczosEigensolver:
                 beta_prev   = beta[j]
         else:
             V = V[:, :max_iter]
-        
-        # Globally orthonormalize V and perform Rayleigh–Ritz on H = V^T A V
+
+        # Orthonormalize basis and form Rayleigh–Ritz matrix H = V^H A V
         V, _                = np.linalg.qr(V)
-        try:
-            AV              = matvec(V)
-        except Exception:
-            AV              = np.column_stack([matvec(V[:, i]) for i in range(V.shape[1])])
+        AV                  = np.column_stack([matvec(V[:, i]) for i in range(V.shape[1])])
         H                   = V.T.conj() @ AV
         H                   = 0.5 * (H + H.T.conj())
         evals_H, evecs_H    = np.linalg.eigh(H)
@@ -326,18 +382,14 @@ class LanczosEigensolver:
         indices             = LanczosEigensolver._select_eigenvalues(evals_H, k, which)
         selected_evals      = evals_H[indices]
         selected_evecs_H    = evecs_H[:, indices]
-        # Eigenvectors in original space
+        # Ritz vectors in original space
         eigenvectors        = V @ selected_evecs_H
-        # Enforce orthonormality of returned eigenvectors and refresh eigenvalues
-        Q, _                = np.linalg.qr(eigenvectors)
-        eigenvectors        = Q
-        # Update eigenvalues via Rayleigh quotients
-        try:
-            AQ              = matvec(eigenvectors)
-        except Exception:
-            AQ              = np.column_stack([matvec(eigenvectors[:, i]) for i in range(eigenvectors.shape[1])])
-        selected_evals      = np.array([np.vdot(eigenvectors[:, i], AQ[:, i]).real for i in range(eigenvectors.shape[1])])
-        
+        # Refine eigenvalues via Rayleigh quotients in the original space
+        selected_evals      = np.array([
+                                    np.vdot(eigenvectors[:, i], matvec(eigenvectors[:, i])).real
+                                    for i in range(eigenvectors.shape[1])
+                                ])
+
         # Compute residual norms: ||A v - \lambda v||
         residual_norms      = np.zeros(len(selected_evals))
         for i, (lam, vec) in enumerate(zip(selected_evals, eigenvectors.T)):
@@ -358,6 +410,7 @@ class LanczosEigensolver:
     
     # ------------------------------------------------------------------------------------
     
+    @staticmethod
     def _lanczos_jax(matvec         : Callable[[NDArray], NDArray],
                     n               : int,
                     v0              : Optional[NDArray],
@@ -405,9 +458,9 @@ class LanczosEigensolver:
             alpha   = alpha.at[j].set(alpha_j)
             w       = w - alpha_j * V[:, j] - beta_prev * v_prev
             
-            # Reorthogonalization if requested
+            # Reorthogonalization (symmetric case): restrict to last two vectors
             if reorthogonalize:
-                for i in range(j + 1):
+                for i in range(max(0, j - 1), j + 1):
                     proj = jnp.vdot(V[:, i], w)
                     w    = w - proj * V[:, i]
             
@@ -431,13 +484,9 @@ class LanczosEigensolver:
         alpha               = alpha[:actual_iters]
         beta                = beta[:actual_iters]
 
-        # Orthonormalize V and perform Rayleigh–Ritz on H = V^T A V
+        # Orthonormalize basis and form Rayleigh–Ritz matrix H = V^H A V
         V, _                = jnp.linalg.qr(V)
-        # Build AV column-wise if needed
-        try:
-            AV              = matvec(V)
-        except Exception:
-            AV              = jnp.column_stack([matvec(V[:, i]) for i in range(V.shape[1])])
+        AV                  = jnp.column_stack([matvec(V[:, i]) for i in range(V.shape[1])])
         H                   = V.T.conj() @ AV
         H                   = 0.5 * (H + H.T.conj())
         evals_H, evecs_H    = jnp.linalg.eigh(H)
@@ -445,14 +494,11 @@ class LanczosEigensolver:
         selected_evals      = evals_H[indices]
         selected_evecs_H    = evecs_H[:, indices]
         eigenvectors        = V @ selected_evecs_H
-        # Enforce orthonormality via QR and refresh eigenvalues with Rayleigh quotients
-        Q, _                = jnp.linalg.qr(eigenvectors)
-        eigenvectors        = Q
-        try:
-            AQ              = matvec(eigenvectors)
-        except Exception:
-            AQ              = jnp.column_stack([matvec(eigenvectors[:, i]) for i in range(eigenvectors.shape[1])])
-        selected_evals      = jnp.array([jnp.vdot(eigenvectors[:, i], AQ[:, i]).real for i in range(eigenvectors.shape[1])])
+        # Refine eigenvalues via Rayleigh quotients in the original space
+        selected_evals      = jnp.array([
+                                    jnp.vdot(eigenvectors[:, i], matvec(eigenvectors[:, i])).real
+                                    for i in range(eigenvectors.shape[1])
+                                ])
         
         # Compute residual norms
         residual_norms      = jnp.array([

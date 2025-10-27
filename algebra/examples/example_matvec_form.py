@@ -7,7 +7,7 @@ Instead of storing the full matrix A, you provide a function that computes
 matrix-vector products y = A @ x.
 
 Benefits of Matrix-Free:
-    - Memory: O(n) instead of O(n²) for matrix storage
+    - Memory: O(n) instead of O(n^2) for matrix storage
     - Flexibility: A can be implicit (e.g., from FFT, operator, etc.)
     - Large-scale: Enables solving systems too large to store A explicitly
 
@@ -79,7 +79,7 @@ def example_tridiagonal_operator():
     print("Example 2: Tridiagonal Operator (1D Laplacian)")
     print("=" * 70)
     
-    # 1D Laplacian: -d²u/dx² discretized
+    # 1D Laplacian: -d^2u/dx^2 discretized
     # Tridiagonal: [-1, 2, -1] pattern
     n = 500
     h = 1.0 / (n + 1)  # Grid spacing
@@ -90,7 +90,7 @@ def example_tridiagonal_operator():
     
     # Matrix-free operator
     def laplacian_matvec(x):
-        """Apply 1D Laplacian: (Ax)_i = (2x_i - x_{i-1} - x_{i+1}) / h²"""
+        """Apply 1D Laplacian: (Ax)_i = (2x_i - x_{i-1} - x_{i+1}) / h^2"""
         y = np.zeros_like(x)
         y[0] = (2*x[0] - x[1]) / h**2
         y[1:-1] = (2*x[1:-1] - x[:-2] - x[2:]) / h**2
@@ -117,7 +117,7 @@ def example_tridiagonal_operator():
     print(f"  Iterations: {result.iterations}")
     print(f"  Residual: {result.residual_norm:.2e}")
     
-    # Analytical solution: u(x) = -sin(πx) / π²
+    # Analytical solution: u(x) = -sin(πx) / π^2
     u_exact = -np.sin(np.pi * x_grid) / np.pi**2
     error = np.linalg.norm(result.x - u_exact)
     
@@ -152,7 +152,7 @@ def example_circulant_fft():
     c_fft = np.fft.fft(c)
     
     def circulant_matvec(x):
-        """Apply circulant matrix via FFT: O(n log n) instead of O(n²)"""
+        """Apply circulant matrix via FFT: O(n log n) instead of O(n^2)"""
         x_fft = np.fft.fft(x)
         y_fft = c_fft * x_fft
         y = np.fft.ifft(y_fft).real
@@ -162,7 +162,7 @@ def example_circulant_fft():
     b = np.random.randn(n)
     
     print(f"\nMatrix-vector product: O(n log n) via FFT")
-    print(f"  vs O(n²) for explicit matrix multiply")
+    print(f"  vs O(n^2) for explicit matrix multiply")
     
     # Solve
     solver = solvers.choose_solver(solver_id='cg', sigma=0.0)
@@ -365,7 +365,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print("\nKey Takeaways:")
     print("1. MATVEC form: Provide function computing A @ x")
-    print("2. Memory: O(n) instead of O(n²)")
+    print("2. Memory: O(n) instead of O(n^2)")
     print("3. Flexibility: A can be implicit (FFT, operator, etc.)")
     print("4. Essential for large systems (n > 10,000)")
     print("5. Common in PDEs, quantum mechanics, ML (Hessian-vector products)")

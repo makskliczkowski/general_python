@@ -15,35 +15,62 @@ Key Features:
     - SciPy wrapper for production use
 
 Mathematical Background:
-    Starting from v₁, build Krylov subspace K_m(A, v₁) = span{v₁, Av₁, A²v₁, ...}
-    Orthogonalize using Modified Gram-Schmidt to get V = [v₁, v₂, ..., v_m]
+    Starting from v_1 , build Krylov subspace K_m(A, v_1 ) = span{v_1 , Av_1 , A^2v_1 , ...}
+    Orthogonalize using Modified Gram-Schmidt to get V = [v_1 , v_2 , ..., v_m]
     Results in: A V = V H + h_{m+1,m} v_{m+1} e_m^T
     where H is upper Hessenberg
 
 References:
-    - Saad, "Numerical Methods for Large Eigenvalue Problems" (2nd ed.), Algorithm 6.1
-    - Golub & Van Loan, "Matrix Computations" (4th ed.), Section 10.4
+    [1] ...
+    
+----------------------------------------
+----------------------------------------
+
 """
 
 from typing import Optional, Callable, Tuple, Literal, Union
 import numpy as np
 from numpy.typing import NDArray
 
+# Backend imports via global utils, with fallback to direct JAX import
 try:
-    import jax
-    import jax.numpy as jnp
-    JAX_AVAILABLE = True
+    from ..utils import JAX_AVAILABLE, jax, jnp, jcfg
+    # If utils didn't enable JAX or x64, try to ensure availability here
+    if not JAX_AVAILABLE:
+        try:
+            import jax                      # type: ignore
+            import jax.numpy as jnp         # type: ignore
+            from jax import config as jcfg  # type: ignore
+            JAX_AVAILABLE   = True
+            # Prefer 64-bit for numerical accuracy
+            jcfg.update("jax_enable_x64", True)
+        except ImportError:
+            JAX_AVAILABLE   = False
+            jax             = None
+            jnp             = None
+            jcfg            = None
+    elif JAX_AVAILABLE and jcfg:
+        try:
+            jcfg.update("jax_enable_x64", True)
+        except Exception:
+            pass
 except ImportError:
-    JAX_AVAILABLE = False
+        JAX_AVAILABLE       = False
+        jax                 = None
+        jnp                 = None
+        jcfg                = None
 
+# Import scipy methods
 try:
     from scipy.sparse.linalg import eigs
     SCIPY_AVAILABLE = True
 except ImportError:
     SCIPY_AVAILABLE = False
 
-from .result import EigenResult
-
+try:
+    from .result import EigenResult
+except ImportError:
+    raise 
 
 class ArnoldiEigensolver:
     """
@@ -142,81 +169,109 @@ class ArnoldiEigensolver:
         
         # Use appropriate backend
         if self.backend == 'numpy':
-            return self._arnoldi_numpy(_matvec, n, v0, max_iter, return_krylov)
+            return ArnoldiEigensolver._arnoldi_numpy(
+                _matvec,
+                n,
+                v0,
+                max_iter,
+                return_krylov,
+                k=self.k,
+                which=self.which,
+                reorthogonalize=self.reorthogonalize,
+                reorth_tol=self.reorth_tol,
+                tol=self.tol,
+            )
         else:  # jax
-            return self._arnoldi_jax(_matvec, n, v0, max_iter, return_krylov)
+            return ArnoldiEigensolver._arnoldi_jax(
+                _matvec,
+                n,
+                v0,
+                max_iter,
+                return_krylov,
+                k=self.k,
+                which=self.which,
+                reorthogonalize=self.reorthogonalize,
+                reorth_tol=self.reorth_tol,
+                tol=self.tol,
+            )
     
+    @staticmethod
     def _arnoldi_numpy(
-        self,
         matvec: Callable[[NDArray], NDArray],
         n: int,
         v0: Optional[NDArray],
         max_iter: int,
-        return_krylov: bool
+        return_krylov: bool,
+        *,
+        k: int,
+        which: Literal['LM', 'SM', 'LR', 'SR', 'LI', 'SI'],
+        reorthogonalize: bool,
+        reorth_tol: float,
+        tol: float,
     ) -> Union[EigenResult, Tuple[EigenResult, NDArray]]:
         """NumPy implementation of Arnoldi iteration."""
-        
+
         # Initialize starting vector
         if v0 is None:
             v0 = np.random.randn(n)
-            # Check if complex
+            # Probe complexity: only promote to complex if imaginary part is non-zero
             test_result = matvec(np.ones(n, dtype=complex))
-            if np.iscomplexobj(test_result):
+            if np.iscomplexobj(test_result) and np.max(np.abs(np.imag(test_result))) > 1e-14:
                 v0 = v0 + 1j * np.random.randn(n)
-        
+
         v0 = v0 / np.linalg.norm(v0)
         dtype = v0.dtype
-        
+
         # Storage for Arnoldi basis (Krylov vectors)
         V = np.zeros((n, max_iter + 1), dtype=dtype)
         V[:, 0] = v0
-        
+
         # Upper Hessenberg matrix
         H = np.zeros((max_iter + 1, max_iter), dtype=np.complex128 if np.iscomplexobj(dtype) else np.float64)
-        
+
         # Arnoldi iteration with Modified Gram-Schmidt
         for j in range(max_iter):
             # Apply matrix
             w = matvec(V[:, j])
-            
+
             # Modified Gram-Schmidt orthogonalization
             for i in range(j + 1):
                 H[i, j] = np.vdot(V[:, i], w)
                 w = w - H[i, j] * V[:, i]
-            
+
             # Reorthogonalization if requested (full reorthogonalization)
-            if self.reorthogonalize:
+            if reorthogonalize:
                 for i in range(j + 1):
                     correction = np.vdot(V[:, i], w)
-                    if np.abs(correction) > self.reorth_tol:
+                    if np.abs(correction) > reorth_tol:
                         H[i, j] += correction
                         w = w - correction * V[:, i]
-            
+
             # Compute norm
             H[j + 1, j] = np.linalg.norm(w)
-            
+
             # Check for breakdown (happy breakdown - exact invariant subspace)
-            if H[j + 1, j] < self.tol * 1e-2:
+            if H[j + 1, j] < tol * 1e-2:
                 max_iter = j + 1
                 H = H[:max_iter, :max_iter]
                 V = V[:, :max_iter]
                 break
-            
+
             # Normalize new vector
             if j < max_iter - 1:
                 V[:, j + 1] = w / H[j + 1, j]
         else:
             V = V[:, :max_iter]
             H = H[:max_iter, :max_iter]
-        
+
         # Solve Hessenberg eigenvalue problem
         evals_H, evecs_H = np.linalg.eig(H)
-        
+
         # Select desired eigenvalues
-        indices = self._select_eigenvalues(evals_H, self.k, self.which)
+        indices = ArnoldiEigensolver._select_eigenvalues(evals_H, k, which)
         selected_evals = evals_H[indices]
         selected_evecs_H = evecs_H[:, indices]
-        
+
         # Transform eigenvectors back to original space (Ritz vectors)
         # eigenvector of A ≈ V @ eigenvector of H
         eigenvectors = V @ selected_evecs_H
@@ -224,16 +279,16 @@ class ArnoldiEigensolver:
         norms = np.linalg.norm(eigenvectors, axis=0)
         norms[norms == 0] = 1.0
         eigenvectors = eigenvectors / norms
-        
+
         # Compute residual norms: ||A v - \lambda v||
         residual_norms = np.zeros(len(selected_evals), dtype=float)
         for i, (lam, vec) in enumerate(zip(selected_evals, eigenvectors.T)):
             residual = matvec(vec) - lam * vec
             residual_norms[i] = np.linalg.norm(residual)
-        
+
         # Check convergence
-        converged = np.all(residual_norms < self.tol)
-        
+        converged = np.all(residual_norms < tol)
+
         result = EigenResult(
             eigenvalues=selected_evals,
             eigenvectors=eigenvectors,
@@ -242,18 +297,24 @@ class ArnoldiEigensolver:
             converged=converged,
             residual_norms=residual_norms
         )
-        
+
         if return_krylov:
             return result, V
         return result
     
+    @staticmethod
     def _arnoldi_jax(
-        self,
         matvec: Callable[[NDArray], NDArray],
         n: int,
         v0: Optional[NDArray],
         max_iter: int,
-        return_krylov: bool
+        return_krylov: bool,
+        *,
+        k: int,
+        which: Literal['LM', 'SM', 'LR', 'SR', 'LI', 'SI'],
+        reorthogonalize: bool,
+        reorth_tol: float,
+        tol: float,
     ) -> Union[EigenResult, Tuple[EigenResult, NDArray]]:
         """JAX implementation of Arnoldi iteration."""
         
@@ -261,9 +322,9 @@ class ArnoldiEigensolver:
         if v0 is None:
             key = jax.random.PRNGKey(42)
             v0 = jax.random.normal(key, (n,))
-            # Check if complex
+            # Check if complex (promote only if imaginary part present)
             test_vec = matvec(jnp.ones(n, dtype=jnp.complex64))
-            if jnp.iscomplexobj(test_vec):
+            if jnp.iscomplexobj(test_vec) and jnp.max(jnp.abs(jnp.imag(test_vec))) > 1e-14:
                 key2 = jax.random.PRNGKey(43)
                 v0 = v0 + 1j * jax.random.normal(key2, (n,))
         
@@ -290,19 +351,19 @@ class ArnoldiEigensolver:
                 w = w - h_ij * V[:, i]
             
             # Reorthogonalization
-            if self.reorthogonalize:
+            if reorthogonalize:
                 for i in range(j + 1):
                     correction = jnp.vdot(V[:, i], w)
-                    w = jnp.where(jnp.abs(correction) > self.reorth_tol,
+                    w = jnp.where(jnp.abs(correction) > reorth_tol,
                                   w - correction * V[:, i], w)
-                    H = H.at[i, j].set(H[i, j] + jnp.where(jnp.abs(correction) > self.reorth_tol,
+                    H = H.at[i, j].set(H[i, j] + jnp.where(jnp.abs(correction) > reorth_tol,
                                                             correction, 0.0))
             
             h_norm = jnp.linalg.norm(w)
             H = H.at[j + 1, j].set(h_norm)
             
             # Check for breakdown
-            if h_norm < self.tol * 1e-2:
+            if h_norm < tol * 1e-2:
                 actual_iters = j + 1
                 break
             
@@ -317,7 +378,7 @@ class ArnoldiEigensolver:
         evals_H, evecs_H = jnp.linalg.eig(H)
         
         # Select desired eigenvalues
-        indices = self._select_eigenvalues(np.array(evals_H), self.k, self.which)
+        indices = ArnoldiEigensolver._select_eigenvalues(np.array(evals_H), k, which)
         selected_evals = evals_H[indices]
         selected_evecs_H = evecs_H[:, indices]
         
@@ -334,7 +395,7 @@ class ArnoldiEigensolver:
             for i in range(len(selected_evals))
         ])
         
-        converged = jnp.all(residual_norms < self.tol)
+        converged = jnp.all(residual_norms < tol)
         
         result = EigenResult(
             eigenvalues=np.array(selected_evals),

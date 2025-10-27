@@ -90,10 +90,10 @@ Given x₀, compute r₀ = b - Ax₀
 Set p₀ = r₀
 For k = 0, 1, 2, ...
     \alphaₖ      = (rₖᵀrₖ) / (pₖᵀApₖ)
-    xₖ₊₁    = xₖ + \alphaₖpₖ
-    rₖ₊₁    = rₖ - \alphaₖApₖ
-    \betaₖ      = (rₖ₊₁ᵀrₖ₊₁) / (rₖᵀrₖ)
-    pₖ₊₁    = rₖ₊₁ + \betaₖpₖ
+    xₖ₊_1     = xₖ + \alphaₖpₖ
+    rₖ₊_1     = rₖ - \alphaₖApₖ
+    \betaₖ      = (rₖ₊_1 ᵀrₖ₊_1 ) / (rₖᵀrₖ)
+    pₖ₊_1     = rₖ₊_1  + \betaₖpₖ
 ```
 
 **Convergence**: For SPD matrix $A$ with condition number $\kappa(A)$:

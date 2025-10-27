@@ -314,7 +314,7 @@ def example_performance_comparison():
     
     print(f"\nObservation:")
     print(f"  - Direct: O(n^3) complexity, predictable cost")
-    print(f"  - CG: O(kn²) complexity, k depends on condition number")
+    print(f"  - CG: O(kn^2) complexity, k depends on condition number")
     print(f"  - CG faster for large, well-conditioned systems")
     print(f"  - Direct better for small systems or when exact solution needed")
 

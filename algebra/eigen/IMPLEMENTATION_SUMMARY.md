@@ -98,8 +98,8 @@ print(f"All {len(result.eigenvalues)} eigenvalues computed")
 
 **Algorithm**:
 
-1. Build Krylov subspace: K_m(A, v) = span{v, Av, A²v, ...}
-2. Orthogonalize to get basis V = [v₁, v₂, ..., v_m]
+1. Build Krylov subspace: K_m(A, v) = span{v, Av, A^2v, ...}
+2. Orthogonalize to get basis V = [v_1 , v_2 , ..., v_m]
 3. Reduce to tridiagonal: A V = V T + \beta_m v_{m+1} e_m^T
 4. Solve eigenvalue problem for T (much smaller)
 5. Transform eigenvectors back: eigenvector(A) = V @ eigenvector(T)
@@ -301,10 +301,10 @@ result = choose_eigensolver('lanczos', A, k=10, which='smallest')
 
 | Method         | Time Complexity | Space Complexity | Best For |
 |----------------|-----------------|------------------|----------|
-| Exact ED       | O(n^3)          | O(n²)            | n < 1000, all eigenvalues |
+| Exact ED       | O(n^3)          | O(n^2)            | n < 1000, all eigenvalues |
 | Lanczos        | O(kmn)         | O(kn)            | k << n, symmetric |
 | Arnoldi        | O(kmn)         | O(kn)            | k << n, non-symmetric |
-| Block Lanczos  | O(k²mn/p)      | O(kn)            | Clustered eigenvalues |
+| Block Lanczos  | O(k^2mn/p)      | O(kn)            | Clustered eigenvalues |
 
 Where:
 

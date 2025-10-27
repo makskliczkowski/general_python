@@ -13,7 +13,7 @@ The Lanczos method is particularly effective for:
 
 Mathematical Background:
     For symmetric matrix A, Lanczos builds orthonormal basis V for Krylov subspace
-    K_m(A, v) = span{v, Av, A²v, ..., A^(m-1)v} such that:
+    K_m(A, v) = span{v, Av, A^2v, ..., A^(m-1)v} such that:
         A V = V T + residual
     where T is tridiagonal. Eigenvalues of T approximate eigenvalues of A.
 """
@@ -43,7 +43,7 @@ def create_test_hamiltonian(n, kind='harmonic'):
     """
     if kind == 'harmonic':
         # Quantum harmonic oscillator in position basis
-        # H = -d²/dx² + x² (in suitable units)
+        # H = -d^2/dx^2 + x^2 (in suitable units)
         # Discretized on grid
         h = 1.0 / (n + 1)
         x = np.linspace(-5, 5, n)
@@ -334,7 +334,7 @@ if __name__ == "__main__":
     print("=" * 70)
     print("\nKey Takeaways:")
     print("1. Lanczos is ideal for finding a few extremal eigenvalues")
-    print("2. Memory-efficient: O(kn) instead of O(n²)")
+    print("2. Memory-efficient: O(kn) instead of O(n^2)")
     print("3. Works with matrix-free operators (matvec functions)")
     print("4. Reorthogonalization improves numerical stability")
     print("5. SciPy wrapper (eigsh) recommended for production use")

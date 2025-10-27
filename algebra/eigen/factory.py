@@ -7,10 +7,12 @@ problem characteristics (matrix size, symmetry, number of eigenvalues needed).
 This module simplifies the selection of eigenvalue solvers by automatically
 choosing the most appropriate method based on user requirements.
 
+----------------------------------------------
 File        : Python/QES/general_python/algebra/eigen/factory.py
 Author      : Maksymilian Kliczkowski
 Email       : maxgrom97@gmail.com
 Date        : 2025-10-26
+----------------------------------------------
 """
 
 import numpy as np
@@ -162,8 +164,7 @@ def choose_eigensolver(
         else:
             # Large non-symmetric - use Arnoldi
             method = 'arnoldi'
-    
-    # Choose solver based on method
+    # ----------------------------------------------    
     if method == 'exact':
         # Exact diagonalization - compute all eigenvalues
         if use_scipy or backend == 'scipy':
@@ -176,7 +177,7 @@ def choose_eigensolver(
         if A is None:
             raise ValueError("Exact diagonalization requires explicit matrix A")
         return solver.solve(A)
-    
+    # ----------------------------------------------    
     elif method == 'lanczos':
         # Lanczos for symmetric/Hermitian
         if not hermitian:
@@ -185,14 +186,14 @@ def choose_eigensolver(
         if use_scipy or backend == 'scipy':
             # Map 'smallest'/'largest' to SciPy's 'SA'/'LA'
             scipy_which = {'smallest': 'SA', 'largest': 'LA', 'both': 'BE'}.get(which, 'SA')
-            solver = LanczosEigensolverScipy(k=k, which=scipy_which, **kwargs)
+            solver      = LanczosEigensolverScipy(k=k, which=scipy_which, **kwargs)
         elif backend == 'jax':
             solver = LanczosEigensolver(k=k, which=which, backend='jax', **kwargs)
         else:
             solver = LanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
         return solver.solve(A=A, matvec=matvec, n=n, k=k)
-    
+    # ----------------------------------------------    
     elif method == 'arnoldi':
         # Arnoldi for general matrices
         if use_scipy or backend == 'scipy':
@@ -203,7 +204,7 @@ def choose_eigensolver(
             solver = ArnoldiEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
         return solver.solve(A=A, matvec=matvec, n=n)
-    
+    # ----------------------------------------------
     elif method == 'shift-invert':
         # Shift-invert mode for interior eigenvalues
         if not hermitian:
@@ -218,19 +219,19 @@ def choose_eigensolver(
                 raise ValueError("Shift-invert requires explicit matrix A")
             
             # eigsh with sigma uses shift-invert mode
-            which_map = {'smallest': 'LM', 'largest': 'LM', 'both': 'LM'}
-            which_si = which_map.get(which, 'LM')
+            which_map   = {'smallest': 'LM', 'largest': 'LM', 'both': 'LM'}
+            which_si    = which_map.get(which, 'LM')
             
             eigenvalues, eigenvectors = scipy_eigsh(
-                A, k=k, sigma=sigma, which=which_si, 
-                tol=kwargs.get('tol', 0), 
-                maxiter=kwargs.get('max_iter', None)
-            )
-            
+                                            A, k=k, sigma=sigma, which=which_si, 
+                                            tol=kwargs.get('tol', 0), 
+                                            maxiter=kwargs.get('max_iter', None)
+                                        )
+                                        
             # Sort by eigenvalue
-            idx = np.argsort(eigenvalues)
-            eigenvalues = eigenvalues[idx]
-            eigenvectors = eigenvectors[:, idx]
+            idx             = np.argsort(eigenvalues)
+            eigenvalues     = eigenvalues[idx]
+            eigenvectors    = eigenvectors[:, idx]
             
             return EigenResult(
                 eigenvalues     = eigenvalues,
@@ -242,7 +243,7 @@ def choose_eigensolver(
             
         except ImportError:
             raise ImportError("Shift-invert mode requires scipy.sparse.linalg.eigsh")
-    
+    # ----------------------------------------------    
     elif method == 'block_lanczos':
         # Block Lanczos for multiple eigenpairs
         if not hermitian:
@@ -251,14 +252,14 @@ def choose_eigensolver(
         if use_scipy or backend == 'scipy':
             # Map 'smallest'/'largest' to boolean for LOBPCG
             largest = (which == 'largest')
-            solver = BlockLanczosEigensolverScipy(k=k, largest=largest, **kwargs)
+            solver  = BlockLanczosEigensolverScipy(k=k, largest=largest, **kwargs)
         elif backend == 'jax':
-            solver = BlockLanczosEigensolver(k=k, which=which, backend='jax', **kwargs)
+            solver  = BlockLanczosEigensolver(k=k, which=which, backend='jax', **kwargs)
         else:
-            solver = BlockLanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
-        
+            solver  = BlockLanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
+            
         return solver.solve(A=A, matvec=matvec, n=n)
-    
+    # ----------------------------------------------
     elif method == 'scipy-eigh':
         # SciPy dense Hermitian/symmetric eigenvalue solver
         if not SCIPY_AVAILABLE:
@@ -269,12 +270,12 @@ def choose_eigensolver(
             raise ValueError("scipy-eigh requires hermitian=True. Use 'scipy-eig' for general matrices")
         
         # Convert to dense array if sparse
-        A_dense = A.toarray() if hasattr(A, 'toarray') else np.asarray(A)
+        A_dense     = A.toarray() if hasattr(A, 'toarray') else np.asarray(A)
         
         # Handle generalized eigenvalue problem
-        b_mat = None
+        b_mat       = None
         if B is not None:
-            b_mat = B.toarray() if hasattr(B, 'toarray') else np.asarray(B)
+            b_mat   = B.toarray() if hasattr(B, 'toarray') else np.asarray(B)
         
         # Extract subset parameters
         subset_by_index = kwargs.get('subset_by_index', None)
@@ -289,13 +290,13 @@ def choose_eigensolver(
         
         # For dense solver, return full spectrum (ignore k)
         return EigenResult(
-            eigenvalues=eigenvalues,
-            eigenvectors=eigenvectors,
-            iterations=None,
-            converged=True,
-            residual_norms=None
+            eigenvalues     =   eigenvalues,
+            eigenvectors    =   eigenvectors,
+            iterations      =   None,
+            converged       =   True,
+            residual_norms  =   None
         )
-    
+    # ----------------------------------------------    
     elif method == 'scipy-eig':
         # SciPy dense general eigenvalue solver
         if not SCIPY_AVAILABLE:
@@ -304,13 +305,13 @@ def choose_eigensolver(
             raise ValueError("scipy-eig requires explicit matrix A")
         
         # Convert to dense array if sparse
-        A_dense = A.toarray() if hasattr(A, 'toarray') else np.asarray(A)
+        A_dense     = A.toarray() if hasattr(A, 'toarray') else np.asarray(A)
         
         # Handle generalized eigenvalue problem
-        b_mat = None
+        b_mat       = None
         if B is not None:
-            b_mat = B.toarray() if hasattr(B, 'toarray') else np.asarray(B)
-        
+            b_mat   = B.toarray() if hasattr(B, 'toarray') else np.asarray(B)
+
         # Call scipy.linalg.eig
         eigenvalues, eigenvectors = scipy_linalg.eig(A_dense, b=b_mat)
         
@@ -320,19 +321,18 @@ def choose_eigensolver(
         else:
             idx = np.argsort(eigenvalues)
         
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
+        eigenvalues     = eigenvalues[idx]
+        eigenvectors    = eigenvectors[:, idx]
         
         # For dense solver, return full spectrum (ignore k)
-        
         return EigenResult(
-            eigenvalues=eigenvalues,
-            eigenvectors=eigenvectors,
-            iterations=None,
-            converged=True,
-            residual_norms=None
-        )
-    
+            eigenvalues     = eigenvalues,
+            eigenvectors    = eigenvectors,
+            iterations      = None,
+            converged       = True,
+            residual_norms  = None
+        )    
+    # ----------------------------------------------
     elif method == 'scipy-eigs':
         # SciPy sparse general eigenvalue solver (for non-Hermitian)
         if not SCIPY_AVAILABLE:
@@ -353,18 +353,18 @@ def choose_eigensolver(
             idx = np.argsort(np.abs(eigenvalues))
         else:
             idx = np.argsort(eigenvalues)
-        
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
-        
+
+        eigenvalues     = eigenvalues[idx]
+        eigenvectors    = eigenvectors[:, idx]
+
         return EigenResult(
-            eigenvalues=eigenvalues,
-            eigenvectors=eigenvectors,
-            iterations=None,
-            converged=True,
-            residual_norms=None
+            eigenvalues     = eigenvalues,
+            eigenvectors    = eigenvectors,
+            iterations      = None,
+            converged       = True,
+            residual_norms  = None
         )
-    
+    # ----------------------------------------------    
     elif method == 'lobpcg':
         # Locally Optimal Block Preconditioned Conjugate Gradient
         if not SCIPY_AVAILABLE:
@@ -375,13 +375,13 @@ def choose_eigensolver(
             raise ValueError("lobpcg requires hermitian=True")
         
         # Generate random initial vectors
-        X = np.random.randn(n if n is not None else A.shape[0], k)
+        X       = np.random.randn(n if n is not None else A.shape[0], k)
         
         # Extract preconditioner
-        M = kwargs.get('M', None)
+        M       = kwargs.get('M', None)
         
         # Handle generalized eigenvalue problem
-        b_mat = B
+        b_mat   = B
         
         # Map which to largest parameter
         largest = (which in ['largest', 'LA', 'LM'])
@@ -395,18 +395,18 @@ def choose_eigensolver(
         )
         
         # Sort eigenvalues
-        idx = np.argsort(eigenvalues)
-        if largest:
-            idx = idx[::-1]
-        eigenvalues = eigenvalues[idx]
-        eigenvectors = eigenvectors[:, idx]
+        idx       = np.argsort(eigenvalues)
+        if largest: idx = idx[::-1]
         
+        eigenvalues     = eigenvalues[idx]
+        eigenvectors    = eigenvectors[:, idx]
+
         return EigenResult(
-            eigenvalues=eigenvalues,
-            eigenvectors=eigenvectors,
-            iterations=None,
-            converged=True,
-            residual_norms=None
+            eigenvalues     = eigenvalues,
+            eigenvectors    = eigenvectors,
+            iterations      = None,
+            converged       = True,
+            residual_norms  = None
         )
     
     elif method == 'jax-eigh':
@@ -419,32 +419,34 @@ def choose_eigensolver(
             raise ValueError("jax-eigh requires hermitian=True")
         
         # Convert to JAX array
-        A_jax = jnp.asarray(A.toarray() if hasattr(A, 'toarray') else A)
+        A_jax           = jnp.asarray(A.toarray() if hasattr(A, 'toarray') else A)
         
         # Call JAX eigh
-        eigenvalues, eigenvectors = jax_scipy_linalg.eigh(A_jax)
+        eigenvalues, eigenvectors   = jax_scipy_linalg.eigh(A_jax)
         
         # Convert back to numpy
-        eigenvalues = np.array(eigenvalues)
-        eigenvectors = np.array(eigenvectors)
-        
+        eigenvalues     = np.array(eigenvalues)
+        eigenvectors    = np.array(eigenvectors)
+
         # Dense JAX solver: return full spectrum (ignore k) to match dense SciPy behavior
         
         return EigenResult(
-            eigenvalues=eigenvalues,
-            eigenvectors=eigenvectors,
-            iterations=None,
-            converged=True,
-            residual_norms=None
+            eigenvalues     = eigenvalues,
+            eigenvectors    = eigenvectors,
+            iterations      = None,
+            converged       = True,
+            residual_norms  = None
         )
-    
+    # ----------------------------------------------    
     else:
+        # Unknown method
         raise ValueError(
             f"Unknown method: {method}. Choose from: "
             "'exact', 'lanczos', 'arnoldi', 'block_lanczos', 'shift-invert', "
             "'scipy-eigh', 'scipy-eig', 'scipy-eigs', 'lobpcg', 'jax-eigh', 'auto'"
         )
 
+# --------------------------------------------------
 
 def decide_method(n         : int,
                 k           : Optional[int] = None,

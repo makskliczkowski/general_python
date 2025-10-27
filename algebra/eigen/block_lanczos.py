@@ -30,7 +30,10 @@ References:
     - Knyazev, "Toward the Optimal Preconditioned Eigensolver" (LOBPCG)
     - Saad, "Numerical Methods for Large Eigenvalue Problems"
 
+----------------------------------------
 File        : general_python/algebra/eigen/block_lanczos.py
+Author      : Maksymilian Kliczkowski
+----------------------------------------
 """
 
 import numpy as np
@@ -39,12 +42,38 @@ from numpy.typing import NDArray
 
 # -----------------------------
 
+# Prefer importing JAX via global utils, fallback to direct import
 try:
-    import jax
-    import jax.numpy as jnp
-    JAX_AVAILABLE   = True
+    from ..utils import JAX_AVAILABLE, jax, jnp, jcfg
+    if not JAX_AVAILABLE:
+        try:
+            import jax                      # type: ignore
+            import jax.numpy as jnp         # type: ignore
+            from jax import config as jcfg  # type: ignore
+            JAX_AVAILABLE   = True
+            jcfg.update("jax_enable_x64", True)
+        except ImportError:
+            JAX_AVAILABLE   = False
+            jax             = None
+            jnp             = None
+            jcfg            = None
+    elif JAX_AVAILABLE and jcfg:
+        try:
+            jcfg.update("jax_enable_x64", True)
+        except Exception:
+            pass
 except ImportError:
-    JAX_AVAILABLE   = False
+    try:
+        import jax                      # type: ignore
+        import jax.numpy as jnp         # type: ignore
+        from jax import config as jcfg  # type: ignore
+        JAX_AVAILABLE   = True
+        jcfg.update("jax_enable_x64", True)
+    except ImportError:
+        JAX_AVAILABLE   = False
+        jax             = None
+        jnp             = None
+        jcfg            = None
 
 try:
     from scipy.sparse.linalg import lobpcg
@@ -219,7 +248,7 @@ class BlockLanczosEigensolver:
         
         # Dispatch to backend
         if self.backend == 'numpy':
-            result = self._block_lanczos_numpy(_matvec, n, V0, eff_max_iter,
+            result = BlockLanczosEigensolver._block_lanczos_numpy(_matvec, n, V0, eff_max_iter,
                                                k=eff_k, block_size=eff_block,
                                                which=eff_which, tol=eff_tol,
                                                reorthogonalize=eff_reorth)
@@ -227,12 +256,19 @@ class BlockLanczosEigensolver:
             if from_basis is not None:
                 ev = result.eigenvectors
                 ev_orig = np.column_stack([from_basis(ev[:, i]) for i in range(ev.shape[1])])
-                result = EigenResult(result.eigenvalues, ev_orig, result.iterations, result.converged, result.residual_norms)
+                result = EigenResult(
+                    eigenvalues     = result.eigenvalues,
+                    eigenvectors    = ev_orig,
+                    subspacevectors = result.subspacevectors,
+                    iterations      = result.iterations,
+                    converged       = result.converged,
+                    residual_norms  = result.residual_norms,
+                )
             return result
         else:  # jax
             if not JAX_AVAILABLE:
                 # Fallback if JAX missing
-                return self._block_lanczos_numpy(_matvec, n, V0, eff_max_iter,
+                return BlockLanczosEigensolver._block_lanczos_numpy(_matvec, n, V0, eff_max_iter,
                                                 k=eff_k, block_size=eff_block,
                                                 which=eff_which, tol=eff_tol,
                                                 reorthogonalize=eff_reorth)
@@ -240,7 +276,7 @@ class BlockLanczosEigensolver:
             # Only compiled path when A is provided and no Python transforms
             if jax_matvec is None:
                 # Use NumPy path when only a Python matvec is provided
-                return self._block_lanczos_numpy(_matvec, n, V0, eff_max_iter,
+                return BlockLanczosEigensolver._block_lanczos_numpy(_matvec, n, V0, eff_max_iter,
                                                 k=eff_k, block_size=eff_block,
                                                 which=eff_which, tol=eff_tol,
                                                 reorthogonalize=eff_reorth)
@@ -278,8 +314,8 @@ class BlockLanczosEigensolver:
     #! NUMPY
     # -----------------------------
 
+    @staticmethod
     def _block_lanczos_numpy(
-        self,
         matvec      : Callable[[NDArray], NDArray],
         n           : int,
         V0          : Optional[NDArray],
@@ -299,7 +335,7 @@ class BlockLanczosEigensolver:
             # Make complex if needed
             V0      = np.random.randn(n, p)
             test    = matvec(np.ones((n, 1), dtype=complex))
-            if np.iscomplexobj(test):
+            if np.iscomplexobj(test) and np.max(np.abs(np.imag(test))) > 1e-14:
                 V0  = V0 + 1j * np.random.randn(n, p)
         
         if V0.shape != (n, p):
