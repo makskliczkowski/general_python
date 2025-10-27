@@ -26,7 +26,7 @@ class SquareLattice(Lattice):
     - c* = [0, 0, 2*pi]
     '''
 
-    def __init__(self, dim, lx, ly=1, lz=1, bc=LatticeBC.PBC, **kwargs):
+    def __init__(self, dim=1, lx=1, ly=1, lz=1, bc=LatticeBC.PBC, **kwargs):
         '''
         Initializer of the square lattice
         '''

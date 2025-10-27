@@ -58,13 +58,13 @@ class HoneycombLattice(Lattice):
         self._ns = 2 * self.Lx * self.Ly * self.Lz
 
         # Initialize the primitive vectors
-        self._a1 = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a2 = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a3 = np.array([0, 0, self.c])
-        self._basis = np.array([
-            np.array([0.0, 0.0, 0.0]),
-            np.array([0.0, self.a, 0.0]),
-        ])
+        self._a1        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a3        = np.array([0, 0, self.c])
+        self._basis     = np.array([
+                            np.array([0.0, 0.0, 0.0]),
+                            np.array([0.0, self.a, 0.0]),
+                        ])
 
         # Compute lattice properties.
         self.calculate_coordinates()
