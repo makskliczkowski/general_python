@@ -933,7 +933,7 @@ if JAX_AVAILABLE:
         flat_samp_p     = sample_probas.reshape(-1)             # (N,)
         
         N               = flat_states.shape[0]                  # N
-        pad             = (-N) % batch_size                     # 0‥batch_size−1
+        pad             = (-N) % batch_size                     # 0‥batch_size-1
         p_states        = jnp.pad(flat_states,  ((0, pad), (0, 0)))
         p_logp_in       = jnp.pad(flat_logp_in, ((0, pad),))
         p_samp_p        = jnp.pad(flat_samp_p,  ((0, pad),))

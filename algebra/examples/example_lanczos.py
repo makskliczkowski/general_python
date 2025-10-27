@@ -63,7 +63,7 @@ def create_test_hamiltonian(n, kind='harmonic'):
         return H
     
     elif kind == 'spin_chain':
-        # Heisenberg spin chain: H = \Sigma _i (σ^x_i σ^x_{i+1} + σ^y_i σ^y_{i+1} + σ^z_i σ^z_{i+1})
+        # Heisenberg spin chain: H = \Sigma _i (\sigma ^x_i \sigma ^x_{i+1} + \sigma ^y_i \sigma ^y_{i+1} + \sigma ^z_i \sigma ^z_{i+1})
         # For small n, use full matrix representation
         
         if n > 12:
@@ -75,14 +75,14 @@ def create_test_hamiltonian(n, kind='harmonic'):
         # Build Hamiltonian
         for state in range(n_states):
             for site in range(n - 1):
-                # σ^z_i σ^z_{i+1}
+                # \sigma ^z_i \sigma ^z_{i+1}
                 bit_i = (state >> site) & 1
                 bit_ip1 = (state >> (site + 1)) & 1
                 sz_i = 0.5 if bit_i == 0 else -0.5
                 sz_ip1 = 0.5 if bit_ip1 == 0 else -0.5
                 H[state, state] += sz_i * sz_ip1
                 
-                # σ^x_i σ^x_{i+1} + σ^y_i σ^y_{i+1}
+                # \sigma ^x_i \sigma ^x_{i+1} + \sigma ^y_i \sigma ^y_{i+1}
                 # These flip both spins
                 new_state = state ^ (1 << site) ^ (1 << (site + 1))
                 H[new_state, state] += 0.5
@@ -199,7 +199,7 @@ def example_matrix_free():
     for i, lam in enumerate(result.eigenvalues):
         print(f"  \lambda_{i+1} = {lam:.6f}")
     
-    # Analytical eigenvalues: \lambda_k = 2(1 - cos(kπ/(n+1))) for k=1,2,...,n
+    # Analytical eigenvalues: \lambda_k = 2(1 - cos(k\pi/(n+1))) for k=1,2,...,n
     analytical = np.array([2*(1 - np.cos((k+1)*np.pi/(n+1))) for k in range(8)])
     print(f"\nAnalytical eigenvalues:")
     for i, lam in enumerate(analytical):

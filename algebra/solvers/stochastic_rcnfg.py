@@ -18,7 +18,7 @@ Both standard stochastic reconfiguration (SR)
 [and its efficient variant—minimum-step SR (MinSR) - see below] — aim to update 
 the parameters by approximately following an imaginary-time evolution:
 
-    |\psi'> = exp(-H · δτ) |\psi(θ)>                              (Eq. 1)
+    |\psi'> = exp(-H \cdot  δτ) |\psi(θ)>                              (Eq. 1)
 
 The update is performed by minimizing the Fubini-Study (FS)
 distance between the evolved state |\psi'> and the 
@@ -28,7 +28,7 @@ variational state |\psi(θ+δθ)>.
 ----------------------
 For small changes δθ and a small time step δτ, the FS distance is expanded as:
 
-    d^2(\psi(θ+δθ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ · δθₖ - \varepsilon₍\sigma₎ |^2    (Eq. 2)
+    d^2(\psi(θ+δθ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ \cdot  δθₖ - \varepsilon₍\sigma₎ |^2    (Eq. 2)
 
 with:
     
@@ -36,38 +36,38 @@ with:
     
 computed over Ns Monte Carlo samples:
     
-    \varepsilon₍\sigma₎ = -δτ · (E^loc₍\sigma₎ - <E^loc>)/\sqrt(Ns),
+    \varepsilon₍\sigma₎ = -δτ \cdot  (E^loc₍\sigma₎ - <E^loc>)/\sqrt(Ns),
     
 where the local energy is given by:
 
-    E^loc₍\sigma₎ = ∑₍\sigma'₎ (\psi₍\sigma'₎/\psi₍\sigma₎) · H₍\sigma,\sigma'₎.
+    E^loc₍\sigma₎ = ∑₍\sigma'₎ (\psi₍\sigma'₎/\psi₍\sigma₎) \cdot  H₍\sigma,\sigma'₎.
 
 The minimization of this distance is equivalent to solving the linear equation:
 
-    O · δθ = \varepsilon                                              (Eq. 3)
+    O \cdot  δθ = \varepsilon                                              (Eq. 3)
 
 ## Standard Stochastic Reconfiguration (SR)
 ------------------------------------------
 In conventional SR, one defines the **quantum metric** (or Fisher information matrix) as:
 
-    S = O\dag · O                                              (Eq. 4)
+    S = O\dag \cdot  O                                              (Eq. 4)
 
 This metric measures the change in the quantum state induced by a parameter update,
 and the FS distance can be 
 written as:
 
-    d^2(\psi(θ), \psi(θ+δθ)) = δθ\dag · S · δθ                        (Eq. 5)
+    d^2(\psi(θ), \psi(θ+δθ)) = δθ\dag \cdot  S \cdot  δθ                        (Eq. 5)
 
 The SR method then updates the variational parameters using the solution of the linear equation (Eq. 3). The 
 standard solution is obtained as:
 
-    δθ = S⁻¹ · O\dag · \varepsilon                                       (Eq. 6)
+    δθ = S^{-1}  \cdot  O\dag \cdot  \varepsilon                                       (Eq. 6)
 
 This approach requires computing and inverting the matrix S,
 which is of size NₚxNₚ (Nₚ is the number of 
 variational parameters). When Nₚ is large,
 the inversion becomes computationally expensive with a typical 
-cost scaling of O(Nₚ^3 ), or O(Nₚ^2·Nₛ + Nₚ^3 ) when iterative solvers are employed.
+cost scaling of O(Nₚ^3 ), or O(Nₚ^2\cdot Nₛ + Nₚ^3 ) when iterative solvers are employed.
 Moreover, for deep networks 
 with Nₚ ≫ Nₛ (the number of Monte Carlo samples),
 the matrix S is rank-deficient (its rank is at most Nₛ), 
@@ -78,7 +78,7 @@ posing additional numerical challenges.
 To overcome the computational bottleneck in standard SR, MinSR reformulates the optimization by introducing the 
 **neural tangent kernel**:
 
-    T = O · O\dag
+    T = O \cdot  O\dag
 
 T is an NₛxNₛ matrix and shares the same nonzero eigenvalues as S.
 By imposing a minimum-norm (or minimum-step) 
@@ -86,30 +86,30 @@ condition—i.e. selecting, among all solutions of Eq. (3),
 the one with the smallest ||δθ||—the MinSR update is 
 given by:
 
-    δθ = O\dag · T⁻¹ · \varepsilon                                  (Eq. 5)
+    δθ = O\dag \cdot  T^{-1}  \cdot  \varepsilon                                  (Eq. 5)
 
 This formulation avoids the costly inversion of the full S matrix.
 The inversion is now only on the smaller T matrix, 
-reducing the computational complexity to approximately O(Nₚ·Nₛ^2 + Nₛ^3 ).
+reducing the computational complexity to approximately O(Nₚ\cdot Nₛ^2 + Nₛ^3 ).
 Two derivations support this result:
 
 1. **Lagrangian Multiplier Approach:**  
-    The method minimizes ||δθ|| subject to O · δθ = \varepsilon by forming the Lagrangian:
+    The method minimizes ||δθ|| subject to O \cdot  δθ = \varepsilon by forming the Lagrangian:
 
-    L({δθₖ}, {\alpha₍\sigma₎}) = ∑₍k₎ |δθₖ|^2 - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ · δθₖ - \varepsilon₍\sigma₎) + c.c.]
+    L({δθₖ}, {\alpha₍\sigma₎}) = ∑₍k₎ |δθₖ|^2 - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ \cdot  δθₖ - \varepsilon₍\sigma₎) + c.c.]
 
-Solving the resulting equations leads to δθ = O\dag · (O · O\dag)⁻¹ · \varepsilon, which is equivalent to Eq. (5).
+Solving the resulting equations leads to δθ = O\dag \cdot  (O \cdot  O\dag)^{-1}  \cdot  \varepsilon, which is equivalent to Eq. (5).
 
 2. **Pseudo-Inverse Method:**  
-By showing that the least-squares minimum-norm solution of O · δθ = \varepsilon is given by:
+By showing that the least-squares minimum-norm solution of O \cdot  δθ = \varepsilon is given by:
 
-    δθ = O\dag · (O · O\dag)⁻¹ · \varepsilon,
+    δθ = O\dag \cdot  (O \cdot  O\dag)^{-1}  \cdot  \varepsilon,
 
 and using properties of the pseudo-inverse,
-one establishes the equivalence (O · O\dag)⁻¹ = T⁻¹, thereby recovering 
+one establishes the equivalence (O \cdot  O\dag)^{-1}  = T^{-1} , thereby recovering 
 Eq. (5).
 
-Regularization is typically applied to T⁻¹
+Regularization is typically applied to T^{-1} 
 (using a cutoff with, for example, relative tolerance rtol = 1e-12) 
 to stabilize the inversion in the presence of small eigenvalues.
 

@@ -31,7 +31,7 @@ Organization:
 **Spectral Functions (subpackage):**
 - spectral.dos                  : Density of states (histogram and Gaussian-broadened)
 - spectral.greens               : Green's functions G(\Omega) and Fourier transforms
-- spectral.spectral_function    : Spectral functions A(k,\Omega) = -Im[G]/π
+- spectral.spectral_function    : Spectral functions A(k,\Omega) = -Im[G]/\pi
 
 **Response Functions (subpackage):**
 - response.structure_factor     : Dynamic structure factor S(q,\Omega) for spins (optimized!)

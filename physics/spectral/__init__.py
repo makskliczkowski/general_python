@@ -13,7 +13,7 @@ Modules:
 --------
 - dos                   : Density of states (histogram and Gaussian-broadened)
 - greens                : Time-resolved Green's functions and Fourier transforms
-- spectral_function     : Spectral functions A(k,\Omega) = -Im[G]/π
+- spectral_function     : Spectral functions A(k,\Omega) = -Im[G]/\pi
 
 Author: Maksymilian Kliczkowski
 Email: maksymilian.kliczkowski@pwr.edu.pl

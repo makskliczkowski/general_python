@@ -311,7 +311,7 @@ def fourier_transform_lattice(greens_function: Array, lattice_k_vectors: Array, 
     """
     Fourier transform from real space to a specific k-point on a lattice.
     
-    G(k) = \sum _{i,j} G_{ij} exp(i k·(r_i - r_j))
+    G(k) = \sum _{i,j} G_{ij} exp(i k\cdot (r_i - r_j))
     
     Parameters
     ----------
@@ -352,7 +352,7 @@ def fourier_transform_lattice_translational(greens_function: Array, lattice_k_ve
     """
     Fourier transform assuming translational invariance: G(k) diagonal in k-space.
     
-    G(k) = \sum _{i,j} G_{ij} exp(i k·(r_i - r_j)) for all k
+    G(k) = \sum _{i,j} G_{ij} exp(i k\cdot (r_i - r_j)) for all k
     
     Returns diagonal matrix in k-space.
     
@@ -388,7 +388,7 @@ def local_dos_from_greens(greens_diagonal: Array) -> Array:
     """
     Compute local density of states from diagonal Green's function.
     
-    LDOS(\Omega) = -(1/π) Im[G_ii(\Omega)]
+    LDOS(\Omega) = -(1/\pi) Im[G_ii(\Omega)]
     
     Parameters
     ----------

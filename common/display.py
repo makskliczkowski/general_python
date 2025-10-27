@@ -64,7 +64,7 @@ def _default_to_bin(state: int, ns: int) -> str:
 def _format_coeff(c: complex | float) -> str:
     """
     Return LaTeX for a numeric coefficient with phase/amplitude split,
-    using multiples of π for phase.
+    using multiples of \pi for phase.
     
     Parameters
     ----------
@@ -81,7 +81,7 @@ def _format_coeff(c: complex | float) -> str:
         phase   = np.angle(c)
         if amp == 0:
             return "0"
-        # Express phase as a multiple of π if close
+        # Express phase as a multiple of \pi if close
         pi_mult = phase / np.pi
         # Use a tolerance for floating point comparison
         tol     = 1e-8

@@ -502,7 +502,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     - For q == 1, the function computes the von Neumann entropy:
           S = -\Sigma  [p * log(p) + (1-p) * log(1-p)]
       where p = 0.5 * (1 + \lambda).
-    - For q ≠ 1, the function computes the Rényi entropy:
+    - For q \neq  1, the function computes the Rényi entropy:
           S_q = (1 / (1-q)) * \Sigma  log(p^q + (1-p)^q)
     - The entropy is normalized by the logarithm of the specified base.
     """
@@ -611,7 +611,7 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
                     acc += p * math.log(p)
             out[j] = -acc
         else:
-            # Rényi‐type: sum p^q, then (1/(1−q))·ln(...)
+            # Rényi‐type: sum p^q, then (1/(1-q))\cdot ln(...)
             for i in range(n):
                 c   = states[i, j]
                 p   = abs(c) ** q

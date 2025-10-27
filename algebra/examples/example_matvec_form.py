@@ -97,7 +97,7 @@ def example_tridiagonal_operator():
         y[-1] = (2*x[-1] - x[-2]) / h**2
         return y
     
-    # Right-hand side: f(x) = sin(π x)
+    # Right-hand side: f(x) = sin(\pi x)
     x_grid = np.linspace(h, 1-h, n)
     b = np.sin(np.pi * x_grid)
     
@@ -117,7 +117,7 @@ def example_tridiagonal_operator():
     print(f"  Iterations: {result.iterations}")
     print(f"  Residual: {result.residual_norm:.2e}")
     
-    # Analytical solution: u(x) = -sin(πx) / π^2
+    # Analytical solution: u(x) = -sin(\pix) / \pi^2
     u_exact = -np.sin(np.pi * x_grid) / np.pi**2
     error = np.linalg.norm(result.x - u_exact)
     
@@ -197,7 +197,7 @@ def example_quantum_hamiltonian():
     print("Example 4: Quantum Hamiltonian (Matrix-Free)")
     print("=" * 70)
     
-    # Spin chain Hamiltonian: H = -J \Sigma _i (σ^x_i σ^x_{i+1} + σ^y_i σ^y_{i+1})
+    # Spin chain Hamiltonian: H = -J \Sigma _i (\sigma ^x_i \sigma ^x_{i+1} + \sigma ^y_i \sigma ^y_{i+1})
     # Acting on state vector in computational basis
     
     n_spins = 10  # Chain length

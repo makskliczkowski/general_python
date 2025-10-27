@@ -4,7 +4,7 @@ Fast dynamic structure factor S(q,\Omega) for spin systems.
 The dynamic structure factor measures spin-spin correlations:
     S(q,\Omega) = \sum _f |<f|S^z_q|i>|^2 δ(\Omega - (E_f - E_i))
 
-where S^z_q = \sum _j S^z_j exp(iq·r_j) is the Fourier-transformed spin operator.
+where S^z_q = \sum _j S^z_j exp(iq\cdot r_j) is the Fourier-transformed spin operator.
 
 File    : QES/general_python/physics/response/structure_factor.py
 Author  : Maksymilian Kliczkowski
@@ -56,7 +56,7 @@ def _structure_factor_kernel(energies: np.ndarray, matrix_elements: np.ndarray,
     
     S_q_omega = np.zeros(n_omega, dtype=np.float64)
     
-    # Lorentzian broadening: (η/π) / [(\Omega - \Omega_fi)^2 + η^2]
+    # Lorentzian broadening: (η/\pi) / [(\Omega - \Omega_fi)^2 + η^2]
     prefactor = eta / np.pi
     
     for i in numba.prange(n_omega):
@@ -98,7 +98,7 @@ def structure_factor_spin(
     hamiltonian_eigvecs : array-like, shape (N, N)
         Hamiltonian eigenvectors (columns are eigenstates).
     spin_q_operator : array-like, shape (N, N)
-        Spin operator S_q = \sum _j S_j exp(iq·r_j) in real space basis.
+        Spin operator S_q = \sum _j S_j exp(iq\cdot r_j) in real space basis.
     omega_grid : array-like, shape (n_omega,)
         Frequency grid for S(q,\Omega).
     eta : float, optional
@@ -333,7 +333,7 @@ def create_spin_q_operator_1d(
     """
     Create Fourier-transformed spin operator S_q for 1D lattice.
     
-    S_q = \sum _j S_j exp(iq·r_j)
+    S_q = \sum _j S_j exp(iq\cdot r_j)
     
     Parameters
     ----------
@@ -351,7 +351,7 @@ def create_spin_q_operator_1d(
         
     Notes
     -----
-    For spin-1/2 systems, local_spin_operators would be σ^z/2 at each site.
+    For spin-1/2 systems, local_spin_operators would be \sigma ^z/2 at each site.
     This is a simplified version; for general use, need proper tensor products.
     """
     lattice_positions = np.asarray(lattice_positions)

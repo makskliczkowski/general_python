@@ -4,7 +4,7 @@ general_python/physics/spectral/spectral_function.py
 Spectral functions A(k,\Omega) for noninteracting quantum systems.
 
 The spectral function is related to the imaginary part of the Green's function:
-    A(k,\Omega) = -(1/π) Im[G(k,\Omega)]
+    A(k,\Omega) = -(1/\pi) Im[G(k,\Omega)]
 
 Author: Maksymilian Kliczkowski
 Email: maksymilian.kliczkowski@pwr.edu.pl
@@ -32,7 +32,7 @@ def spectral_function(greens_function: Array) -> Array:
     """
     Compute spectral function from Green's function.
     
-    A(\Omega) = -(1/π) Im[G(\Omega)]
+    A(\Omega) = -(1/\pi) Im[G(\Omega)]
     
     Parameters
     ----------
@@ -60,8 +60,8 @@ def spectral_function_diagonal(omega: float, eigenvalues: Array, eta: float = 0.
     """
     Compute diagonal spectral function directly from eigenvalues.
     
-    A_nn(\Omega) = -(1/π) Im[1/(\Omega + iη - E_n)]
-            = (η/π) / [(\Omega - E_n)^2 + η^2]
+    A_nn(\Omega) = -(1/\pi) Im[1/(\Omega + iη - E_n)]
+            = (η/\pi) / [(\Omega - E_n)^2 + η^2]
     
     Parameters
     ----------
@@ -83,7 +83,7 @@ def spectral_function_diagonal(omega: float, eigenvalues: Array, eta: float = 0.
     """
     eigenvalues = np.asarray(eigenvalues)
     
-    # Lorentzian: (η/π) / [(\Omega - E_n)^2 + η^2]
+    # Lorentzian: (η/\pi) / [(\Omega - E_n)^2 + η^2]
     return (eta / np.pi) / ((omega - eigenvalues)**2 + eta**2)
 
 def spectral_function_multi_omega(omegas: Array, eigenvalues: Array, eigenvectors: Optional[Array] = None,
@@ -156,7 +156,7 @@ def spectral_function_k_resolved(
     Compute momentum-resolved spectral function A(k,\Omega).
     
     For systems with momentum as a good quantum number, compute:
-        A(k,\Omega) = (η/π) / [(\Omega - E(k))^2 + η^2]
+        A(k,\Omega) = (η/\pi) / [(\Omega - E(k))^2 + η^2]
     
     Parameters
     ----------

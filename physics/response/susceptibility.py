@@ -5,7 +5,7 @@ The dynamical susceptibility is the linear response function:
     χ(q,\Omega) = i∫dt e^{i\Omegat} <[A_q(t), A\dag_{-q}(0)]>
 
 Related to structure factor via fluctuation-dissipation theorem:
-    S(q,\Omega) = -(1/π) Im[χ(q,\Omega)] / (1 - exp(-\beta\Omega))
+    S(q,\Omega) = -(1/\pi) Im[χ(q,\Omega)] / (1 - exp(-\beta\Omega))
 
 File    : QES/general_python/physics/response/susceptibility.py
 Author  : Maksymilian Kliczkowski
@@ -170,7 +170,7 @@ def static_susceptibility(
     χ(q,0) = \beta <(A_q - <A_q>)^2>  (fluctuation-dissipation)
     
     At T=0:
-    χ(q,0) = 2 \sum _{n≠0} |<n|A_q|0>|^2 / (E_n - E_0)
+    χ(q,0) = 2 \sum _{n\neq 0} |<n|A_q|0>|^2 / (E_n - E_0)
     
     Parameters
     ----------
@@ -254,7 +254,7 @@ def magnetic_susceptibility(
     hamiltonian_eigvecs : array-like
         Eigenvectors.
     magnetization_q : array-like
-        Magnetization operator M_q = \sum _j M_j exp(iq·r_j).
+        Magnetization operator M_q = \sum _j M_j exp(iq\cdot r_j).
     omega_grid : array-like
         Frequency grid.
     eta : float, optional
@@ -297,7 +297,7 @@ def charge_susceptibility(
     hamiltonian_eigvecs : array-like
         Eigenvectors.
     density_q : array-like
-        Charge density operator n_q = \sum _j n_j exp(iq·r_j).
+        Charge density operator n_q = \sum _j n_j exp(iq\cdot r_j).
     omega_grid : array-like
         Frequency grid.
     eta : float, optional
@@ -332,10 +332,10 @@ def susceptibility_to_structure_factor(
     """
     Convert susceptibility to structure factor via fluctuation-dissipation theorem.
     
-    S(q,\Omega) = -(1/π) Im[χ(q,\Omega)] / (1 - exp(-\beta\Omega))
+    S(q,\Omega) = -(1/\pi) Im[χ(q,\Omega)] / (1 - exp(-\beta\Omega))
     
     At T=0:
-    S(q,\Omega) = -(1/π) Im[χ(q,\Omega)]  for \Omega > 0
+    S(q,\Omega) = -(1/\pi) Im[χ(q,\Omega)]  for \Omega > 0
     
     Parameters
     ----------
@@ -380,7 +380,7 @@ def structure_factor_to_susceptibility(
     """
     Convert structure factor to susceptibility (inverse of above).
     
-    Im[χ(q,\Omega)] = -π S(q,\Omega) (1 - exp(-\beta\Omega))
+    Im[χ(q,\Omega)] = -\pi S(q,\Omega) (1 - exp(-\beta\Omega))
     
     Parameters
     ----------
@@ -427,7 +427,7 @@ def susceptibility_sum_rule_check(
     """
     Check f-sum rule for susceptibility.
     
-    ∫ d\Omega \Omega Im[χ(q,\Omega)] = -π/2 <[A_q, [H, A\dag_q]]>
+    ∫ d\Omega \Omega Im[χ(q,\Omega)] = -\pi/2 <[A_q, [H, A\dag_q]]>
     
     Parameters
     ----------
@@ -445,7 +445,7 @@ def susceptibility_sum_rule_check(
     integral : float
         ∫ d\Omega \Omega Im[χ(q,\Omega)].
     expected : float
-        -π/2 <commutator>.
+        -\pi/2 <commutator>.
     """
     Im_chi = np.imag(chi)
     integral = np.trapz(omega_grid * Im_chi, omega_grid)

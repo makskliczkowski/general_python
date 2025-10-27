@@ -68,7 +68,7 @@ def choose_eigensolver(
     use_scipy       : bool = False,
     B               : Optional[NDArray] = None,
     **kwargs) -> EigenResult:
-    """
+    r"""
     Unified interface for eigenvalue solvers.
     
     Automatically selects the most appropriate eigenvalue solver based on the

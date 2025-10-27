@@ -184,9 +184,9 @@ with sparsity pattern matching (or similar to) $A$.
 L = lower_triangular_part(A)
 For k = 1 to n:
     L(k,k) = sqrt(L(k,k))
-    For i = k+1 to n where L(i,k) ≠ 0:
+    For i = k+1 to n where L(i,k) \neq  0:
         L(i,k) = L(i,k) / L(k,k)
-        For j = k+1 to i where L(i,j) ≠ 0:
+        For j = k+1 to i where L(i,j) \neq  0:
             L(i,j) = L(i,j) - L(i,k) * L(j,k)
 ```
 
@@ -286,7 +286,7 @@ print(f"Converged: {result.converged}, Iterations: {result.iterations}")
 ### With Regularization
 
 ```python
-# Add regularization: M ≈ (A + σI)
+# Add regularization: M ≈ (A + \sigma I)
 sigma   = 0.01
 precond = JacobiPreconditioner()
 precond.set_a(A, sigma=sigma)
@@ -315,7 +315,7 @@ precond.set_s(DeltaO)
 solver  = CgSolver(backend='numpy', is_gram=True)
 solver.set_s(DeltaO)
 
-# Solve (S + σI)x = force
+# Solve (S + \sigma I)x = force
 result = solver.solve(force, preconditioner=precond)
 ```
 

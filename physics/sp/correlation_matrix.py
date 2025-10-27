@@ -22,7 +22,7 @@ Functions
 For a single Slater determinant with occupation vector `n` (shape (Ls,)), the reduced 
 correlation matrix C_A is given by:
 
-    C_A = W_A ^\dag  · diag(n) · W_A
+    C_A = W_A ^\dag  \cdot  diag(n) \cdot  W_A
     # raw multiplication (Eq. (3) PHYSICAL REVIEW LETTERS 125, 180604 (2020))
 
 References
@@ -88,8 +88,8 @@ def corr_single(
             ignored unless you pass a tuple: then you may pass a tuple (U_A_CT, V_A_CT).
     raw : bool
         "slater" fast path:
-            if True, uses selection by boolean mask and computes 2·(W_occ^\dag W_occ).
-        If False, uses `pref = 2·occ - 1` trick.
+            if True, uses selection by boolean mask and computes 2\cdot (W_occ^\dag W_occ).
+        If False, uses `pref = 2\cdot occ - 1` trick.
     mode : {"slater","bdg-normal","bdg-full"}
         - "slater"     : C = <c_i^\dag c_j> (La\times La).
         - "bdg-normal" : N = <c_i^\dag c_j> for BdG (La\times La).
@@ -113,7 +113,7 @@ def corr_single(
         F ≡ <c   c>  = U (I - f) V^T + V f U^T,
         Ṅ ≡ <c   c^\dag> = U (I - f) U^\dag + V f V^\dag = I - N.
     Implementation uses row-major (orbitals q) storage: U_A has shape (Ls, La), so
-        N = (U_A^\dag · f · U_A) + (V_A^\dag · (1-f) · V_A),
+        N = (U_A^\dag \cdot  f \cdot  U_A) + (V_A^\dag \cdot  (1-f) \cdot  V_A),
         computed efficiently without forming diag(f) via column-wise scaling of U_A^\dag and V_A^\dag.
     """
     if mode == "slater":
@@ -233,8 +233,8 @@ def corr_full(
         - "bdg-full":
             subtract block-diag(I, I) on the 2L times 2L Nambu matrix.
     raw :
-        - "slater" fast path using selection by boolean mask and computes 2·(W_occ^\dag W_occ).
-        If False, uses the (2·occ-1) trick.
+        - "slater" fast path using selection by boolean mask and computes 2\cdot (W_occ^\dag W_occ).
+        If False, uses the (2\cdot occ-1) trick.
     mode : {"slater","bdg-normal","bdg-full"}
         - "slater"     : returns C = <c^\dag c>, shape (L, L).
         - "bdg-normal" : returns N = <c^\dag c> for BdG, shape (L, L).
@@ -246,7 +246,7 @@ def corr_full(
 
     Notes
     -----
-    - For "slater", we keep the spin-unpolarized convention C = 2·W_occ^\dag W_occ (you can drop the factor 2 if not needed).
+    - For "slater", we keep the spin-unpolarized convention C = 2\cdot W_occ^\dag W_occ (you can drop the factor 2 if not needed).
     - For BdG with diagonal quasiparticle occupations f = diag(f_q):
         N = U f U^\dag + V (I - f) V^\dag,
         F = U (I - f) V^T + V f U^T,
@@ -456,7 +456,7 @@ def corr_superposition(
         C += (abs(ck) ** 2) * cache[key]
 
     # --------------------------------------------------------------------------------
-    # Off-diagonal (m ≠ n): only when configurations differ by exactly one hop
+    # Off-diagonal (m \neq  n): only when configurations differ by exactly one hop
     #   i.e., XOR has Hamming weight 2. Let q_from be occupied in m, empty in n,
     #   and q_to be empty in m, occupied in n. Then the contribution is:
     #       2 * a_m* a_n * sgn * |phi_{q_to}><phi_{q_from}|  + h.c.
@@ -487,7 +487,7 @@ def corr_superposition(
 
             coef = 2.0 * sign * np.conjugate(coeff[a]) * coeff[b]
 
-            #! Outer product  (La,1)·(1,La) fused by BLAS as gemm
+            #! Outer product  (La,1)\cdot (1,La) fused by BLAS as gemm
             C += coef * np.outer(W_A_CT[:, q1], W_A[q2, :])
 
             # and its Hermitian conjugate (because we skipped the term with indices

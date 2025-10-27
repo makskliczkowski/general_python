@@ -304,7 +304,7 @@ def overlap_diag(a  : Array,
 
     If `a` and `b` are both 2D with shape (dim, n), returns a 1D array `r`
     of length n with
-        r[i] = <a_i|O|b_i> = ∑_k conj(a[k,i]) · (O @ b[:,i])[k].
+        r[i] = <a_i|O|b_i> = ∑_k conj(a[k,i]) \cdot  (O @ b[:,i])[k].
 
     If `b` is None, it defaults to `a`, giving <a_i|O|a_i> for each i.
 

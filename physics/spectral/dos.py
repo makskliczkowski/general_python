@@ -112,7 +112,7 @@ def dos_gaussian(
     """
     Compute density of states with Gaussian broadening.
     
-    DOS(E) = \sum _n (1/\sqrt(2πσ^2)) exp(-(E - E_n)^2/(2σ^2))
+    DOS(E) = \sum _n (1/\sqrt(2\pi\sigma ^2)) exp(-(E - E_n)^2/(2\sigma ^2))
     
     Parameters
     ----------
