@@ -305,7 +305,7 @@ def entropy_thermal(energies: Array, beta: float) -> float:
 
 def magnetic_susceptibility(energies: Array, magnetization_diagonal: Array, beta: float) -> float:
     r"""
-    Compute magnetic susceptibility χ_M = \beta (<M^2> - <M>^2).
+    Compute magnetic susceptibility chi_M = \beta (<M^2> - <M>^2).
     
     Parameters
     ----------
@@ -319,7 +319,7 @@ def magnetic_susceptibility(energies: Array, magnetization_diagonal: Array, beta
     Returns
     -------
     float
-        Magnetic susceptibility χ_M.
+        Magnetic susceptibility chi_M.
         
     Notes
     -----
@@ -331,7 +331,7 @@ def magnetic_susceptibility(energies: Array, magnetization_diagonal: Array, beta
 
 def charge_susceptibility(energies: Array, charge_diagonal: Array, beta: float) -> float:
     """
-    Compute charge susceptibility χ_c = \beta (<N^2> - <N>^2).
+    Compute charge susceptibility chi_c = \beta (<N^2> - <N>^2).
     
     Parameters
     ----------
@@ -345,11 +345,11 @@ def charge_susceptibility(energies: Array, charge_diagonal: Array, beta: float) 
     Returns
     -------
     float
-        Charge susceptibility χ_c.
+        Charge susceptibility chi_c.
         
     Notes
     -----
-    Related to compressibility via χ_c = \beta <(δN)^2>.
+    Related to compressibility via chi_c = \beta <(δN)^2>.
     """
     N, _    = thermal_average_diagonal(energies, charge_diagonal, beta)
     N2, _   = thermal_average_diagonal(energies, charge_diagonal**2, beta)
@@ -381,7 +381,7 @@ def specific_heat_from_moments(avg_H: float, avg_H2: float, beta: float) -> floa
 
 def susceptibility_from_moments(avg_O: float, avg_O2: float, beta: float) -> float:
     """
-    Generic susceptibility from moments: χ = \beta (<O^2> - <O>^2).
+    Generic susceptibility from moments: chi = \beta (<O^2> - <O>^2).
     
     Parameters
     ----------
@@ -395,7 +395,7 @@ def susceptibility_from_moments(avg_O: float, avg_O2: float, beta: float) -> flo
     Returns
     -------
     float
-        Susceptibility χ.
+        Susceptibility chi.
     """
     return beta * (avg_O2 - avg_O**2)
 

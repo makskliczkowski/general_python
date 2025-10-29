@@ -33,6 +33,9 @@ class LatticeDirection(Enum):
     X = auto()
     Y = auto()
     Z = auto()
+    
+    def __str__(self):      return str(self.name).lower()
+    def __repr__(self):     return f"LatticeDirection.{self.name}"
 
 # -----------------------------------------------------------------------------------------------------------
 

@@ -1,11 +1,11 @@
 """
-Magnetic and charge susceptibilities χ(q,\Omega) for quantum systems.
+Magnetic and charge susceptibilities chi(q,\Omega) for quantum systems.
 
 The dynamical susceptibility is the linear response function:
-    χ(q,\Omega) = i∫dt e^{i\Omegat} <[A_q(t), A\dag_{-q}(0)]>
+    chi(q,\Omega) = i∫dt e^{i\Omegat} <[A_q(t), A\dag_{-q}(0)]>
 
 Related to structure factor via fluctuation-dissipation theorem:
-    S(q,\Omega) = -(1/\pi) Im[χ(q,\Omega)] / (1 - exp(-\beta\Omega))
+    S(q,\Omega) = -(1/\pi) Im[chi(q,\Omega)] / (1 - exp(-\beta\Omega))
 
 File    : QES/general_python/physics/response/susceptibility.py
 Author  : Maksymilian Kliczkowski
@@ -26,7 +26,7 @@ else:
     jnp = np
 
 # =============================================================================
-# Dynamical Susceptibility χ(q,\Omega)
+# Dynamical Susceptibility chi(q,\Omega)
 # =============================================================================
 
 def susceptibility_lehmann(
@@ -40,7 +40,7 @@ def susceptibility_lehmann(
     """
     Compute dynamical susceptibility using Lehmann representation.
     
-    χ(q,\Omega) = \sum _{m,n} (ρ_m - ρ_n) <m|A_q|n><n|A\dag_q|m> / (\Omega - \Omega_nm + iη)
+    chi(q,\Omega) = \sum _{m,n} (ρ_m - ρ_n) <m|A_q|n><n|A\dag_q|m> / (\Omega - \Omega_nm + iη)
     
     where \Omega_nm = E_n - E_m and ρ_m are thermal occupation factors.
     
@@ -62,11 +62,11 @@ def susceptibility_lehmann(
     Returns
     -------
     complex
-        Dynamical susceptibility χ(q,\Omega).
+        Dynamical susceptibility chi(q,\Omega).
         
     Notes
     -----
-    At T=0, only ground state contributes: χ ~ \sum _n |<n|A|0>|^2 / (\Omega - \Omega_n0 + iη).
+    At T=0, only ground state contributes: chi ~ \sum _n |<n|A|0>|^2 / (\Omega - \Omega_n0 + iη).
     """
     eigvals = np.asarray(hamiltonian_eigvals)
     eigvecs = np.asarray(hamiltonian_eigvecs, dtype=complex)
@@ -114,7 +114,7 @@ def susceptibility_multi_omega(
         temperature: float = 0.0
 ) -> Array:
     """
-    Compute χ(q,\Omega) for multiple frequencies.
+    Compute chi(q,\Omega) for multiple frequencies.
     
     Parameters
     ----------
@@ -134,7 +134,7 @@ def susceptibility_multi_omega(
     Returns
     -------
     Array, shape (n_omega,), complex
-        χ(q,\Omega) for each frequency.
+        chi(q,\Omega) for each frequency.
     """
     omega_grid = np.asarray(omega_grid)
     n_omega = len(omega_grid)
@@ -155,7 +155,7 @@ def susceptibility_multi_omega(
 
 
 # =============================================================================
-# Static Susceptibility χ(q,\Omega=0)
+# Static Susceptibility chi(q,\Omega=0)
 # =============================================================================
 
 def static_susceptibility(
@@ -165,12 +165,12 @@ def static_susceptibility(
         temperature: float = 0.0
 ) -> float:
     """
-    Compute static (\Omega=0) susceptibility χ(q,0).
+    Compute static (\Omega=0) susceptibility chi(q,0).
     
-    χ(q,0) = \beta <(A_q - <A_q>)^2>  (fluctuation-dissipation)
+    chi(q,0) = \beta <(A_q - <A_q>)^2>  (fluctuation-dissipation)
     
     At T=0:
-    χ(q,0) = 2 \sum _{n\neq 0} |<n|A_q|0>|^2 / (E_n - E_0)
+    chi(q,0) = 2 \sum _{n\neq 0} |<n|A_q|0>|^2 / (E_n - E_0)
     
     Parameters
     ----------
@@ -186,7 +186,7 @@ def static_susceptibility(
     Returns
     -------
     float
-        Static susceptibility χ(q,0).
+        Static susceptibility chi(q,0).
     """
     eigvals = np.asarray(hamiltonian_eigvals)
     eigvecs = np.asarray(hamiltonian_eigvecs, dtype=complex)
@@ -212,7 +212,7 @@ def static_susceptibility(
         A2_eigen = A_q_eigen @ A_q_eigen
         A2_avg = np.sum(rho * np.real(np.diag(A2_eigen)))
         
-        # χ = \beta (<A^2> - <A>^2)
+        # chi = \beta (<A^2> - <A>^2)
         chi_static = beta * (A2_avg - A_avg**2)
     
     else:
@@ -243,7 +243,7 @@ def magnetic_susceptibility(
         temperature: float = 0.0
 ) -> Array:
     """
-    Compute magnetic susceptibility χ_M(q,\Omega).
+    Compute magnetic susceptibility chi_M(q,\Omega).
     
     This is the susceptibility_multi_omega with operator = magnetization.
     
@@ -265,7 +265,7 @@ def magnetic_susceptibility(
     Returns
     -------
     Array, complex
-        χ_M(q,\Omega).
+        chi_M(q,\Omega).
     """
     return susceptibility_multi_omega(
         hamiltonian_eigvals,
@@ -286,7 +286,7 @@ def charge_susceptibility(
         temperature: float = 0.0
 ) -> Array:
     """
-    Compute charge susceptibility χ_c(q,\Omega).
+    Compute charge susceptibility chi_c(q,\Omega).
     
     This is the susceptibility_multi_omega with operator = charge density.
     
@@ -308,7 +308,7 @@ def charge_susceptibility(
     Returns
     -------
     Array, complex
-        χ_c(q,\Omega).
+        chi_c(q,\Omega).
     """
     return susceptibility_multi_omega(
         hamiltonian_eigvals,
@@ -332,15 +332,15 @@ def susceptibility_to_structure_factor(
     """
     Convert susceptibility to structure factor via fluctuation-dissipation theorem.
     
-    S(q,\Omega) = -(1/\pi) Im[χ(q,\Omega)] / (1 - exp(-\beta\Omega))
+    S(q,\Omega) = -(1/\pi) Im[chi(q,\Omega)] / (1 - exp(-\beta\Omega))
     
     At T=0:
-    S(q,\Omega) = -(1/\pi) Im[χ(q,\Omega)]  for \Omega > 0
+    S(q,\Omega) = -(1/\pi) Im[chi(q,\Omega)]  for \Omega > 0
     
     Parameters
     ----------
     chi : array-like, complex
-        Dynamical susceptibility χ(q,\Omega).
+        Dynamical susceptibility chi(q,\Omega).
     omega_grid : array-like
         Frequency grid.
     temperature : float, optional
@@ -380,7 +380,7 @@ def structure_factor_to_susceptibility(
     """
     Convert structure factor to susceptibility (inverse of above).
     
-    Im[χ(q,\Omega)] = -\pi S(q,\Omega) (1 - exp(-\beta\Omega))
+    Im[chi(q,\Omega)] = -\pi S(q,\Omega) (1 - exp(-\beta\Omega))
     
     Parameters
     ----------
@@ -398,7 +398,7 @@ def structure_factor_to_susceptibility(
         
     Notes
     -----
-    This only gives Im[χ]. To get full χ, need Kramers-Kronig relations.
+    This only gives Im[chi]. To get full chi, need Kramers-Kronig relations.
     """
     S_q_omega = np.asarray(S_q_omega)
     omega_grid = np.asarray(omega_grid)
@@ -427,7 +427,7 @@ def susceptibility_sum_rule_check(
     """
     Check f-sum rule for susceptibility.
     
-    ∫ d\Omega \Omega Im[χ(q,\Omega)] = -\pi/2 <[A_q, [H, A\dag_q]]>
+    ∫ d\Omega \Omega Im[chi(q,\Omega)] = -\pi/2 <[A_q, [H, A\dag_q]]>
     
     Parameters
     ----------
@@ -443,7 +443,7 @@ def susceptibility_sum_rule_check(
     Returns
     -------
     integral : float
-        ∫ d\Omega \Omega Im[χ(q,\Omega)].
+        ∫ d\Omega \Omega Im[chi(q,\Omega)].
     expected : float
         -\pi/2 <commutator>.
     """

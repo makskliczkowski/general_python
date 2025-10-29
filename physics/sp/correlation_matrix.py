@@ -476,7 +476,7 @@ def corr_superposition(
             # q_to  : empty in a, occupied in b
             q1, q2 = np.nonzero(diff)[0]    # the two differing orbitals
             
-            # The ± sign from fermionic exchange:
+            # The +/-  sign from fermionic exchange:
             #   if |m> has q1 occupied and |n> has q1 empty  -> annihilate at q1
             #   otherwise the opposite.
             # We encode this in the prefactor below.

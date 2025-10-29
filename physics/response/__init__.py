@@ -5,7 +5,7 @@ Response functions and dynamical correlation functions for quantum systems.
 
 This subpackage provides tools for:
 - Dynamic structure factors S(q,\Omega) for spin systems
-- Magnetic and charge susceptibilities χ(q,\Omega)
+- Magnetic and charge susceptibilities chi(q,\Omega)
 - Correlation functions and linear response
 
 Modules:

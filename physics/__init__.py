@@ -35,7 +35,7 @@ Organization:
 
 **Response Functions (subpackage):**
 - response.structure_factor     : Dynamic structure factor S(q,\Omega) for spins (optimized!)
-- response.susceptibility       : Magnetic and charge susceptibilities χ(q,\Omega)
+- response.susceptibility       : Magnetic and charge susceptibilities chi(q,\Omega)
 
 **Specialized:**
 - sp                            : Single particle physics utilities
