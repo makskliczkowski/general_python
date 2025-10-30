@@ -28,11 +28,11 @@ variational state |\psi(θ+delta θ)>.
 ----------------------
 For small changes delta θ and a small time step delta τ, the FS distance is expanded as:
 
-    d^2(\psi(θ+delta θ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ \cdot  delta θₖ - \varepsilon₍\sigma₎ |^2    (Eq. 2)
+    d^2(\psi(θ+delta θ), \psi′) = ∑₍\sigma₎ | ∑₍k₎ O₍\sigma,k₎ \cdot  delta θ_k  - \varepsilon₍\sigma₎ |^2    (Eq. 2)
 
 with:
     
-    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ - <(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θₖ>,
+    O₍\sigma,k₎ = (1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θ_k  - <(1/\psi₍\sigma₎) ∂\psi₍\sigma₎/∂θ_k >,
     
 computed over Ns Monte Carlo samples:
     
@@ -96,7 +96,7 @@ Two derivations support this result:
 1. **Lagrangian Multiplier Approach:**  
     The method minimizes ||delta θ|| subject to O \cdot  delta θ = \varepsilon by forming the Lagrangian:
 
-    L({delta θₖ}, {\alpha₍\sigma₎}) = ∑₍k₎ |delta θₖ|^2 - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ \cdot  delta θₖ - \varepsilon₍\sigma₎) + c.c.]
+    L({delta θ_k }, {\alpha₍\sigma₎}) = ∑₍k₎ |delta θ_k |^2 - [∑₍\sigma₎ \alpha₍\sigma₎* (∑₍k₎ O₍\sigma,k₎ \cdot  delta θ_k  - \varepsilon₍\sigma₎) + c.c.]
 
 Solving the resulting equations leads to delta θ = O\dag \cdot  (O \cdot  O\dag)^{-1}  \cdot  \varepsilon, which is equivalent to Eq. (5).
 

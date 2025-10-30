@@ -68,11 +68,11 @@ except ImportError:
     SCIPY_AVAILABLE = False
 
 try:
-    from .result import EigenResult
+    from .result import EigenResult, EigenSolver
 except ImportError:
     raise 
 
-class ArnoldiEigensolver:
+class ArnoldiEigensolver(EigenSolver):
     """
     Arnoldi iteration for general (non-symmetric) eigenvalue problems.
     

@@ -14,6 +14,13 @@ version     : 1.0.0
 import time
 from typing import List, Optional
 
+try:
+    from ...algebra.utils import JAX_AVAILABLE
+except ImportError:
+    JAX_AVAILABLE = False
+
+# --------------------------------------------------------------------------------------------------
+
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax

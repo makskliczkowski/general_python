@@ -89,11 +89,11 @@ $$
 Given x₀, compute r₀ = b - Ax₀
 Set p₀ = r₀
 For k = 0, 1, 2, ...
-    \alphaₖ      = (rₖᵀrₖ) / (pₖᵀApₖ)
-    xₖ₊_1     = xₖ + \alphaₖpₖ
-    rₖ₊_1     = rₖ - \alphaₖApₖ
-    \betaₖ      = (rₖ₊_1 ᵀrₖ₊_1 ) / (rₖᵀrₖ)
-    pₖ₊_1     = rₖ₊_1  + \betaₖpₖ
+    \alpha_k       = (r_k ᵀr_k ) / (p_k ᵀAp_k )
+    x_k ₊_1     = x_k  + \alpha_k p_k 
+    r_k ₊_1     = r_k  - \alpha_k Ap_k 
+    \beta_k       = (r_k ₊_1 ᵀr_k ₊_1 ) / (r_k ᵀr_k )
+    p_k ₊_1     = r_k ₊_1  + \beta_k p_k 
 ```
 
 **Convergence**: For SPD matrix $A$ with condition number $\kappa(A)$:

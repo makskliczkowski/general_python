@@ -62,7 +62,7 @@ def _default_to_bin(state: int, ns: int) -> str:
     return strtex
 
 def _format_coeff(c: complex | float) -> str:
-    """
+    r"""
     Return LaTeX for a numeric coefficient with phase/amplitude split,
     using multiples of \pi for phase.
     
@@ -180,7 +180,7 @@ def display_operator_action(op_tex    : str,
                             to_bin    : Callable[[int, int], str] | None = None
                             ) -> None:
     r"""
-    Show the action  Ô₍site₎ |\psi > = \Sigma ₖ cₖ |φₖ>  (or 0).
+    Show the action  Ô₍site₎ |\psi > = \Sigma _k  c_k  |φ_k >  (or 0).
 
     Parameters
     ----------
@@ -193,7 +193,7 @@ def display_operator_action(op_tex    : str,
     ns : int
         Number of lattice sites (binary string length for integer states).
     out_state : int | list[int] | None
-        Output basis state(s).  *None* ⇒ result is 0.
+        Output basis state(s).  *None* -> result is 0.
     coeff : number | complex | list[number|complex]
         Corresponding amplitude(s).  Must match *out_state* length.
     """
@@ -251,9 +251,10 @@ def superposition(terms : Sequence[Tuple[complex, int]],
                 ns      : int,
                 *, 
                 to_bin  : Callable[[int, int], str] | None = None) -> str:
-    """Return LaTeX for \Sigma ₖ aₖ |k> given *(coeff, state)* pairs."""
-    parts: List[str] = []
-    to_bin = _default_to_bin if to_bin is None else to_bin
+    r"""Return LaTeX for \Sigma _k  a_k  |k> given *(coeff, state)* pairs."""
+    
+    parts: List[str]    = []
+    to_bin              = _default_to_bin if to_bin is None else to_bin
     for amp, st in terms:
         amp_tex = f"{amp:g}" if amp not in (-1, 1) else ("-" if amp == -1 else "")
         parts.append(fr"{amp_tex}{ket(st, ns, to_bin=to_bin)}")

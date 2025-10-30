@@ -327,6 +327,7 @@ class Lattice(ABC):
         # neighbors
         self._nn            = [[]]
         self._nn_forward    = [[]]
+        self._nn_max_num    = 0
         self._nnn           = [[]]
         self._nnn_forward   = [[]]
         
@@ -579,6 +580,11 @@ class Lattice(ABC):
     @bc.setter
     def bc(self, value):            self._bc = value
     
+    @property
+    def cardinality(self):          return self.get_nn_forward_num_max()
+    @cardinality.setter
+    def cardinality(self, value):   self._nn_max_num = value
+    
     # ------------------------------------------------------------------
     #! Boundary fluxes
     # ------------------------------------------------------------------
@@ -600,15 +606,18 @@ class Lattice(ABC):
     def boundary_phase_from_winding(self, wx: int, wy: int, wz: int) -> complex:
         """
         Return total complex boundary phase accumulated from winding numbers.
+        If no winding (all zero), returns real 1.0.
         """
-        phase = 1.0 + 0j
+        if wx == 0 and wy == 0 and wz == 0:
+            return 1.0
+        phase = 1.0
         if wx != 0:
             phase *= self.boundary_phase(LatticeDirection.X, winding=wx)
         if wy != 0:
             phase *= self.boundary_phase(LatticeDirection.Y, winding=wy)
         if wz != 0:
             phase *= self.boundary_phase(LatticeDirection.Z, winding=wz)
-        return phase
+        return phase if np.iscomplexobj(phase) and not np.isreal(phase) else float(np.real(phase))
 
     def bond_winding(self, i: int, j: int) -> tuple[int, int, int]:
         """
@@ -989,6 +998,22 @@ class Lattice(ABC):
     #! FORWARD NEAREST NEIGHBORS HELPERS
     # -----------------------------------------------------------------------------
     
+    def get_nn_forward_num_max(self):
+        '''
+        Returns the maximum number of forward nearest neighbors in the lattice.
+        
+        Returns:
+        - maximum number of nearest neighbors
+        '''
+        if (self._nn_max_num is None or self._nn_max_num == 0) and self.nn_forward is not None:
+            max_nn = 0
+            for site in range(self.ns):
+                nn_num = len(self.nn_forward[site])
+                if nn_num > max_nn:
+                    max_nn = nn_num
+            self._nn_max_num = max_nn
+        return self._nn_max_num
+    
     def get_nn_forward_num(self, site : int):
         '''
         Returns the number of forward nearest neighbors of a given site.
@@ -1160,32 +1185,13 @@ class Lattice(ABC):
     ############################ ABSTRACT CALCULATORS #############################
     
     @abstractmethod
-    def calculate_coordinates(self):
-        '''
-        Calculates the real lattice coordinates based on a lattice site
-        '''
-        pass
-    
+    def calculate_coordinates(self):    pass
     @abstractmethod
-    def calculate_r_vectors(self):
-        '''
-        Calculates all possible vectors in real space
-        '''
-        pass
-    
+    def calculate_r_vectors(self):      pass
     @abstractmethod
-    def calculate_k_vectors(self):
-        '''
-        Calculates the inverse space vectors
-        '''
-        pass
-    
+    def calculate_k_vectors(self):      pass
     @abstractmethod
-    def calculate_norm_sym(self):
-        '''
-        Calculates the norm for a given symmetry
-        '''
-        pass
+    def calculate_norm_sym(self):       pass
     
     # -----------------------------------------------------------------------------
     #! Nearest neighbors

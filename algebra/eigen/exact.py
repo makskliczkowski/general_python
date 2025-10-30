@@ -38,7 +38,7 @@ try:
 except ImportError:
     SCIPY_AVAILABLE = False
 
-from .result import EigenResult
+from .result import EigenResult, EigenSolver
 
 # ----------------------------------------------------------------------------------------
 #! Exact Eigensolver Classes
@@ -183,7 +183,7 @@ class ExactEigensolver:
 #! SciPy Exact Eigensolver Class
 # ----------------------------------------------------------------------------------------
 
-class ExactEigensolverScipy:
+class ExactEigensolverScipy(EigenSolver):
     """
     Full eigenvalue decomposition using SciPy.
     

@@ -20,7 +20,7 @@ from numpy.typing import NDArray
 from typing import Optional, Callable, Literal, Union, Any
 
 try:
-    from .result import EigenResult
+    from .result import EigenResult, EigenSolver
     from .exact import ExactEigensolver, ExactEigensolverScipy
     from .lanczos import LanczosEigensolver, LanczosEigensolverScipy
     from .arnoldi import ArnoldiEigensolver, ArnoldiEigensolverScipy

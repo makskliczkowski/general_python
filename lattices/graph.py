@@ -60,7 +60,7 @@ class GraphLattice(Lattice):
     adjacency:
         Square (``Ns \times Ns``) adjacency matrix.  Non-zero entries denote
         connected pairs.  The absolute value of the weight is used to rank
-        neighbor order (highest ⇒ nearest).
+        neighbor order (highest -> nearest).
     coords:
         Optional vertex embedding of shape ``(Ns, dim)``.  Defaults to a 1D
         chain ordering.  Used for plotting and distance heuristics.

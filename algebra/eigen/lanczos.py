@@ -79,7 +79,7 @@ except ImportError:
     SCIPY_AVAILABLE = False
 
 try:
-    from .result import EigenResult
+    from .result import EigenResult, EigenSolver
 except ImportError:
     raise ImportError("EigenResult class not found. Ensure 'result.py' is available.")
 
@@ -87,7 +87,7 @@ except ImportError:
 #! LanczosEigensolver
 # ----------------------------------------------------------------------------------------
 
-class LanczosEigensolver:
+class LanczosEigensolver(EigenSolver):
     r"""
     Lanczos algorithm for symmetric/Hermitian eigenvalue problems.
     
@@ -219,7 +219,7 @@ class LanczosEigensolver:
             _matvec = lambda x: A @ x
             
             # Check symmetry
-            if not np.allclose(A, A.T.conj()):
+            if not EigenSolver._is_hermitian(A):
                 raise ValueError("A must be symmetric or Hermitian for Lanczos")
             
         elif matvec is not None:
@@ -553,7 +553,7 @@ class LanczosEigensolver:
 #! LanczosEigensolverScipy
 # ----------------------------------------------------------------------------------------
 
-class LanczosEigensolverScipy:
+class LanczosEigensolverScipy(EigenSolver):
     """
     SciPy wrapper for Lanczos eigenvalue solver.
     
@@ -615,9 +615,16 @@ class LanczosEigensolverScipy:
         self.v0         = v0
 
     def solve(self, 
-              A         : Optional[NDArray] = None,
-              matvec    : Optional[Callable[[NDArray], NDArray]] = None,
-              n         : Optional[int] = None) -> EigenResult:
+            A         : Optional[NDArray] = None,
+            matvec    : Optional[Callable[[NDArray], NDArray]] = None,
+            n         : Optional[int] = None,
+            *,
+            k         : int = None,
+            which     : Literal['SM', 'LM', 'SA', 'LA', 'BE'] = 'SA',
+            tol       : float = 0.0,
+            maxiter   : Optional[int] = None,
+            v0        : Optional[NDArray] = None
+            ) -> EigenResult:
         """
         Solve for eigenvalues using SciPy's eigsh.
         
@@ -647,12 +654,12 @@ class LanczosEigensolverScipy:
         try:
             eigenvalues, eigenvectors = eigsh(
                 A,
-                k       = self.k,
-                which   = self.which,
-                tol     = self.tol,
-                maxiter = self.maxiter,
-                v0      = self.v0,
-                return_eigenvectors=True
+                k                   = self.k if k is None else k,
+                which               = self.which if which is None else which,
+                tol                 = self.tol if tol == 0.0 else tol,
+                maxiter             = self.maxiter if maxiter is None else maxiter,
+                v0                  = self.v0 if v0 is None else v0,
+                return_eigenvectors = True
             )
             
             converged   = True

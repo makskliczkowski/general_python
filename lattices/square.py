@@ -216,6 +216,9 @@ class SquareLattice(Lattice):
     
     # ---------------------------------------------------------------------------------
     
+    def get_nn_forward_num_max(self):
+        return 2 * self.dim
+    
     def get_nn_forward(self, site: int, num: int = -1):
         """ Returns the forward nearest neighbors of a given site. """
         if num < 0:

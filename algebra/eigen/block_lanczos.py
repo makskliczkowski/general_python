@@ -82,13 +82,17 @@ except ImportError:
     SCIPY_AVAILABLE = False
 
 # -----------------------------
-from .result import EigenResult
+try:
+    from .result import EigenResult, EigenSolver
+except ImportError:
+    raise ImportError("Failed to import EigenResult and EigenSolver from the current package.")
+
 # -----------------------------
 
 # -----------------------------
 #! Algorithm
 # -----------------------------
-class BlockLanczosEigensolver:
+class BlockLanczosEigensolver(EigenSolver):
     """
     Block Lanczos algorithm for symmetric/Hermitian eigenvalue problems.
     
