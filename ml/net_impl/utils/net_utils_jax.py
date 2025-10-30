@@ -413,14 +413,14 @@ if JAX_AVAILABLE:
         should ideally move `p` in the direction that maximally decreases `L`.
         Using Wirtinger calculus, the direction of steepest descent for `L` with
         respect to `p` is given by -∇_{p*} L, where ∇_{p*} = ∂/∂p* = (∂/∂Re[p] + i ∂/∂Im[p])/2.
-        If L depends on a complex function f(p) (like log Ψ(p)), such that L = Re[g(f(p))] or |f(p)|^2,
+        If L depends on a complex function f(p) (like log Psi(p)), such that L = Re[g(f(p))] or |f(p)|^2,
         the chain rule involves terms like ∂f/∂p* and ∂f/∂p.
         
         For many physical systems/wavefunctions (non-holomorphic cases), the relevant gradient
         component driving the optimization of the real loss function turns out to be proportional
         to ∇_p Re[f] - i ∇_p Im[f], which is precisely (∇_p f)^*. This is the gradient
         conjugate to the standard complex gradient ∇_p f = ∇_p Re[f] + i ∇_p Im[f].
-        In VMC, this often corresponds to (∇_p log Ψ)*.
+        In VMC, this often corresponds to (∇_p log Psi)*.
 
         Math: Computes g_R = ∇_p sum(Re[f(p, s)]) and g_I = ∇_p sum(Im[f(p, s)]).
             Returns the complex PyTree g = g_R - i g_I.

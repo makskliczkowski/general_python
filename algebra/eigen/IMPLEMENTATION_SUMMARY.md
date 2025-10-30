@@ -33,7 +33,7 @@ QES/general_python/algebra/eigen/
 
 ## Implementation Status
 
-### ✅ COMPLETED: Exact Diagonalization
+### (ok) COMPLETED: Exact Diagonalization
 
 **Module**: `exact.py`
 
@@ -53,9 +53,9 @@ QES/general_python/algebra/eigen/
 
 **Backends Supported**:
 
-- ✅ NumPy: `np.linalg.eigh` / `np.linalg.eig`
-- ✅ SciPy: `scipy.linalg.eigh` / `scipy.linalg.eig` (with LAPACK drivers)
-- ✅ JAX: `jnp.linalg.eigh` / `jnp.linalg.eig`
+- (ok) NumPy: `np.linalg.eigh` / `np.linalg.eig`
+- (ok) SciPy: `scipy.linalg.eigh` / `scipy.linalg.eig` (with LAPACK drivers)
+- (ok) JAX: `jnp.linalg.eigh` / `jnp.linalg.eig`
 
 **Usage**:
 
@@ -68,11 +68,11 @@ print(f"Ground state energy: {result.eigenvalues[0]}")
 print(f"All {len(result.eigenvalues)} eigenvalues computed")
 ```
 
-**Testing**: ✅ PASSED in `test_all_solvers.py`
+**Testing**: (ok) PASSED in `test_all_solvers.py`
 
 ---
 
-### ✅ COMPLETED: Lanczos Method
+### (ok) COMPLETED: Lanczos Method
 
 **Module**: `lanczos.py`
 
@@ -92,9 +92,9 @@ print(f"All {len(result.eigenvalues)} eigenvalues computed")
 
 **Backends Supported**:
 
-- ✅ NumPy: Native implementation with reorthogonalization
-- ✅ JAX: JAX implementation (float32 precision due to JAX defaults)
-- ✅ SciPy: `scipy.sparse.linalg.eigsh` (ARPACK) - Production ready
+- (ok) NumPy: Native implementation with reorthogonalization
+- (ok) JAX: JAX implementation (float32 precision due to JAX defaults)
+- (ok) SciPy: `scipy.sparse.linalg.eigsh` (ARPACK) - Production ready
 
 **Algorithm**:
 
@@ -117,7 +117,7 @@ print(f"Converged: {result.converged}")
 print(f"Residuals: {result.residual_norms}")
 ```
 
-**Testing**: ✅ PASSED comprehensive tests in `test_lanczos.py`
+**Testing**: (ok) PASSED comprehensive tests in `test_lanczos.py`
 
 - NumPy backend: 7.38e-15 error vs exact diagonalization
 - SciPy wrapper: Production-ready
@@ -128,7 +128,7 @@ print(f"Residuals: {result.residual_norms}")
 
 ---
 
-### ✅ COMPLETED: Arnoldi Method
+### (ok) COMPLETED: Arnoldi Method
 
 **Module**: `arnoldi.py`
 
@@ -149,9 +149,9 @@ print(f"Residuals: {result.residual_norms}")
 
 **Backends Supported**:
 
-- ✅ NumPy: Native implementation
-- ✅ JAX: JAX implementation
-- ✅ SciPy: `scipy.sparse.linalg.eigs` (ARPACK)
+- (ok) NumPy: Native implementation
+- (ok) JAX: JAX implementation
+- (ok) SciPy: `scipy.sparse.linalg.eigs` (ARPACK)
 
 **Algorithm**:
 
@@ -172,7 +172,7 @@ result = solver.solve(A=A)
 print(f"Largest magnitude eigenvalues: {result.eigenvalues}")
 ```
 
-**Testing**: ✅ Created but not yet run comprehensive tests (implementation matches C++ reference)
+**Testing**: (ok) Created but not yet run comprehensive tests (implementation matches C++ reference)
 
 ---
 
@@ -199,7 +199,7 @@ print(f"Largest magnitude eigenvalues: {result.eigenvalues}")
 - Block tridiagonal construction needs verification
 - Reorthogonalization logic may be incorrect
 
-**SciPy Wrapper Status**: ✅ WORKING - `BlockLanczosEigensolverScipy` uses LOBPCG and works correctly
+**SciPy Wrapper Status**: (ok) WORKING - `BlockLanczosEigensolverScipy` uses LOBPCG and works correctly
 
 **Next Steps**:
 
@@ -210,7 +210,7 @@ print(f"Largest magnitude eigenvalues: {result.eigenvalues}")
 
 ---
 
-### ✅ COMPLETED: Unified Interface
+### (ok) COMPLETED: Unified Interface
 
 **Module**: `factory.py`
 
@@ -253,7 +253,7 @@ result = choose_eigensolver(method, A, k=10)
 result = choose_eigensolver('lanczos', A, k=10, which='smallest')
 ```
 
-**Testing**: ✅ PASSED in `test_all_solvers.py`
+**Testing**: (ok) PASSED in `test_all_solvers.py`
 
 ---
 
@@ -261,10 +261,10 @@ result = choose_eigensolver('lanczos', A, k=10, which='smallest')
 
 | Solver              | NumPy | JAX | SciPy | Status  |
 |---------------------|-------|-----|-------|---------|
-| ExactEigensolver    | ✅    | ✅  | ✅    | WORKING |
-| LanczosEigensolver  | ✅    | ⚠️  | ✅    | WORKING (JAX float32) |
-| ArnoldiEigensolver  | ✅    | ✅  | ✅    | WORKING |
-| BlockLanczos        | ⚠️    | ⚠️  | ✅    | BROKEN (SciPy works) |
+| ExactEigensolver    | (ok)    | (ok)  | (ok)    | WORKING |
+| LanczosEigensolver  | (ok)    | ⚠️  | (ok)    | WORKING (JAX float32) |
+| ArnoldiEigensolver  | (ok)    | (ok)  | (ok)    | WORKING |
+| BlockLanczos        | ⚠️    | ⚠️  | (ok)    | BROKEN (SciPy works) |
 
 ---
 
@@ -273,24 +273,24 @@ result = choose_eigensolver('lanczos', A, k=10, which='smallest')
 ### test_lanczos.py (Comprehensive)
 
 ```
-✅ test_smallest_eigenvalues_numpy:  Error 8.30e-14
-✅ test_largest_eigenvalues_numpy:   Error 1.39e-13
-✅ test_smallest_eigenvalues_jax:    Error 8.60e-06 (float32)
-✅ test_scipy_wrapper:               Error < 1e-8
-✅ test_matvec_tridiagonal:          Error < 1e-6
-✅ test_eigenvector_residuals:       All < 1e-6
-✅ test_iteration_count:             Convergence improves with iterations
-✅ test_breakdown_detection:         Early termination works
-✅ test_complex_hermitian:           Complex matrices work
+(ok) test_smallest_eigenvalues_numpy:  Error 8.30e-14
+(ok) test_largest_eigenvalues_numpy:   Error 1.39e-13
+(ok) test_smallest_eigenvalues_jax:    Error 8.60e-06 (float32)
+(ok) test_scipy_wrapper:               Error < 1e-8
+(ok) test_matvec_tridiagonal:          Error < 1e-6
+(ok) test_eigenvector_residuals:       All < 1e-6
+(ok) test_iteration_count:             Convergence improves with iterations
+(ok) test_breakdown_detection:         Early termination works
+(ok) test_complex_hermitian:           Complex matrices work
 ```
 
 ### test_all_solvers.py (Quick Validation)
 
 ```
-✅ Exact Diagonalization:   All 50 eigenvalues computed
-✅ Lanczos:                 Error 7.38e-15 vs exact
+(ok) Exact Diagonalization:   All 50 eigenvalues computed
+(ok) Lanczos:                 Error 7.38e-15 vs exact
 ⚠️ Block Lanczos:           SKIPPED (numerical issues)
-✅ Unified Interface:       Error 6.02e-15 vs exact
+(ok) Unified Interface:       Error 6.02e-15 vs exact
 ```
 
 ---
@@ -331,7 +331,7 @@ For n=500, k=10 symmetric matrix:
 result = full_diagonalization(A, hermitian=True)
 ```
 
-✅ Simple, returns all eigenvalues, no iteration needed
+(ok) Simple, returns all eigenvalues, no iteration needed
 
 ### Large Sparse Symmetric (n > 1000, k << n)
 
@@ -340,7 +340,7 @@ solver = LanczosEigensolver(k=10, which='smallest', max_iter=100)
 result = solver.solve(A=H)
 ```
 
-✅ Memory-efficient, fast for extremal eigenvalues
+(ok) Memory-efficient, fast for extremal eigenvalues
 
 ### Large Non-Symmetric
 
@@ -349,7 +349,7 @@ solver = ArnoldiEigensolver(k=10, which='LM')
 result = solver.solve(A=A)
 ```
 
-✅ Handles non-symmetric matrices
+(ok) Handles non-symmetric matrices
 
 ### Automatic Selection
 
@@ -357,7 +357,7 @@ result = solver.solve(A=A)
 result = choose_eigensolver('auto', A, k=10, hermitian=True)
 ```
 
-✅ Let the library decide based on problem size
+(ok) Let the library decide based on problem size
 
 ### Matrix-Free Operation
 
@@ -369,7 +369,7 @@ solver = LanczosEigensolver(k=10, which='smallest')
 result = solver.solve(matvec=my_matvec, n=dimension)
 ```
 
-✅ For very large systems where A cannot fit in memory
+(ok) For very large systems where A cannot fit in memory
 
 ---
 
@@ -400,7 +400,7 @@ result = solver.solve(matvec=my_matvec, n=dimension)
 
 ## C++ Reference Implementation Parity
 
-✅ **Implemented Features from C++ Reference**:
+(ok) **Implemented Features from C++ Reference**:
 
 - Tridiagonal/Hessenberg reduction
 - Full reorthogonalization (reorthogonalize() function)
@@ -416,18 +416,18 @@ result = solver.solve(matvec=my_matvec, n=dimension)
 
 We have successfully implemented a **production-ready eigenvalue solver suite** with:
 
-✅ **4 solver methods**: Exact ED, Lanczos, Arnoldi, Block Lanczos (3.5 working)
-✅ **3 backends**: NumPy, JAX, SciPy
-✅ **Unified interface**: Auto-select based on problem characteristics
-✅ **Comprehensive tests**: Lanczos fully tested, others validated
-✅ **Matrix-free support**: For very large systems
-✅ **C++ reference parity**: All key features from original codebase
+(ok) **4 solver methods**: Exact ED, Lanczos, Arnoldi, Block Lanczos (3.5 working)
+(ok) **3 backends**: NumPy, JAX, SciPy
+(ok) **Unified interface**: Auto-select based on problem characteristics
+(ok) **Comprehensive tests**: Lanczos fully tested, others validated
+(ok) **Matrix-free support**: For very large systems
+(ok) **C++ reference parity**: All key features from original codebase
 
 **Recommended for production use**:
 
-- ✅ Exact Diagonalization (all backends)
-- ✅ Lanczos (NumPy, SciPy - production ready)
-- ✅ Arnoldi (NumPy, SciPy - ready, needs more tests)
+- (ok) Exact Diagonalization (all backends)
+- (ok) Lanczos (NumPy, SciPy - production ready)
+- (ok) Arnoldi (NumPy, SciPy - ready, needs more tests)
 - ⚠️ Block Lanczos (SciPy only - native implementation needs fixing)
 
 **Next immediate steps**:

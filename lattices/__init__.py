@@ -316,7 +316,7 @@ def run_lattice_tests(dim=2, lx=5, ly=5, lz=1, bc=None, typek="square"):
 
     ## Generate Lattice Plot
     plot_lattice_structure(lattice)
-    print(f"\n✅ All tests completed successfully for {lattice}!")
+    print(f"\n(ok) All tests completed successfully for {lattice}!")
 
 def plot_lattice_structure(lattice, **kwargs):
     """
@@ -545,6 +545,6 @@ def run_lattice_tests(dim=2, lx=5, ly=5, lz=1, bc=None, typek="square"):
 
     ## Generate Lattice Plot
     plot_lattice_structure(lattice)
-    print(f"\n✅ All tests completed successfully for {lattice}!")
+    print(f"\n(ok) All tests completed successfully for {lattice}!")
 
 ####################################################################################################

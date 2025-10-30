@@ -239,7 +239,7 @@ def main():
         test_preconditioner_integration()
         
         print("\n" + "=" * 70)
-        print("✅ ALL TDVP/NQS COMPATIBILITY TESTS PASSED!")
+        print("(ok) ALL TDVP/NQS COMPATIBILITY TESTS PASSED!")
         print("=" * 70)
         print("\nSummary:")
         print("  • Solver factory (choose_solver) works correctly")
@@ -252,7 +252,7 @@ def main():
         
     except Exception as e:
         print("\n" + "=" * 70)
-        print(f"❌ TEST FAILED: {e}")
+        print(f"(bad) TEST FAILED: {e}")
         print("=" * 70)
         import traceback
         traceback.print_exc()

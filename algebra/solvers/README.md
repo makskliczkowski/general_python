@@ -54,13 +54,13 @@ Is your matrix symmetric?
 │   └─ NO: Is it singular or badly scaled?
 │       ├─ YES: Use MINRES-QLP (most robust) 🚧
 │       └─ NO: Use MINRES
-│           └─ MinresSolverScipy (recommended) ✅
+│           └─ MinresSolverScipy (recommended) (ok)
 └─ NO: Use Direct or iterative GMRES (if available)
 ```
 
 **Implementation Status**:
 
-- ✅ **Stable**         : Production-ready, well-tested
+- (ok) **Stable**         : Production-ready, well-tested
 - 🚧 **WIP**            : Work-in-progress, use alternative
 - 🔍 **Needs Review**   : Requires validation/fixes
 
