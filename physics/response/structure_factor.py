@@ -2,7 +2,7 @@
 Fast dynamic structure factor S(q,\Omega) for spin systems.
 
 The dynamic structure factor measures spin-spin correlations:
-    S(q,\Omega) = \sum _f |<f|S^z_q|i>|^2 δ(\Omega - (E_f - E_i))
+    S(q,\Omega) = \sum _f |<f|S^z_q|i>|^2 delta (\Omega - (E_f - E_i))
 
 where S^z_q = \sum _j S^z_j exp(iq\cdot r_j) is the Fourier-transformed spin operator.
 
@@ -82,10 +82,10 @@ def structure_factor_spin(
     """
     Compute dynamic structure factor S(q,\Omega) for a spin system.
     
-    S(q,\Omega) = \sum _f |<f|S_q|i>|^2 δ(\Omega - (E_f - E_i))
+    S(q,\Omega) = \sum _f |<f|S_q|i>|^2 delta (\Omega - (E_f - E_i))
     
     At finite temperature:
-    S(q,\Omega) = \sum _{i,f} ρ_i |<f|S_q|i>|^2 δ(\Omega - (E_f - E_i))
+    S(q,\Omega) = \sum _{i,f} ρ_i |<f|S_q|i>|^2 delta (\Omega - (E_f - E_i))
     
     where ρ_i = exp(-\betaE_i)/Z are Boltzmann weights.
     

@@ -240,7 +240,7 @@ def example_spin_chain_ground_state():
     
     # Gap to first excited state
     gap = result.eigenvalues[1] - result.eigenvalues[0]
-    print(f"\nEnergy gap to first excited state: Δ = {gap:.8f}")
+    print(f"\nEnergy gap to first excited state: delta  = {gap:.8f}")
     
     return result
 

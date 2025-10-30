@@ -331,15 +331,15 @@ result = solver.solve(b)
 from QES.general_python.algebra.solvers import CgSolver
 import numpy as np
 
-# Fisher matrix S = ΔO\dag ΔO
-# ΔO: (n_samples, n_params) matrix of derivatives
+# Fisher matrix S = delta O\dag delta O
+# delta O: (n_samples, n_params) matrix of derivatives
 n_samples, n_params = 1000, 50
 DeltaO = np.random.randn(n_samples, n_params) + \
          1j * np.random.randn(n_samples, n_params)
 
 # Create solver
 solver = CgSolver(backend='numpy', is_gram=True)
-solver.set_s(DeltaO)  # Sets S = ΔO\dag ΔO implicitly
+solver.set_s(DeltaO)  # Sets S = delta O\dag delta O implicitly
 
 # Solve Sx = b efficiently without forming S
 b = np.random.randn(n_params) + 1j * np.random.randn(n_params)

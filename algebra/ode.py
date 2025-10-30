@@ -295,7 +295,7 @@ class Heun(IVP):
     Parameters
     ----------
     dt : float
-        Fixed step size Δt (can be adapted externally).
+        Fixed step size delta t (can be adapted externally).
     backend : str
         'numpy' or 'jax'
     """
@@ -358,7 +358,7 @@ class AdaptiveHeun(IVP):
     Parameters
     ----------
     dt : float
-        Initial time step Δt.
+        Initial time step delta t.
     tol : float
         Error tolerance.
     max_step : float
@@ -554,7 +554,7 @@ class ScipyRK(IVP):
     Parameters
     ----------
     dt : float
-        Initial and maximum time step Δt.
+        Initial and maximum time step delta t.
     tol : float
         Relative and absolute tolerance for solver.
     max_step : float or None

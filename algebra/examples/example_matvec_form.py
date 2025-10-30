@@ -275,7 +275,7 @@ def example_jacobian_vector_product():
     print("=" * 70)
     
     # Nonlinear function f: R^n -> R^n
-    # Solve linearized system: J(x_0) @ δx = -f(x_0)
+    # Solve linearized system: J(x_0) @ delta x = -f(x_0)
     # where J is Jacobian
     
     n = 100
@@ -298,7 +298,7 @@ def example_jacobian_vector_product():
         """Compute J(x_0) @ v using finite differences."""
         return (nonlinear_function(x_0 + epsilon * v) - f_0) / epsilon
     
-    # Solve J @ δx = -f_0 (Newton step)
+    # Solve J @ delta x = -f_0 (Newton step)
     b = -f_0
     
     solver = solvers.choose_solver(solver_id='cg', sigma=0.0)

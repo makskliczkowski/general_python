@@ -349,7 +349,7 @@ def charge_susceptibility(energies: Array, charge_diagonal: Array, beta: float) 
         
     Notes
     -----
-    Related to compressibility via chi_c = \beta <(δN)^2>.
+    Related to compressibility via chi_c = \beta <(delta N)^2>.
     """
     N, _    = thermal_average_diagonal(energies, charge_diagonal, beta)
     N2, _   = thermal_average_diagonal(energies, charge_diagonal**2, beta)
