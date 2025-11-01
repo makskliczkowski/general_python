@@ -56,7 +56,7 @@ def _structure_factor_kernel(energies: np.ndarray, matrix_elements: np.ndarray,
     
     S_q_omega = np.zeros(n_omega, dtype=np.float64)
     
-    # Lorentzian broadening: (η/\pi) / [(\Omega - \Omega_fi)^2 + η^2]
+    # Lorentzian broadening: (eta /\pi) / [(\Omega - \Omega_fi)^2 + eta ^2]
     prefactor = eta / np.pi
     
     for i in numba.prange(n_omega):
@@ -85,9 +85,9 @@ def structure_factor_spin(
     S(q,\Omega) = \sum _f |<f|S_q|i>|^2 delta (\Omega - (E_f - E_i))
     
     At finite temperature:
-    S(q,\Omega) = \sum _{i,f} ρ_i |<f|S_q|i>|^2 delta (\Omega - (E_f - E_i))
+    S(q,\Omega) = \sum _{i,f} rho _i |<f|S_q|i>|^2 delta (\Omega - (E_f - E_i))
     
-    where ρ_i = exp(-\betaE_i)/Z are Boltzmann weights.
+    where rho _i = exp(-\betaE_i)/Z are Boltzmann weights.
     
     Parameters
     ----------

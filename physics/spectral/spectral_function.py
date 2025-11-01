@@ -1,20 +1,27 @@
 """
-general_python/physics/spectral/spectral_function.py
+Convenience wrappers for spectral function calculations.
 
-Spectral functions A(k,\Omega) for noninteracting quantum systems.
+This module provides convenient access to spectral functions by delegating to
+the unified physics backend (../backend.py). All actual implementations are
+centralized in spectral_backend.py to avoid code duplication.
 
-The spectral function is related to the imaginary part of the Green's function:
-    A(k,\Omega) = -(1/\pi) Im[G(k,\Omega)]
+For detailed documentation, see spectral_backend.py or backend.py.
 
-Author: Maksymilian Kliczkowski
-Email: maksymilian.kliczkowski@pwr.edu.pl
+-------------------------------------------------------------------------------
+File        : general_python/physics/spectral/spectral_function.py
+Author      : Maksymilian Kliczkowski
+Email       : maksymilian.kliczkowski@pwr.edu.pl
+-------------------------------------------------------------------------------
 """
 
 from typing import Optional, Union
 import numpy as np
 
-from ...algebra.utils import JAX_AVAILABLE, Array
-from . import greens
+try:
+    from ...algebra.utils import JAX_AVAILABLE, Array
+except ImportError:
+    JAX_AVAILABLE   = False
+    Array           = np.ndarray
 
 if JAX_AVAILABLE:
     import jax.numpy as jnp
@@ -24,299 +31,94 @@ else:
     jax = None
     jnp = np
 
+# Import from centralized backend to avoid duplication
+try:
+    from .. import backend as physics_backend
+except ImportError:
+    physics_backend = None
+
 # =============================================================================
 # Spectral Function from Green's Function
 # =============================================================================
 
-def spectral_function(greens_function: Array) -> Array:
+def spectral_function(greens_function: Array, operator: Optional[Array] = None) -> Array:
     """
     Compute spectral function from Green's function.
     
-    A(\Omega) = -(1/\pi) Im[G(\Omega)]
-    
-    Parameters
-    ----------
-    greens_function : array-like, complex
-        Green's function G(\Omega), any shape.
-        
-    Returns
-    -------
-    Array, real
-        Spectral function A(\Omega), same shape as input.
-        
-    Examples
-    --------
-    >>> omega = 1.0
-    >>> G = greens.greens_function_eigenbasis(omega, eigenvalues, eigenvectors, eta=0.01)
-    >>> A = spectral_function(G)
-    
-    Notes
-    -----
-    The spectral function satisfies sum rule: ∫ d\Omega A(\Omega) = N (number of states).
+    Delegates to backend.spectral_function for actual implementation.
+    See backend.py or spectral_backend.py for details.
     """
-    return -np.imag(greens_function) / np.pi
+    if physics_backend is None:
+        raise ImportError("Physics backend not available")
+    return physics_backend.spectral_function(greens_function, operator, backend="default")
 
 def spectral_function_diagonal(omega: float, eigenvalues: Array, eta: float = 0.01) -> Array:
     """
     Compute diagonal spectral function directly from eigenvalues.
     
-    A_nn(\Omega) = -(1/\pi) Im[1/(\Omega + iη - E_n)]
-            = (η/\pi) / [(\Omega - E_n)^2 + η^2]
-    
-    Parameters
-    ----------
-    omega : float
-        Frequency \Omega.
-    eigenvalues : array-like
-        Eigenvalues E_n.
-    eta : float, optional
-        Broadening parameter (default: 0.01).
-        
-    Returns
-    -------
-    Array
-        Diagonal spectral function A_nn(\Omega).
-        
-    Notes
-    -----
-    This is a Lorentzian (Cauchy) distribution centered at each E_n.
+    Delegates to backend.spectral_function_diagonal for actual implementation.
+    See backend.py or spectral_backend.py for details.
     """
-    eigenvalues = np.asarray(eigenvalues)
-    
-    # Lorentzian: (η/\pi) / [(\Omega - E_n)^2 + η^2]
-    return (eta / np.pi) / ((omega - eigenvalues)**2 + eta**2)
+    if physics_backend is None:
+        raise ImportError("Physics backend not available")
+    return physics_backend.spectral_function_diagonal(omega, eigenvalues, eta, backend="default")
 
 def spectral_function_multi_omega(omegas: Array, eigenvalues: Array, eigenvectors: Optional[Array] = None,
         eta: float = 0.01, diagonal_only: bool = False) -> Array:
     """
     Compute spectral function for multiple frequencies.
     
-    Parameters
-    ----------
-    omegas : array-like, shape (n_omega,)
-        Array of frequencies.
-    eigenvalues : array-like, shape (N,)
-        Eigenvalues E_n.
-    eigenvectors : array-like, shape (N, N), optional
-        Eigenvectors. Required if diagonal_only=False.
-    eta : float, optional
-        Broadening parameter (default: 0.01).
-    diagonal_only : bool, optional
-        If True, compute only diagonal elements (default: False).
-        
-    Returns
-    -------
-    Array
-        If diagonal_only=True: shape (n_omega, N)
-        If diagonal_only=False: shape (n_omega, N, N)
-        
-    Examples
-    --------
-    >>> omegas = np.linspace(-5, 5, 100)
-    >>> A_diag = spectral_function_multi_omega(omegas, eigenvalues, diagonal_only=True)
-    >>> # Plot diagonal elements: LDOS
-    >>> plt.plot(omegas, A_diag[:, site_index])
+    Delegates to backend.spectral_function_multi_omega for actual implementation.
+    See backend.py or spectral_backend.py for details.
     """
-    omegas = np.asarray(omegas)
-    eigenvalues = np.asarray(eigenvalues)
-    
-    n_omega = len(omegas)
-    N = len(eigenvalues)
-    
-    if diagonal_only:
-        # Compute only diagonal A_nn(\Omega)
-        A = np.zeros((n_omega, N), dtype=float)
-        for i, omega in enumerate(omegas):
-            A[i] = spectral_function_diagonal(omega, eigenvalues, eta)
-    else:
-        # Compute full matrix A(\Omega)
-        if eigenvectors is None:
-            raise ValueError("eigenvectors required when diagonal_only=False")
-        
-        eigenvectors = np.asarray(eigenvectors, dtype=complex)
-        A = np.zeros((n_omega, N, N), dtype=float)
-        
-        for i, omega in enumerate(omegas):
-            G = greens.greens_function_eigenbasis(omega, eigenvalues, eigenvectors, eta)
-            A[i] = spectral_function(G)
-    
-    return A
-
-# =============================================================================
-# Momentum-Resolved Spectral Function
-# =============================================================================
+    if physics_backend is None:
+        raise ImportError("Physics backend not available")
+    return physics_backend.spectral_function_multi_omega(omegas, eigenvalues, eigenvectors, eta, diagonal_only, backend="default")
 
 def spectral_function_k_resolved(
-        omegas: Array,
-        k_points: Array,
-        eigenvalues_k: Array,
-        eta: float = 0.01
-) -> Array:
+        omegas          : Array,
+        k_points        : Array,
+        eigenvalues_k   : Array,
+        eta             : float = 0.01) -> Array:
     """
     Compute momentum-resolved spectral function A(k,\Omega).
     
-    For systems with momentum as a good quantum number, compute:
-        A(k,\Omega) = (η/\pi) / [(\Omega - E(k))^2 + η^2]
-    
-    Parameters
-    ----------
-    omegas : array-like, shape (n_omega,)
-        Frequencies.
-    k_points : array-like, shape (n_k, d)
-        k-points in Brillouin zone.
-    eigenvalues_k : array-like, shape (n_k,) or (n_k, n_bands)
-        Energy dispersion E(k). If 2D, includes multiple bands.
-    eta : float, optional
-        Broadening parameter (default: 0.01).
-        
-    Returns
-    -------
-    Array
-        Shape (n_k, n_omega) if eigenvalues_k is 1D,
-        Shape (n_k, n_bands, n_omega) if eigenvalues_k is 2D.
-        
-    Examples
-    --------
-    >>> # 1D tight-binding dispersion
-    >>> k_points = np.linspace(-np.pi, np.pi, 100)
-    >>> E_k = -2 * np.cos(k_points)  # dispersion
-    >>> omegas = np.linspace(-3, 3, 200)
-    >>> A_k_omega = spectral_function_k_resolved(omegas, k_points, E_k)
-    >>> plt.imshow(A_k_omega, aspect='auto', extent=[omegas[0], omegas[-1], k_points[0], k_points[-1]])
+    Delegates to backend.spectral_function_k_resolved for actual implementation.
+    See backend.py or spectral_backend.py for details.
     """
-    omegas = np.asarray(omegas)
-    eigenvalues_k = np.asarray(eigenvalues_k)
-    
-    n_omega = len(omegas)
-    
-    if eigenvalues_k.ndim == 1:
-        # Single band: shape (n_k,)
-        n_k = len(eigenvalues_k)
-        A = np.zeros((n_k, n_omega), dtype=float)
-        
-        for k_idx in range(n_k):
-            E_k = eigenvalues_k[k_idx]
-            A[k_idx, :] = (eta / np.pi) / ((omegas - E_k)**2 + eta**2)
-    
-    elif eigenvalues_k.ndim == 2:
-        # Multiple bands: shape (n_k, n_bands)
-        n_k, n_bands = eigenvalues_k.shape
-        A = np.zeros((n_k, n_bands, n_omega), dtype=float)
-        
-        for k_idx in range(n_k):
-            for band in range(n_bands):
-                E_k = eigenvalues_k[k_idx, band]
-                A[k_idx, band, :] = (eta / np.pi) / ((omegas - E_k)**2 + eta**2)
-    else:
-        raise ValueError("eigenvalues_k must be 1D or 2D")
-    
-    return A
-
-
-# =============================================================================
-# Integrated Spectral Function
-# =============================================================================
+    if physics_backend is None:
+        raise ImportError("Physics backend not available")
+    return physics_backend.spectral_function_k_resolved(omegas, k_points, eigenvalues_k, eta, backend="default")
 
 def integrated_spectral_weight(
-        spectral_function: Array,
-        omega_grid: Array,
-        omega_min: Optional[float] = None,
-        omega_max: Optional[float] = None
-) -> Union[float, Array]:
+        spectral_function   : Array,
+        omega_grid          : Array,
+        omega_min           : Optional[float] = None,
+        omega_max           : Optional[float] = None) -> Union[float, Array]:
     """
     Compute integrated spectral weight over an energy window.
     
-    W = ∫_{\Omega_min}^{\Omega_max} d\Omega A(\Omega)
-    
-    Parameters
-    ----------
-    spectral_function : array-like
-        Spectral function A(\Omega), shape (..., n_omega).
-    omega_grid : array-like, shape (n_omega,)
-        Frequency grid (must be uniformly spaced).
-    omega_min, omega_max : float, optional
-        Integration limits. If None, integrates over full range.
-        
-    Returns
-    -------
-    float or Array
-        Integrated spectral weight. Returns scalar if input is 1D,
-        otherwise returns array integrated along last axis.
-        
-    Notes
-    -----
-    Uses trapezoidal rule for integration.
+    Delegates to backend.integrated_spectral_weight for actual implementation.
+    See backend.py or spectral_backend.py for details.
     """
-    spectral_function = np.asarray(spectral_function)
-    omega_grid = np.asarray(omega_grid)
-    
-    # Determine integration window
-    if omega_min is None:
-        omega_min = omega_grid[0]
-    if omega_max is None:
-        omega_max = omega_grid[-1]
-    
-    # Find indices for integration window
-    mask = (omega_grid >= omega_min) & (omega_grid <= omega_max)
-    omega_window = omega_grid[mask]
-    A_window = spectral_function[..., mask]
-    
-    # Integrate using trapezoidal rule
-    return np.trapz(A_window, omega_window, axis=-1)
-
-
-# =============================================================================
-# Peak Finding and Analysis
-# =============================================================================
+    if physics_backend is None:
+        raise ImportError("Physics backend not available")
+    return physics_backend.integrated_spectral_weight(spectral_function, omega_grid, omega_min, omega_max, backend="default")
 
 def find_spectral_peaks(
-        spectral_function: Array,
-        omega_grid: Array,
-        threshold: float = 0.1,
-        min_distance: int = 5
-) -> Array:
+        spectral_function   : Array,
+        omega_grid          : Array,
+        threshold           : float = 0.1,
+        min_distance        : int = 5) -> Array:
     """
     Find peaks in spectral function.
     
-    Parameters
-    ----------
-    spectral_function : array-like, shape (n_omega,)
-        1D spectral function.
-    omega_grid : array-like, shape (n_omega,)
-        Frequency grid.
-    threshold : float, optional
-        Minimum relative height for peak detection (default: 0.1).
-    min_distance : int, optional
-        Minimum distance between peaks in grid points (default: 5).
-        
-    Returns
-    -------
-    Array
-        Frequencies of detected peaks.
-        
-    Notes
-    -----
-    Uses simple local maximum detection. For more sophisticated peak finding,
-    consider scipy.signal.find_peaks.
+    Delegates to backend.find_spectral_peaks for actual implementation.
+    See backend.py or spectral_backend.py for details.
     """
-    from scipy.signal import find_peaks
-    
-    spectral_function = np.asarray(spectral_function)
-    omega_grid = np.asarray(omega_grid)
-    
-    # Normalize for threshold
-    A_max = np.max(spectral_function)
-    height_threshold = threshold * A_max
-    
-    # Find peaks
-    peak_indices, _ = find_peaks(
-        spectral_function,
-        height=height_threshold,
-        distance=min_distance
-    )
-    
-    return omega_grid[peak_indices]
-
+    if physics_backend is None:
+        raise ImportError("Physics backend not available")
+    return physics_backend.find_spectral_peaks(spectral_function, omega_grid, threshold, min_distance, backend="default")
 
 # =============================================================================
 # Exports

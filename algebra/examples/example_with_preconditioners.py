@@ -290,7 +290,7 @@ def example_gram_form_with_preconditioner():
     # With Jacobi preconditioner for GRAM form
     # Preconditioner acts on Gram matrix S\dag S
     precond             = JacobiPreconditioner(is_gram=True)
-    precond.set(S, ap=S_dag)  # Pass both S and S† for Gram form
+    precond.set(S, ap=S_dag)  # Pass both S and Sdagger  for Gram form
 
     precond_apply       = precond.get_apply()
     result_precond      = solve_func(s=S, s_p=S_dag, b=forces, x0=None, tol=1e-6, maxiter=200, precond_apply=precond_apply)

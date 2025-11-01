@@ -66,6 +66,15 @@ class EigenResult(NamedTuple):
             Whether the solver converged successfully
         residual_norms: 
             Residual norms ||A v - \lambda v|| for each eigenpair (optional)
+        ----------------------------------------------------------------------------
+        Specific to iterative/Lanczos methods:
+        ----------------------------------------------------------------------------
+        lanczos_alpha:
+            Diagonal elements of Lanczos tridiagonal matrix (for Lanczos-based solvers)
+        lanczos_beta:
+            Off-diagonal elements of Lanczos tridiagonal matrix (for Lanczos-based solvers)
+        krylov_basis:
+            Orthonormal Krylov basis vectors used in iterative methods (for spectral functions)
     """
     eigenvalues     : NDArray
     eigenvectors    : NDArray
@@ -73,6 +82,10 @@ class EigenResult(NamedTuple):
     iterations      : Optional[int]     = None
     converged       : bool              = True
     residual_norms  : Optional[NDArray] = None
+    # ------------------------------------------------------------------------
+    lanczos_alpha   : Optional[NDArray] = None
+    lanczos_beta    : Optional[NDArray] = None
+    krylov_basis    : Optional[NDArray] = None
 
     def __repr__(self):
         n_eigs      = len(self.eigenvalues) if self.eigenvalues is not None else 0

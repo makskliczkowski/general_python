@@ -3,6 +3,7 @@
 The `general_python.algebra` package collects deterministic linear-algebra and random-matrix tools that form the numerical backbone of QES.  Every module is written to admit NumPy or JAX backends and focuses on well-defined mathematical problems.
 
 ## Core Problem Statements
+
 - **Linear systems** — Solve $A x = b$ with optional left/right preconditioning $M^{-1} A x = M^{-1} b$ or $A M^{-1} y = b$, $x = M^{-1} y$.
 - **Eigenproblems** — Approximate $(A - \lambda I) v = 0$ through Krylov bases $\mathcal{K}_k(A, v_0) = \mathrm{span}\{v_0, A v_0, \dots, A^{k-1} v_0\}$.
 - **Matrix factorizations** — Compute Pfaffians and Hafnians of structured matrices:
@@ -12,6 +13,7 @@ The `general_python.algebra` package collects deterministic linear-algebra and r
 - **Initial value problems** — Integrate $\dot{y}(t) = f(t, y)$ via explicit solver interfaces with adaptive backends.
 
 ## Package Layout
+
 | Path | Mathematical focus | Notes |
 |------|--------------------|-------|
 | `linalg.py` | Dense basis transforms, tensor products, and inner/outer products. Implements $U A U^\dagger$ basis changes and Kronecker products consistent with backend dtype promotion. | Primary entry-point for deterministic dense operations. |
@@ -26,11 +28,13 @@ The `general_python.algebra` package collects deterministic linear-algebra and r
 | `utils.py` | Backend negotiation (`get_backend`, `maybe_jit`) and array typing used across the package. | Centralizes NumPy/JAX feature detection. |
 
 ## Backend Guarantees
+
 - Functions accept `backend="default"`, resolving to JAX if available, else NumPy.  Explicit `backend="np"` or `"jnp"` yields deterministic behavior.
 - All public solvers accept matrix-free callables $v \mapsto A v$ and optional preconditioner callbacks $v \mapsto M^{-1} v$, enforcing shape compatibility before iteration.
 - Random generators expose seedable registries so that $\mathbb{E}[A^\dagger A] = I$ holds across backends.
 
 ## Cross-References
+
 - Detailed solver convergence theory: `solvers/README.md`.
 - Eigenvalue algorithm roadmap: `eigen/README.md` (with derivations in `eigen/IMPLEMENTATION_SUMMARY.md`).
 - Pfaffian/Hafnian numerics: `utilities/README.md`.
@@ -38,4 +42,5 @@ The `general_python.algebra` package collects deterministic linear-algebra and r
 - Preconditioner catalogue and proofs: `PRECONDITIONERS.md`.
 
 ## Copyright
+
 Copyright (c) 2025 Maksymilian Kliczkowski. All rights reserved.

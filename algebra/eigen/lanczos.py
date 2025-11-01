@@ -405,7 +405,11 @@ class LanczosEigensolver(EigenSolver):
             subspacevectors = V,
             iterations      = max_iter,
             converged       = converged,
-            residual_norms  = residual_norms
+            residual_norms  = residual_norms,
+            # Lanczos coefficients specifically
+            lanczos_alpha   = alpha,
+            lanczos_beta    = beta,
+            krylov_basis    = V
         )
     
     # ------------------------------------------------------------------------------------
@@ -514,7 +518,11 @@ class LanczosEigensolver(EigenSolver):
             subspacevectors     = np.array(V),
             iterations          = actual_iters,
             converged           = bool(converged),
-            residual_norms      = np.array(residual_norms)
+            residual_norms      = np.array(residual_norms),
+            # Lanczos coefficients specifically
+            lanczos_alpha       = np.array(alpha),
+            lanczos_beta        = np.array(beta),
+            krylov_basis        = np.array(V)
         )
     
     # ------------------------------------------------------------------------------------

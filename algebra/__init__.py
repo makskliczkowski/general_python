@@ -26,18 +26,23 @@ import time
 # from general_python.algebra import solver
 # from general_python.algebra import preconditioners
 # from general_python.algebra import ode
-from .solvers import SolverType, generate_test_mat_vec, choose_solver
-from .solvers.backend_ops import get_backend_ops, BackendOps, default_ops
-from .preconditioners import choose_precond, Preconditioner
+try:
+    from .solvers import SolverType, generate_test_mat_vec, choose_solver
+    from .solvers.backend_ops import get_backend_ops, BackendOps, default_ops
+    from .preconditioners import choose_precond, Preconditioner
+    from . import backend_linalg as LinalgModule
+except ImportError as e:
+    raise ImportError("Required modules from .solvers or .preconditioners could not be imported.") from e
 
-from ..common.plot import MatrixPrinter
-from ..common.flog import get_global_logger as get_logger
+try:
+    from ..common.plot import MatrixPrinter
+    from ..common.flog import get_global_logger as get_logger
+except ImportError as e:
+    raise ImportError("Required modules from ..common.plot or ..common.flog could not be imported.") from e
 
-# ##################################################################################################
+####################################################################################################
 # Test the algebra module
 ####################################################################################################
-
-from . import linalg as LinalgModule
 
 class AlgebraTests:
     '''

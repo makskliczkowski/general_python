@@ -35,7 +35,7 @@ else:
 
 def greens_function_dense(omega: float, hamiltonian: Array, eta: float = 0.01) -> Array:
     """
-    Compute retarded Green's function G(\Omega) = (\Omega + iη - H)^(-1) for dense Hamiltonian.
+    Compute retarded Green's function G(\Omega) = (\Omega + ieta  - H)^(-1) for dense Hamiltonian.
     
     Parameters
     ----------
@@ -44,7 +44,7 @@ def greens_function_dense(omega: float, hamiltonian: Array, eta: float = 0.01) -
     hamiltonian : array-like, shape (N, N)
         Hamiltonian matrix H.
     eta : float, optional
-        Broadening parameter η > 0 (default: 0.01).
+        Broadening parameter eta  > 0 (default: 0.01).
         
     Returns
     -------
@@ -59,7 +59,7 @@ def greens_function_dense(omega: float, hamiltonian: Array, eta: float = 0.01) -
     hamiltonian = np.asarray(hamiltonian, dtype=complex)
     N           = hamiltonian.shape[0]
     
-    # Construct (\Omega + iη)I - H
+    # Construct (\Omega + ieta )I - H
     matrix      = (omega + 1j * eta) * np.eye(N, dtype=complex) - hamiltonian
     
     # Solve: G = matrix^(-1)
@@ -79,7 +79,7 @@ def greens_function_sparse(omega: float, hamiltonian: sp.spmatrix, eta: float = 
     hamiltonian : scipy.sparse matrix, shape (N, N)
         Sparse Hamiltonian matrix H.
     eta : float, optional
-        Broadening parameter η > 0 (default: 0.01).
+        Broadening parameter eta  > 0 (default: 0.01).
         
     Returns
     -------
@@ -93,7 +93,7 @@ def greens_function_sparse(omega: float, hamiltonian: sp.spmatrix, eta: float = 
     """
     N = hamiltonian.shape[0]
     
-    # Construct (\Omega + iη)I - H as sparse matrix
+    # Construct (\Omega + ieta )I - H as sparse matrix
     identity_sparse = sp.eye(N, dtype=complex, format='csr')
     matrix          = (omega + 1j * eta) * identity_sparse - hamiltonian
     
@@ -111,7 +111,7 @@ def greens_function_eigenbasis(omega: float, eigenvalues: Array, eigenvectors: A
     """
     Compute Green's function using eigenvalue decomposition.
     
-    G(\Omega) = U * diag(1/(\Omega + iη - E_n)) * U\dag
+    G(\Omega) = U * diag(1/(\Omega + ieta  - E_n)) * U\dag
     
     where H = U * diag(E_n) * U\dag.
     
@@ -124,7 +124,7 @@ def greens_function_eigenbasis(omega: float, eigenvalues: Array, eigenvectors: A
     eigenvectors : array-like, shape (N, N)
         Eigenvectors U (columns are eigenstates).
     eta : float, optional
-        Broadening parameter η > 0 (default: 0.01).
+        Broadening parameter eta  > 0 (default: 0.01).
         
     Returns
     -------
@@ -139,7 +139,7 @@ def greens_function_eigenbasis(omega: float, eigenvalues: Array, eigenvectors: A
     eigenvalues     = np.asarray(eigenvalues)
     eigenvectors    = np.asarray(eigenvectors, dtype=complex)
 
-    # Diagonal matrix elements: 1/(\Omega + iη - E_n)
+    # Diagonal matrix elements: 1/(\Omega + ieta  - E_n)
     diag_inv        = 1.0 / (omega + 1j * eta - eigenvalues)
     
     # G = U * diag_inv * U\dag
@@ -152,7 +152,7 @@ def greens_function_diagonal(omega: float, eigenvalues: Array, eta: float = 0.01
     """
     Compute diagonal Green's function in energy eigenbasis.
     
-    G_nn(\Omega) = 1/(\Omega + iη - E_n)
+    G_nn(\Omega) = 1/(\Omega + ieta  - E_n)
     
     Parameters
     ----------
@@ -161,7 +161,7 @@ def greens_function_diagonal(omega: float, eigenvalues: Array, eta: float = 0.01
     eigenvalues : array-like, shape (N,)
         Eigenvalues E_n.
     eta : float, optional
-        Broadening parameter η > 0 (default: 0.01).
+        Broadening parameter eta  > 0 (default: 0.01).
         
     Returns
     -------
