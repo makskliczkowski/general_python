@@ -274,7 +274,7 @@ def structure_factor_sum_rule(
         omega_grid: Array
 ) -> float:
     """
-    Compute sum rule: ∫ d\Omega S(q,\Omega) = <S\dag_q S_q>.
+    Compute sum rule: int d\Omega S(q,\Omega) = <S\dag_q S_q>.
     
     Parameters
     ----------
@@ -296,7 +296,7 @@ def structure_factor_first_moment(
         omega_grid: Array
 ) -> float:
     """
-    Compute first moment: ∫ d\Omega \Omega S(q,\Omega) / ∫ d\Omega S(q,\Omega).
+    Compute first moment: int d\Omega \Omega S(q,\Omega) / int d\Omega S(q,\Omega).
     
     This gives the average excitation energy at momentum q.
     

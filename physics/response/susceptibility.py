@@ -2,7 +2,7 @@
 Magnetic and charge susceptibilities chi(q,\Omega) for quantum systems.
 
 The dynamical susceptibility is the linear response function:
-    chi(q,\Omega) = i∫dt e^{i\Omegat} <[A_q(t), A\dag_{-q}(0)]>
+    chi(q,\Omega) = iintdt e^{i\Omegat} <[A_q(t), A\dag_{-q}(0)]>
 
 Related to structure factor via fluctuation-dissipation theorem:
     S(q,\Omega) = -(1/\pi) Im[chi(q,\Omega)] / (1 - exp(-\beta\Omega))
@@ -438,7 +438,7 @@ def susceptibility_sum_rule_check(
     Returns
     -------
     integral : float
-        ∫ d\Omega \Omega Im[chi(q,\Omega)].
+        int d\Omega \Omega Im[chi(q,\Omega)].
     expected : float
         -\pi/2 <commutator>.
     """

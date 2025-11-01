@@ -475,12 +475,11 @@ def integrated_spectral_weight(
         omega_grid          : Array,
         omega_min           : Optional[float] = None,
         omega_max           : Optional[float] = None,
-        backend             : str = "default"
-) -> Union[float, Array]:
+        backend             : str = "default") -> Union[float, Array]:
     r"""
     Compute integrated spectral weight over an energy window.
     
-    W = ∫_{omega_min}^{omega_max} domega A(omega)
+    W = int_{omega_min}^{omega_max} domega A(omega)
     
     Parameters
     ----------
@@ -601,6 +600,545 @@ def find_spectral_peaks(
 
 
 # =============================================================================
+# Thermal Utilities (Shared with Susceptibility Module)
+# =============================================================================
+
+def thermal_weights(
+        eigenvalues : Array,
+        temperature : float = 0.0,
+        backend     : str = "default"
+) -> Array:
+    r"""
+    Compute thermal occupation weights (Boltzmann/Fermi/Bose factors).
+    
+    For temperature T > 0:
+        ρ_n = exp(-β(E_n - E_0)) / Z, where β = 1/k_B T
+    
+    For temperature T = 0:
+        ρ_0 = 1, all others = 0 (ground state only)
+    
+    Parameters
+    ----------
+    eigenvalues : array-like, shape (N,)
+        Eigenvalues E_n. Must be real.
+    temperature : float, optional
+        Temperature in energy units (default: 0). 
+        If 0, returns ground-state-only weights.
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    Array, shape (N,), dtype float
+        Normalized thermal weights (sum to 1).
+        
+    Examples
+    --------
+    >>> E = np.array([-2, -1, 0, 1, 2])
+    >>> rho_T0 = thermal_weights(E, temperature=0.0)     # [1, 0, 0, 0, 0]
+    >>> rho_T1 = thermal_weights(E, temperature=1.0)     # Boltzmann distribution
+    """
+    be = get_backend(backend)
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    
+    if temperature <= 0:
+        # T=0: ground state only
+        rho = be.zeros(len(eigenvalues), dtype=be.float64)
+        rho_list = rho.tolist() if hasattr(rho, 'tolist') else list(rho)
+        rho_list[0] = 1.0
+        return be.asarray(rho_list, dtype=be.float64)
+    else:
+        # Finite temperature
+        beta = 1.0 / temperature
+        E_min = be.min(eigenvalues)
+        rho = be.exp(-beta * (eigenvalues - E_min))
+        Z = be.sum(rho)
+        return rho / Z
+
+
+# =============================================================================
+# Operator-Projected Spectral Functions (Many-body)
+# =============================================================================
+
+def operator_spectral_function_lehmann(
+        omega               : float,
+        eigenvalues         : Array,
+        eigenvectors        : Array,
+        operator            : Array,
+        eta                 : float = 0.01,
+        temperature         : float = 0.0,
+        backend             : str = "default"
+) -> float:
+    r"""
+    Compute operator-projected spectral function using Lehmann representation.
+    
+    A_O(ω) = Σ_{m,n} (ρ_m - ρ_n) |<m|O|n>|² δ(ω - (E_n - E_m))
+    
+    This represents the contribution of operator O to the spectrum:
+    - Used for spin/charge/current response in many-body systems
+    - Naturally accounts for finite temperature via ρ_n
+    - Gives matrix elements <m|O|n> between ALL many-body eigenstates
+    
+    Parameters
+    ----------
+    omega : float
+        Frequency ω.
+    eigenvalues : array-like, shape (N,)
+        Hamiltonian eigenvalues E_n.
+    eigenvectors : array-like, shape (N, N)
+        Hamiltonian eigenvectors (columns = eigenstates).
+    operator : array-like, shape (N, N)
+        Many-body operator O (e.g., magnetization, density).
+    eta : float, optional
+        Broadening parameter (default: 0.01). Controls peak width.
+    temperature : float, optional
+        Temperature in energy units (default: 0).
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    float
+        Operator-projected spectral function A_O(ω).
+        
+    Notes
+    -----
+    At T=0, only ground-state contributions (|<n|O|0>|²) appear.
+    At T>0, thermal factors ρ_m ≠ ρ_n activate all transitions.
+    
+    This is the foundation for computing susceptibilities:
+    χ_OO(ω) can be reconstructed from this for all operators.
+    
+    See Also
+    --------
+    operator_spectral_function_multi_omega : Vectorized over frequencies
+    thermal_weights : Thermal occupation factors
+    
+    Examples
+    --------
+    >>> E, V = np.linalg.eigh(H)
+    >>> S_z = compute_spin_operator()  # Your magnetization
+    >>> A_sz = operator_spectral_function_lehmann(omega=0.5, 
+    ...                                             eigenvalues=E, 
+    ...                                             eigenvectors=V,
+    ...                                             operator=S_z,
+    ...                                             temperature=1.0)
+    """
+    be = get_backend(backend)
+    
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    eigenvectors = be.asarray(eigenvectors, dtype=be.complex128)
+    operator = be.asarray(operator, dtype=be.complex128)
+    
+    # Ensure operator is 2D and properly shaped
+    if operator.ndim == 0:
+        # Scalar
+        operator = be.eye(len(eigenvalues), dtype=be.complex128) * operator
+    elif operator.ndim == 1:
+        # 1D array - make it diagonal
+        operator = be.diag(operator)
+    
+    N = len(eigenvalues)
+    
+    # Transform operator to eigenbasis: O_nm = <n|O|m>
+    O_eigen = eigenvectors.conj().T @ operator @ eigenvectors
+    
+    # Thermal weights
+    rho = thermal_weights(eigenvalues, temperature, backend)
+    
+    # Lorentzian broadening kernel
+    def lorentzian(delta_E):
+        return (eta / np.pi) / (delta_E**2 + eta**2)
+    
+    # Lehmann sum over all transitions
+    A = 0.0
+    for m in range(N):
+        for n in range(N):
+            if be.abs(rho[m] - rho[n]) < 1e-14:
+                continue
+            delta_E = omega - (eigenvalues[n] - eigenvalues[m])
+            matrix_element_sq = be.abs(O_eigen[m, n])**2
+            A += (rho[m] - rho[n]) * matrix_element_sq * lorentzian(delta_E)
+    
+    return float(be.real(A))
+
+
+def operator_spectral_function_multi_omega(
+        omegas              : Array,
+        eigenvalues         : Array,
+        eigenvectors        : Array,
+        operator            : Array,
+        eta                 : float = 0.01,
+        temperature         : float = 0.0,
+        backend             : str = "default"
+) -> Array:
+    r"""
+    Compute operator-projected spectral function for multiple frequencies.
+    
+    Vectorized version of operator_spectral_function_lehmann.
+    
+    Parameters
+    ----------
+    omegas : array-like, shape (n_omega,)
+        Frequency grid.
+    eigenvalues : array-like, shape (N,)
+        Eigenvalues.
+    eigenvectors : array-like, shape (N, N)
+        Eigenvectors.
+    operator : array-like, shape (N, N)
+        Operator O.
+    eta : float, optional
+        Broadening (default: 0.01).
+    temperature : float, optional
+        Temperature (default: 0).
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    Array, shape (n_omega,), dtype float
+        Spectral function A_O(ω) for each ω.
+        
+    Examples
+    --------
+    >>> omegas = np.linspace(-5, 5, 200)
+    >>> A_sz = operator_spectral_function_multi_omega(omegas, E, V, S_z, temperature=1.0)
+    >>> plt.plot(omegas, A_sz)
+    """
+    be = get_backend(backend)
+    omegas = be.asarray(omegas)
+    
+    n_omega = len(omegas)
+    A = be.zeros(n_omega, dtype=be.float64)
+    
+    for i, omega in enumerate(omegas):
+        # Convert omega to Python float (avoid numpy scalar issues)
+        omega_val = float(omega) if hasattr(omega, '__float__') else omega
+        A_i = operator_spectral_function_lehmann(
+            omega_val, eigenvalues, eigenvectors, operator,
+            eta=eta, temperature=temperature, backend=backend
+        )
+        if JAX_AVAILABLE and backend == "jax":
+            A = A.at[i].set(A_i)
+        else:
+            A[i] = A_i
+    
+    return A
+
+
+# =============================================================================
+# Bubble Susceptibility (Quadratic / Mean-Field)
+# =============================================================================
+
+def susceptibility_bubble(
+        omega               : float,
+        eigenvalues         : Array,
+        vertex              : Optional[Array] = None,
+        occupation          : Optional[Array] = None,
+        eta                 : float = 0.01,
+        backend             : str = "default"
+) -> complex:
+    r"""
+    Compute bare susceptibility (Lindhard function) from single-particle spectrum.
+    
+    χ⁰(ω) = Σ_{m,n} (f_m - f_n) |V_{mn}|² / (ω + iη - (E_n - E_m))
+    
+    This is the bubble diagram contribution, valid for quadratic or mean-field
+    Hamiltonians where Wick's theorem holds.
+    
+    Parameters
+    ----------
+    omega : float or complex
+        Frequency ω.
+    eigenvalues : array-like, shape (N,)
+        Single-particle energies E_n (not many-body eigenvalues!).
+    vertex : array-like, shape (N, N), optional
+        Vertex/coupling matrix V_{mn} (e.g., velocity for conductivity).
+        If None, assumes identity (density-density response).
+    occupation : array-like, shape (N,), optional
+        Single-particle occupations f_n (Fermi/Bose factors).
+        If None, assumes ground state (f_n = Θ(-E_n) for fermions at T=0).
+    eta : float, optional
+        Broadening (default: 0.01).
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    complex
+        Bare susceptibility χ⁰(ω) at this frequency.
+        
+    Notes
+    -----
+    The occupation f_n should be computed from the single-particle eigenenergies,
+    NOT from the many-body Hamiltonian. Typical choices:
+    
+    - Fermions at T=0: f_n = Θ(-E_n) [filled orbitals below Fermi]
+    - Fermions at T>0: f_n = 1/(1 + exp(β(E_n - μ)))
+    - Bosons: f_n = 1/(exp(β E_n) - 1)
+    
+    For density-density response, vertex = I (identity).
+    For charge/current response, vertex encodes the operator O_mn = <m|O|n>.
+    
+    See Also
+    --------
+    conductivity_kubo_bubble : Optical conductivity σ(ω) from bubbles
+    
+    Examples
+    --------
+    >>> # Tight-binding chain: E_k = -2cos(k)
+    >>> E_k = np.array([-2, -1.8, -1.5, 0, 1.5, 1.8, 2])
+    >>> f = 1/(1 + np.exp(E_k/(0.1)))  # Fermi-Dirac at T=0.1
+    >>> chi0 = susceptibility_bubble(omega=0.5, eigenvalues=E_k, occupation=f)
+    """
+    be = get_backend(backend)
+    
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    omega_complex = be.asarray(omega, dtype=be.complex128)
+    eta_complex = be.asarray(eta, dtype=be.complex128)
+    
+    N = len(eigenvalues)
+    
+    if vertex is None:
+        vertex = be.eye(N, dtype=be.complex128)
+    else:
+        vertex = be.asarray(vertex, dtype=be.complex128)
+    
+    if occupation is None:
+        # T=0: all states below Fermi filled (filled Fermi sea)
+        occupation = be.where(eigenvalues < 0, 1.0, 0.0)
+    else:
+        occupation = be.asarray(occupation, dtype=be.float64)
+    
+    # Bubble: χ⁰ = Σ_{mn} (f_m - f_n) |V_{mn}|² / (ω + iη - (E_n - E_m))
+    chi = 0.0 + 0.0j
+    for m in range(N):
+        for n in range(N):
+            if be.abs(occupation[m] - occupation[n]) < 1e-14:
+                continue
+            denom = omega_complex + 1j * eta_complex - (eigenvalues[n] - eigenvalues[m])
+            V_mn_sq = be.abs(vertex[m, n])**2
+            chi += (occupation[m] - occupation[n]) * V_mn_sq / denom
+    
+    return complex(chi)
+
+
+def susceptibility_bubble_multi_omega(
+        omegas              : Array,
+        eigenvalues         : Array,
+        vertex              : Optional[Array] = None,
+        occupation          : Optional[Array] = None,
+        eta                 : float = 0.01,
+        backend             : str = "default"
+) -> Array:
+    r"""
+    Compute bare susceptibility for multiple frequencies.
+    
+    Vectorized version of susceptibility_bubble.
+    
+    Parameters
+    ----------
+    omegas : array-like, shape (n_omega,)
+        Frequency grid.
+    eigenvalues : array-like, shape (N,)
+        Single-particle energies.
+    vertex : array-like, shape (N, N), optional
+        Vertex matrix. If None, uses identity.
+    occupation : array-like, shape (N,), optional
+        Occupations. If None, assumes T=0 filled Fermi sea.
+    eta : float, optional
+        Broadening (default: 0.01).
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    Array, shape (n_omega,), dtype complex
+        χ⁰(ω) for each ω.
+    """
+    be = get_backend(backend)
+    omegas = be.asarray(omegas)
+    
+    n_omega = len(omegas)
+    chi = be.zeros(n_omega, dtype=be.complex128)
+    
+    for i, omega in enumerate(omegas):
+        chi_i = susceptibility_bubble(
+            float(omega), eigenvalues, vertex, occupation,
+            eta=eta, backend=backend
+        )
+        if JAX_AVAILABLE and backend == "jax":
+            chi = chi.at[i].set(chi_i)
+        else:
+            chi[i] = chi_i
+    
+    return chi
+
+
+# =============================================================================
+# Kubo Conductivity (Quadratic Systems)
+# =============================================================================
+
+def conductivity_kubo_bubble(
+        omega               : float,
+        eigenvalues         : Array,
+        velocity_matrix     : Array,
+        occupation          : Optional[Array] = None,
+        eta                 : float = 0.01,
+        backend             : str = "default"
+) -> complex:
+    r"""
+    Compute optical conductivity from Kubo-Greenwood formula (bubble diagram).
+    
+    σ(ω) = (1/(2ω)) Σ_{mn} (f_m - f_n) |<m|v|n>|² / (ω + iη - (E_n - E_m))
+    
+    This is the single-particle bubble contribution, valid for non-interacting
+    or mean-field Hamiltonians.
+    
+    Parameters
+    ----------
+    omega : float or complex
+        Frequency ω (should be real for physical conductivity).
+    eigenvalues : array-like, shape (N,)
+        Single-particle eigenenergies.
+    velocity_matrix : array-like, shape (N, N)
+        Velocity/momentum matrix elements v_mn = <m|v|n>.
+        Typically: v_mn = ∂H/∂k in k-space, or related to hopping in real space.
+    occupation : array-like, shape (N,), optional
+        Single-particle occupations f_n.
+        If None, assumes ground state (T=0).
+    eta : float, optional
+        Broadening/scattering rate (default: 0.01).
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    complex
+        Conductivity σ(ω).
+        
+    Notes
+    -----
+    The formula is:
+        σ(ω) = (1/(2ω)) χ⁰_{vv}(ω)
+    
+    Real part Re[σ(ω)] gives absorptive conductivity.
+    Imaginary part Im[σ(ω)] gives reactive effects.
+    
+    For optical conductivity (intraband vs interband):
+    - Intraband: f_m ≠ f_n within partially filled band
+    - Interband: f_m ≠ f_n across band gap
+    
+    See Also
+    --------
+    susceptibility_bubble : General bubble susceptibility
+    
+    Examples
+    --------
+    >>> # Graphene-like: linear dispersion
+    >>> E = np.array([-1, -0.5, 0, 0.5, 1])
+    >>> v = np.array([[0, 1, 0, 0, 0],
+    ...               [1, 0, 1, 0, 0],
+    ...               [0, 1, 0, 1, 0],
+    ...               [0, 0, 1, 0, 1],
+    ...               [0, 0, 0, 1, 0]])
+    >>> f = (E < 0).astype(float)  # filled below E=0
+    >>> sigma = conductivity_kubo_bubble(omega=0.5, eigenvalues=E, 
+    ...                                   velocity_matrix=v, occupation=f)
+    """
+    be = get_backend(backend)
+    
+    omega_complex = be.asarray(omega, dtype=be.complex128)
+    
+    # Compute χ⁰ from velocity vertex
+    chi_vv = susceptibility_bubble(
+        omega, eigenvalues, vertex=velocity_matrix,
+        occupation=occupation, eta=eta, backend=backend
+    )
+    
+    # σ(ω) = (1/(2ω)) χ⁰_{vv}(ω)
+    # Handle ω=0 carefully
+    if be.abs(omega_complex) < 1e-14:
+        return 0.0 + 0.0j
+    
+    sigma = chi_vv / (2.0 * omega_complex)
+    return complex(sigma)
+
+
+# =============================================================================
+# Kramers-Kronig Relations
+# =============================================================================
+
+def kramers_kronig_transform(
+        Im_chi           : Array,
+        omega_grid       : Array,
+        backend          : str = "default"
+) -> Array:
+    r"""
+    Reconstruct Re[χ(ω)] from Im[χ(ω)] using Kramers-Kronig relations.
+    
+    Re[χ(ω)] = (2/π) P int_0^∞ dω' (ω' Im[χ(ω')] / (ω'² - ω²))
+    
+    where P denotes principal value.
+    
+    Parameters
+    ----------
+    Im_chi : array-like, shape (n_omega,)
+        Imaginary part of susceptibility (must be real-valued).
+    omega_grid : array-like, shape (n_omega,)
+        Frequency grid. Should be dense and include positive/negative ω symmetrically
+        for best accuracy.
+    backend : str, optional
+        Numerical backend (default: 'default').
+        
+    Returns
+    -------
+    Array, shape (n_omega,)
+        Real part Re[χ(ω)].
+        
+    Notes
+    -----
+    This uses a simple numerical Hilbert transform via integration.
+    For high accuracy, use scipy.integrate.quad with analytic kernels.
+    
+    Assumes Im[χ(ω)] decays at large |ω|.
+    
+    See Also
+    --------
+    scipy.integrate.hilbert : More sophisticated Hilbert transform
+    
+    Examples
+    --------
+    >>> omegas = np.linspace(-10, 10, 500)
+    >>> Im_chi = -0.1 / ((omegas - 1)**2 + 0.1**2)  # Lorentzian
+    >>> Re_chi = kramers_kronig_transform(Im_chi, omegas)
+    """
+    from scipy import integrate
+    
+    be = get_backend(backend)
+    Im_chi = np.asarray(Im_chi, dtype=np.float64)
+    omega_grid = np.asarray(omega_grid, dtype=np.float64)
+    
+    n_omega = len(omega_grid)
+    Re_chi = np.zeros(n_omega, dtype=np.float64)
+    
+    for i, omega in enumerate(omega_grid):
+        # Avoid division by zero
+        mask = np.abs(omega_grid - omega) > 1e-10
+        omega_prime = omega_grid[mask]
+        Im_chi_prime = Im_chi[mask]
+        
+        # Integrand: ω' Im[χ(ω')] / (ω'² - ω²)
+        integrand = omega_prime * Im_chi_prime / (omega_prime**2 - omega**2)
+        
+        # Integrate (could use more sophisticated method)
+        integral = np.trapz(integrand, omega_prime)
+        Re_chi[i] = (2.0 / np.pi) * integral
+    
+    return be.asarray(Re_chi, dtype=be.float64)
+
+
+# =============================================================================
 # Exports
 # =============================================================================
 
@@ -619,6 +1157,18 @@ __all__ = [
     'integrated_spectral_weight',
     # Analysis
     'find_spectral_peaks',
+    # Thermal utilities
+    'thermal_weights',
+    # Operator-projected spectral (many-body)
+    'operator_spectral_function_lehmann',
+    'operator_spectral_function_multi_omega',
+    # Bubble susceptibilities (quadratic)
+    'susceptibility_bubble',
+    'susceptibility_bubble_multi_omega',
+    # Kubo conductivity
+    'conductivity_kubo_bubble',
+    # Kramers-Kronig
+    'kramers_kronig_transform',
 ]
 
 # =============================================================================

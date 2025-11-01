@@ -304,7 +304,7 @@ def dos_from_spectral(
     """
     Compute DOS from spectral function A(k,\Omega) by integrating over k.
     
-    DOS(\Omega) = ∫ dk A(k,\Omega) / \Omega_BZ
+    DOS(\Omega) = int dk A(k,\Omega) / \Omega_BZ
     
     Parameters
     ----------
