@@ -130,7 +130,7 @@ class UnifiedResponseFunction:
         Parameters
         ----------
         operator : array-like
-            Operator O for response χ_OO(ω).
+            Operator O for response χ_OO(omega ).
         omega_grid : array-like
             Frequency grid for evaluation.
         eta : float, optional
@@ -144,7 +144,7 @@ class UnifiedResponseFunction:
         Returns
         -------
         chi : array-like
-            Response function χ(ω) or A(ω).
+            Response function χ(omega ) or A(omega ).
         method : str
             Which method was used ("many-body-lehmann", "quadratic-bubble", etc.)
         """

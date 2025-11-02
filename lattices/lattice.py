@@ -655,6 +655,97 @@ class Lattice(ABC):
         return (wx, wy, wz)
 
     # ------------------------------------------------------------------
+    #! Chirality helpers
+    # ------------------------------------------------------------------
+    
+    def get_nnn_middle_sites(self, i: int, j: int,
+                             orientation: Optional[str] = None) -> list[int]:
+        """
+        Return the list of 'middle' sites l that are nearest neighbors
+        of both i and j — i.e., sites forming two-step NNN paths i-l-j.
+
+        Works for any lattice that implements get_nn(site, idx)
+        and get_nn_num(site).
+
+        Parameters
+        ----------
+        i, j : int
+            Site indices.
+        orientation : {'anticlockwise', 'clockwise', None}, optional
+            If provided, will sort/choose based on geometric angle.
+            Default: None (return all middle sites).
+
+        Returns
+        -------
+        list[int]
+            List of middle-site indices (can be 0, 1, or 2 elements).
+        """
+        nn_i = [self.get_nn(i, k) for k in range(self.get_nn_num(i))]
+        nn_j = [self.get_nn(j, k) for k in range(self.get_nn_num(j))]
+        mids = list(set(nn_i).intersection(nn_j))
+        if not mids or orientation is None:
+            return mids
+
+        # Optional: choose one by local geometry
+        if len(mids) > 1:
+            ri      = np.array(self.get_coordinates(i))
+            rj      = np.array(self.get_coordinates(j))
+            centers = []
+            for l in mids:
+                rl      = np.array(self.get_coordinates(l))
+                cross_z = np.cross(rl - ri, rj - rl)[-1]
+                centers.append((l, cross_z))
+            if orientation.lower().startswith("anti"):
+                mids    = [l for (l, cz) in centers if cz > 0]
+            elif orientation.lower().startswith("clock"):
+                mids    = [l for (l, cz) in centers if cz < 0]
+        return mids
+
+    def get_chirality_sign(self, i: int, j: int, normal: Optional[np.ndarray] = None, orientation: Optional[str] = None) -> int:
+        r"""
+        Compute the local orientation (chirality) sign \nu_{ij} = \pm 1 for a NNN pair (i,j),
+        defined by the cross product of the two bond vectors i-l and l-j.
+
+        Works for any 2D or quasi-2D lattice with known site coordinates.
+
+        Parameters
+        ----------
+        i, j : int
+            Site indices (next-nearest neighbors).
+        normal : np.ndarray, optional
+            Orientation of the lattice plane (default: +z for 2D).
+
+        Returns
+        -------
+        int
+            +1 for anticlockwise, -1 for clockwise, 0 if not a valid NNN pair.
+        """
+        if self.dim < 2:
+            raise ValueError("Chirality sign is only defined for 2D or higher-dimensional lattices.")
+        
+        # Default normal: +z
+        if normal is None:
+            normal = np.array([0, 0, 1.0])
+
+        # find common neighbor(s)
+        mids = self.get_nnn_middle_sites(i, j, orientation=orientation)
+        if not mids:
+            return 0
+
+        # Choose one middle site (if multiple, pick the first or average)
+        l       = mids[0]
+        ri      = np.array(self.get_coordinates(i), dtype=float)
+        rj      = np.array(self.get_coordinates(j), dtype=float)
+        rl      = np.array(self.get_coordinates(l), dtype=float)
+
+        d1      = rl - ri
+        d2      = rj - rl
+        cross   = np.cross(d1, d2)
+        sign    = np.sign(np.dot(cross, normal))
+
+        return int(sign)
+
+    # ------------------------------------------------------------------
     #! Boundary helpers
     # ------------------------------------------------------------------
 

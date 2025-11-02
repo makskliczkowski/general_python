@@ -83,8 +83,8 @@ def example_1_manybody_spin_dynamics():
         
         ax.plot(omegas, A_sz, linewidth=2, color='darkblue')
         ax.fill_between(omegas, A_sz, alpha=0.3, color='lightblue')
-        ax.set_xlabel("ω (energy units)")
-        ax.set_ylabel("A_Sz(ω)")
+        ax.set_xlabel("omega  (energy units)")
+        ax.set_ylabel("A_Sz(omega )")
         ax.set_title(f"T = {T:.1f}\nZ = {Z:.3f}")
         ax.grid(alpha=0.3)
         
@@ -115,7 +115,7 @@ def example_1_manybody_spin_dynamics():
 
 def example_2_optical_conductivity():
     """
-    Compute optical conductivity σ(ω) for a tight-binding chain.
+    Compute optical conductivity σ(omega ) for a tight-binding chain.
     
     This demonstrates:
       - Single-particle (quadratic) system
@@ -172,7 +172,7 @@ def example_2_optical_conductivity():
     ax = axes[0]
     ax.plot(omegas, -Im_sigma / np.pi, linewidth=2, label='-Im[σ]/π (Drude)')
     ax.fill_between(omegas, -Im_sigma / np.pi, alpha=0.2)
-    ax.set_xlabel("ω (energy units)")
+    ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Dissipative conductivity")
     ax.set_title("Optical Response (Bubble Diagram)")
     ax.grid(alpha=0.3)
@@ -183,7 +183,7 @@ def example_2_optical_conductivity():
     ax.plot(omegas, Re_sigma, linewidth=2, label='Re[σ] (direct)', color='tab:blue')
     ax.plot(omegas, Re_sigma_kk, linewidth=2, linestyle='--', 
             label='Re[σ] (K-K from Im)', color='tab:orange')
-    ax.set_xlabel("ω (energy units)")
+    ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Reactive conductivity")
     ax.set_title("Real Part (Comparison Methods)")
     ax.grid(alpha=0.3)
@@ -195,7 +195,7 @@ def example_2_optical_conductivity():
     
     # Summary
     print(f"\nPhysics:")
-    print(f"  - Drude peak at low ω: intraband (free electron) behavior")
+    print(f"  - Drude peak at low omega : intraband (free electron) behavior")
     print(f"  - Real part threshold ≈ 2|E_Fermi|: interband transitions")
     print(f"  - K-K relation checks causality")
     print(f"  - Integrating -Im[σ]/π gives oscillator strength")
@@ -273,7 +273,7 @@ def example_3_exact_vs_meanfield():
     ax.plot(omegas, A_exact, linewidth=2.5, label='Exact (Many-Body ED)', color='darkblue')
     ax.plot(omegas, A_mf_spec, linewidth=2.5, linestyle='--', 
             label='Mean-Field (Bubble)', color='darkred', alpha=0.7)
-    ax.set_xlabel("ω (energy units)")
+    ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Response function")
     ax.set_title("Raw Spectra")
     ax.legend(fontsize=11)
@@ -284,7 +284,7 @@ def example_3_exact_vs_meanfield():
     ax.plot(omegas, A_exact_norm, linewidth=2.5, label='Exact (normalized)', color='darkblue')
     ax.plot(omegas, A_mf_norm, linewidth=2.5, linestyle='--', 
             label='Mean-Field (normalized)', color='darkred', alpha=0.7)
-    ax.set_xlabel("ω (energy units)")
+    ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Normalized response")
     ax.set_title("Peak Shape Comparison")
     ax.legend(fontsize=11)
@@ -361,9 +361,9 @@ def example_4_temperature_effects():
         ax.tick_params(axis='y', labelcolor='tab:blue')
         
         # Spectral function
-        ax2.plot(omegas, A, linewidth=2.5, color='darkred', label='Spectral function A(ω)')
+        ax2.plot(omegas, A, linewidth=2.5, color='darkred', label='Spectral function A(omega )')
         ax2.fill_between(omegas, A, alpha=0.2, color='darkred')
-        ax2.set_ylabel("A(ω)", color='darkred', fontsize=10)
+        ax2.set_ylabel("A(omega )", color='darkred', fontsize=10)
         ax2.tick_params(axis='y', labelcolor='darkred')
         
         ax.set_xlabel("Energy")

@@ -672,7 +672,7 @@ def operator_spectral_function_lehmann(
     r"""
     Compute operator-projected spectral function using Lehmann representation.
     
-    A_O(ω) = Σ_{m,n} (ρ_m - ρ_n) |<m|O|n>|² δ(ω - (E_n - E_m))
+    A_O(omega ) = Σ_{m,n} (ρ_m - ρ_n) |<m|O|n>|² delta (omega  - (E_n - E_m))
     
     This represents the contribution of operator O to the spectrum:
     - Used for spin/charge/current response in many-body systems
@@ -682,7 +682,7 @@ def operator_spectral_function_lehmann(
     Parameters
     ----------
     omega : float
-        Frequency ω.
+        Frequency omega .
     eigenvalues : array-like, shape (N,)
         Hamiltonian eigenvalues E_n.
     eigenvectors : array-like, shape (N, N)
@@ -699,7 +699,7 @@ def operator_spectral_function_lehmann(
     Returns
     -------
     float
-        Operator-projected spectral function A_O(ω).
+        Operator-projected spectral function A_O(omega ).
         
     Notes
     -----
@@ -707,7 +707,7 @@ def operator_spectral_function_lehmann(
     At T>0, thermal factors ρ_m ≠ ρ_n activate all transitions.
     
     This is the foundation for computing susceptibilities:
-    χ_OO(ω) can be reconstructed from this for all operators.
+    χ_OO(omega ) can be reconstructed from this for all operators.
     
     See Also
     --------
@@ -797,7 +797,7 @@ def operator_spectral_function_multi_omega(
     Returns
     -------
     Array, shape (n_omega,), dtype float
-        Spectral function A_O(ω) for each ω.
+        Spectral function A_O(omega ) for each omega .
         
     Examples
     --------
@@ -841,7 +841,7 @@ def susceptibility_bubble(
     r"""
     Compute bare susceptibility (Lindhard function) from single-particle spectrum.
     
-    χ⁰(ω) = Σ_{m,n} (f_m - f_n) |V_{mn}|² / (ω + iη - (E_n - E_m))
+    χ⁰(omega ) = Σ_{m,n} (f_m - f_n) |V_{mn}|² / (omega  + iη - (E_n - E_m))
     
     This is the bubble diagram contribution, valid for quadratic or mean-field
     Hamiltonians where Wick's theorem holds.
@@ -849,7 +849,7 @@ def susceptibility_bubble(
     Parameters
     ----------
     omega : float or complex
-        Frequency ω.
+        Frequency omega .
     eigenvalues : array-like, shape (N,)
         Single-particle energies E_n (not many-body eigenvalues!).
     vertex : array-like, shape (N, N), optional
@@ -866,7 +866,7 @@ def susceptibility_bubble(
     Returns
     -------
     complex
-        Bare susceptibility χ⁰(ω) at this frequency.
+        Bare susceptibility χ⁰(omega ) at this frequency.
         
     Notes
     -----
@@ -882,7 +882,7 @@ def susceptibility_bubble(
     
     See Also
     --------
-    conductivity_kubo_bubble : Optical conductivity σ(ω) from bubbles
+    conductivity_kubo_bubble : Optical conductivity σ(omega ) from bubbles
     
     Examples
     --------
@@ -910,7 +910,7 @@ def susceptibility_bubble(
     else:
         occupation = be.asarray(occupation, dtype=be.float64)
     
-    # Bubble: χ⁰ = Σ_{mn} (f_m - f_n) |V_{mn}|² / (ω + iη - (E_n - E_m))
+    # Bubble: χ⁰ = Σ_{mn} (f_m - f_n) |V_{mn}|² / (omega  + iη - (E_n - E_m))
     chi = 0.0 + 0.0j
     for m in range(N):
         for n in range(N):
@@ -954,7 +954,7 @@ def susceptibility_bubble_multi_omega(
     Returns
     -------
     Array, shape (n_omega,), dtype complex
-        χ⁰(ω) for each ω.
+        χ⁰(omega ) for each omega .
     """
     be = get_backend(backend)
     omegas = be.asarray(omegas)
@@ -990,7 +990,7 @@ def conductivity_kubo_bubble(
     r"""
     Compute optical conductivity from Kubo-Greenwood formula (bubble diagram).
     
-    σ(ω) = (1/(2ω)) Σ_{mn} (f_m - f_n) |<m|v|n>|² / (ω + iη - (E_n - E_m))
+    σ(omega ) = (1/(2omega )) Σ_{mn} (f_m - f_n) |<m|v|n>|² / (omega  + iη - (E_n - E_m))
     
     This is the single-particle bubble contribution, valid for non-interacting
     or mean-field Hamiltonians.
@@ -998,7 +998,7 @@ def conductivity_kubo_bubble(
     Parameters
     ----------
     omega : float or complex
-        Frequency ω (should be real for physical conductivity).
+        Frequency omega  (should be real for physical conductivity).
     eigenvalues : array-like, shape (N,)
         Single-particle eigenenergies.
     velocity_matrix : array-like, shape (N, N)
@@ -1015,15 +1015,15 @@ def conductivity_kubo_bubble(
     Returns
     -------
     complex
-        Conductivity σ(ω).
+        Conductivity σ(omega ).
         
     Notes
     -----
     The formula is:
-        σ(ω) = (1/(2ω)) χ⁰_{vv}(ω)
+        σ(omega ) = (1/(2omega )) χ⁰_{vv}(omega )
     
-    Real part Re[σ(ω)] gives absorptive conductivity.
-    Imaginary part Im[σ(ω)] gives reactive effects.
+    Real part Re[σ(omega )] gives absorptive conductivity.
+    Imaginary part Im[σ(omega )] gives reactive effects.
     
     For optical conductivity (intraband vs interband):
     - Intraband: f_m ≠ f_n within partially filled band
@@ -1056,8 +1056,8 @@ def conductivity_kubo_bubble(
         occupation=occupation, eta=eta, backend=backend
     )
     
-    # σ(ω) = (1/(2ω)) χ⁰_{vv}(ω)
-    # Handle ω=0 carefully
+    # σ(omega ) = (1/(2omega )) χ⁰_{vv}(omega )
+    # Handle omega =0 carefully
     if be.abs(omega_complex) < 1e-14:
         return 0.0 + 0.0j
     
@@ -1075,9 +1075,9 @@ def kramers_kronig_transform(
         backend          : str = "default"
 ) -> Array:
     r"""
-    Reconstruct Re[χ(ω)] from Im[χ(ω)] using Kramers-Kronig relations.
+    Reconstruct Re[χ(omega )] from Im[χ(omega )] using Kramers-Kronig relations.
     
-    Re[χ(ω)] = (2/π) P int_0^∞ dω' (ω' Im[χ(ω')] / (ω'² - ω²))
+    Re[χ(omega )] = (2/π) P int_0^∞ domega ' (omega ' Im[χ(omega ')] / (omega '² - omega ²))
     
     where P denotes principal value.
     
@@ -1086,7 +1086,7 @@ def kramers_kronig_transform(
     Im_chi : array-like, shape (n_omega,)
         Imaginary part of susceptibility (must be real-valued).
     omega_grid : array-like, shape (n_omega,)
-        Frequency grid. Should be dense and include positive/negative ω symmetrically
+        Frequency grid. Should be dense and include positive/negative omega  symmetrically
         for best accuracy.
     backend : str, optional
         Numerical backend (default: 'default').
@@ -1094,14 +1094,14 @@ def kramers_kronig_transform(
     Returns
     -------
     Array, shape (n_omega,)
-        Real part Re[χ(ω)].
+        Real part Re[χ(omega )].
         
     Notes
     -----
     This uses a simple numerical Hilbert transform via integration.
     For high accuracy, use scipy.integrate.quad with analytic kernels.
     
-    Assumes Im[χ(ω)] decays at large |ω|.
+    Assumes Im[χ(omega )] decays at large |omega |.
     
     See Also
     --------
@@ -1128,7 +1128,7 @@ def kramers_kronig_transform(
         omega_prime = omega_grid[mask]
         Im_chi_prime = Im_chi[mask]
         
-        # Integrand: ω' Im[χ(ω')] / (ω'² - ω²)
+        # Integrand: omega ' Im[χ(omega ')] / (omega '² - omega ²)
         integrand = omega_prime * Im_chi_prime / (omega_prime**2 - omega**2)
         
         # Integrate (could use more sophisticated method)
