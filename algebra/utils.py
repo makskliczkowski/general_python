@@ -151,8 +151,11 @@ PY_NP_CPX_TYPE          : Type              = np.complex64 if PY_USE_32BIT else 
 PY_BACKEND              : str               = os.environ.get(PY_BACKEND_STR, DEFAULT_BACKEND).lower()
 os.environ[PY_BACKEND_STR]                  = PY_BACKEND
 
-# by default, use numpy
-PREFER_JAX              : bool              = PY_BACKEND == "jax"
+# Define PY_JAX_DONT_USE before using it
+PY_JAX_DONT_USE         : bool                       = os.environ.get(PY_JAX_DONT_USE_STR, "0") in ("1", "true", "True")
+
+# by default, use numpy (can override with PY_JAX_DONT_USE)
+PREFER_JAX              : bool              = (PY_BACKEND == "jax") and not PY_JAX_DONT_USE
 PREFER_64BIT            : bool              = True if not PREFER_32BIT else False
 
 #! Backend Detection
@@ -181,7 +184,7 @@ JaxDevice: TypeAlias    = Any
 
 PY_JAX_AVAILABLE: bool                      = JAX_AVAILABLE
 os.environ[PY_JAX_AVAILABLE_STR]            = "1" if PY_JAX_AVAILABLE else "0"
-PY_JAX_DONT_USE: bool                       = os.environ.get(PY_JAX_DONT_USE_STR, "0") in ("1", "true", "True")
+# Note: PY_JAX_DONT_USE is already defined earlier
 
 # ---------------------------------------------------------------------
 
