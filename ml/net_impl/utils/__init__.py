@@ -4,11 +4,21 @@ This module provides utility functions for the general Python machine learning f
 It includes functions for initializing weights, creating activation functions, and handling
 activation function parameters. The module supports both JAX and NumPy backends, allowing for
 flexible use in different environments.
+
+-----------------------------------------------------------------
+File        : general_python/ml/net_impl/utils/__init__.py
+author      : Maksymilian Kliczkowski
+email       : maksymilian.kliczkowski@pwr.edu.pl
+date        : 2025-11-01
+------------------------------------------------------------------
 '''
 
-from .... import ml.net_impl.utils.net_init as net_init
-from .... import ml.net_impl.utils.net_init_jax as jaxpy
-from .... import ml.net_impl.utils.net_init_np as numpy
+try:
+    from . import net_init
+    from . import net_init_jax as jaxpy
+    from . import net_init_np as numpy
+except ImportError as e:
+    raise ImportError("Failed to import net_init, net_init_jax, or net_init_np modules. Ensure QES package is correctly installed.") from e
 
 __all__ = [
     'net_init',
@@ -23,3 +33,7 @@ __status__      = 'Development'
 __license__     = 'MIT'
 __copyright__   = 'Copyright (c) 2025 Maksymilian Kliczkowski'
 __description__ = 'General Python Machine Learning Framework Utilities using JAX and NumPy'
+
+# ----------------------------------------------------------------
+#! End of file
+# ---------------------------------------------------------------

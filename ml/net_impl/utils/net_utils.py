@@ -1,12 +1,4 @@
 r'''
-file    : general_python/ml/net_impl/utils/net_utils.py
-author  : Maksymilian Kliczkowski
-date    : 2025-03-01
-
-
------------------
-
-
 # Some info:
 
 This file contains functions for creating batches of data, evaluating functions on batches, 
@@ -44,6 +36,12 @@ you to compute derivatives with respect to θ directly.
 However, if the ansatz is non-holomorphic,
 you need to compute the derivatives with respect to Re(θ) and Im(θ)
 separately and then combine them appropriately.
+
+-----------------
+File        : general_python/ml/net_impl/utils/net_utils.py
+author      : Maksymilian Kliczkowski
+date        : 2025-11-01
+------------------------------------------------------------------
 '''
 
 import os
@@ -53,10 +51,14 @@ from typing import Callable, Optional, Any, Tuple
 
 _JAX_AVAILABLE = os.environ.get("PY__JAX_AVAILABLE", "1") == "1"
 # from general python utils
-from ....algebra.utils import get_backend
-from .... import ml.net_impl.utils.net_utils_np as numpy
+try:
+    from ....algebra.utils import get_backend
+    from . import net_utils_np as numpy
+except ImportError as e:
+    raise ImportError("Failed to import algebra.utils or net_utils_np module. Ensure QES package is correctly installed.") from e
+
 if _JAX_AVAILABLE:
-    from .... import ml.net_impl.utils.net_utils_jax as jaxpy
+    from . import net_utils_jax as jaxpy
 
 #########################################################################
 #! BATCHES
