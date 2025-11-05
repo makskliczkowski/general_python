@@ -1,8 +1,12 @@
 """
+Simple feedforward neural network implementation using Flax.
+
+--------------------------------------------------------------
 file    : general_python/ml/net_impl/net_simple_flax.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-03-10
+-------------------------------------------------------------
 """
 
 import numpy as np

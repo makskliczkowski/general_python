@@ -1,14 +1,30 @@
-import numpy as np
-from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+'''
+Contains the Honeycomb lattice implementation.
+This module defines the HoneycombLattice class, which extends the base Lattice class
+to represent a 2D honeycomb lattice structure. It includes methods for calculating
+nearest and next-nearest neighbors, as well as lattice vectors and coordinates.
+
+---------------------------------
+File        : general_python/lattices/honeycomb.py
+Author      : Maksymilian Kliczkowski
+Date        : 2025-11-01
+License     : MIT
+---------------------------------
+'''
 
 import numpy as np
-from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
 
-import sys, os 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from maths import MathMod
+try:
+    from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+    from ..maths.math_utils import mod_euc
+except ImportError:
+    raise ImportError("Could not import Lattice base classes. Ensure the module is in the PYTHONPATH.")
 
 ################################### LATTICE IMPLEMENTATION #######################################
+
+X_BOND_NEI = 2
+Y_BOND_NEI = 1
+Z_BOND_NEI = 0
 
 class HoneycombLattice(Lattice):
     """
@@ -58,9 +74,10 @@ class HoneycombLattice(Lattice):
         self._ns = 2 * self.Lx * self.Ly * self.Lz
 
         # Initialize the primitive vectors
-        self._a1        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a3        = np.array([0, 0, self.c])
+
+        self._a1        = np.array([np.sqrt(3) * self.a / 2,  3 * self.a / 2, 0.0])
+        self._a2        = np.array([-np.sqrt(3) * self.a / 2,  3 * self.a / 2, 0.0])
+        self._a3        = np.array([0.0, 0.0, self.c])
         self._basis     = np.array([
                             np.array([0.0, 0.0, 0.0]),
                             np.array([0.0, self.a, 0.0]),
@@ -71,6 +88,10 @@ class HoneycombLattice(Lattice):
         self.calculate_r_vectors()
         self.calculate_k_vectors()
 
+        self._delta_x   = np.array([-np.sqrt(3)/2 * self.a,  0.5 * self.a, 0.0])
+        self._delta_y   = np.array([ np.sqrt(3)/2 * self.a,  0.5 * self.a, 0.0])
+        self._delta_z   = np.array([ 0.0,  self.a,  0.0])
+
         if self._ns < 100:
             self.calculate_dft_matrix()
 
@@ -80,10 +101,14 @@ class HoneycombLattice(Lattice):
         self.calculate_norm_sym()
         
         # Initialize the k vectors
-        self._k1 = np.array([2 * np.pi / self.a, 0, 0])
-        self._k2 = np.array([-np.pi / self.a, np.sqrt(3) * np.pi / self.a, 0])
-        self._k3 = np.array([-np.pi / self.a, -np.sqrt(3) * np.pi / self.a, 0])
+        A = np.column_stack([self._a1, self._a2, self._a3])
+        B = 2 * np.pi * np.linalg.inv(A.T)
+        self._k1, self._k2, self._k3 = B.T
         
+        # Initialize the normal vectors along the bonds
+        self._n1    = self._delta_x / np.linalg.norm(self._delta_x)
+        self._n2    = self._delta_y / np.linalg.norm(self._delta_y)
+        self._n3    = self._delta_z / np.linalg.norm(self._delta_z)
 
     def __str__(self):
         return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
@@ -209,7 +234,7 @@ class HoneycombLattice(Lattice):
         # Helper function to apply periodic boundary conditions.
         def _bcfun(_i, _l, _pbc):
             if _pbc:
-                return MathMod.mod_euc(_i, _l)
+                return mod_euc(_i, _l)
             return _i if 0 <= _i < _l else -1
         
         # 1D: Each site has two neighbors.
@@ -290,7 +315,7 @@ class HoneycombLattice(Lattice):
         """
         def _bcfun(_i, _L, _pbc):
             if _pbc:
-                return MathMod.mod_euc(_i, _L)
+                return mod_euc(_i, _L)
             return _i if 0 <= _i < _L else -1
 
         self._nnn = [[] for _ in range(self.Ns)]
@@ -366,3 +391,7 @@ class HoneycombLattice(Lattice):
         Placeholder for symmetry checking.
         """
         return True
+
+# ---------------------------------------------------------------------------
+#! EOF
+# -------------------------------------------------------------------------

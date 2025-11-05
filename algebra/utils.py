@@ -176,9 +176,9 @@ jrn: Optional[Any]      = None
 jcfg: Optional[Any]     = None
 
 # --- Type Aliases (with defaults) ---
-Array: TypeAlias        = np.ndarray
-PRNGKey: TypeAlias      = Any # Keep as 'Any' to avoid import errors if JAX is not present
-JaxDevice: TypeAlias    = Any
+Array       : TypeAlias = np.ndarray        # Default to NumPy array
+PRNGKey     : TypeAlias = Any               # Keep as 'Any' to avoid import errors if JAX is not present
+JaxDevice   : TypeAlias = Any               # Keep as 'Any' to avoid import errors if JAX is not present
 
 # ---------------------------------------------------------------------
 

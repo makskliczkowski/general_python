@@ -53,7 +53,7 @@ print(f"   Error vs exact: {error:.2e}")
 
 # Test 3: Block Lanczos  
 print("\n3. Block Lanczos Method (skipped - needs debugging):")
-print(f"   ⚠ Block Lanczos has numerical issues, skipping for now")
+print(f"   (warning) Block Lanczos has numerical issues, skipping for now")
 # solver_block = BlockLanczosEigensolver(k=k, block_size=2, which='smallest')
 # result_block = solver_block.solve(A=A)
 

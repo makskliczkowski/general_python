@@ -340,9 +340,15 @@ class Lattice(ABC):
         self._a1            = Backend.zeros((dim, dim))     # real space vectors - base vectors of the lattice
         self._a2            = Backend.zeros((dim, dim))
         self._a3            = Backend.zeros((dim, dim))
+        # inverse space vectors
         self._k1            = Backend.zeros((dim, dim))     # inverse space vectors - reciprocal lattice vectors
         self._k2            = Backend.zeros((dim, dim))
         self._k3            = Backend.zeros((dim, dim))
+        # normal vectors (along the bonds - if required)
+        self._n1            = Backend.zeros((dim, dim))     # normal vectors along the bonds
+        self._n2            = Backend.zeros((dim, dim))
+        self._n3            = Backend.zeros((dim, dim))
+        
         self._rvectors      = Backend.zeros((self._ns, 3))  # allowed values of the real space vectors
         self._kvectors      = Backend.zeros((self._ns, 3))  # allowed values of the inverse space vectors
         # initialize dft matrix
@@ -536,6 +542,25 @@ class Lattice(ABC):
     def k3(self, value):    self._k3 = value
     
     @property
+    def n1(self):           return self._n1
+    @n1.setter
+    def n1(self, value):    self._n1 = value
+
+    @property
+    def n2(self):           return self._n2
+    @n2.setter
+    def n2(self, value):    self._n2 = value
+    
+    @property
+    def n3(self):           return self._n3
+    @n3.setter
+    def n3(self, value):    self._n3 = value
+    
+    # ------------------------------------------------------------------
+    #! DFT Matrix
+    # ------------------------------------------------------------------
+    
+    @property
     def dft(self):                  return self._dft
     @dft.setter
     def dft(self, value):           self._dft = value
@@ -584,6 +609,33 @@ class Lattice(ABC):
     def cardinality(self):          return self.get_nn_forward_num_max()
     @cardinality.setter
     def cardinality(self, value):   self._nn_max_num = value
+    
+    # ------------------------------------------------------------------
+    #! K-space
+    # ------------------------------------------------------------------
+    
+    @staticmethod
+    def _reciprocal_from_real(a1, a2, a3=None):
+        """Return reciprocal vectors b1,b2,(b3) satisfying a_i · b_j = 2π δ_ij."""
+        A           = np.column_stack([a1[:3], a2[:3], (a3 if a3 is not None else np.array([0.,0.,1.]))[:3]])
+        B           = 2.0 * np.pi * np.linalg.inv(A).T
+        b1, b2, b3  = B[:,0], B[:,1], B[:,2]
+        return b1, b2, b3
+    
+    def k_vector(self, qx, qy=0.0, qz=0.0) -> np.ndarray:
+        """
+        Return the k-vector in Cartesian coordinates for given (qx, qy, qz)
+        in reciprocal lattice units.
+        """
+        if self.k1 == None or self.k2 == None or self.k3 == None:
+            self.k1, self.k2, self.k3 = Lattice._reciprocal_from_real(self.a1[0,:], self.a2[0,:], self.a3[0,:])
+        
+        kvec = qx * self.k1[0,:]
+        if self.dim > 1:
+            kvec += qy * self.k2[0,:]
+        if self.dim > 2:
+            kvec += qz * self.k3[0,:]
+        return kvec
     
     # ------------------------------------------------------------------
     #! Boundary fluxes

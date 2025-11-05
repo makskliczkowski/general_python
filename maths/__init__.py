@@ -12,17 +12,12 @@ Available submodule aliases
 - ``RandomMod``    -> ``general_python.maths.random``
 - ``StatisticsMod``-> ``general_python.maths.statistics``
 
-Examples
---------
->>> from general_python.maths import MathMod
->>> rng_matrix = MathMod.random_unitary(4)
-
->>> from general_python.maths import RandomMod, StatisticsMod
->>> samples = RandomMod.normal(mean=0.0, std=1.0, size=10_000)
->>> StatisticsMod.Statistics.calculate_fluctuations(samples.reshape(100, -1), bin_size=5)
-
-Author: Maksymilian Kliczkowski
-License: MIT
+---------------------------------------------------------------------------
+File        : general_python/maths/__init__.py
+Author      : Maksymilian Kliczkowski
+License     : MIT
+Copyright   : (c) 2021-2024 QES Group
+---------------------------------------------------------------------------
 """
 
 from __future__ import annotations
@@ -108,4 +103,6 @@ def list_available_modules() -> List[str]:
     """
     return sorted(_ALIAS_TO_MODULE.keys())
 
+# ---------------------------------------------------------------------------
 #! EOF
+# -------------------------------------------------------------------------

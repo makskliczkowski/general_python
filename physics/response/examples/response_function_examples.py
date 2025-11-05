@@ -47,7 +47,7 @@ def example_1_manybody_spin_dynamics():
     )
     
     # Build a toy 4-site Ising model (16D Hilbert space)
-    # H = -J * Σ_i σ_z_i σ_z_{i+1} + h * Σ_i σ_x_i
+    # H = -J * Σ_i \sigma_z_i \sigma_z_{i+1} + h * Σ_i \sigma_x_i
     L = 4
     J = 1.0
     h = 0.5
@@ -98,7 +98,7 @@ def example_1_manybody_spin_dynamics():
     
     plt.tight_layout()
     plt.savefig('/tmp/example1_manybody_spin.png', dpi=150, bbox_inches='tight')
-    print("✓ Plot saved to /tmp/example1_manybody_spin.png")
+    print("(ok) Plot saved to /tmp/example1_manybody_spin.png")
     
     # Summary
     print(f"\nPhysics:")
@@ -115,7 +115,7 @@ def example_1_manybody_spin_dynamics():
 
 def example_2_optical_conductivity():
     """
-    Compute optical conductivity σ(omega ) for a tight-binding chain.
+    Compute optical conductivity \sigma(omega ) for a tight-binding chain.
     
     This demonstrates:
       - Single-particle (quadratic) system
@@ -170,7 +170,7 @@ def example_2_optical_conductivity():
     
     # Imaginary part (dissipative)
     ax = axes[0]
-    ax.plot(omegas, -Im_sigma / np.pi, linewidth=2, label='-Im[σ]/π (Drude)')
+    ax.plot(omegas, -Im_sigma / np.pi, linewidth=2, label='-Im[\sigma]/π (Drude)')
     ax.fill_between(omegas, -Im_sigma / np.pi, alpha=0.2)
     ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Dissipative conductivity")
@@ -180,9 +180,9 @@ def example_2_optical_conductivity():
     
     # Real part (reactive)
     ax = axes[1]
-    ax.plot(omegas, Re_sigma, linewidth=2, label='Re[σ] (direct)', color='tab:blue')
+    ax.plot(omegas, Re_sigma, linewidth=2, label='Re[\sigma] (direct)', color='tab:blue')
     ax.plot(omegas, Re_sigma_kk, linewidth=2, linestyle='--', 
-            label='Re[σ] (K-K from Im)', color='tab:orange')
+            label='Re[\sigma] (K-K from Im)', color='tab:orange')
     ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Reactive conductivity")
     ax.set_title("Real Part (Comparison Methods)")
@@ -191,14 +191,14 @@ def example_2_optical_conductivity():
     
     plt.tight_layout()
     plt.savefig('/tmp/example2_conductivity.png', dpi=150, bbox_inches='tight')
-    print("✓ Plot saved to /tmp/example2_conductivity.png")
+    print("(ok) Plot saved to /tmp/example2_conductivity.png")
     
     # Summary
     print(f"\nPhysics:")
     print(f"  - Drude peak at low omega : intraband (free electron) behavior")
     print(f"  - Real part threshold ≈ 2|E_Fermi|: interband transitions")
     print(f"  - K-K relation checks causality")
-    print(f"  - Integrating -Im[σ]/π gives oscillator strength")
+    print(f"  - Integrating -Im[\sigma]/π gives oscillator strength")
 
 
 # =============================================================================
@@ -292,7 +292,7 @@ def example_3_exact_vs_meanfield():
     
     plt.tight_layout()
     plt.savefig('/tmp/example3_comparison.png', dpi=150, bbox_inches='tight')
-    print("✓ Plot saved to /tmp/example3_comparison.png")
+    print("(ok) Plot saved to /tmp/example3_comparison.png")
     
     # Quantitative comparison
     error = np.trapz(np.abs(A_exact - A_mf_spec), omegas)
@@ -377,7 +377,7 @@ def example_4_temperature_effects():
     
     plt.tight_layout()
     plt.savefig('/tmp/example4_temperature.png', dpi=150, bbox_inches='tight')
-    print("✓ Plot saved to /tmp/example4_temperature.png")
+    print("(ok) Plot saved to /tmp/example4_temperature.png")
     
     # Quantitative analysis
     print(f"\nThermal analysis:")

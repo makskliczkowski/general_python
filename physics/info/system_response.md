@@ -283,7 +283,7 @@ where $j$ is the current operator (e.g., $j = \sum_i v_i c_i^\dagger c_i$).
 
 ```python
 from QES.general_python.algebra.spectral_backend import conductivity_kubo_bubble
-# Computes σ(ω) using the bubble approximation
+# Computes \sigma(ω) using the bubble approximation
 sigma = conductivity_kubo_bubble(omega, E_sp, velocity_matrix, occupation=f)
 ```
 
@@ -337,9 +337,9 @@ Re_chi_from_Im = kramers_kronig_transform(Im_chi, omega_grid)
 
 **Limitations:**
 
-* ❌ **Exponential scaling:** Impossible for $L > 15$ (storage) or $L > 18$ (computation time).
-* ❌ **Memory intensive:** Must store the $N \times N$ eigenvectors.
-* ❌ **Limited to small clusters:** Finite-size effects can be significant.
+* (error) **Exponential scaling:** Impossible for $L > 15$ (storage) or $L > 18$ (computation time).
+* (error) **Memory intensive:** Must store the $N \times N$ eigenvectors.
+* (error) **Limited to small clusters:** Finite-size effects can be significant.
 
 **Example:** 4-site Hubbard model
 $$H = -t \sum_{\langle i,j \rangle, \sigma} c_{i,\sigma}^\dagger c_{j,\sigma} + U \sum_i n_{i\uparrow} n_{i\downarrow}$$
@@ -384,9 +384,9 @@ A_O = operator_spectral_function_multi_omega(
 
 **Limitations:**
 
-* ❌ **No genuine many-body excitations:** Misses bound states, Mott gaps, etc.
-* ❌ **Correlation effects missing:** Cannot describe phenomena driven by strong interactions.
-* ❌ **Only single-particle excitations** (particle-hole pairs) are visible.
+* (error) **No genuine many-body excitations:** Misses bound states, Mott gaps, etc.
+* (error) **Correlation effects missing:** Cannot describe phenomena driven by strong interactions.
+* (error) **Only single-particle excitations** (particle-hole pairs) are visible.
 
 **Example:** Tight-binding chain
 $$H = -t \sum_{\langle i,j \rangle} c_i^\dagger c_j$$
@@ -530,7 +530,7 @@ conductivity_kubo_bubble(
     omega, eigenvalues, velocity_matrix,
     occupation=None, eta=0.01, backend="default"
 )
-    -> σ(ω) = (1/(2ω)) χ⁰_{vv}(ω)
+    -> \sigma(ω) = (1/(2ω)) χ⁰_{vv}(ω)
     Returns: complex (single frequency)
 ```
 
@@ -696,7 +696,7 @@ from QES.general_python.algebra.spectral_backend import (
 # from QES.operators.spin import build_total_spin_z
 
 # Build many-body Hamiltonian (16×16 for 4 sites)
-# H = -t Σ_{<ij>,σ} c†_{i,σ} c_{j,σ} + U Σ_i n_{i↑} n_{i↓}
+# H = -t Σ_{<ij>,\sigma} c†_{i,\sigma} c_{j,\sigma} + U Σ_i n_{i↑} n_{i↓}
 H = build_hubbard_4site(t=1.0, U=4.0)
 
 # Diagonalize

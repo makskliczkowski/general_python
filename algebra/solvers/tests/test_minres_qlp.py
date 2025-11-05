@@ -84,7 +84,7 @@ def test_minres_qlp_with_shift():
     print("="*60)
     print("TEST 3: MINRES-QLP with shift [SKIPPED - shift handling needs fix]")
     print("="*60)
-    print("⚠ Shift parameter interacts with matvec creation; needs API refinement")
+    print("(warning) Shift parameter interacts with matvec creation; needs API refinement")
     print("(ok)  SKIPPED\n")
     return
     

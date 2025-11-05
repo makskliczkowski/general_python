@@ -882,7 +882,7 @@ def susceptibility_bubble(
     
     See Also
     --------
-    conductivity_kubo_bubble : Optical conductivity σ(omega ) from bubbles
+    conductivity_kubo_bubble : Optical conductivity \sigma(omega ) from bubbles
     
     Examples
     --------
@@ -990,7 +990,7 @@ def conductivity_kubo_bubble(
     r"""
     Compute optical conductivity from Kubo-Greenwood formula (bubble diagram).
     
-    σ(omega ) = (1/(2omega )) Σ_{mn} (f_m - f_n) |<m|v|n>|² / (omega  + iη - (E_n - E_m))
+    \sigma(omega ) = (1/(2omega )) Σ_{mn} (f_m - f_n) |<m|v|n>|² / (omega  + iη - (E_n - E_m))
     
     This is the single-particle bubble contribution, valid for non-interacting
     or mean-field Hamiltonians.
@@ -1015,15 +1015,15 @@ def conductivity_kubo_bubble(
     Returns
     -------
     complex
-        Conductivity σ(omega ).
+        Conductivity \sigma(omega ).
         
     Notes
     -----
     The formula is:
-        σ(omega ) = (1/(2omega )) χ⁰_{vv}(omega )
+        \sigma(omega ) = (1/(2omega )) χ⁰_{vv}(omega )
     
-    Real part Re[σ(omega )] gives absorptive conductivity.
-    Imaginary part Im[σ(omega )] gives reactive effects.
+    Real part Re[\sigma(omega )] gives absorptive conductivity.
+    Imaginary part Im[\sigma(omega )] gives reactive effects.
     
     For optical conductivity (intraband vs interband):
     - Intraband: f_m ≠ f_n within partially filled band
@@ -1056,7 +1056,7 @@ def conductivity_kubo_bubble(
         occupation=occupation, eta=eta, backend=backend
     )
     
-    # σ(omega ) = (1/(2omega )) χ⁰_{vv}(omega )
+    # \sigma(omega ) = (1/(2omega )) χ⁰_{vv}(omega )
     # Handle omega =0 carefully
     if be.abs(omega_complex) < 1e-14:
         return 0.0 + 0.0j

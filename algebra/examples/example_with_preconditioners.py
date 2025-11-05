@@ -70,7 +70,7 @@ def example_no_preconditioner():
     print(f"  Residual: {result.residual_norm:.2e}")
     
     if not result.converged:
-        print(f"  ⚠ Failed to converge in {result.iterations} iterations")
+        print(f"  (warning) Failed to converge in {result.iterations} iterations")
     
     return result
 
