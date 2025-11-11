@@ -25,6 +25,9 @@ except ImportError:
 X_BOND_NEI = 2
 Y_BOND_NEI = 1
 Z_BOND_NEI = 0
+# X_BOND_NEI = 0
+# Y_BOND_NEI = 1
+# Z_BOND_NEI = 2
 
 class HoneycombLattice(Lattice):
     """
@@ -71,7 +74,7 @@ class HoneycombLattice(Lattice):
             self._lz = lz
 
         # For the honeycomb lattice there are two sites per unit cell.
-        self._ns = 2 * self.Lx * self.Ly * self.Lz
+        self._ns        = 2 * self.Lx * self.Ly * self.Lz
 
         # Initialize the primitive vectors
 
@@ -83,6 +86,9 @@ class HoneycombLattice(Lattice):
                             np.array([0.0, self.a, 0.0]),
                         ])
 
+        # Initialize the k vectors
+        self.calculate_reciprocal_vectors()
+        
         # Compute lattice properties.
         self.calculate_coordinates()
         self.calculate_r_vectors()
@@ -99,11 +105,6 @@ class HoneycombLattice(Lattice):
         self.calculate_nn()
         self.calculate_nnn()
         self.calculate_norm_sym()
-        
-        # Initialize the k vectors
-        A = np.column_stack([self._a1, self._a2, self._a3])
-        B = 2 * np.pi * np.linalg.inv(A.T)
-        self._k1, self._k2, self._k3 = B.T
         
         # Initialize the normal vectors along the bonds
         self._n1    = self._delta_x / np.linalg.norm(self._delta_x)
@@ -169,56 +170,7 @@ class HoneycombLattice(Lattice):
                 return self._nnn_forward[site]
             return self._nnn_forward[site][num] if num < len(self._nnn_forward[site]) else -1
         return -1
-
-    ################################### COORDINATE SYSTEM #######################################
-
-    def calculate_coordinates(self):
-        """
-        Calculates the coordinates for each lattice site.
-        
-        Here we use the common honeycomb convention:
-            For site index i, we use:
-              x = (i // 2) mod Lx,
-              y = ((i // 2) // Lx) mod Ly, then mapped to (2*y + (i mod 2))
-              z = ((i // 2) // (Lx * Ly)) mod Lz.
-        """
-        self.coordinates = []
-        for i in range(self.Ns):
-            x = (i // 2) % self.Lx
-            y = ((i // 2) // self.Lx) % self.Ly
-            z = ((i // 2) // (self.Lx * self.Ly)) % self.Lz
-            self.coordinates.append((x, 2 * y + (i % 2), z))
-
-    def calculate_k_vectors(self):
-        """
-        Calculates the reciprocal lattice vectors.
-        """
-        two_pi_over_Lx = 2 * np.pi / self.Lx
-        two_pi_over_Ly = 2 * np.pi / self.Ly
-        two_pi_over_Lz = 2 * np.pi / self.Lz
-
-        self.kvectors = np.array([
-            [-np.pi + two_pi_over_Lx * qx,
-             -np.pi + two_pi_over_Ly * qy,
-             -np.pi + two_pi_over_Lz * qz]
-            for qx in range(self.Lx) for qy in range(self.Ly) for qz in range(self.Lz)
-        ])
-
-    def calculate_r_vectors(self):
-        """
-        Calculates the real-space vectors for each site.
-        """
-        rv = np.zeros((self.Ns, 3))
-        idx = 0
-        for z in range(self.Lz):
-            for y in range(self.Ly):
-                for x in range(self.Lx):
-                    cell_offset = x * self._a1 + y * self._a2 + z * self._a3
-                    for sub in range(2):
-                        rv[idx] = cell_offset + self._basis[sub]
-                        idx += 1
-        self.rvectors = rv
-
+    
     ################################### NEIGHBORHOOD CALCULATORS #######################################
 
     def calculate_nn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
@@ -391,6 +343,23 @@ class HoneycombLattice(Lattice):
         Placeholder for symmetry checking.
         """
         return True
+    
+    def get_bond_type(self, site1: int, site2: int):
+        """
+        Determines the bond type between two sites.
+        
+        Returns:
+            int: 0 for x-bond, 1 for y-bond, 2 for z-bond, -1 if no bond exists.
+        """
+        if site2 in self._nn[site1]:
+            idx = self._nn[site1].index(site2)
+            if idx == 2:
+                return X_BOND_NEI
+            elif idx == 1:
+                return Y_BOND_NEI
+            elif idx == 0:
+                return Z_BOND_NEI
+        return -1
 
 # ---------------------------------------------------------------------------
 #! EOF

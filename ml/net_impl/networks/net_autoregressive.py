@@ -5,7 +5,7 @@ Autoregressive Neural Network for Quantum States
 This module provides implementation of Autoregressive (AR) neural networks for
 representing quantum wavefunctions using the factorization:
 
-    ψ(s₁, s₂, ..., sₙ) = p(s₁) × p(s₂|s₁) × p(s₃|s₁,s₂) × ... × p(sₙ|s₁,...,sₙ₋₁)
+    ψ(s₁, s₂, ..., sₙ) = p(s₁) times  p(s₂|s₁) times  p(s₃|s₁,s₂) times  ... times  p(sₙ|s₁,...,sₙ₋₁)
 
 The autoregressive architecture sequentially generates the wavefunction coefficients
 by conditioning each factor on all previous factors.

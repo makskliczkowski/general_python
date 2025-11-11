@@ -14,201 +14,26 @@ Date    : 2025-02-01
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
 from enum import Enum, auto, unique                 # for enumerations
-from typing import Dict, Mapping, Optional, Tuple, Union, Any
+from typing import Dict, List, Mapping, Optional, Tuple, Union, Any
 
 import numpy as np
 import scipy.sparse as sp
 
-from ..common import hdf5_lib as HDF5Mod
-from ..common import directories as DirectoriesMod
-
-# -----------------------------------------------------------------------------------------------------------
-# LATTICE ENUMERATIONS
-# -----------------------------------------------------------------------------------------------------------
-
-class LatticeDirection(Enum):
-    '''
-    Enumeration for the lattice directions
-    '''
-    X = auto()
-    Y = auto()
-    Z = auto()
-    
-    def __str__(self):      return str(self.name).lower()
-    def __repr__(self):     return f"LatticeDirection.{self.name}"
-
-# -----------------------------------------------------------------------------------------------------------
-
-class LatticeBC(Enum):
-    '''
-    Enumeration for the boundary conditions in the lattice model.
-    '''
-    PBC         = auto()    # Periodic Boundary Conditions
-    OBC         = auto()    # Open Boundary Conditions      
-    MBC         = auto()    # Mixed Boundary Conditions     - periodic in X direction, open in Y direction
-    SBC         = auto()    # Special Boundary Conditions   - periodic in Y direction, open in X direction
-
-# -----------------------------------------------------------------------------------------------------------
-
-class LatticeType(Enum):
-    '''
-    Contains all the implemented lattice types for the lattice model. 
-    '''
-    SQUARE      = auto()    # Square lattice
-    HEXAGONAL   = auto()    # Hexagonal lattice
-    HONEYCOMB   = auto()    # Honeycomb lattice
-    GRAPH       = auto()    # Generic graph lattice (adjacency-defined)
+try:
+    from .tools.lattice_tools import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
+    from .tools.lattice_flux import BoundaryFlux, _normalize_flux_dict
+    from .tools.lattice_kspace import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path, 
+                                    reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
+                                    build_translation_operators
+                                    )
+    from ..common import hdf5_lib as HDF5Mod
+    from ..common import directories as DirectoriesMod
+except ImportError:
+    raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")
 
 ############################################## GENERAL LATTICE ##############################################
 
-@dataclass(frozen=True)
-class BoundaryFlux:
-    """
-    Collection of magnetic fluxes piercing lattice boundary loops.
-
-    The value associated with a direction is interpreted as the phase 
-    ``phi``
-    (in radians) acquired upon wrapping around the boundary once along that
-    direction. The corresponding hopping phase factor is ``exp(1j * phi)``.
-    
-    The fluxes are stored as a mapping from :class:`LatticeDirection` to corresponding
-    complex phase values.
-    
-    Options for specifying fluxes include:
-    - Uniform flux in all directions (single float value).
-    - Direction-specific fluxes (mapping from direction to float).
-    - Zero flux (empty mapping).
-    
-    Physically, these fluxes correspond to magnetic fluxes threading
-    the holes of a torus formed by periodic boundary conditions.
-    
-    Example:
-    >>> flux = BoundaryFlux({LatticeDirection.X: np.pi/2, LatticeDirection.Y: np.pi})
-    >>> flux.phase(LatticeDirection.X)
-    (6.123233995736766e-17+1j)
-    >>> flux.phase(LatticeDirection.Y)
-    (-1+0j)
-    
-    For non-abelian gauge fields, more complex structures are needed.
-    """
-    
-    values  : Mapping[LatticeDirection, float]
-
-    def phase(self, direction: LatticeDirection, winding: int = 1) -> complex:
-        """
-        Return ``exp(1j * winding * phi_direction)``.
-        
-        Parameters:
-        -----------
-        direction : LatticeDirection
-            The lattice direction for which to get the phase factor.
-        winding : int, optional
-            The winding number for the phase factor. Defaults to 1.
-        """
-        phi = float(self.values.get(direction, 0.0))
-        return np.exp(1j * winding * phi)
-
-def _normalize_flux_dict(flux: Optional[Union[float, Mapping[Union[str, LatticeDirection], float]]]) -> BoundaryFlux:
-    """
-    Normalize flux input into a :class:`BoundaryFlux` instance.
-    
-    Parameters:
-    -----------
-    flux : float or Mapping[Union[str, LatticeDirection], float] or None
-        If a float, interpreted as uniform flux in all directions.
-        If a mapping, keys can be either :class:`LatticeDirection` members
-        or their string names (case-insensitive).  Values are fluxes in radians.
-        If None, interpreted as zero flux in all directions.
-    """
-    if flux is None:
-        return BoundaryFlux({})
-    
-    if isinstance(flux, (int, float)):
-        phi = float(flux)
-        return BoundaryFlux({direction: phi for direction in LatticeDirection})
-    
-    if isinstance(flux, Mapping):
-        out: Dict[LatticeDirection, float] = {}
-        
-        # parse mapping
-        for key, value in flux.items():
-            
-            if isinstance(key, LatticeDirection):
-                direction = key
-                
-            elif isinstance(key, str):
-                try:
-                    direction = LatticeDirection[key.upper()]
-                except KeyError as exc:
-                    raise ValueError(f"Unknown lattice direction '{key}' for flux specification.") from exc
-            else:
-                raise TypeError(f"Unsupported flux key type: {type(key)!r}")
-            out[direction] = float(value)
-        return BoundaryFlux(out)
-    raise TypeError(f"Unsupported flux specification of type {type(flux)!r}.")
-
-# -----------------------------------------------------------------------------------------------------------
-#! HELPER FUNCTIONS
-# -----------------------------------------------------------------------------------------------------------
-
-def handle_boundary_conditions(bc: Any):
-    """
-    Handles and normalizes the input for boundary conditions.
-    Parameters:
-    -----------
-        bc (str, LatticeBC, or None):
-            The boundary condition to handle. Can be a string
-            ("pbc", "obc", "mbc", "sbc"), an instance of LatticeBC, or None.
-    Returns:
-    --------
-        LatticeBC: The corresponding LatticeBC enum value for the given boundary condition.
-    Raises:
-        ValueError: If the provided boundary condition is not recognized.
-    """
-
-    if bc is None:
-        bc = LatticeBC.PBC
-    elif isinstance(bc, str):
-        if bc.lower() == "pbc":
-            bc = LatticeBC.PBC
-        elif bc.lower() == "obc":
-            bc = LatticeBC.OBC
-        elif bc.lower() == "mbc":
-            bc = LatticeBC.MBC
-        elif bc.lower() == "sbc":
-            bc = LatticeBC.SBC
-        else:
-            raise ValueError(f"Unknown boundary condition: {bc}")
-    elif not isinstance(bc, LatticeBC):
-        raise ValueError(f"Unknown boundary condition: {bc}")
-    return bc
-
-def handle_dim(lx, ly, lz):
-    """
-    Handles and normalizes the input for lattice dimensions.
-    Parameters:
-        lx (int):
-            Number of sites in the x-direction.
-        ly (int):
-            Number of sites in the y-direction.
-        lz (int):
-            Number of sites in the z-direction.
-    Returns:
-        tuple: A tuple containing the dimensions (lx, ly, lz).
-    """
-    if lx <= 0 or ly <= 0 or lz <= 0:
-        raise ValueError("Lattice dimensions must be positive integers.")
-    
-    dim = 1
-    if ly > 1:
-        dim += 1
-    if lz > 1:
-        dim += 1
-    return dim, lx, ly, lz
-
 Backend = np
-
-# -----------------------------------------------------------------------------------------------------------
 
 class Lattice(ABC):
     '''
@@ -333,24 +158,26 @@ class Lattice(ABC):
         
         # helping lists
         self._coords        = []
-        self._spatial_norm  = [[[]]]                        # three dimensional array for the spatial norm
+        self._spatial_norm  = [[[]]]                                # three dimensional array for the spatial norm
         
         # matrices for real space and inverse space vectors
-        self._vectors       = Backend.zeros((3, 3))         # real space vectors - base vectors of the lattice
-        self._a1            = Backend.zeros((dim, dim))     # real space vectors - base vectors of the lattice
-        self._a2            = Backend.zeros((dim, dim))
-        self._a3            = Backend.zeros((dim, dim))
-        # inverse space vectors
-        self._k1            = Backend.zeros((dim, dim))     # inverse space vectors - reciprocal lattice vectors
-        self._k2            = Backend.zeros((dim, dim))
-        self._k3            = Backend.zeros((dim, dim))
+        vec_size            = max(3, self._dim)
+        self._vectors       = Backend.zeros((vec_size, vec_size))   # real space vectors - base vectors of the lattice
+        self._a1            = Backend.zeros(vec_size)               # real space vectors - base vectors of the lattice
+        self._a2            = Backend.zeros(vec_size)
+        self._a3            = Backend.zeros(vec_size)
+        self._basis         = Backend.zeros((0, vec_size))          # basis vectors within the unit cell
+        # inverse space vectors - ALWAYS 3D vectors for consistency
+        self._k1            = Backend.zeros(3)                      # inverse space vectors - reciprocal lattice vectors (3D)
+        self._k2            = Backend.zeros(3)
+        self._k3            = Backend.zeros(3)
         # normal vectors (along the bonds - if required)
-        self._n1            = Backend.zeros((dim, dim))     # normal vectors along the bonds
-        self._n2            = Backend.zeros((dim, dim))
-        self._n3            = Backend.zeros((dim, dim))
+        self._n1            = Backend.zeros((self._dim, self._dim ))# normal vectors along the bonds
+        self._n2            = Backend.zeros((self._dim, self._dim ))
+        self._n3            = Backend.zeros((self._dim, self._dim ))
         
-        self._rvectors      = Backend.zeros((self._ns, 3))  # allowed values of the real space vectors
-        self._kvectors      = Backend.zeros((self._ns, 3))  # allowed values of the inverse space vectors
+        self._rvectors      = Backend.zeros((self._ns, 3))          # allowed values of the real space vectors
+        self._kvectors      = Backend.zeros((self._ns, 3))          # allowed values of the inverse space vectors
         # initialize dft matrix
         self._dft           = Backend.zeros((self._ns, self._ns), dtype = complex) # Discrete Fourier Transform matrix for the lattice model
         
@@ -497,7 +324,9 @@ class Lattice(ABC):
     def Ns(self):            return self._ns
     @property
     def sites(self):        return self._ns
-    
+    @property
+    def size(self):         return self._ns
+
     @ns.setter
     def ns(self, value):    self._ns = value
     @Ns.setter
@@ -556,6 +385,28 @@ class Lattice(ABC):
     @n3.setter
     def n3(self, value):    self._n3 = value
     
+    @property
+    def basis(self):        return self._basis
+    @basis.setter
+    def basis(self, value): self._basis = value
+    @property
+    def multipartity(self): return self._basis.shape[0]
+    
+    @property
+    def vectors(self):      return self._vectors
+    @vectors.setter
+    def vectors(self, value): self._vectors = value
+    
+    @property
+    def avec(self):         return np.stack((self._a1, self._a2, self._a3), axis=0)
+    @avec.setter
+    def avec(self, value):  self._a1 = value[0]; self._a2 = value[1]; self._a3 = value[2]
+    
+    @property
+    def bvec(self):         return np.stack((self._k1, self._k2, self._k3), axis=0)
+    @bvec.setter
+    def bvec(self, value):  self._k1 = value[0]; self._k2 = value[1]; self._k3 = value[2]
+
     # ------------------------------------------------------------------
     #! DFT Matrix
     # ------------------------------------------------------------------
@@ -614,21 +465,13 @@ class Lattice(ABC):
     #! K-space
     # ------------------------------------------------------------------
     
-    @staticmethod
-    def _reciprocal_from_real(a1, a2, a3=None):
-        """Return reciprocal vectors b1,b2,(b3) satisfying a_i · b_j = 2π δ_ij."""
-        A           = np.column_stack([a1[:3], a2[:3], (a3 if a3 is not None else np.array([0.,0.,1.]))[:3]])
-        B           = 2.0 * np.pi * np.linalg.inv(A).T
-        b1, b2, b3  = B[:,0], B[:,1], B[:,2]
-        return b1, b2, b3
-    
     def k_vector(self, qx, qy=0.0, qz=0.0) -> np.ndarray:
         """
         Return the k-vector in Cartesian coordinates for given (qx, qy, qz)
         in reciprocal lattice units.
         """
         if self.k1 == None or self.k2 == None or self.k3 == None:
-            self.k1, self.k2, self.k3 = Lattice._reciprocal_from_real(self.a1[0,:], self.a2[0,:], self.a3[0,:])
+            self.k1, self.k2, self.k3 = reciprocal_from_real(self.a1, self.a2, self.a3)
         
         kvec = qx * self.k1[0,:]
         if self.dim > 1:
@@ -636,6 +479,57 @@ class Lattice(ABC):
         if self.dim > 2:
             kvec += qz * self.k3[0,:]
         return kvec
+    
+    def extract_momentum(self, 
+                        eigvecs    : np.ndarray, 
+                        *,
+                        eigvals     : np.ndarray = None,
+                        tol         : float      = 1e-10,
+                        ) -> np.ndarray:
+        """
+        Extract crystal momentum vectors k from real-space eigenvectors.
+        """
+        return extract_momentum(eigvecs, self, eigvals=eigvals, tol=tol)
+
+    def extract_bz_path_data(self, 
+                            k_vectors           : np.ndarray,
+                            values              : np.ndarray,
+                            path                : Union[PathTypes, str, StandardBZPath]  = StandardBZPath.HONEYCOMB_2D,
+                            *,
+                            mode                : str = 'discrete',
+                            points_p_segment    : int = 10,
+                            tol                 : float = 1e-8,
+                            ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
+        """
+        Extract k-point path data in the Brillouin zone for band structure calculations.
+        Parameters:
+        -----------
+        k_vectors : np.ndarray
+            Array of k-vectors in Cartesian coordinates.
+        values : np.ndarray
+            Corresponding values (e.g., energies) at each k-vector.
+        path : Union[PathTypes, str, StandardBZPath], optional
+            Predefined path type or custom path specification. Default is StandardBZPath.HONEYCOMB_2D.
+        mode : str, optional
+            Mode of extraction: 'discrete' for discrete points, 'interpolated' for interpolated path. Default is 'discrete'.
+        points_p_segment : int, optional
+            Number of points per segment for interpolation. Default is 10.
+        tol : float, optional
+            Tolerance for numerical comparisons. Default is 1e-8.
+        Returns:
+        --------
+        Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]
+            Tuple containing:
+            - k_path : np.ndarray
+                Array of k-vectors along the specified path.
+            - values_path : np.ndarray
+                Corresponding values along the k-path.
+            - labels : List[Tuple[int, str]]
+                List of tuples with indices and labels of high-symmetry points.
+            - distances : np.ndarray
+                Cumulative distances along the k-path.
+        """
+        return extract_bz_path_data(self, k_vectors, values, path, mode=mode, points_per_seg=points_p_segment, tol=tol)
     
     # ------------------------------------------------------------------
     #! Boundary fluxes
@@ -714,7 +608,7 @@ class Lattice(ABC):
                              orientation: Optional[str] = None) -> list[int]:
         """
         Return the list of 'middle' sites l that are nearest neighbors
-        of both i and j — i.e., sites forming two-step NNN paths i-l-j.
+        of both i and j - i.e., sites forming two-step NNN paths i-l-j.
 
         Works for any lattice that implements get_nn(site, idx)
         and get_nn_num(site).
@@ -797,6 +691,27 @@ class Lattice(ABC):
 
         return int(sign)
 
+    def bond_type(self, i: int, j: int) -> str:
+        """
+        Determine the bond type between sites i and j.
+
+        Parameters
+        ----------
+        i, j : int
+            Site indices.
+
+        Returns
+        -------
+        str
+            'nn' for nearest neighbor, 'nnn' for next-nearest neighbor, 'none' otherwise.
+        """
+        if j in self.nn[i]:
+            return 'nn'
+        elif j in self.nnn[i]:
+            return 'nnn'
+        else:
+            return 'none'
+
     # ------------------------------------------------------------------
     #! Boundary helpers
     # ------------------------------------------------------------------
@@ -870,8 +785,60 @@ class Lattice(ABC):
     # -----------------------------------------------------------------------------
     #! DFT MATRIX
     # -----------------------------------------------------------------------------
+
+    def calculate_reciprocal_vectors(self):
+        '''
+        Calculates the reciprocal lattice vectors based on the primitive vectors.
+        Always returns 3D vectors (padding with zeros for lower dimensions).
+        
+        Returns:
+        - k1, k2, k3 : Reciprocal lattice vectors (always 3D)
+        '''
+        self._k1, self._k2, self._k3 = reciprocal_from_real(self.a1, self.a2, self.a3)
+        
+        # Ensure 3D form (pad zeros if 1D or 2D)
+        self._k1    = np.pad(self._k1, (0, 3 - len(self._k1)))
+        self._k2    = np.pad(self._k2, (0, 3 - len(self._k2)))
+        self._k3    = np.pad(self._k3, (0, 3 - len(self._k3)))
+        return self._k1, self._k2, self._k3
     
-    def calculate_dft_matrix(self, phase = False):
+    def apply_dft_matrix(self, vec: np.ndarray, orthogonal: bool = True) -> np.ndarray:
+        """
+        Perform FFT-based Bloch transform on (possibly multi-sublattice) lattices.
+
+        Parameters
+        ----------
+        vec : np.ndarray
+            Real-space field array of shape (Lx, Ly, Lz, n_basis).
+        orthogonal : bool
+            If True, assumes orthogonal lattice; otherwise applies basis-phase correction.
+
+        Returns
+        -------
+        psi_k : np.ndarray
+            Fourier coefficients of shape (Lx, Ly, Lz, n_basis).
+        """
+        
+        # 1. FFT along Bravais directions - in general orthogonal lattices
+        psi_k = np.fft.fftn(vec, axes=(0, 1, 2), norm='ortho')
+
+        # 2. Apply basis-dependent phase correction if non-orthogonal
+        if not orthogonal and hasattr(self, "_basis") and hasattr(self, "_kvectors"):
+            n_basis     = len(self._basis)
+            Nk          = len(self._kvectors)
+            Lx, Ly, Lz  = self.Lx, self.Ly, self.Lz
+
+            # Reshape kvectors onto (Lx, Ly, Lz, 3)
+            kgrid       = self._kvectors.reshape(Lx, Ly, Lz, 3)
+
+            for b, r_basis in enumerate(self._basis):
+                # Compute exp(-i * k . r_basis) for every k-point
+                phase           = np.exp(-1j * np.tensordot(kgrid, r_basis, axes=([3],[0])))
+                psi_k[..., b]  *= phase
+
+        return psi_k
+    
+    def calculate_dft_matrix(self, phase = False, use_fft: bool = False) -> np.ndarray:
         '''
         Calculates the Discrete Fourier Transform (DFT) matrix for the lattice.
         This method can be optimized using FFT (Fast Fourier Transform) in the future.
@@ -884,32 +851,21 @@ class Lattice(ABC):
         - DFT matrix (ndarray): The calculated DFT matrix.
         '''
         
-        # initialize the DFT matrix
-        self._dft   = Backend.zeros((self.ns, self.ns), dtype = complex)
-        
-        # Create omega values
-        omega_x     = Backend.exp(-1j * 2.0 * Backend.pi * self.a / self._lx)
-        omega_y     = Backend.exp(-1j * 2.0 * Backend.pi * self.b / self._ly)
-        omega_z     = Backend.exp(-1j * 2.0 * Backend.pi * self.c / self._lz)
+        if use_fft:
+            N       = self.Lx * self.Ly * self.Lz
+            indices = np.arange(N).reshape(self.Lx, self.Ly, self.Lz)
+            F       = np.fft.fftn(np.eye(N).reshape(self.Lx, self.Ly, self.Lz, N), axes=(0, 1, 2), norm='ortho')
+            return F.reshape(N, N)
+                
+        N           = self.ns
+        # (Ns,3) array of real-space positions (in units of a)
+        r           = np.array([self.get_coordinates(i) for i in range(N)])     # or self._rvectors
+        # (Nk,3) array of k-vectors in reciprocal space
+        k           = self._kvectors                                            # computed from primitive vectors
 
-        e_min_pi    = Backend.exp(1j * Backend.pi)
-
-        # Precompute coordinate arrays
-        indices     = Backend.arange(self._ns)
-        coords      = Backend.array([self.get_coordinates(i) for i in indices])  # Shape (Ns, 3)
-
-        x_coords, y_coords, z_coords = coords[:, 0], coords[:, 1], coords[:, 2]
-
-        # Compute phase factors
-        phase_x     = Backend.where(x_coords % 2 == 0, 1, e_min_pi) if phase else Backend.ones(self._ns)
-        phase_y     = Backend.where(y_coords % 2 == 0, 1, e_min_pi) if phase else Backend.ones(self._ns)
-        phase_z     = Backend.where(z_coords % 2 == 0, 1, e_min_pi) if phase else Backend.ones(self._ns)
-
-        # Compute DFT matrix using broadcasting
-        self.dft = (Backend.power(omega_x, x_coords[:, None] * x_coords[None, :]) *
-                    Backend.power(omega_y, y_coords[:, None] * y_coords[None, :]) *
-                    Backend.power(omega_z, z_coords[:, None] * z_coords[None, :]) *
-                    phase_x[:, None] * phase_y[:, None] * phase_z[:, None])
+        # Construct DFT matrix
+        phase       = np.exp(-1j * np.dot(r, k.T))                              # shape (N, Nk)
+        self._dft   = phase / np.sqrt(N)
         return self._dft
     
     # -----------------------------------------------------------------------------
@@ -1327,12 +1283,88 @@ class Lattice(ABC):
     
     ############################ ABSTRACT CALCULATORS #############################
     
-    @abstractmethod
-    def calculate_coordinates(self):    pass
-    @abstractmethod
-    def calculate_r_vectors(self):      pass
-    @abstractmethod
-    def calculate_k_vectors(self):      pass
+    def calculate_coordinates(self):
+        """
+        Calculates the coordinates for each lattice site in up to 3D.
+
+        Each site index i corresponds to:
+            cell = i // n_basis
+            sub  = i % n_basis
+        where n_basis = len(self._basis) (e.g., 2 for honeycomb).
+        
+        Works for any lattice with defined self._a1, _a2, _a3 and self._basis list.
+        """
+        n_basis             = len(self._basis)
+        self.coordinates    = []
+
+        for i in range(self.Ns):
+            cell    = i // n_basis          # integer division
+            sub     = i % n_basis           # remainder
+
+            nx      =  cell              % self.Lx
+            ny      = (cell // self.Lx)  % self.Ly if self._dim >= 2 else 0
+            nz      = (cell // (self.Lx  * self.Ly)) % self.Lz if self._dim >= 3 else 0
+
+            R       = nx * self._a1 + ny * self._a2 + nz * self._a3     # lattice vector
+            r       = R + self._basis[sub]                              # add basis vector
+            self.coordinates.append(r)
+
+        self.coordinates = np.array(self.coordinates)
+        return self.coordinates
+        
+    def calculate_r_vectors(self):
+        """
+        Calculates the real-space vectors (r) for each site.
+        Equivalent to coordinates but as a NumPy array with shape (Ns, 3).
+        """
+        
+        n_basis     = len(self._basis)
+        rv          = np.zeros((self.Ns, 3))
+        idx         = 0
+
+        for z in range(self.Lz if self._dim >= 3 else 1):
+            for y in range(self.Ly if self._dim >= 2 else 1):
+                for x in range(self.Lx):
+                    cell_offset = x * self._a1 + y * self._a2 + z * self._a3
+                    for sub in range(n_basis):
+                        rv[idx] = cell_offset + self._basis[sub]
+                        idx    += 1
+
+        self.rvectors = rv
+        return self.rvectors
+
+    def calculate_k_vectors(self):
+        """
+        Calculates the allowed reciprocal-space k-vectors (momentum grid)
+        consistent with the lattice size and primitive reciprocal vectors.
+
+        Requires that self._k1, self._k2, self._k3 (reciprocal lattice vectors)
+        are already set, e.g., from:
+        >>> A = np.column_stack([self._a1, self._a2, self._a3])
+        >>> B = 2 * np.pi * np.linalg.inv(A.T)
+        >>> self._k1, self._k2, self._k3 = B.T
+        """
+        kv = []
+        for nx in range(self.Lx):
+            for ny in range(self.Ly if self._dim >= 2 else 1):
+                for nz in range(self.Lz if self._dim >= 3 else 1):
+                    k = (nx / self.Lx) * self._k1 \
+                      + (ny / self.Ly) * self._k2 \
+                      + (nz / self.Lz) * self._k3
+                    kv.append(k)
+
+        self.kvectors = np.array(kv)
+        return self.kvectors
+
+    def translation_operators(self):
+        """Return translation matrices T1, T2, T3 on the one-hot basis."""
+        self._T1, self._T2, self._T3 = build_translation_operators(self)
+        return self._T1, self._T2, self._T3
+
+    # -----------------------------------------------------------------------------
+    #! Spatial norm calculators
+    # -----------------------------------------------------------------------------
+
     @abstractmethod
     def calculate_norm_sym(self):       pass
     
@@ -1518,7 +1550,96 @@ class Lattice(ABC):
                 nei_in = self.get_nn_forward(i, j)
                 print_nei(f"Neighbor {j} of site {i}: {nei_in}", lvl = 2, color = 'blue')
 
-    # -----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    #! Bloch Transform & Basis Operations
+    # -------------------------------------------------------------------------
+
+    def get_geometric_encoding(self, *, tol=1e-9):
+        """
+        Map each site i to (cell_idx, sub_idx) purely from geometry.
+
+        Returns
+        -------
+        cell_idx : (Ns,) int array in [0, Nc-1]
+        sub_idx  : (Ns,) int array in [0, Nb-1]
+        """
+        import numpy as np
+
+        coords      = np.asarray(self.coordinates, float)          # (Ns,3)
+        a1          = np.asarray(self._a1, float).reshape(3)
+        a2          = np.asarray(self._a2, float).reshape(3)
+        a3          = np.asarray(self._a3, float).reshape(3)
+        A           = np.column_stack([a1, a2, a3])                # (3,3)
+        Ainv        = np.linalg.inv(A)
+
+        Nb          = len(self._basis)
+        basis       = np.zeros((Nb,3), float)
+        basis[:, :self._basis.shape[1]] = np.asarray(self._basis, float)
+
+        Lx, Ly, Lz  = self._lx, max(self._ly,1), max(self._lz,1)
+        Nc          = Lx*Ly*Lz
+        Ns          = coords.shape[0]
+
+        # fractional cell coords (may be non-integers due to numeric noise)
+        frac        = (Ainv @ coords.T).T                           # (Ns,3)
+        # wrap to [0,L) and round to nearest cell
+        cx          = np.mod(np.rint(frac[:,0]), Lx).astype(int)
+        cy          = np.mod(np.rint(frac[:,1]), max(Ly,1)).astype(int) if self._dim >= 2 else np.zeros(Ns, int)
+        cz          = np.mod(np.rint(frac[:,2]), max(Lz,1)).astype(int) if self._dim >= 3 else np.zeros(Ns, int)
+
+        # residual within unit cell
+        Rrec        = (cx[:,None]*a1[None,:] + cy[:,None]*a2[None,:] + cz[:,None]*a3[None,:])   # (Ns,3)
+        r_in        = coords - Rrec
+
+        # assign sublattice by nearest basis vector
+        d2          = ((r_in[:,None,:] - basis[None,:,:])**2).sum(axis=2)   # (Ns,Nb)
+        sub         = np.argmin(d2, axis=1)
+        if not np.all(np.take_along_axis(d2, sub[:,None], axis=1)[:,0] < tol):
+            # If this trips, increase tol or check a1,a2,a3/basis consistency
+            raise ValueError("Some sites could not be matched to a basis position; adjust tolerance or geometry.")
+
+        cell        = ((cz*Ly + cy)*Lx + cx).astype(int)            # (Ns,)
+        return cell, sub
+
+    # ============================================================
+    #  INVERSE BLOCH TRANSFORM
+    # ============================================================
+
+    def realspace_from_kspace(
+        self,
+        Hk_grid                 : np.ndarray,
+        kpoints                 : Optional[np.ndarray] = None,
+        require_full_grid       : bool = False,
+        unitary_norm            : bool = True):
+        """
+        Inverse Bloch projector: H(k) ∈ C^{Nbtimes Nb} at each k -> H_real (Nstimes Ns), **order-respecting**.
+        """
+        from .tools.lattice_kspace import realspace_from_kspace
+        return realspace_from_kspace(
+            lattice                 = self,
+            Hk_grid                 = Hk_grid,
+            kpoints                 = kpoints,
+            require_full_grid       = require_full_grid,
+            unitary_norm            = unitary_norm)
+
+    def kspace_from_realspace(
+        self,
+        H_real                 : np.ndarray,
+        kpoints                : Optional[np.ndarray] = None,
+        require_full_grid      : bool = False,
+        unitary_norm           : bool = True):
+        """
+        Bloch projector: H_real (Nstimes Ns), **order-respecting** -> H(k) ∈ C^{Nbtimes Nb} at each k.
+        """
+        from .tools.lattice_kspace import kspace_from_realspace
+        return kspace_from_realspace(
+            lattice                 = self,
+            H_real                  = H_real,
+            kpoints                 = kpoints,
+            require_full_grid       = require_full_grid,
+            unitary_norm            = unitary_norm)
+
+    # -------------------------------------------------------------------------
     #! Presentation helpers (text / plots)
     # -----------------------------------------------------------------------------
 

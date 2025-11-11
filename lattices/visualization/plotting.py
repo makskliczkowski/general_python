@@ -892,3 +892,7 @@ class LatticePlotter:
         kwargs.setdefault("figsize", (5.5, 5.5))
         kwargs.setdefault("title", None)
         return plot_lattice_structure(self.lattice, **kwargs)
+
+# -------------------------
+#! EOF
+# -------------------------

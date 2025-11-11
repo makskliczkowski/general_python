@@ -353,7 +353,7 @@ $$H = -t \sum_{\langle i,j \rangle, \sigma} c_{i,\sigma}^\dagger c_{j,\sigma} + 
 ```python
 from QES.general_python.algebra.spectral_backend import operator_spectral_function_multi_omega
 
-# H_full is the 2^L × 2^L matrix
+# H_full is the 2^L times  2^L matrix
 E, V = np.linalg.eigh(H_full)
 A_O = operator_spectral_function_multi_omega(
     omegas, E, V, operator,
@@ -400,7 +400,7 @@ $$H = -t \sum_{\langle i,j \rangle} c_i^\dagger c_j$$
 ```python
 from QES.general_python.algebra.spectral_backend import susceptibility_bubble_multi_omega
 
-# H_single_particle is the L × L matrix
+# H_single_particle is the L times  L matrix
 E_sp = np.linalg.eigvals(H_single_particle)
 f = 1/(1 + np.exp(beta * E_sp))  # Fermi-Dirac occupations
 chi0 = susceptibility_bubble_multi_omega(
@@ -442,7 +442,7 @@ operator_spectral_function_lehmann(
     omega, eigenvalues, eigenvectors, operator,
     eta=0.01, temperature=0.0, backend="default"
 )
-    -> A_O(ω) = Σ_{m,n} (ρ_m - ρ_n) |⟨m|O|n⟩|² δ_η(ω - (E_n - E_m))
+    -> A_O(ω) = Σ_{m,n} (ρ_m - ρ_n) |⟨m|O|n⟩|² delta_η(ω - (E_n - E_m))
     Returns: float (single frequency)
 ```
 
@@ -695,7 +695,7 @@ from QES.general_python.algebra.spectral_backend import (
 # from QES.systems.hubbard import build_hubbard_4site
 # from QES.operators.spin import build_total_spin_z
 
-# Build many-body Hamiltonian (16×16 for 4 sites)
+# Build many-body Hamiltonian (16times 16 for 4 sites)
 # H = -t Σ_{<ij>,\sigma} c†_{i,\sigma} c_{j,\sigma} + U Σ_i n_{i↑} n_{i↓}
 H = build_hubbard_4site(t=1.0, U=4.0)
 

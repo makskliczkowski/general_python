@@ -45,8 +45,6 @@ from ..common.embedded import binary_search as bin_search
 #! Global functions
 ####################################################################################################
 
-
-
 def set_global_defaults(repr_value : float, spin : bool):
     """
     Set the global defaults for the binary module.
