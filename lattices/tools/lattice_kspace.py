@@ -8,9 +8,11 @@ Author          : Maksymilian Kliczkowski
 '''
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Iterable, Optional, Literal
+from typing import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple
+
 from enum import Enum
 import numpy as np
+import scipy.sparse as sp
 
 if TYPE_CHECKING:
     from ..lattice import Lattice
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
 # -----------------------------------------------------------------------------------------------------------
 
 class StandardBZPath(Enum):
-    """
+    r"""
     Enumeration of standard high-symmetry paths in the Brillouin zone.
 
     We define the k-space paths in a general representation of momentum vectors:
@@ -44,38 +46,38 @@ class StandardBZPath(Enum):
     """
 
     CHAIN_1D = [
-        ("0",       [0.0, 0.0, 0.0]),
-        (r"\pi",    [0.5, 0.0, 0.0]),
-        (r"2\pi",   [1.0, 0.0, 0.0])
+        ("0",           [0.0, 0.0, 0.0]),
+        (r"\pi",        [0.5, 0.0, 0.0]),
+        (r"2\pi",       [1.0, 0.0, 0.0])
     ]
 
     SQUARE_2D = [
-        ("G",       [0.0, 0.0, 0.0]),
-        ("X",       [0.5, 0.0, 0.0]),
-        ("M",       [0.5, 0.5, 0.0]),
-        ("G",       [0.0, 0.0, 0.0])
+        (r"$\Gamma$",   [0.0, 0.0, 0.0]),
+        (r"$X$",        [0.5, 0.0, 0.0]),
+        (r"$M$",        [0.5, 0.5, 0.0]),
+        (r"$\Gamma$",   [0.0, 0.0, 0.0])
     ]
 
     TRIANGULAR_2D = [
-        ("G",       [0.0, 0.0, 0.0]),
-        ("M",       [0.5, 0.0, 0.0]),
-        ("K",       [1/3, 1/3, 0.0]),
-        ("G",       [0.0, 0.0, 0.0])
+        (r"$\Gamma$",   [0.0, 0.0, 0.0]),
+        (r"$M$",        [0.5, 0.0, 0.0]),
+        (r"$K$",        [1/3, 1/3, 0.0]),
+        (r"$\Gamma$",   [0.0, 0.0, 0.0])
     ]
 
     CUBIC_3D = [
-        ("G",       [0.0, 0.0, 0.0]),
-        ("X",       [0.5, 0.0, 0.0]),
-        ("M",       [0.5, 0.5, 0.0]),
-        ("R",       [0.5, 0.5, 0.5]),
-        ("G",       [0.0, 0.0, 0.0])
+        (r"$\Gamma$",   [0.0, 0.0, 0.0]),
+        (r"$X$",        [0.5, 0.0, 0.0]),
+        (r"$M$",        [0.5, 0.5, 0.0]),
+        (r"$R$",        [0.5, 0.5, 0.5]),
+        (r"$\Gamma$",   [0.0, 0.0, 0.0])
     ]
 
     HONEYCOMB_2D = [
-        ("G",       [0.0, 0.0, 0.0]),
-        ("K",       [1/3, 1/3, 0.0]),
-        ("M",       [0.5, 0.0, 0.0]),
-        ("G",       [0.0, 0.0, 0.0])
+        (r"$\Gamma$",   [0.0, 0.0, 0.0]),
+        (r"$K$",        [2/3, 1/3, 0.0]),
+        (r"$M$",        [0.5, 0.0, 0.0]),
+        (r"$\Gamma$",   [0.0, 0.0, 0.0])
     ]
     
     def from_str(name: str) -> StandardBZPath:
@@ -231,140 +233,113 @@ def brillouin_zone_path(
         Indices and labels for symmetry points.
     """
     
-    # resolve path
-    path        = _resolve_path_input(path)
-    recip       = np.vstack([v for v in [lattice._k1, lattice._k2, lattice._k3] if v is not None]) # shape (3, 3) - our lattice always has 3D vectors
-    dim         = lattice.dim
+    path = _resolve_path_input(path)
 
-    # fractional -> cartesian
-    cart_pts    = []
-    for label, frac in path:
-        f       = np.array(frac, dtype=float)[:dim]
-        cart_pts.append(f @ recip)  # k = f1*b1 + f2*b2 + f3*b3
+    # Reciprocal lattice matrix: columns = b1, b2, b3
+    b1 = np.asarray(lattice._k1, float).reshape(3)
+    b2 = np.asarray(lattice._k2, float).reshape(3)
+    b3 = np.asarray(lattice._k3, float).reshape(3)
+    B  = np.column_stack([b1, b2, b3])      # (3,3)
 
-    k_path      = []                    # will hold all k-points along path
-    k_path_frac = []                    # fractional coords along path
-    k_dist      = [0.0]                 # cumulative distance for plotting
-    labels      = [(0, path[0][0])]     # list of (index, label) for symmetry points
+    cart_pts  = []
+    frac_pts  = []
+    for _, frac in path:
+        f = np.zeros(3, float)
+        f[:len(frac)] = np.array(frac, float)
+        k_cart = B @ f
+        cart_pts.append(k_cart)
+        frac_pts.append(f)
 
-    # interpolate segments given in the path
+    k_path      = []
+    k_path_frac = []
+    k_dist      = [0.0]
+    labels      = [(0, path[0][0])]
+
     for i in range(len(cart_pts) - 1):
-        p0          = cart_pts[i]               # start point
-        p1          = cart_pts[i + 1]           # end point
-        
-        if points_per_seg is None or points_per_seg < 1:
-            # determine from the number of k-points in segment
-            # for instance, on a square lattice, the maximal number of points along each direction is Lx, Ly, Lz
-            # therefore, when going from p0 to p1, we can estimate the number of points needed to sample the segment
-            # based on the length of the segment in reciprocal space and the lattice size
-            # we scale by 10 to ensure sufficient sampling -> later we can downsample using the closest k-point method
-            # Example: if segment length is 0.5 * |b1| and Lx=10, we want ~5 points along that segment
-            points_per_seg_in = int(np.linalg.norm(p1 - p0) / (2.0 * np.pi) * max(lattice._lx, lattice._ly, lattice._lz) * 10)
-        
-        # interpolate segment       
-        seg         = np.linspace(p0, p1, points_per_seg, endpoint=False)                       # cartesian coords - true k-points
-        seg_frac    = np.linspace(path[i][1], path[i + 1][1], points_per_seg, endpoint=False)   # fractional coords, e.g., [0.0, 0.0, 0.0] -> [0.5, 0.0, 0.0]
-        
-        # append to path
-        for k in seg:
+        p0, p1 = cart_pts[i], cart_pts[i + 1]
+        f0, f1 = frac_pts[i], frac_pts[i + 1]
+
+        nseg      = points_per_seg
+        seg_cart  = np.linspace(p0, p1, nseg, endpoint=False)
+        seg_frac  = np.linspace(f0, f1, nseg, endpoint=False)
+
+        for j in range(nseg):
+            k = seg_cart[j]
             if k_path:
                 dk = np.linalg.norm(k - k_path[-1])
                 k_dist.append(k_dist[-1] + dk)
             k_path.append(k)
-            
-        for kf in seg_frac:
-            k_path_frac.append(kf)
+            k_path_frac.append(seg_frac[j])
 
-        # add label at end of segment
-        labels.append((len(k_path) - 1, path[i + 1][0]))
+        labels.append((len(k_path), path[i + 1][0]))
 
-    return np.array(k_path), np.array(k_dist), labels, np.array(k_path_frac) # fractional coords along path
+    k_path      = np.array(k_path)
+    k_path_frac = np.array(k_path_frac)
+    k_dist      = np.array(k_dist)
+
+    return k_path, k_dist, labels, k_path_frac
 
 # -----------------------------------------------------------------------------------------------------------
 # K-SPACE PATH EXTRACTION
 # -----------------------------------------------------------------------------------------------------------
 
 def extract_bz_path_data(
-    lattice         : Lattice,                                                  # Lattice object
-    k_vectors       : np.ndarray,                                               # shape (Nk, 3)
-    values          : np.ndarray,                                               # shape (Nk, ...)
-    path            : Iterable[tuple[str, Iterable[float]]] | StandardBZPath,   # path definition
-    ) -> tuple[np.ndarray, np.ndarray, list[tuple[int, str]], np.ndarray]:
+    lattice,
+    k_vectors           : np.ndarray,
+    k_vectors_frac      : np.ndarray, 
+    values              : np.ndarray,
+    path                : Iterable[tuple[str, Iterable[float]]] | StandardBZPath,
+    ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
     """
-    Select or interpolate k-points and corresponding values along a Brillouin zone path.
-
+    Extract k-path data using FRACTIONAL coordinate matching with periodicity.
+    
+    This correctly handles the periodic Brillouin zone by comparing
+    fractional coordinates modulo 1.
+    
     Parameters
     ----------
-    lattice : Lattice
-        Lattice object with reciprocal lattice vectors (_k1, _k2, _k3).
     k_vectors : np.ndarray, shape (Nk, 3)
-        All computed k-points in reciprocal-space Cartesian coordinates.
-        This is not the fractional representation!
-    values : np.ndarray, shape (Nk, ...)
-        Values (e.g., eigenvalues, observables) associated with each k-point.
-    path : list[(label, coords)] or StandardBZPath
-        Path definition (fractional coordinates) or one of the standard enums.
-
-    Returns
-    -------
-    k_path : np.ndarray, shape (Npath, 3)
-        k-points along the path.
-    k_dist : np.ndarray, shape (Npath,)
-        Cumulative distance for x-axis plotting.
-    labels : list[(int, str)]
-        Indices and labels for symmetry points.
-    values_path : np.ndarray, shape (Npath, ...)
-        Values corresponding to points along the path (interpolated or discrete).
+        Cartesian k-points
+    k_vectors_frac : np.ndarray, shape (Nk, 3)
+        Fractional coordinates of k-points (NEW!)
+    tolerance : float
+        Tolerance for fractional coordinate matching (accounts for numerical error)
     """
+    
+    # flatten everything for easy search
+    kf_flat     = k_vectors_frac.reshape(-1, 3)
+    kc_flat     = k_vectors.reshape(-1, 3)
+    val_flat    = values.reshape(-1, values.shape[-1])
 
-    k_vectors = np.asarray(k_vectors, dtype=float)
-    values    = np.asarray(values)
-
-    # Ensure our k_vectors are a 2D array of shape (Nk, 3), each row a k-point
-    if k_vectors.ndim > 2:
-        k_vectors = k_vectors.reshape(-1, k_vectors.shape[-1])
-        
-    # Ensure values is 2D: (Nk, nvals = 1 or more [e.g., bands])
-    if values.ndim == 1:
-        values = values.reshape(-1, 1)
-    elif values.ndim > 2:
-        values = values.reshape(-1, values.shape[-1])
-
-    # Check size consistency
-    if k_vectors.shape[0] != values.shape[0]:
-        raise ValueError(f"k_vectors and values size mismatch: {k_vectors.shape[0]} vs {values.shape[0]}")
-
-    # ideal geometric path in k-space (cartesian)
-    k_ideal, k_dist, labels, k_ideal_frac = brillouin_zone_path(
-        lattice        = lattice,
-        path           = path,
-        points_per_seg = None, # we want only true k-points along path
+    # Generate continuous ideal path
+    k_ideal_cart, k_dist, labels, k_ideal_frac = brillouin_zone_path(
+        lattice=lattice, path=path, points_per_seg=80
     )
 
-    # allocate output arrays
-    npath               = k_ideal.shape[0]
-    nvals               = values.shape[1]
-    k_path_sel          = np.zeros_like(k_ideal)
-    values_path         = np.zeros((npath, nvals), dtype=values.dtype)
+    # grid resolution for tolerance
+    Lx, Ly, Lz  = lattice._lx, lattice._ly, lattice._lz
+    tol         = 0.5 * np.sqrt((1/Lx)**2 + (1/Ly)**2 + (1/Lz)**2)
 
-    # convert ideal path to array for distance computations
-    # first, get fractional coordinates of ideal path
-    # nearest-neighbor sampling along path
-    # go through each ideal k-point, find closest in k_vectors
-    # compute effective fractional coordinates of existing k-vectors
-    
-    # go through each ideal k-point, find closest in k_vectors
-    for i, kf_frac in enumerate(k_ideal_frac):
-        
-        # get cartesian coords of ideal k-point -> if we want to match in cartesian space
-        k_cart          = k_ideal[i]  # shape (3,)
-        # find closest in k_vectors
-        diff            = np.linalg.norm(k_vectors - k_cart, axis=1) # (\vec{k} - \vec{k_ideal}) norm
-        idx             = np.argmin(diff)
-        k_path_sel[i]   = k_vectors[idx]
-        values_path[i]  = values[idx]
+    # prepare outputs
+    Np          = len(k_ideal_frac)
+    nb          = values.shape[-1]
+    k_sel_cart  = np.zeros((Np, 3))
+    k_sel_frac  = np.zeros((Np, 3))
+    vals_sel    = np.zeros((Np, nb))
 
-    return k_path_sel, k_dist, labels, values_path
+    # loop through path points
+    for i, kf_target in enumerate(k_ideal_frac):
+        diff    = kf_flat - kf_target
+        diff   -= np.round(diff)
+        dist    = np.linalg.norm(diff, axis=1)
+        idx     = np.argmin(dist)
+        if dist[idx] > tol:
+            print(f"Warning: far match ({dist[idx]:.3e}) at k={kf_target}")
+        k_sel_cart[i]   = kc_flat[idx]
+        k_sel_frac[i]   = kf_flat[idx]
+        vals_sel[i]     = val_flat[idx]
+
+    return k_sel_cart, k_sel_frac, k_dist, labels, vals_sel
 
 # -----------------------------------------------------------------------------------------------------------
 #? Reciprocal Lattice Vectors
@@ -572,7 +547,7 @@ def build_translation_operators(lattice: 'Lattice') -> tuple[np.ndarray, np.ndar
 
     return T1, T2, T3
 
-def reconstruct_k_grid_from_blocks(blocks):
+def reconstruct_k_grid_from_blocks(blocks: List['QuadraticBlockDiagonalInfo']) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Reconstruct the structured k-space grid and energy array
     from a flat list of QuadraticBlockDiagonalInfo objects.
@@ -600,15 +575,17 @@ def reconstruct_k_grid_from_blocks(blocks):
 
     # Allocate structured arrays
     k_grid      = np.zeros((Lx, Ly, Lz, 3))
+    k_grid_frac = np.zeros((Lx, Ly, Lz, 3))
     energy_grid = np.zeros((Lx, Ly, Lz, n_bands))
 
     # Fill by index
     for blk in blocks:
-        ix, iy, iz                  = blk.block_index
+        ix, iy, iz                  = blk.block_index[0], blk.block_index[1], blk.block_index[2]
+        k_grid_frac[ix, iy, iz, :]  = blk.frac_point
         k_grid[ix, iy, iz, :]       = blk.point
         energy_grid[ix, iy, iz, :]  = blk.en
 
-    return k_grid, energy_grid
+    return k_grid, k_grid_frac, energy_grid
 
 # -------------------------------------------------------------------------------------------
 #! SPACE TRANSFORMATIONS
@@ -757,12 +734,11 @@ def kspace_from_realspace(
         or (Nk, Nb, Nb)          if kpoints is provided
     kgrid   : (Lx, Ly, Lz, 3)       or (Nk, 3)
     """
-    import numpy as np
-    import scipy.sparse as sp
 
     #! VALIDATE INPUTS
     if H_real.ndim != 2 or H_real.shape[0] != H_real.shape[1]:
         raise ValueError("H_real must be a square matrix.")
+    
     Ns = H_real.shape[0]
     if Ns != lattice.Ns:
         raise ValueError(f"H_real size {Ns} != lattice Ns {lattice.Ns}.")
@@ -782,20 +758,28 @@ def kspace_from_realspace(
     #! k-point mesh - either full grid or provided points
     if kpoints is None:
         # fractional coordinates in reciprocal lattice basis
-        frac_x  = np.linspace(0, 1, Lx, endpoint=False)
-        frac_y  = np.linspace(0, 1, Ly, endpoint=False)
-        frac_z  = np.linspace(0, 1, Lz, endpoint=False)
+        frac_x                      = np.linspace(0, 1, Lx, endpoint=False)
+        frac_y                      = np.linspace(0, 1, Ly, endpoint=False)
+        frac_z                      = np.linspace(0, 1, Lz, endpoint=False)
+        kx_frac, ky_frac, kz_frac   = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
 
-        # handle dimensionality automatically (1D/2D/3D)
-        # Calculate k-grid for all dimensions, ensuring a (Lx, Ly, Lz, 3) shape
-        # even if some dimensions are effectively 1.
-        kx, ky, kz  = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
-        kgrid       = kx[..., None] * b1 + ky[..., None] * b2 + kz[..., None] * b3  # shape (Lx, Ly, Lz, 3)
-        kpoints     = kgrid.reshape(-1, 3)                                          # shape (Nc, 3)
-        return_grid = True
+        # Store fractional coordinates for return
+        # kgrid_frac has shape (Lx, Ly, Lz, 3)
+        kgrid_frac                  = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)
+
+        # Construct the Cartesian k-vectors
+        # (Lx,Ly,Lz,1) * (3,) -> (Lx,Ly,Lz,3)
+        kgrid                       = (kx_frac[..., None] * b1 + 
+                                       ky_frac[..., None] * b2 + 
+                                       kz_frac[..., None] * b3)  # shape (Lx, Ly, Lz, 3)
+        
+        kpoints                     = kgrid.reshape(-1, 3)  # shape (Nc, 3)
+        return_grid                 = True
     else:
-        kpoints     = np.asarray(kpoints, float).reshape(-1, 3)
-        return_grid = False
+        kpoints                     = np.asarray(kpoints, float).reshape(-1, 3)
+        kgrid                       = None
+        kgrid_frac                  = None
+        return_grid                 = False
 
     # Determine number of k-points
     Nk = kpoints.shape[0]
@@ -803,34 +787,185 @@ def kspace_from_realspace(
         raise ValueError(f"Round-trip requires Nk == Nc == {Nc}, got Nk={Nk}.")
 
     #! geometric labeling: (cell, sub) while keeping order
-    # (uses coords + a1,a2,a3 + basis; no reindexing of H_real)
-    cell, sub       = lattice.get_geometric_encoding()  # both (Ns,)
+    # cell_idx, sub_idx = lattice.get_geometric_encoding()      # shape (Ns,)
+    indices           = np.arange(Ns)
+    sub_idx           = indices % Nb
+    
+    # Ensure basis is padded with zeros for 1D/2D
+    basis_coords                                = np.zeros((Nb, 3), dtype=float)
+    basis_coords[:, :lattice._basis.shape[1]]   = np.asarray(lattice._basis, float)
+    
+    # Total position vector r_i = R_n + r_a
+    # This should be *identical* to lattice.coordinates if they were
+    # generated in the same order as H_real.
+    # Using lattice.coordinates is simpler and safer if we trust it.
+    coords                                      = np.asarray(lattice.coordinates, float) # shape (Ns, 3)
 
-    # one-hot projector onto sublattice columns (Nstimes Nb)
-    S = np.zeros((Ns, Nb), dtype=complex)
-    S[np.arange(Ns), sub] = 1.0
-
-    # site coordinates for Bloch phases (Nstimes 3)
-    coords = np.asarray(lattice.coordinates, float)
-
-    # normalization: unitary Bloch projector uses 1/sqrt(Nc)
-    norm = (Nc ** 0.5) if unitary_norm else 1.0
-
-    # allow sparse H
-    Hdot = (H_real.dot if sp.issparse(H_real) else (lambda X: H_real @ X))
-
-    # --- main loop: w = diag(phi) @ S, then Hk = w^† H w ---
-    Hk = np.zeros((Nk, Nb, Nb), dtype=complex)
-    for ik, kvec in enumerate(kpoints):
-        phi = np.exp(-1j * (coords @ kvec)) / norm      # (Ns,)
-        w   = phi[:, None] * S                          # (Ns,Nb)
-        Hw  = Hdot(w)                                   # (Ns,Nb)
-        Hk[ik] = w.conj().T @ Hw                        # (Nb,Nb)
+    # We need the projector S[i, a] = delta_{sub(i), a}
+    S                           = np.zeros((Ns, Nb), dtype=complex)     # Bloch projector
+    S[np.arange(Ns), sub_idx]   = 1.0                                   # shape (Ns, Nb)
+    
+    # The FT formula is: H_ab(k) = sum_{n,m} e^{-ik(R_n-R_m)} H_{n,a; m,b}
+    # Or, using the projector W: H_ab(k) = sum_{i,j} W*_{i,a} H_{i,j} W_{j,b}
+    # Where W_{i,a} = (1/sqrt(Nc)) * e^{-ik . r_i} * S_{i,a}
+    #               = (1/sqrt(Nc)) * e^{-ik . (R_n + r_a)} * delta_{sub(i), a}
+    
+    phases                      = np.exp(-1j * (kpoints @ coords.T))  # (Nc, Ns)
+    norm                        = np.sqrt(Nc) if unitary_norm else 1.0
+    phases                     /= norm
+    
+    # Vectorized projector: W[ik, i, a] = phases[ik, i] * S[i, a]
+    W                           = phases[:, :, None] * S[None, :, :]  # (Nc, Ns, Nb)
+    
+    # Transform: H(k) = W† @ H @ W for all k
+    # (Nc, Nb, Ns) @ (Ns, Ns) @ (Nc, Ns, Nb) -> (Nc, Nb, Nb)
+    Hk                          = np.einsum('kia,ij,kjb->kab', W.conj(), H_real, W)
+    
+    # Reshape and shift
+    Hk                          = Hk.reshape(Lx, Ly, Lz, Nb, Nb)
+    kgrid                       = np.fft.fftshift(kgrid, axes=(0, 1, 2))
+    kgrid_frac                  = np.fft.fftshift(kgrid_frac, axes=(0, 1, 2))
+    return Hk, kgrid, kgrid_frac
+    
+    norm                    = (Nc ** 0.5) if unitary_norm else 1.0
+    Hk                      = np.zeros((Nk, Nb, Nb), dtype=complex)
+    for ik in range(Nk):
+        # Phase factors for this k-point
+        # phi[i] = e^{-i k * r_i} / norm
+        # r_i is the full coordinate vector r_i = R_n + r_a
+        phi     = np.exp(-1j * (kpoints[ik] @ coords.T)) / norm  # shape (Ns,)
+        
+        # Bloch projector: W[i,a] = phi[i] * S[i,a]
+        # S[i,a] is 1 only if site 'i' belongs to sublattice 'a', 0 otherwise.
+        # This correctly applies the phase e^{-ik.r_i} only to the
+        # basis state 'a' that site 'i' corresponds to.
+        W       = phi[:, None] * S  # shape (Ns, Nb)
+        
+        # Transform: H(k) = W† H W
+        if sp.issparse(H_real):
+            # For sparse: (Nb, Ns) @ sparse(Ns, Ns) @ (Ns, Nb)
+            Hk[ik] = W.conj().T @ (H_real @ W)
+        else:
+            Hk[ik] = W.conj().T @ H_real @ W
 
     if return_grid:
-        return Hk.reshape(Lx, Ly, Lz, Nb, Nb), kgrid
+        # Also return fractional coordinates
+        Hk          = Hk.reshape(Lx, Ly, Lz, Nb, Nb)
+        k_grid      = np.fft.fftshift(k_grid,       axes=(0, 1, 2))
+        k_grid_frac = np.fft.fftshift(k_grid_frac,  axes=(0, 1, 2))
+        result      = (Hk, k_grid, k_grid_frac) # This is already (Lx, Ly, Lz, 3)
+        return result
     else:
         return Hk, kpoints
+
+def kspace_from_realspace_fft(
+        lattice,
+        H_real: np.ndarray,
+        unitary_norm: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    FFT-based Bloch transform: H_real (Ns×Ns) -> H(k) (Lx,Ly,Lz,Nb,Nb)
+    
+    This uses numpy's FFT for computational efficiency.
+    
+    Parameters
+    ----------
+    lattice : Lattice
+        Lattice object with geometry info
+    H_real : np.ndarray
+        Real-space Hamiltonian (Ns × Ns)
+    unitary_norm : bool
+        If True, use 1/√Nc normalization (unitary transform)
+        
+    Returns
+    -------
+    Hk : np.ndarray, shape (Lx, Ly, Lz, Nb, Nb)
+        k-space Hamiltonian blocks
+    kgrid : np.ndarray, shape (Lx, Ly, Lz, 3)
+        Cartesian k-vectors (fftshifted to center at Γ)
+    kgrid_frac : np.ndarray, shape (Lx, Ly, Lz, 3)
+        Fractional k-coordinates (fftshifted)
+    """
+    # Validate inputs
+    if H_real.ndim != 2 or H_real.shape[0] != H_real.shape[1]:
+        raise ValueError("H_real must be square")
+    
+    Ns = H_real.shape[0]
+    if Ns != lattice.Ns:
+        raise ValueError(f"H_real size {Ns} != lattice.Ns {lattice.Ns}")
+    
+    # Convert sparse to dense if needed
+    if sp.issparse(H_real):
+        H_real = H_real.toarray()
+    
+    # Lattice parameters
+    Lx, Ly, Lz = lattice._lx, max(lattice._ly, 1), max(lattice._lz, 1)
+    Nc = Lx * Ly * Lz  # number of unit cells
+    Nb = len(lattice._basis)  # sublattices per cell
+    
+    if Ns != Nc * Nb:
+        raise ValueError(f"Ns={Ns} must equal Nc*Nb = {Nc}*{Nb} = {Nc*Nb}")
+    
+    # Reciprocal lattice vectors
+    b1 = np.asarray(lattice._k1, float).reshape(3)
+    b2 = np.asarray(lattice._k2, float).reshape(3)
+    b3 = np.asarray(lattice._k3, float).reshape(3)
+    
+    # Reshape Hamiltonian: (Ns, Ns) -> (Lx, Ly, Lz, Nb, Lx, Ly, Lz, Nb)
+    # Index as: [ix, iy, iz, a, jx, jy, jz, b]
+    # where (ix,iy,iz) is cell index and a,b are sublattice indices
+    H_reshaped = np.zeros((Lx, Ly, Lz, Nb, Lx, Ly, Lz, Nb), dtype=complex)
+    
+    # Fill reshaped array
+    for i in range(Ns):
+        for j in range(Ns):
+            # Decompose site indices
+            cell_i, sub_i = i // Nb, i % Nb
+            cell_j, sub_j = j // Nb, j % Nb
+            
+            # Cell coordinates
+            ix = cell_i % Lx
+            iy = (cell_i // Lx) % Ly
+            iz = (cell_i // (Lx * Ly)) % Lz
+            
+            jx = cell_j % Lx
+            jy = (cell_j // Lx) % Ly
+            jz = (cell_j // (Lx * Ly)) % Lz
+            
+            H_reshaped[ix, iy, iz, sub_i, jx, jy, jz, sub_j] = H_real[i, j]
+    
+    # Apply FFT over spatial dimensions (axes 4, 5, 6 = jx, jy, jz)
+    # This computes: H_ab(R, k) = Σ_R' H_ab(R, R') e^(-ik·R')
+    norm_factor = np.sqrt(Nc) if unitary_norm else 1.0
+    
+    Hk_temp = np.fft.fftn(H_reshaped, axes=(4, 5, 6), norm='ortho' if unitary_norm else None)
+    
+    # For translationally invariant systems, H(k) should be independent of R
+    # Average over R (or just take R=0)
+    # H_ab(k) = H_ab(R=0, k)
+    Hk = Hk_temp[0, 0, 0, :, :, :, :, :]  # Take R=0 reference cell
+    
+    # Rearrange to (Lx, Ly, Lz, Nb, Nb)
+    Hk = np.transpose(Hk, (1, 2, 3, 0, 4))  # (kx, ky, kz, sub_i, sub_j)
+    
+    # Generate k-grid
+    frac_x = np.fft.fftfreq(Lx)  # FFT frequencies: [0, 1/L, ..., (L-1)/L] -> [-0.5, ..., 0.5)
+    frac_y = np.fft.fftfreq(Ly)
+    frac_z = np.fft.fftfreq(Lz)
+    
+    kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing='ij')
+    kgrid_frac = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)
+    
+    # Convert to Cartesian k-vectors
+    kgrid = (kx_frac[..., None] * b1 + 
+             ky_frac[..., None] * b2 + 
+             kz_frac[..., None] * b3)
+    
+    # Apply fftshift to center at Γ
+    Hk = np.fft.fftshift(Hk, axes=(0, 1, 2))
+    kgrid = np.fft.fftshift(kgrid, axes=(0, 1, 2))
+    kgrid_frac = np.fft.fftshift(kgrid_frac, axes=(0, 1, 2))
+    
+    return Hk, kgrid, kgrid_frac
 
 # -----------------------------------------------------------------------------------------------------------
 #! END OF FILE

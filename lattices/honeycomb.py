@@ -76,14 +76,17 @@ class HoneycombLattice(Lattice):
         # For the honeycomb lattice there are two sites per unit cell.
         self._ns        = 2 * self.Lx * self.Ly * self.Lz
 
-        # Initialize the primitive vectors
+        # Define lattice parameters
+        # self._a1        = np.array([np.sqrt(3) * self.a, 0, 0])
+        # self._a2        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        # self._a3        = np.array([0, 0, self.c])
+        self._a1        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a3        = np.array([0, 0, self.c])
 
-        self._a1        = np.array([np.sqrt(3) * self.a / 2,  3 * self.a / 2, 0.0])
-        self._a2        = np.array([-np.sqrt(3) * self.a / 2,  3 * self.a / 2, 0.0])
-        self._a3        = np.array([0.0, 0.0, self.c])
         self._basis     = np.array([
-                            np.array([0.0, 0.0, 0.0]),
-                            np.array([0.0, self.a, 0.0]),
+                            [0.0, 0.0, 0.0],      # A sublattice
+                            [0.0, self.a, 0.0]    # B sublattice
                         ])
 
         # Initialize the k vectors
@@ -94,9 +97,9 @@ class HoneycombLattice(Lattice):
         self.calculate_r_vectors()
         self.calculate_k_vectors()
 
-        self._delta_x   = np.array([-np.sqrt(3)/2 * self.a,  0.5 * self.a, 0.0])
-        self._delta_y   = np.array([ np.sqrt(3)/2 * self.a,  0.5 * self.a, 0.0])
-        self._delta_z   = np.array([ 0.0,  self.a,  0.0])
+        self._delta_x   = np.array([0.0, self.a, 0.0])
+        self._delta_y   = np.array([-np.sqrt(3) * self.a / 2.0, -self.a / 2.0, 0.0])
+        self._delta_z   = np.array([np.sqrt(3) * self.a / 2.0, -self.a / 2.0, 0.0])
 
         if self._ns < 100:
             self.calculate_dft_matrix()

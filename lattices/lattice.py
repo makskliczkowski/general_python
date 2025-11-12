@@ -175,6 +175,11 @@ class Lattice(ABC):
         self._n1            = Backend.zeros((self._dim, self._dim ))# normal vectors along the bonds
         self._n2            = Backend.zeros((self._dim, self._dim ))
         self._n3            = Backend.zeros((self._dim, self._dim ))
+        # nearest neighbors vectors of the cells
+        self._delta_z       = np.array([0.0, 0.0, self.a])          # UP
+        self._delta_x       = np.array([self.a, 0.0, 0.0])          # RIGHT
+        self._delta_y       = np.array([0.0, self.a, 0.0])          # FRONT
+        
         
         self._rvectors      = Backend.zeros((self._ns, 3))          # allowed values of the real space vectors
         self._kvectors      = Backend.zeros((self._ns, 3))          # allowed values of the inverse space vectors
@@ -493,12 +498,9 @@ class Lattice(ABC):
 
     def extract_bz_path_data(self, 
                             k_vectors           : np.ndarray,
+                            k_vectors_frac      : np.ndarray,
                             values              : np.ndarray,
                             path                : Union[PathTypes, str, StandardBZPath]  = StandardBZPath.HONEYCOMB_2D,
-                            *,
-                            mode                : str = 'discrete',
-                            points_p_segment    : int = 10,
-                            tol                 : float = 1e-8,
                             ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
         """
         Extract k-point path data in the Brillouin zone for band structure calculations.
@@ -529,7 +531,7 @@ class Lattice(ABC):
             - distances : np.ndarray
                 Cumulative distances along the k-path.
         """
-        return extract_bz_path_data(self, k_vectors, values, path, mode=mode, points_per_seg=points_p_segment, tol=tol)
+        return extract_bz_path_data(self, k_vectors, k_vectors_frac, values, path)
     
     # ------------------------------------------------------------------
     #! Boundary fluxes
@@ -850,23 +852,53 @@ class Lattice(ABC):
         Returns:
         - DFT matrix (ndarray): The calculated DFT matrix.
         '''
+        Ns          = self.Ns
+        Lx, Ly, Lz  = self._lx, max(self._ly, 1), max(self._lz, 1)
+        Nc = Lx * Ly * Lz
+        Nb = len(self._basis)
         
-        if use_fft:
-            N       = self.Lx * self.Ly * self.Lz
-            indices = np.arange(N).reshape(self.Lx, self.Ly, self.Lz)
-            F       = np.fft.fftn(np.eye(N).reshape(self.Lx, self.Ly, self.Lz, N), axes=(0, 1, 2), norm='ortho')
-            return F.reshape(N, N)
+        # Get site coordinates
+        r_vectors = np.asarray(self.coordinates, dtype=float)  # (Ns, 3)
+        sub_idx = np.arange(Ns) % Nb  # Sublattice index for each site
+        
+        # Generate k-vectors
+        frac_x = np.linspace(0, 1, Lx, endpoint=False)
+        frac_y = np.linspace(0, 1, Ly, endpoint=False)
+        frac_z = np.linspace(0, 1, Lz, endpoint=False)
+        
+        kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing='ij')
+        
+        b1 = np.asarray(self._k1, float).reshape(3)
+        b2 = np.asarray(self._k2, float).reshape(3)
+        b3 = np.asarray(self._k3, float).reshape(3)
+        
+        kgrid = (kx_frac[..., None] * b1 + 
+                ky_frac[..., None] * b2 + 
+                kz_frac[..., None] * b3)
+        k_vectors = kgrid.reshape(-1, 3)  # (Nc, 3)
+        
+        # Build block DFT matrix
+        # Row index: ik*Nb + α (k-point ik, sublattice α)
+        # Col index: i (site i in real space)
+        F_block = np.zeros((Nc * Nb, Ns), dtype=complex)
+        
+        norm = np.sqrt(Nc)
+        for ik in range(Nc):
+            k = k_vectors[ik]
+            
+            # Phases for all sites at this k
+            phases = np.exp(-1j * (k @ r_vectors.T)) / norm  # (Ns,)
+            
+            # Fill rows for this k-point (one row per sublattice)
+            for α in range(Nb):
+                row_idx = ik * Nb + α
                 
-        N           = self.ns
-        # (Ns,3) array of real-space positions (in units of a)
-        r           = np.array([self.get_coordinates(i) for i in range(N)])     # or self._rvectors
-        # (Nk,3) array of k-vectors in reciprocal space
-        k           = self._kvectors                                            # computed from primitive vectors
-
-        # Construct DFT matrix
-        phase       = np.exp(-1j * np.dot(r, k.T))                              # shape (N, Nk)
-        self._dft   = phase / np.sqrt(N)
-        return self._dft
+                # Only connect to sites of sublattice α
+                for i in range(Ns):
+                    if sub_idx[i] == α:
+                        F_block[row_idx, i] = phases[i]
+        
+        return F_block
     
     # -----------------------------------------------------------------------------
     #! NEAREST NEIGHBORS
@@ -1315,21 +1347,21 @@ class Lattice(ABC):
     def calculate_r_vectors(self):
         """
         Calculates the real-space vectors (r) for each site.
-        Equivalent to coordinates but as a NumPy array with shape (Ns, 3).
+        Must match the ordering in calculate_coordinates().
         """
+        n_basis = len(self._basis)
+        rv = np.zeros((self.Ns, 3))
         
-        n_basis     = len(self._basis)
-        rv          = np.zeros((self.Ns, 3))
-        idx         = 0
-
-        for z in range(self.Lz if self._dim >= 3 else 1):
-            for y in range(self.Ly if self._dim >= 2 else 1):
-                for x in range(self.Lx):
-                    cell_offset = x * self._a1 + y * self._a2 + z * self._a3
-                    for sub in range(n_basis):
-                        rv[idx] = cell_offset + self._basis[sub]
-                        idx    += 1
-
+        for i in range(self.Ns):
+            cell    = i // n_basis
+            sub     = i % n_basis
+            
+            nx      = cell % self.Lx
+            ny      = (cell // self.Lx) % self.Ly if self._dim >= 2 else 0
+            nz      = (cell // (self.Lx * self.Ly)) % self.Lz if self._dim >= 3 else 0
+            
+            rv[i] = nx * self._a1 + ny * self._a2 + nz * self._a3 + self._basis[sub]
+        
         self.rvectors = rv
         return self.rvectors
 
@@ -1554,7 +1586,7 @@ class Lattice(ABC):
     #! Bloch Transform & Basis Operations
     # -------------------------------------------------------------------------
 
-    def get_geometric_encoding(self, *, tol=1e-9):
+    def get_geometric_encoding(self, *, tol=1e-6):
         """
         Map each site i to (cell_idx, sub_idx) purely from geometry.
 
@@ -1563,7 +1595,6 @@ class Lattice(ABC):
         cell_idx : (Ns,) int array in [0, Nc-1]
         sub_idx  : (Ns,) int array in [0, Nb-1]
         """
-        import numpy as np
 
         coords      = np.asarray(self.coordinates, float)          # (Ns,3)
         a1          = np.asarray(self._a1, float).reshape(3)
