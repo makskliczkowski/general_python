@@ -435,7 +435,7 @@ def greens_function_quadratic_finite_T(
         )
 
     # ----------------------------------------------------
-    # JAX or other backend → pure Python implementation
+    # JAX or other backend -> pure Python implementation
     # ----------------------------------------------------
     G = omega_c * 0.0 + 0.0j
 

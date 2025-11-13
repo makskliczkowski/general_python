@@ -865,8 +865,8 @@ class Lattice(ABC):
         '''
         Ns          = self.Ns
         Lx, Ly, Lz  = self._lx, max(self._ly, 1), max(self._lz, 1)
-        Nc = Lx * Ly * Lz
-        Nb = len(self._basis)
+        Nc          = Lx * Ly * Lz
+        Nb          = len(self._basis) if (self._basis is not None and len(self._basis) > 0) else 1  # Avoid division by zero
         
         # Get site coordinates
         r_vectors = np.asarray(self.coordinates, dtype=float)  # (Ns, 3)
@@ -901,12 +901,12 @@ class Lattice(ABC):
             phases = np.exp(-1j * (k @ r_vectors.T)) / norm  # (Ns,)
             
             # Fill rows for this k-point (one row per sublattice)
-            for \alpha in range(Nb):
-                row_idx = ik * Nb + \alpha
+            for alpha in range(Nb):
+                row_idx = ik * Nb + alpha
                 
                 # Only connect to sites of sublattice \alpha
                 for i in range(Ns):
-                    if sub_idx[i] == \alpha:
+                    if sub_idx[i] == alpha:
                         F_block[row_idx, i] = phases[i]
         
         return F_block

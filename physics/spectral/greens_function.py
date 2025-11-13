@@ -54,12 +54,25 @@ except ImportError:
 # =============================================================================
 # Fourier Transforms (Utilities)
 # =============================================================================
+#
+# Note: For lattice-based systems with translation symmetry, prefer using
+# the Lattice methods for optimal performance and consistency:
+#   - lattice.kspace_from_realspace(G_real)  : Real-space -> k-space
+#   - lattice.realspace_from_kspace(G_k)     : k-space -> Real-space
+# These methods properly handle sublattices, basis transformations, and
+# preserve the spectral properties exactly.
+# =============================================================================
 
 def fourier_transform_matrix(greens_function: Array) -> Array:
     r"""
     Fourier transform Green's function using FFT.
     
     G(t) = FFT[G(\Omega)]
+    
+    Note
+    ----
+    For lattice systems, consider using lattice.kspace_from_realspace()
+    or lattice.realspace_from_kspace() for proper handling of sublattices.
     
     Parameters
     ----------
@@ -100,6 +113,16 @@ def fourier_transform_lattice(greens_function: Array, lattice_k_vectors: Array, 
     Fourier transform from real space to a specific k-point on a lattice.
     
     G(k) = \sum_{i,j} G_{ij} exp(i k\cdot (r_i - r_j))
+    
+    Note
+    ----
+    For full lattice transformations with proper sublattice handling,
+    use lattice.kspace_from_realspace(G_real) instead. This provides:
+      - Correct treatment of basis sites
+      - Efficient FFT-based computation
+      - Shape (Lx, Ly, Lz, Nb, Nb) output with momentum grid
+    
+    This function is for single k-point evaluation or custom use cases.
     """
     greens_function = np.asarray(greens_function, dtype=complex)
     k               = np.asarray(lattice_k_vectors)
