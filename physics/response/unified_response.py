@@ -28,7 +28,7 @@ Array = Union[np.ndarray, list, tuple]
 
 # Import both response calculation backends
 try:
-    from ...algebra.spectral_backend import (
+    from ..spectral.spectral_backend import (
         operator_spectral_function_multi_omega,
         susceptibility_bubble_multi_omega,
         thermal_weights,
@@ -200,7 +200,7 @@ class UnifiedResponseFunction:
             Method used.
         """
         # Diagonal spectral function
-        from ...algebra.spectral_backend import spectral_function_diagonal
+        from ..spectral.spectral_backend import spectral_function_diagonal
         
         dos = spectral_function_diagonal(
                 omega       =   self.eigenvalues,
@@ -298,7 +298,7 @@ def compute_dos_direct(
     dos : array-like
         Density of states at each omega.
     """
-    from ...algebra.spectral_backend import spectral_function_diagonal
+    from ..spectral.spectral_backend import spectral_function_diagonal
     
     dos = np.zeros_like(omega_grid, dtype=float)
     

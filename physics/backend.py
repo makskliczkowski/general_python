@@ -33,12 +33,17 @@ except ImportError:
 
 __all__ = [
     # Spectral functions (wrapped from spectral_backend.py)
-    'greens_function_eigenbasis',
-    'greens_function_lanczos',
-    'spectral_function',
-    'spectral_function_diagonal',
-    'spectral_function_multi_omega',
-    'spectral_function_k_resolved',
+    'greens_function_diagonal',         # From spectral_backend.py
+    'greens_function_quadratic',        # From spectral_backend.py
+    'greens_function_quadratic_finite_T',  # From spectral_backend.py
+    'greens_function_manybody',         # From spectral_backend.py
+    'greens_function_manybody_finite_T',   # From spectral_backend.py
+    'greens_function_lanczos',          # From spectral_backend.py
+    'greens_function_lanczos_finite_T',    # From spectral_backend.py (FTLM)
+    # ---
+    'spectral_function',                # From spectral_backend.py
+    'spectral_function_k_resolved',     # From spectral_backend.py
+    # ---
     'integrated_spectral_weight',
     'find_spectral_peaks',
     
@@ -63,18 +68,18 @@ __all__ = [
 ]
 
 # =============================================================================
-# Lazy Module Loading (Prevent Circular Imports)
+#! Lazy Module Loading (Prevent Circular Imports)
 # =============================================================================
 
-_spectral_backend = None
-_thermal_backend = None
+_spectral_backend   = None
+_thermal_backend    = None
 
 def _load_spectral_backend():
     """Lazily load spectral backend module."""
     global _spectral_backend
     if _spectral_backend is None:
         try:
-            from ..algebra import spectral_backend
+            from .spectral import spectral_backend
             _spectral_backend = spectral_backend
         except ImportError as e:
             raise ImportError(f"Failed to load spectral backend: {e}") from e
@@ -95,53 +100,103 @@ def _load_thermal_backend():
 # Spectral Function Wrappers (delegate to spectral_backend.py)
 # =============================================================================
 
-def greens_function_eigenbasis(
-        omega: float,
-        eigenvalues: Array,
-        eigenvectors: Optional[Array] = None,
-        eta: float = 0.01,
-        backend: str = "default") -> Array:
-    """Compute Green's function in eigenbasis. See spectral_backend.py for details."""
+def greens_function_diagonal(
+        omega           : float,
+        eigenvalues     : Array,
+        eta             : float = 0.01,
+        backend         : str = "default") -> Array:
+    """Compute diagonal Green's function. See spectral_backend.py for details."""
     spec = _load_spectral_backend()
-    return spec.greens_function_eigenbasis(omega, eigenvalues, eigenvectors, eta, backend)
+    return spec.greens_function_diagonal(omega, eigenvalues, eta, backend)
+
+def greens_function_quadratic(
+        omega           : float,
+        eigenvalues     : Array,
+        eigenvectors    : Optional[Array] = None,
+        eta             : float = 0.01,
+        backend         : str = "default",
+        **kwargs) -> Array:
+    """Compute quadratic Green's function. See spectral_backend.py for details."""
+    spec = _load_spectral_backend()
+    return spec.greens_function_quadratic(omega, eigenvalues, eigenvectors, eta, backend=backend, **kwargs)
+
+def greens_function_quadratic_finite_T(
+        omega           : float,
+        eigenvalues     : Array,
+        eigenvectors    : Optional[Array] = None,
+        eta             : float = 0.01,
+        beta            : float = 1.0,
+        mu              : float = 0.0,
+        backend         : str = "default",
+        **kwargs) -> Array:
+    """Compute finite-T quadratic Green's function. See spectral_backend.py for details."""
+    spec = _load_spectral_backend()
+    return spec.greens_function_quadratic_finite_T(omega, eigenvalues, eigenvectors, eta, 
+                                                    beta=beta, mu=mu, backend=backend, **kwargs)
+
+def greens_function_manybody(
+        omega           : float,
+        eigenvalues     : Array,
+        operator_a      : Array,
+        eta             : float = 0.01,
+        backend         : str = "default",
+        **kwargs) -> Array:
+    """Compute many-body Green's function. See spectral_backend.py for details."""
+    spec = _load_spectral_backend()
+    return spec.greens_function_manybody(omega, eigenvalues, operator_a, eta, backend=backend, **kwargs)
+
+def greens_function_manybody_finite_T(
+        omega           : Union[float, Array],
+        eigenvalues     : Array,
+        operator_a      : Array,
+        eta             : float = 0.01,
+        beta            : float = 1.0,
+        backend         : str = "default",
+        **kwargs) -> Array:
+    """Compute finite-T many-body Green's function. See spectral_backend.py for details."""
+    spec = _load_spectral_backend()
+    return spec.greens_function_manybody_finite_T(omega, eigenvalues, operator_a, eta, 
+                                                   beta=beta, backend=backend, **kwargs)
 
 def greens_function_lanczos(
-        omega: float,
-        alpha: Array,
-        beta: Array,
-        eta: float = 0.01,
-        backend: str = "default") -> complex:
+        omega               : float,
+        lanczos_eigenvalues : Array,
+        lanczos_vectors     : Array,
+        lanczos_eigenvector : Array,
+        eta                 : float = 0.01,
+        backend             : str = "default",
+        **kwargs) -> complex:
     """Compute Green's function from Lanczos coefficients. See spectral_backend.py for details."""
     spec = _load_spectral_backend()
-    return spec.greens_function_lanczos(omega, alpha, beta, eta, backend)
+    return spec.greens_function_lanczos(omega, lanczos_eigenvalues, lanczos_vectors, 
+                                       lanczos_eigenvector, eta, backend=backend, **kwargs)
+
+def greens_function_lanczos_finite_T(
+        omega           : Union[float, Array],
+        hamiltonian     : Array,
+        operator_a      : Array,
+        eta             : float = 0.01,
+        beta            : float = 1.0,
+        n_random        : int = 50,
+        max_krylov      : int = 100,
+        backend         : str = "default",
+        **kwargs) -> Array:
+    """
+    Finite-Temperature Lanczos Method (FTLM) for many-body Green's functions.
+    See spectral_backend.py for details.
+    """
+    spec = _load_spectral_backend()
+    return spec.greens_function_lanczos_finite_T(omega, hamiltonian, operator_a, eta, 
+                                                  beta=beta, n_random=n_random, 
+                                                  max_krylov=max_krylov, backend=backend, **kwargs)
 
 def spectral_function(
-        greens_function: Array,
-        operator: Optional[Array] = None,
-        backend: str = "default") -> Array:
-    """Compute spectral function from Green's function. See spectral_backend.py for details."""
+        greens_function : Optional[Array] = None,
+        backend         : str = "default",
+        **kwargs) -> Array:
+    """Compute spectral function. See spectral_backend.py for details."""
     spec = _load_spectral_backend()
-    return spec.spectral_function(greens_function, backend)
-
-def spectral_function_diagonal(
-        omega: float,
-        eigenvalues: Array,
-        eta: float = 0.01,
-        backend: str = "default") -> Array:
-    """Compute diagonal spectral function. See spectral_backend.py for details."""
-    spec = _load_spectral_backend()
-    return spec.spectral_function_diagonal(omega, eigenvalues, eta, backend)
-
-def spectral_function_multi_omega(
-        omegas: Array,
-        eigenvalues: Array,
-        eigenvectors: Optional[Array] = None,
-        eta: float = 0.01,
-        diagonal_only: bool = False,
-        backend: str = "default") -> Array:
-    """Compute spectral function for multiple frequencies. See spectral_backend.py for details."""
-    spec = _load_spectral_backend()
-    return spec.spectral_function_multi_omega(omegas, eigenvalues, eigenvectors, eta, diagonal_only, backend)
+    return spec.spectral_function(greens_function, backend=backend, **kwargs)
 
 def spectral_function_k_resolved(
         omegas: Array,
@@ -280,7 +335,7 @@ def get_spectral_backend():
     Examples
     --------
     >>> spec_backend = get_spectral_backend()
-    >>> G = spec_backend.greens_function_eigenbasis(omega, evals, evecs)
+    >>> G = spec_backend.greens_function_quadratic(omega, evals, evecs)
     """
     return _load_spectral_backend()
 

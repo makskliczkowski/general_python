@@ -41,7 +41,7 @@ def example_1_manybody_spin_dynamics():
     print("EXAMPLE 1: Many-Body Spin Dynamics (Exact)")
     print("="*70)
     
-    from QES.general_python.algebra.spectral_backend import (
+    from QES.general_python.physics.spectral.spectral_backend import (
         operator_spectral_function_multi_omega,
         thermal_weights,
     )
@@ -127,7 +127,7 @@ def example_2_optical_conductivity():
     print("EXAMPLE 2: Optical Conductivity (Tight-Binding)")
     print("="*70)
     
-    from QES.general_python.algebra.spectral_backend import (
+    from QES.general_python.physics.spectral.spectral_backend import (
         conductivity_kubo_bubble,
         kramers_kronig_transform,
     )
@@ -218,7 +218,7 @@ def example_3_exact_vs_meanfield():
     print("EXAMPLE 3: Exact vs Mean-Field Comparison")
     print("="*70)
     
-    from QES.general_python.algebra.spectral_backend import (
+    from QES.general_python.physics.spectral.spectral_backend import (
         operator_spectral_function_multi_omega,
         susceptibility_bubble_multi_omega,
     )
@@ -323,7 +323,7 @@ def example_4_temperature_effects():
     print("EXAMPLE 4: Temperature Effects")
     print("="*70)
     
-    from QES.general_python.algebra.spectral_backend import (
+    from QES.general_python.physics.spectral.spectral_backend import (
         operator_spectral_function_multi_omega,
         thermal_weights,
     )

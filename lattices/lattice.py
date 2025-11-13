@@ -180,6 +180,8 @@ class Lattice(ABC):
         self._delta_x       = np.array([self.a, 0.0, 0.0])          # RIGHT
         self._delta_y       = np.array([0.0, self.a, 0.0])          # FRONT
         
+        # bonds
+        self._bonds         = []                                    # empty if not calculated...
         
         self._rvectors      = Backend.zeros((self._ns, 3))          # allowed values of the real space vectors
         self._kvectors      = Backend.zeros((self._ns, 3))          # allowed values of the inverse space vectors
@@ -310,6 +312,10 @@ class Lattice(ABC):
     def Lz(self, value):    self._lz = value; self._lxlylz = self._lxly * self._lz; self._lylz = self._ly * self._lz; self._lxlz = self._lx * self._lz
 
     @property
+    def area(self):         return self._lxly
+    @property
+    def volume(self):       return self._lxlylz
+    @property
     def lxly(self):         return self._lxly
     @property
     def lxlz(self):         return self._lxlz
@@ -425,6 +431,11 @@ class Lattice(ABC):
     def nn(self):                   return self._nn
     @nn.setter
     def nn(self, value):            self._nn = value
+
+    @property
+    def bonds(self):                return self._bonds
+    @bonds.setter
+    def bonds(self, value):         self._bonds = value
 
     @property
     def nn_forward(self):           return self._nn_forward
@@ -878,7 +889,7 @@ class Lattice(ABC):
         k_vectors = kgrid.reshape(-1, 3)  # (Nc, 3)
         
         # Build block DFT matrix
-        # Row index: ik*Nb + α (k-point ik, sublattice α)
+        # Row index: ik*Nb + \alpha (k-point ik, sublattice \alpha)
         # Col index: i (site i in real space)
         F_block = np.zeros((Nc * Nb, Ns), dtype=complex)
         
@@ -890,12 +901,12 @@ class Lattice(ABC):
             phases = np.exp(-1j * (k @ r_vectors.T)) / norm  # (Ns,)
             
             # Fill rows for this k-point (one row per sublattice)
-            for α in range(Nb):
-                row_idx = ik * Nb + α
+            for \alpha in range(Nb):
+                row_idx = ik * Nb + \alpha
                 
-                # Only connect to sites of sublattice α
+                # Only connect to sites of sublattice \alpha
                 for i in range(Ns):
-                    if sub_idx[i] == α:
+                    if sub_idx[i] == \alpha:
                         F_block[row_idx, i] = phases[i]
         
         return F_block
@@ -1314,6 +1325,19 @@ class Lattice(ABC):
         return [[tuple(_slice[i][j]) for j in range(ynum * znum)] for i in range(xnum)]
     
     ############################ ABSTRACT CALCULATORS #############################
+    
+    def calculate_bonds(self):
+        '''
+        Calculates the bonds for the lattice using forward nn.
+        '''
+        self._bonds = []
+        for i in range(self.Ns):
+            for idx in range(self.get_nn_forward_num(i)):
+                j = self.get_nn_forward(i, idx)
+                if self.wrong_nei(j):
+                    continue
+                self._bonds.append((i, j))
+        return self._bonds
     
     def calculate_coordinates(self):
         """

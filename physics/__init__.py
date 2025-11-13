@@ -1,4 +1,4 @@
-"""
+r"""
 Physics Module for General Python Utilities.
 
 This module provides comprehensive utilities for quantum physics simulations and calculations,
@@ -54,10 +54,10 @@ Examples:
 >>> C_V     = thermal.heat_capacity(energies, beta=1.0)
 
 >>> # Spectral functions
->>> from general_python.physics.spectral import dos, greens, spectral_function
->>> dos_hist, edges = dos.dos_histogram(energies, bins=50)
->>> G               = greens.greens_function_eigenbasis(omega, eigenvalues, eigenvectors)
->>> A               = spectral_function.spectral_function(G)
+>>> from general_python.physics.spectral import greens_function, spectral_function
+>>> from general_python.physics.spectral.spectral_backend import greens_function_quadratic
+>>> G = greens_function_quadratic(omega, eigenvalues, eigenvectors)
+>>> A = spectral_function.spectral_function(greens_function=G)
 
 >>> # Response functions
 >>> from general_python.physics.response import structure_factor, susceptibility
