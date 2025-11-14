@@ -149,7 +149,6 @@ def _greens_function_quadratic_scalar(ev, A, B, occ, omega_val, eta):
 
     return G_real + 1j * G_imag
 
-
 def _greens_function_quadratic(ev, A, B, occ, omega, eta):
     r"""
     Wrapper for _greens_function_quadratic_scalar that handles both scalar and array omega.
@@ -198,13 +197,13 @@ def greens_function_quadratic(
     """
 
     be      = get_backend(backend)
-    ev      = be.asarray(eigenvalues, dtype=be.complex128)
+    ev      = be.asarray(eigenvalues,   dtype=be.complex128)
     omega   = be.asarray(omega,         dtype=be.complex128)
     eta     = be.asarray(eta,           dtype=be.complex128)
     z       = omega + 1j * eta
 
     # -----------------------------------------
-    # 0. No eigenvectors -> diagonal resolvent
+    # No eigenvectors -> diagonal resolvent
     # -----------------------------------------
     if eigenvectors is None:
         return 1.0 / (z - ev)
@@ -213,14 +212,14 @@ def greens_function_quadratic(
     N       = ev.shape[0]
 
     # -----------------------------------------
-    # 1. No operators -> single-particle resolvent
+    # No operators -> single-particle resolvent
     # -----------------------------------------
     if operator_a is None:
         denom = 1.0 / (z - ev)
         return U @ (be.diag(denom)) @ U.T.conj()
 
     # -----------------------------------------
-    # 2. Many-body Green's function G_AB(\omega)
+    # Many-body Green's function G_AB(\omega)
     # -----------------------------------------
 
     # Default occupations: half-filling
@@ -238,14 +237,16 @@ def greens_function_quadratic(
         B = U.T.conj() @ be.asarray(operator_b, dtype=be.complex128) @ U if basis_transform else be.asarray(operator_b, dtype=be.complex128)
 
     if be.__name__ == 'numpy':
-        omega_val = omega.real if hasattr(omega, 'real') else omega
-        eta_val = eta.real if hasattr(eta, 'real') else eta
+        omega_val   = omega.real    if hasattr(omega, 'real')   else omega
+        eta_val     = eta.real      if hasattr(eta, 'real')     else eta
         return _greens_function_quadratic(ev, A, B, occ, omega_val, eta_val)
 
     # Scalar Green's function
     G = omega * 0.0 + 0.0j
 
     # Double sum over m,n with occupation factors
+    # Computes the Green's function <A| 1 / (w + i eta - (H - E0)) |B>
+    # where <A| = <c0| A and |B> = B |c0>
     for m in range(N):
         if not occ[m]:    # needs to be occupied
             continue
@@ -336,7 +337,6 @@ def _greens_function_quadratic_finite_T_scalar(ev, A, B, beta, mu, omega_val, et
             G_imag += t_imag
 
     return G_real + 1j * G_imag
-
 
 def _greens_function_quadratic_finite_T(ev, A, B, beta, mu, omega, eta):
     r"""
