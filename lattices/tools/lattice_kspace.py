@@ -148,7 +148,6 @@ def _get_bloch_transform_cache(lattice: 'Lattice', unitary_norm: bool = True) ->
     _bloch_cache[lattice_id] = cache
     return cache
 
-
 # -----------------------------------------------------------------------------------------------------------
 # ENUMERATIONS OF STANDARD PATHS
 # -----------------------------------------------------------------------------------------------------------
@@ -827,7 +826,6 @@ def realspace_from_kspace(lattice, H_k: np.ndarray, kgrid: Optional[np.ndarray] 
         # (Lx, Ly, Lz, Nb, Nb) format - blocks are already in correct order from kspace_from_realspace
         Lx, Ly, Lz, Ns_block, Ns2   = H_k.shape
         Nc                          = Lx * Ly * Lz
-        # H_k is already in fftfreq order (no shift applied in kspace_from_realspace)
         H_k_flat                    = H_k.reshape(Nc, Ns_block, Ns2)
     elif H_k.ndim == 3:
         # (Nk, Nb, Nb) format
@@ -864,17 +862,16 @@ def realspace_from_kspace(lattice, H_k: np.ndarray, kgrid: Optional[np.ndarray] 
     # Build k-grid if not provided - use same convention as kspace_from_realspace
     if kgrid is None:
         # Use fftfreq convention to match forward transform
-        frac_x = np.fft.fftfreq(Lx)
-        frac_y = np.fft.fftfreq(Ly)
-        frac_z = np.fft.fftfreq(Lz)
+        frac_x                      = np.linspace(0, 1, Lx, endpoint=False)
+        frac_y                      = np.linspace(0, 1, Ly, endpoint=False)
+        frac_z                      = np.linspace(0, 1, Lz, endpoint=False)
+
+        kx_frac, ky_frac, kz_frac   = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
         
-        kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
-        
-        # Cartesian k-vectors in fftfreq order
-        kgrid = (kx_frac[..., None] * b1 + 
-                 ky_frac[..., None] * b2 + 
-                 kz_frac[..., None] * b3)
-        kpoints = kgrid.reshape(-1, 3)
+        kgrid                       = (kx_frac[..., None] * b1 + 
+                                       ky_frac[..., None] * b2 + 
+                                       kz_frac[..., None] * b3)
+        kpoints                     = kgrid.reshape(-1, 3)
     else:
         # kgrid is already in fftfreq order from kspace_from_realspace
         if kgrid.ndim == 4:
@@ -996,9 +993,11 @@ def kspace_from_realspace(
         # H_k_full is block-diagonal with Nc blocks of size NbxNb
         # Sites are ordered as [cell0_sub0, cell0_sub1, ..., cell1_sub0, cell1_sub1, ...]
         Hk_blocks   = np.zeros((Nc, Nb, Nb), dtype=complex)
+        # i_move      = (Nc // 2) * Nb if Nc % 2 == 0 else 0
+        i_move      = 0
         for ik in range(Nc):
-            i_start         = ik * Nb
-            i_end           = (ik + 1) * Nb
+            i_start         = ik * Nb + i_move % Ns
+            i_end           = (ik + 1) * Nb + i_move % Ns
             Hk_blocks[ik]   = H_k_full[i_start:i_end, i_start:i_end]
         
         # Get k-grid from lattice
@@ -1006,6 +1005,8 @@ def kspace_from_realspace(
         
         # Reshape blocks to grid (fftfreq order)
         Hk_grid             = Hk_blocks.reshape(Lx, Ly, Lz, Nb, Nb)
+        Hk_grid             = np.ascontiguousarray(Hk_grid)
+        Hk_grid             = np.fft.fftshift(Hk_grid, axes=(0,1,2))
         
         if return_transform:
             # For compatibility, return dummy transform
@@ -1025,10 +1026,10 @@ def kspace_from_realspace(
         # Use fftfreq convention: k_n = n/N for n = 0, 1, ..., N/2-1, -N/2, ..., -1
         # This gives k $\in$ [-0.5, 0.5) in fractional coordinates
         # which maps to the first Brillouin zone correctly for both even and odd N
-        frac_x                      = np.fft.fftfreq(Lx)  # sorted: [0, 1/N, ..., (N/2-1)/N, -N/2/N, ..., -1/N]
-        frac_y                      = np.fft.fftfreq(Ly)
-        frac_z                      = np.fft.fftfreq(Lz)
-        
+        frac_x                      = np.linspace(0, 1, Lx, endpoint=False)  # sorted: [0, 1/N, ..., (N/2-1)/N, -N/2/N, ..., -1/N]
+        frac_y                      = np.linspace(0, 1, Ly, endpoint=False)
+        frac_z                      = np.linspace(0, 1, Lz, endpoint=False)
+
         # Create meshgrid in the fftfreq order
         kx_frac, ky_frac, kz_frac   = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
 

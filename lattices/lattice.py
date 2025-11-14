@@ -1431,22 +1431,29 @@ class Lattice(ABC):
         Calculates the allowed reciprocal-space k-vectors (momentum grid)
         consistent with the lattice size and primitive reciprocal vectors.
 
-        Requires that self._k1, self._k2, self._k3 (reciprocal lattice vectors)
-        are already set, e.g., from:
-        >>> A = np.column_stack([self._a1, self._a2, self._a3])
-        >>> B = 2 * np.pi * np.linalg.inv(A.T)
-        >>> self._k1, self._k2, self._k3 = B.T
+        The sampling follows the same fftfreq ordering used by the Bloch
+        transform (Γ at index [0,0,0], followed by positive frequencies and
+        finally the negative branch).  This keeps the analytic grids aligned
+        with the numerically constructed H(k) blocks.
         """
-        kv = []
-        for nx in range(self.Lx):
-            for ny in range(self.Ly if self._dim >= 2 else 1):
-                for nz in range(self.Lz if self._dim >= 3 else 1):
-                    k = (nx / self.Lx) * self._k1 \
-                      + (ny / self.Ly) * self._k2 \
-                      + (nz / self.Lz) * self._k3
-                    kv.append(k)
+        Lx      = self.Lx
+        Ly      = self.Ly if self._dim >= 2 else 1
+        Lz      = self.Lz if self._dim >= 3 else 1
 
-        self.kvectors = np.array(kv)
+        frac_x  = np.fft.fftfreq(Lx)
+        frac_y  = np.fft.fftfreq(Ly)
+        frac_z  = np.fft.fftfreq(Lz)
+
+        kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
+
+        k_grid = (
+              kx_frac[..., None] * self._k1
+            + ky_frac[..., None] * self._k2
+            + kz_frac[..., None] * self._k3
+        )
+
+        self.kvectors       = k_grid.reshape(-1, 3)
+        self.kvectors_frac  = np.stack([kx_frac, ky_frac, kz_frac], axis=-1).reshape(-1, 3)
         return self.kvectors
 
     def translation_operators(self):
