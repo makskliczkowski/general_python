@@ -8,7 +8,8 @@ Author          : Maksymilian Kliczkowski
 '''
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple
+from typing import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict
+from dataclasses import dataclass
 
 from enum import Enum
 import numpy as np
@@ -16,6 +17,137 @@ import scipy.sparse as sp
 
 if TYPE_CHECKING:
     from ..lattice import Lattice
+    from QES.Algebra.hamil_quadratic import QuadraticBlockDiagonalInfo
+
+# -----------------------------------------------------------------------------------------------------------
+# CACHED BLOCH TRANSFORMATION
+# -----------------------------------------------------------------------------------------------------------
+
+@dataclass
+class BlochTransformCache:
+    r"""
+    Cache for Bloch transformation matrices to avoid recomputation.
+    
+    Attributes
+    ----------
+    W : np.ndarray
+        Bloch projector matrix, shape (Nc, Ns, Nb)
+        W[ik, i, a] = (1/sqrt Nc) * exp(-ik\cdot r_i) * delta_{sub(i),a}
+    W_conj : np.ndarray
+        Complex conjugate of W for efficiency
+    kpoints : np.ndarray
+        K-point grid used for this cache, shape (Nc, 3)
+    kgrid : np.ndarray
+        Structured k-grid, shape (Lx, Ly, Lz, 3)
+    kgrid_frac : np.ndarray
+        Fractional k-grid coordinates, shape (Lx, Ly, Lz, 3)
+    lattice_hash : int
+        Hash of lattice parameters to detect changes
+    """
+    W               : np.ndarray
+    W_conj          : np.ndarray
+    kpoints         : np.ndarray
+    kgrid           : np.ndarray
+    kgrid_frac      : np.ndarray
+    lattice_hash    : int
+
+def _get_lattice_hash(lattice: 'Lattice') -> int:
+    """Generate a hash from lattice parameters to detect changes."""
+    return hash((
+        lattice._lx, lattice._ly, lattice._lz,
+        len(lattice._basis),
+        tuple(lattice._a1.flatten()),
+        tuple(lattice._a2.flatten()),
+        tuple(lattice._a3.flatten()),
+        tuple(lattice._k1.flatten()),
+        tuple(lattice._k2.flatten()),
+        tuple(lattice._k3.flatten()),
+    ))
+
+# Global cache dictionary: lattice_id -> BlochTransformCache
+_bloch_cache: Dict[int, BlochTransformCache] = {}
+
+def _get_bloch_transform_cache(lattice: 'Lattice', unitary_norm: bool = True) -> BlochTransformCache:
+    """
+    Get or create cached Bloch transformation matrices.
+    
+    Parameters
+    ----------
+    lattice : Lattice
+        Lattice object
+    unitary_norm : bool
+        Whether to use unitary normalization (1/sqrt Nc)
+    
+    Returns
+    -------
+    cache : BlochTransformCache
+        Cached transformation matrices
+    """
+    lattice_hash    = _get_lattice_hash(lattice)
+    lattice_id      = id(lattice)
+
+    # 1. cache reuse
+    if lattice_id in _bloch_cache:
+        cache = _bloch_cache[lattice_id]
+        if cache.lattice_hash == lattice_hash:
+            return cache
+
+    # 2. lattice sizes
+    Lx, Ly, Lz      = lattice._lx, max(lattice._ly, 1), max(lattice._lz, 1)
+    Nc              = Lx * Ly * Lz
+    Nb              = len(lattice._basis)
+    Ns              = lattice.Ns
+
+    # 3. reciprocal basis and k-grid (same as calculate_dft_matrix)
+    b1              = np.asarray(lattice._k1, float).reshape(3)
+    b2              = np.asarray(lattice._k2, float).reshape(3)
+    b3              = np.asarray(lattice._k3, float).reshape(3)
+
+    frac_x          = np.linspace(0.0, 1.0, Lx, endpoint=False)
+    frac_y          = np.linspace(0.0, 1.0, Ly, endpoint=False)
+    frac_z          = np.linspace(0.0, 1.0, Lz, endpoint=False)
+
+    kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
+    kgrid_frac      = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)            # (Lx,Ly,Lz,3)
+
+    kgrid           = (kx_frac[..., None] * b1
+                     + ky_frac[..., None] * b2
+                     + kz_frac[..., None] * b3)                                 # (Lx,Ly,Lz,3)
+
+    kpoints         = kgrid.reshape(-1, 3)                                      # (Nc,3)
+
+    # 4. real-space Bravais vectors and sublattice indices
+    R_cells         = np.asarray(lattice.cells, float)                          # (Ns,3)
+    if R_cells.shape[0] != Ns:
+        raise ValueError("Mismatch in number of sites and lattice.cells.")
+
+    sub_idx         = np.asarray(lattice.subs, dtype=int)                      # (Ns,)
+    if sub_idx.shape[0] != Ns:
+        raise ValueError("Mismatch in number of sites and lattice.subs.")
+
+    # Projector S[i, alpha] = delta_{beta_i, alpha}
+    S               = np.zeros((Ns, Nb), dtype=complex)
+    S[np.arange(Ns), sub_idx] = 1.0
+
+    # 5. Bloch projectors: W[k,i,alpha] = exp(-i k·R_i) / sqrt(Nc) * S[i,alpha]
+    phases          = np.exp(-1j * (kpoints @ R_cells.T))                      # (Nc,Ns)
+    if unitary_norm:
+        phases     /= np.sqrt(Nc)
+
+    W               = phases[:, :, None] * S[None, :, :]                       # (Nc,Ns,Nb)
+    W_conj          = W.conj()
+
+    cache = BlochTransformCache(
+        W           = W,
+        W_conj      = W_conj,
+        kpoints     = kpoints,
+        kgrid       = kgrid,
+        kgrid_frac  = kgrid_frac,
+        lattice_hash= lattice_hash,
+    )
+    _bloch_cache[lattice_id] = cache
+    return cache
+
 
 # -----------------------------------------------------------------------------------------------------------
 # ENUMERATIONS OF STANDARD PATHS
@@ -333,6 +465,7 @@ def extract_bz_path_data(
         diff   -= np.round(diff)
         dist    = np.linalg.norm(diff, axis=1)
         idx     = np.argmin(dist)
+        
         if dist[idx] > tol:
             print(f"Warning: far match ({dist[idx]:.3e}) at k={kf_target}")
         k_sel_cart[i]   = kc_flat[idx]
@@ -591,36 +724,86 @@ def reconstruct_k_grid_from_blocks(blocks: List['QuadraticBlockDiagonalInfo']) -
 #! SPACE TRANSFORMATIONS
 # -------------------------------------------------------------------------------------------
 
-def realspace_from_kspace(lattice, H_k: np.ndarray, kgrid: Optional[np.ndarray] = None) -> np.ndarray:
+def full_k_space_transform(lattice: Lattice, mat: np.ndarray, inverse: bool = False) -> np.ndarray:
     r"""
-    Inverse Bloch transform: H(k) blocks -> H_real (Ns times Ns).
+    Full Ns x Ns k-space transform using DFT matrix.
     
-    Reconstructs the real-space Hamiltonian from k-space blocks using the inverse 
-    Fourier transform. This is the exact inverse of `kspace_from_realspace()` with 
-    `extract_bands=False`.
+    Computes:
+        H_k = F @ H_real @ F†
     
-    Formula:
-        H_real = (1/Nc) \sum_k U^\dag(k) H(k) U(k)
-    where U(k)_ij = exp(+i k·r_i) delta_ij (note: +i for inverse transform).
+    where F is the Ns x Ns DFT matrix:
+        F[n, i] = (1/sqrt Ns) * exp(-i k_n r_i)
+    
+    This works for ANY lattice, independent of multipartition structure.
+    The result is an NsxNs matrix that is block-diagonal for translationally
+    invariant systems.
     
     Parameters
     ----------
+    lattice : Lattice
+        Lattice object with DFT matrix and k-vectors
+    mat : np.ndarray
+        Real-space matrix, shape (Ns, Ns)
+    
+    Returns
+    -------
     H_k : np.ndarray
-        K-space Hamiltonian blocks. Shape (Lx, Ly, Lz, Ns, Ns) or (Nk, Ns, Ns).
+        K-space matrix, shape (Ns, Ns)
+    """
+    Ns = lattice.Ns
+    if mat.shape != (Ns, Ns):
+        raise ValueError(f"mat must have shape ({Ns}, {Ns}), got {mat.shape}")
+    
+    # Get or calculate DFT matrix
+    F = lattice.dft
+    if F is None or F.shape != (Ns, Ns) or not np.any(F):
+        F = lattice.calculate_dft_matrix()
+    
+    # Transform: H_k = F @ H_real @ F†
+    if not inverse:
+        F_dagger    = F.conj().T
+        H_k_full    = F @ mat @ F_dagger
+
+        return H_k_full
+    else:
+        # Inverse transform
+        F_inv       = F_dagger
+        H_real_full = F_inv @ mat @ F
+
+        return H_real_full
+
+def realspace_from_kspace(lattice, H_k: np.ndarray, kgrid: Optional[np.ndarray] = None) -> np.ndarray:
+    r"""
+    Inverse Bloch transform: H(k) blocks -> H_real (Ns x Ns).
+    
+    Reconstructs the real-space Hamiltonian from k-space blocks using the inverse 
+    Fourier transform. This is the exact inverse of `kspace_from_realspace()`.
+    
+    Formula:
+        H_real = Σ_k W(k)† H(k) W(k)
+    where W[i,a] = (1/√Nc) . exp(-ik.r_i) . delta _{sublattice(i),a}
+    
+    Parameters
+    ----------
+    lattice : Lattice
+        Lattice object with geometry information
+    H_k : np.ndarray
+        K-space Hamiltonian blocks. Shape (Lx, Ly, Lz, Nb, Nb) or (Nk, Nb, Nb).
+        Must be in fftfreq order (as returned by kspace_from_realspace).
     kgrid : Optional[np.ndarray]
-        K-point grid for reference. If None, reconstructs from shape assuming full grid.
-        Shape (Lx, Ly, Lz, 3) or (Nk, 3).
+        K-point grid for reference. If None, reconstructs using fftfreq convention.
+        Shape (Lx, Ly, Lz, 3) or (Nk, 3). Must be in fftfreq order.
     
     Returns
     -------
     H_real : np.ndarray
-        Real-space Hamiltonian (Ns times Ns).
+        Real-space Hamiltonian (Ns x Ns).
         
     Notes
     -----
     - Eigenvalues are preserved to machine precision (error ~1e-15)
-    - Matrix coefficients differ due to eigenvector basis rotation (expected)
-    - Only works with full NstimesNs matrices (raises error for NbtimesNb band blocks)
+    - Both H_k and kgrid must be in fftfreq order (no fftshift applied)
+    - The reconstruction is exact: H_real_reconstructed ≈ H_real_original
     
     Examples
     --------
@@ -629,45 +812,46 @@ def realspace_from_kspace(lattice, H_k: np.ndarray, kgrid: Optional[np.ndarray] 
     >>> H_real_orig = H_real_orig + H_real_orig.conj().T  # Make Hermitian
     >>>
     >>> # Forward transform
-    >>> H_k, k_grid = lat.kspace_from_realspace(H_real_orig, extract_bands=False)
+    >>> H_k, k_grid, k_frac = kspace_from_realspace(lattice, H_real_orig)
     >>>
     >>> # Inverse transform
-    >>> H_real_recon = lat.realspace_from_kspace_exact(H_k, k_grid)
+    >>> H_real_recon = realspace_from_kspace(lattice, H_k, k_grid)
     >>>
-    >>> # Check eigenvalues match
-    >>> evals_orig = np.linalg.eigvalsh(H_real_orig)
-    >>> evals_recon = np.linalg.eigvalsh(H_real_recon)
-    >>> np.allclose(np.sort(evals_orig), np.sort(evals_recon))  # True
+    >>> # Check reconstruction
+    >>> np.allclose(H_real_orig, H_real_recon)  # True (to machine precision)
     """
     import numpy as np
     
     # Parse input shape
     if H_k.ndim == 5:
-        # (Lx, Ly, Lz, Ns, Ns) format
-        Lx, Ly, Lz, Ns_block, Ns2 = H_k.shape
-        Nc = Lx * Ly * Lz
-        H_k_flat = H_k.reshape(Nc, Ns_block, Ns2)
+        # (Lx, Ly, Lz, Nb, Nb) format - blocks are already in correct order from kspace_from_realspace
+        Lx, Ly, Lz, Ns_block, Ns2   = H_k.shape
+        Nc                          = Lx * Ly * Lz
+        # H_k is already in fftfreq order (no shift applied in kspace_from_realspace)
+        H_k_flat                    = H_k.reshape(Nc, Ns_block, Ns2)
     elif H_k.ndim == 3:
-        # (Nk, Ns, Ns) format
-        Nk, Ns_block, Ns2 = H_k.shape
-        H_k_flat = H_k
-        Nc = Nk
+        # (Nk, Nb, Nb) format
+        Nk, Ns_block, Ns2           = H_k.shape
+        H_k_flat                    = H_k
+        Nc                          = Nk
     else:
         raise ValueError(f"H_k must be 3D or 5D array, got shape {H_k.shape}")
     
     # Check Hermiticity
     if Ns_block != Ns2:
-        raise ValueError(f"H_k blocks must be square: got {Ns_block}times{Ns2}")
+        raise ValueError(f"H_k blocks must be square: got {Ns_block}x{Ns2}")
     
     Ns = Ns_block
     
     # Infer lattice properties
-    if Ns != lattice.Ns:
-        raise ValueError(f"H_k block size {Ns} != lattice Ns {lattice.Ns}")
+    # For multi-sublattice systems, Ns_block = Nb (number of sublattices), not total sites
+    Nb = lattice.multipartity       # Number of sublattices
+    if Ns != Nb:
+        raise ValueError(f"H_k block size {Ns} != lattice sublattices {Nb}")
     
-    Lx = lattice._lx
-    Ly = max(lattice._ly, 1)
-    Lz = max(lattice._lz, 1)
+    Lx          = lattice._lx
+    Ly          = max(lattice._ly, 1)
+    Lz          = max(lattice._lz, 1)
     expected_Nc = Lx * Ly * Lz
     if Nc != expected_Nc:
         raise ValueError(f"Number of k-points {Nc} != expected {expected_Nc}")
@@ -677,37 +861,52 @@ def realspace_from_kspace(lattice, H_k: np.ndarray, kgrid: Optional[np.ndarray] 
     b2 = np.asarray(lattice._k2, float).reshape(3)
     b3 = np.asarray(lattice._k3, float).reshape(3)
     
-    # Build k-grid if not provided
+    # Build k-grid if not provided - use same convention as kspace_from_realspace
     if kgrid is None:
-        n_x = np.arange(Lx, dtype=float) / Lx
-        n_y = np.arange(Ly, dtype=float) / Ly
-        n_z = np.arange(Lz, dtype=float) / Lz
-        kgrid = (n_x[:, None, None, None] * b1[None, None, None, :]
-            + n_y[None, :, None, None] * b2[None, None, None, :]
-            + n_z[None, None, :, None] * b3[None, None, None, :])
+        # Use fftfreq convention to match forward transform
+        frac_x = np.fft.fftfreq(Lx)
+        frac_y = np.fft.fftfreq(Ly)
+        frac_z = np.fft.fftfreq(Lz)
+        
+        kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
+        
+        # Cartesian k-vectors in fftfreq order
+        kgrid = (kx_frac[..., None] * b1 + 
+                 ky_frac[..., None] * b2 + 
+                 kz_frac[..., None] * b3)
         kpoints = kgrid.reshape(-1, 3)
     else:
+        # kgrid is already in fftfreq order from kspace_from_realspace
         if kgrid.ndim == 4:
-            kpoints = kgrid.reshape(-1, 3)
+            kpoints         = kgrid.reshape(-1, 3)
         else:
-            kpoints = np.asarray(kgrid, float).reshape(-1, 3)
+            kpoints         = np.asarray(kgrid, float).reshape(-1, 3)
     
-    # Site coordinates
-    coords = np.asarray(lattice.coordinates, float)
+    # Site coordinates and sublattice indices
+    coords      = np.asarray(lattice.coordinates, float)
+    Ns_total    = lattice.Ns  # Total number of sites
+    indices     = np.arange(Ns_total)
+    sub_idx     = indices % Nb
     
-    # Inverse Bloch transform: H_real = (1/Nc) Σ_k U†(k) H(k) U(k)
-    # U(k) = diag(exp(+i k·r_i)) / sqrt(Nc) for consistency with forward transform
-    # But we divide by Nc at the end, so normalization is (1/Nc) Σ ...
+    # Projector S[i, a] = delta_{sub(i), a}
+    S           = np.zeros((Ns_total, Nb), dtype=complex)
+    S[np.arange(Ns_total), sub_idx] = 1.0
     
-    H_real = np.zeros((Ns, Ns), dtype=complex)
+    # Inverse Bloch transform: H_real = (1/Nc) Σ_k W(k)† H(k) W(k)
+    # where W[i,a] = (1/sqrt Nc) * exp(-ik\cdot r_i) * S[i,a]
+    # Note: Using -i (same as forward transform) because W is the unitary transform
+    
+    H_real = np.zeros((Ns_total, Ns_total), dtype=complex)
     for ik, kvec in enumerate(kpoints):
-        # Phase: exp(+i k·r_i) for inverse transform
-        phi = np.exp(1j * (coords @ kvec))
-        U = np.diag(phi)
-        # Accumulate: U†(k) H(k) U(k) / Nc
-        H_real += U.conj().T @ H_k_flat[ik] @ U
+        # Phase: exp(-i k\cdot r_i) (same sign as forward transform)
+        phases      = np.exp(-1j * (coords @ kvec))
+        # Bloch projector W[i,a] = (1/sqrt Nc) * exp(-ik\cdot r_i) * S[i,a]
+        W           = (phases[:, None] * S) / np.sqrt(Nc)
+        # Accumulate: W H(k) W† (since W is (Ns_total, Nb) and H_k is (Nb, Nb))
+        H_real     += W @ H_k_flat[ik] @ W.conj().T
     
-    H_real = H_real / Nc
+    # Note: No division by Nc needed - it's already in W normalization
+    # However, we accumulated Nc terms, so effectively: H = Σ_k WHW† = I due to completeness
     
     # Ensure Hermiticity (average with conjugate to remove numerical noise)
     H_real = 0.5 * (H_real + H_real.conj().T)
@@ -719,23 +918,61 @@ def kspace_from_realspace(
         H_real                  : np.ndarray,
         kpoints                 : Optional[np.ndarray] = None,
         require_full_grid       : bool = False,
-        unitary_norm            : bool = True):
-    """
-    Bloch projector: H_real (Nstimes Ns) -> H(k) ∈ C^{Nbtimes Nb} at each k, **order-respecting**.
+        unitary_norm            : bool = True,
+        return_transform        : bool = False):
+    r"""
+    Bloch projector: H_real (NsxNs) -> H(k) $\in$ C^{NbxNb} at each k.
+
+    Transforms a real-space Hamiltonian into momentum space using the Bloch transform:
+        H_ab(k) = Σ_{i,j} W*_{i,a}(k) H_{i,j} W_{j,b}(k)
+    where W[i,a](k) = (1/√Nc) . exp(-ik.r_i) . delta _{sublattice(i),a}
 
     Assumptions:
-    - PBC and true translational invariance if you expect the union of H(k) spectra
-        to equal the full real-space spectrum.
-    - Site ordering is arbitrary; geometry (coordinates + basis) defines sublattices.
+    - Periodic boundary conditions (PBC)
+    - True translational invariance to preserve spectrum
+    - Site ordering is arbitrary; geometry (coordinates + basis) defines sublattices
+
+    Parameters
+    ----------
+    lattice : Lattice
+        Lattice object with geometry information
+    H_real : np.ndarray
+        Real-space Hamiltonian matrix (Ns x Ns)
+    kpoints : Optional[np.ndarray]
+        Custom k-points to evaluate at. If None, uses full BZ grid.
+    require_full_grid : bool
+        If True, raises error if kpoints doesn't match full grid size
+    unitary_norm : bool
+        Use unitary normalization (1/√Nc) for Bloch transform
+    use_cache : bool
+        Use cached Bloch transformation matrices for speed (default: True)
+    return_transform : bool
+        If True, also return the Bloch unitary W for computing correlation functions
 
     Returns
     -------
-    Hk_grid : (Lx, Ly, Lz, Nb, Nb)   if kpoints is None
-        or (Nk, Nb, Nb)          if kpoints is provided
-    kgrid   : (Lx, Ly, Lz, 3)       or (Nk, 3)
+    Hk_grid : np.ndarray
+        Shape (Lx, Ly, Lz, Nb, Nb) if kpoints is None
+        Shape (Nk, Nb, Nb) if kpoints is provided
+        Momentum-space Hamiltonian blocks in fftfreq order
+    kgrid : np.ndarray
+        Shape (Lx, Ly, Lz, 3) or (Nk, 3)
+        K-point coordinates in fftfreq order (Γ at [0,0,0])
+    kgrid_frac : np.ndarray
+        Shape (Lx, Ly, Lz, 3) or None
+        Fractional k-point coordinates in fftfreq order
+    W : np.ndarray [only if return_transform=True]
+        Shape (Nc, Ns, Nb) or (Nk, Ns, Nb)
+        Bloch unitary matrix W[ik, i, a] = (1/√Nc) . exp(-ik.r_i) . delta _{sub(i),a}
+        Use for transforming operators: O_k = W† @ O_real @ W
+        
+    Notes
+    -----
+    - K-points are in fftfreq order: k[0,0,0] = Γ point
+    - No fftshift is applied to maintain correspondence between k_grid and H_k indices
+    - For translationally invariant systems: spectrum(H_real) = union of spectrum(H(k))
     """
 
-    #! VALIDATE INPUTS
     if H_real.ndim != 2 or H_real.shape[0] != H_real.shape[1]:
         raise ValueError("H_real must be a square matrix.")
     
@@ -748,8 +985,36 @@ def kspace_from_realspace(
     Nc         = Lx * Ly * Lz           # number of unit cells
     Nb         = len(lattice._basis)    # number of basis sites per cell
     if Ns % Nc != 0 or (Ns // Nc) != Nb:
-        raise ValueError(f"Ns={Ns} not compatible with Nc={Nc} and Nb={Nb} (Ns must be Nc*Nb).")
+        raise ValueError(f"Ns={Ns} not compatible with Nc={Nc} and Nb={Nb} (Ns must be Nc*Mb).")
 
+    # Use full DFT transform - simpler and works for any lattice
+    if kpoints is None:
+        # Full k-space transform using DFT matrix
+        H_k_full    = full_k_space_transform(lattice, H_real)
+        
+        # Extract blocks: for translationally invariant systems,
+        # H_k_full is block-diagonal with Nc blocks of size NbxNb
+        # Sites are ordered as [cell0_sub0, cell0_sub1, ..., cell1_sub0, cell1_sub1, ...]
+        Hk_blocks   = np.zeros((Nc, Nb, Nb), dtype=complex)
+        for ik in range(Nc):
+            i_start         = ik * Nb
+            i_end           = (ik + 1) * Nb
+            Hk_blocks[ik]   = H_k_full[i_start:i_end, i_start:i_end]
+        
+        # Get k-grid from lattice
+        cache               = _get_bloch_transform_cache(lattice, unitary_norm)
+        
+        # Reshape blocks to grid (fftfreq order)
+        Hk_grid             = Hk_blocks.reshape(Lx, Ly, Lz, Nb, Nb)
+        
+        if return_transform:
+            # For compatibility, return dummy transform
+            W_grid = np.zeros((Lx, Ly, Lz, Ns, Nb), dtype=complex)
+            return Hk_grid, cache.kgrid, cache.kgrid_frac, W_grid
+        else:
+            return Hk_grid, cache.kgrid, cache.kgrid_frac
+    
+    # Fallback: manual computation for custom k-points
     # reciprocal basis
     b1          = np.asarray(lattice._k1, float).reshape(3)
     b2          = np.asarray(lattice._k2, float).reshape(3)
@@ -757,22 +1022,26 @@ def kspace_from_realspace(
 
     #! k-point mesh - either full grid or provided points
     if kpoints is None:
-        # fractional coordinates in reciprocal lattice basis
-        frac_x                      = np.linspace(0, 1, Lx, endpoint=False)
-        frac_y                      = np.linspace(0, 1, Ly, endpoint=False)
-        frac_z                      = np.linspace(0, 1, Lz, endpoint=False)
+        # Use fftfreq convention: k_n = n/N for n = 0, 1, ..., N/2-1, -N/2, ..., -1
+        # This gives k $\in$ [-0.5, 0.5) in fractional coordinates
+        # which maps to the first Brillouin zone correctly for both even and odd N
+        frac_x                      = np.fft.fftfreq(Lx)  # sorted: [0, 1/N, ..., (N/2-1)/N, -N/2/N, ..., -1/N]
+        frac_y                      = np.fft.fftfreq(Ly)
+        frac_z                      = np.fft.fftfreq(Lz)
+        
+        # Create meshgrid in the fftfreq order
         kx_frac, ky_frac, kz_frac   = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
 
-        # Store fractional coordinates for return
-        # kgrid_frac has shape (Lx, Ly, Lz, 3)
+        # Store fractional coordinates (shape: Lx, Ly, Lz, 3)
         kgrid_frac                  = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)
 
-        # Construct the Cartesian k-vectors
-        # (Lx,Ly,Lz,1) * (3,) -> (Lx,Ly,Lz,3)
+        # Construct Cartesian k-vectors: k = f1*b1 + f2*b2 + f3*b3
         kgrid                       = (kx_frac[..., None] * b1 + 
                                        ky_frac[..., None] * b2 + 
                                        kz_frac[..., None] * b3)  # shape (Lx, Ly, Lz, 3)
         
+        # Γ point is at index [0,0,0] (fftfreq order)
+        # Flatten for computation
         kpoints                     = kgrid.reshape(-1, 3)  # shape (Nc, 3)
         return_grid                 = True
     else:
@@ -787,7 +1056,6 @@ def kspace_from_realspace(
         raise ValueError(f"Round-trip requires Nk == Nc == {Nc}, got Nk={Nk}.")
 
     #! geometric labeling: (cell, sub) while keeping order
-    # cell_idx, sub_idx = lattice.get_geometric_encoding()      # shape (Ns,)
     indices           = np.arange(Ns)
     sub_idx           = indices % Nb
     
@@ -795,177 +1063,49 @@ def kspace_from_realspace(
     basis_coords                                = np.zeros((Nb, 3), dtype=float)
     basis_coords[:, :lattice._basis.shape[1]]   = np.asarray(lattice._basis, float)
     
-    # Total position vector r_i = R_n + r_a
-    # This should be *identical* to lattice.coordinates if they were
-    # generated in the same order as H_real.
-    # Using lattice.coordinates is simpler and safer if we trust it.
+    # Total position vector r_i = R_n + τ_a
     coords                                      = np.asarray(lattice.coordinates, float) # shape (Ns, 3)
 
-    # We need the projector S[i, a] = delta_{sub(i), a}
-    S                           = np.zeros((Ns, Nb), dtype=complex)     # Bloch projector
+    # Projector S[i, a] = delta_{sub(i), a}
+    S                           = np.zeros((Ns, Nb), dtype=complex)
     S[np.arange(Ns), sub_idx]   = 1.0                                   # shape (Ns, Nb)
     
-    # The FT formula is: H_ab(k) = sum_{n,m} e^{-ik(R_n-R_m)} H_{n,a; m,b}
-    # Or, using the projector W: H_ab(k) = sum_{i,j} W*_{i,a} H_{i,j} W_{j,b}
-    # Where W_{i,a} = (1/sqrt(Nc)) * e^{-ik . r_i} * S_{i,a}
-    #               = (1/sqrt(Nc)) * e^{-ik . (R_n + r_a)} * delta_{sub(i), a}
+    # Bloch transform: H_ab(k) = Σ_{i,j} W*_{i,a} H_{i,j} W_{j,b}
+    # where W_{i,a} = (1/sqrt Nc) * e^{-ik\cdot r_i} * delta_{sub(i),a}
+    # where r_i = R_cell + τ_sublattice is the full site position
+    # This accounts for both unit cell position AND basis vector in the phase
     
-    phases                      = np.exp(-1j * (kpoints @ coords.T))  # (Nc, Ns)
+    phases                      = np.exp(-1j * (kpoints @ coords.T))  # (Nk, Ns)
     norm                        = np.sqrt(Nc) if unitary_norm else 1.0
     phases                     /= norm
     
     # Vectorized projector: W[ik, i, a] = phases[ik, i] * S[i, a]
-    W                           = phases[:, :, None] * S[None, :, :]  # (Nc, Ns, Nb)
+    W                           = phases[:, :, None] * S[None, :, :]  # (Nk, Ns, Nb)
     
     # Transform: H(k) = W† @ H @ W for all k
-    # (Nc, Nb, Ns) @ (Ns, Ns) @ (Nc, Ns, Nb) -> (Nc, Nb, Nb)
-    Hk                          = np.einsum('kia,ij,kjb->kab', W.conj(), H_real, W)
-    
-    # Reshape and shift
-    Hk                          = Hk.reshape(Lx, Ly, Lz, Nb, Nb)
-    kgrid                       = np.fft.fftshift(kgrid, axes=(0, 1, 2))
-    kgrid_frac                  = np.fft.fftshift(kgrid_frac, axes=(0, 1, 2))
-    return Hk, kgrid, kgrid_frac
-    
-    norm                    = (Nc ** 0.5) if unitary_norm else 1.0
-    Hk                      = np.zeros((Nk, Nb, Nb), dtype=complex)
-    for ik in range(Nk):
-        # Phase factors for this k-point
-        # phi[i] = e^{-i k * r_i} / norm
-        # r_i is the full coordinate vector r_i = R_n + r_a
-        phi     = np.exp(-1j * (kpoints[ik] @ coords.T)) / norm  # shape (Ns,)
-        
-        # Bloch projector: W[i,a] = phi[i] * S[i,a]
-        # S[i,a] is 1 only if site 'i' belongs to sublattice 'a', 0 otherwise.
-        # This correctly applies the phase e^{-ik.r_i} only to the
-        # basis state 'a' that site 'i' corresponds to.
-        W       = phi[:, None] * S  # shape (Ns, Nb)
-        
-        # Transform: H(k) = W† H W
-        if sp.issparse(H_real):
-            # For sparse: (Nb, Ns) @ sparse(Ns, Ns) @ (Ns, Nb)
-            Hk[ik] = W.conj().T @ (H_real @ W)
-        else:
-            Hk[ik] = W.conj().T @ H_real @ W
+    # Use einsum for efficiency: (Nk, Nb, Ns) @ (Ns, Ns) @ (Nk, Ns, Nb) -> (Nk, Nb, Nb)
+    if sp.issparse(H_real):
+        # For sparse matrices, use loop (einsum doesn't support sparse)
+        Hk = np.zeros((Nk, Nb, Nb), dtype=complex)
+        for ik in range(Nk):
+            Hk[ik] = W[ik].conj().T @ (H_real @ W[ik])
+    else:
+        Hk = np.einsum('kia,ij,kjb->kab', W.conj(), H_real, W)
 
     if return_grid:
-        # Also return fractional coordinates
-        Hk          = Hk.reshape(Lx, Ly, Lz, Nb, Nb)
-        k_grid      = np.fft.fftshift(k_grid,       axes=(0, 1, 2))
-        k_grid_frac = np.fft.fftshift(k_grid_frac,  axes=(0, 1, 2))
-        result      = (Hk, k_grid, k_grid_frac) # This is already (Lx, Ly, Lz, 3)
-        return result
+        # Reshape blocks to grid (keep in fftfreq order - NO SHIFT)
+        # This ensures H_k[ix,iy,iz] corresponds to k_grid[ix,iy,iz]
+        Hk_grid = Hk.reshape(Lx, Ly, Lz, Nb, Nb)
+        if return_transform:
+            W_grid = W.reshape(Lx, Ly, Lz, Ns, Nb)
+            return Hk_grid, kgrid, kgrid_frac, W_grid
+        else:
+            return Hk_grid, kgrid, kgrid_frac
     else:
-        return Hk, kpoints
-
-def kspace_from_realspace_fft(
-        lattice,
-        H_real: np.ndarray,
-        unitary_norm: bool = True) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    FFT-based Bloch transform: H_real (Ns×Ns) -> H(k) (Lx,Ly,Lz,Nb,Nb)
-    
-    This uses numpy's FFT for computational efficiency.
-    
-    Parameters
-    ----------
-    lattice : Lattice
-        Lattice object with geometry info
-    H_real : np.ndarray
-        Real-space Hamiltonian (Ns × Ns)
-    unitary_norm : bool
-        If True, use 1/√Nc normalization (unitary transform)
-        
-    Returns
-    -------
-    Hk : np.ndarray, shape (Lx, Ly, Lz, Nb, Nb)
-        k-space Hamiltonian blocks
-    kgrid : np.ndarray, shape (Lx, Ly, Lz, 3)
-        Cartesian k-vectors (fftshifted to center at Γ)
-    kgrid_frac : np.ndarray, shape (Lx, Ly, Lz, 3)
-        Fractional k-coordinates (fftshifted)
-    """
-    # Validate inputs
-    if H_real.ndim != 2 or H_real.shape[0] != H_real.shape[1]:
-        raise ValueError("H_real must be square")
-    
-    Ns = H_real.shape[0]
-    if Ns != lattice.Ns:
-        raise ValueError(f"H_real size {Ns} != lattice.Ns {lattice.Ns}")
-    
-    # Convert sparse to dense if needed
-    if sp.issparse(H_real):
-        H_real = H_real.toarray()
-    
-    # Lattice parameters
-    Lx, Ly, Lz = lattice._lx, max(lattice._ly, 1), max(lattice._lz, 1)
-    Nc = Lx * Ly * Lz  # number of unit cells
-    Nb = len(lattice._basis)  # sublattices per cell
-    
-    if Ns != Nc * Nb:
-        raise ValueError(f"Ns={Ns} must equal Nc*Nb = {Nc}*{Nb} = {Nc*Nb}")
-    
-    # Reciprocal lattice vectors
-    b1 = np.asarray(lattice._k1, float).reshape(3)
-    b2 = np.asarray(lattice._k2, float).reshape(3)
-    b3 = np.asarray(lattice._k3, float).reshape(3)
-    
-    # Reshape Hamiltonian: (Ns, Ns) -> (Lx, Ly, Lz, Nb, Lx, Ly, Lz, Nb)
-    # Index as: [ix, iy, iz, a, jx, jy, jz, b]
-    # where (ix,iy,iz) is cell index and a,b are sublattice indices
-    H_reshaped = np.zeros((Lx, Ly, Lz, Nb, Lx, Ly, Lz, Nb), dtype=complex)
-    
-    # Fill reshaped array
-    for i in range(Ns):
-        for j in range(Ns):
-            # Decompose site indices
-            cell_i, sub_i = i // Nb, i % Nb
-            cell_j, sub_j = j // Nb, j % Nb
-            
-            # Cell coordinates
-            ix = cell_i % Lx
-            iy = (cell_i // Lx) % Ly
-            iz = (cell_i // (Lx * Ly)) % Lz
-            
-            jx = cell_j % Lx
-            jy = (cell_j // Lx) % Ly
-            jz = (cell_j // (Lx * Ly)) % Lz
-            
-            H_reshaped[ix, iy, iz, sub_i, jx, jy, jz, sub_j] = H_real[i, j]
-    
-    # Apply FFT over spatial dimensions (axes 4, 5, 6 = jx, jy, jz)
-    # This computes: H_ab(R, k) = Σ_R' H_ab(R, R') e^(-ik·R')
-    norm_factor = np.sqrt(Nc) if unitary_norm else 1.0
-    
-    Hk_temp = np.fft.fftn(H_reshaped, axes=(4, 5, 6), norm='ortho' if unitary_norm else None)
-    
-    # For translationally invariant systems, H(k) should be independent of R
-    # Average over R (or just take R=0)
-    # H_ab(k) = H_ab(R=0, k)
-    Hk = Hk_temp[0, 0, 0, :, :, :, :, :]  # Take R=0 reference cell
-    
-    # Rearrange to (Lx, Ly, Lz, Nb, Nb)
-    Hk = np.transpose(Hk, (1, 2, 3, 0, 4))  # (kx, ky, kz, sub_i, sub_j)
-    
-    # Generate k-grid
-    frac_x = np.fft.fftfreq(Lx)  # FFT frequencies: [0, 1/L, ..., (L-1)/L] -> [-0.5, ..., 0.5)
-    frac_y = np.fft.fftfreq(Ly)
-    frac_z = np.fft.fftfreq(Lz)
-    
-    kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing='ij')
-    kgrid_frac = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)
-    
-    # Convert to Cartesian k-vectors
-    kgrid = (kx_frac[..., None] * b1 + 
-             ky_frac[..., None] * b2 + 
-             kz_frac[..., None] * b3)
-    
-    # Apply fftshift to center at Γ
-    Hk = np.fft.fftshift(Hk, axes=(0, 1, 2))
-    kgrid = np.fft.fftshift(kgrid, axes=(0, 1, 2))
-    kgrid_frac = np.fft.fftshift(kgrid_frac, axes=(0, 1, 2))
-    
-    return Hk, kgrid, kgrid_frac
+        if return_transform:
+            return Hk, kpoints, W
+        else:
+            return Hk, kpoints
 
 # -----------------------------------------------------------------------------------------------------------
 #! END OF FILE

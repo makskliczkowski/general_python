@@ -257,7 +257,7 @@ def inner(vec1: Array, vec2: Array, backend: str = "default") -> Array:
     r"""
     Compute inner product of two vectors.
     
-    <v1|v2> = v1dagger  · v2
+    <v1|v2> = v1dagger  \cdot  v2
     
     Parameters
     ----------
@@ -301,7 +301,7 @@ def bra_ket(vec: Array, backend: str = "default") -> Array:
     r"""
     Compute bra-ket (inner product) of a vector with itself.
     
-    <Psi |Psi > = Psi dagger  · Psi  = ||Psi ||²
+    <Psi |Psi > = Psi dagger  \cdot  Psi  = ||Psi ||²
     
     Parameters
     ----------
@@ -364,13 +364,15 @@ def overlap(
         b = a
     
     # Convert to 2D column matrices
-    a_mat = be.atleast_2d(a) if a.ndim == 1 else a
-    if a_mat.ndim == 1:
-        a_mat = a_mat[:, None]
+    if a.ndim == 1:
+        a_mat = a[:, None]
+    else:
+        a_mat = a
     
-    b_mat = be.atleast_2d(b) if b.ndim == 1 else b
-    if b_mat.ndim == 1:
-        b_mat = b_mat[:, None]
+    if b.ndim == 1:
+        b_mat = b[:, None]
+    else:
+        b_mat = b
     
     # Apply operator
     Ob  = O @ b_mat

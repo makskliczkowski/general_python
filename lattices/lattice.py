@@ -370,16 +370,30 @@ class Lattice(ABC):
     def k1(self):           return self._k1
     @k1.setter
     def k1(self, value):    self._k1 = value
+    @property
+    def b1(self):           return self._k1
+    @b1.setter
+    def b1(self, value):    self._k1 = value
     
     @property
     def k2(self):           return self._k2
     @k2.setter
     def k2(self, value):    self._k2 = value
+    @property
+    def b2(self):           return self._k2
+    @b2.setter
+    def b2(self, value):    self._k2 = value
     
     @property
     def k3(self):           return self._k3
     @k3.setter
     def k3(self, value):    self._k3 = value
+    @property
+    def b3(self):           return self._k3
+    @b3.setter
+    def b3(self, value):    self._k3 = value
+    
+    # ------------------------------------------------------------------
     
     @property
     def n1(self):           return self._n1
@@ -457,6 +471,21 @@ class Lattice(ABC):
     @coordinates.setter
     def coordinates(self, value):   self._coords = value
     
+    @property
+    def subs(self):                 return self._subs
+    @subs.setter
+    def subs(self, value):          self._subs = value
+    
+    @property
+    def cells(self):                return self._cells
+    @cells.setter
+    def cells(self, value):         self._cells = value
+    
+    @property
+    def fracs(self):                return self._fracs
+    @fracs.setter
+    def fracs(self, value):         self._fracs = value
+
     @property
     def kvectors(self):             return self._kvectors
     @kvectors.setter
@@ -815,44 +844,29 @@ class Lattice(ABC):
         self._k3    = np.pad(self._k3, (0, 3 - len(self._k3)))
         return self._k1, self._k2, self._k3
     
-    def apply_dft_matrix(self, vec: np.ndarray, orthogonal: bool = True) -> np.ndarray:
-        """
-        Perform FFT-based Bloch transform on (possibly multi-sublattice) lattices.
-
-        Parameters
-        ----------
-        vec : np.ndarray
-            Real-space field array of shape (Lx, Ly, Lz, n_basis).
-        orthogonal : bool
-            If True, assumes orthogonal lattice; otherwise applies basis-phase correction.
-
-        Returns
-        -------
-        psi_k : np.ndarray
-            Fourier coefficients of shape (Lx, Ly, Lz, n_basis).
-        """
-        
-        # 1. FFT along Bravais directions - in general orthogonal lattices
-        psi_k = np.fft.fftn(vec, axes=(0, 1, 2), norm='ortho')
-
-        # 2. Apply basis-dependent phase correction if non-orthogonal
-        if not orthogonal and hasattr(self, "_basis") and hasattr(self, "_kvectors"):
-            n_basis     = len(self._basis)
-            Nk          = len(self._kvectors)
-            Lx, Ly, Lz  = self.Lx, self.Ly, self.Lz
-
-            # Reshape kvectors onto (Lx, Ly, Lz, 3)
-            kgrid       = self._kvectors.reshape(Lx, Ly, Lz, 3)
-
-            for b, r_basis in enumerate(self._basis):
-                # Compute exp(-i * k . r_basis) for every k-point
-                phase           = np.exp(-1j * np.tensordot(kgrid, r_basis, axes=([3],[0])))
-                psi_k[..., b]  *= phase
-
-        return psi_k
-    
     def calculate_dft_matrix(self, phase = False, use_fft: bool = False) -> np.ndarray:
-        '''
+        r'''
+        Bloch-type DFT matrix on the site basis.
+        
+        Indices:
+            i  = (R, beta)   real-space cell R and sublattice beta
+            n  = (k, alpha)  k-point k and sublattice alpha
+
+        Elements:
+        $$
+            F_{(k,alpha),(R,beta)} =
+                1/sqrt(Nc) * delta_{alpha,beta} * exp(-i k . R).
+        $$
+        This is unitary:
+        $$
+            F^\dagger F = I_{Ns},   F F^\dagger = I_{Ns},
+        $$
+        where Ns = Nc * Nb is the total number of sites, Nc is the number of
+        unit cells, and Nb is the number of sublattices.
+        
+        Note that this DFT matrix does not include basis-dependent phases
+        (i.e., exp(-i k . r_basis)).
+        
         Calculates the Discrete Fourier Transform (DFT) matrix for the lattice.
         This method can be optimized using FFT (Fast Fourier Transform) in the future.
         Reference: https://en.wikipedia.org/wiki/DFT_matrix
@@ -863,53 +877,66 @@ class Lattice(ABC):
         Returns:
         - DFT matrix (ndarray): The calculated DFT matrix.
         '''
-        Ns          = self.Ns
-        Lx, Ly, Lz  = self._lx, max(self._ly, 1), max(self._lz, 1)
-        Nc          = Lx * Ly * Lz
-        Nb          = len(self._basis) if (self._basis is not None and len(self._basis) > 0) else 1  # Avoid division by zero
+        Ns              = self.Ns
+        Lx, Ly, Lz      = self._lx, max(self._ly, 1), max(self._lz, 1)
+        Nc              = Lx * Ly * Lz
+        Nb              = len(self._basis) if (self._basis is not None and len(self._basis) > 0) else 1  # Avoid division by zero
         
         # Get site coordinates
-        r_vectors = np.asarray(self.coordinates, dtype=float)  # (Ns, 3)
-        sub_idx = np.arange(Ns) % Nb  # Sublattice index for each site
-        
+        # r_vectors       = np.asarray(self.coordinates, dtype=float)  # (Ns, 3)
+        r_vectors       = np.asarray(self.cells, dtype=float)  # (Ns, 3)
+        if not r_vectors.shape[0] == Ns:
+            raise ValueError("Mismatch in number of sites and coordinates.")
+
+        sub_idx         = self.subs # (Ns,)
+
         # Generate k-vectors
-        frac_x = np.linspace(0, 1, Lx, endpoint=False)
-        frac_y = np.linspace(0, 1, Ly, endpoint=False)
-        frac_z = np.linspace(0, 1, Lz, endpoint=False)
+        frac_x          = np.linspace(0, 1, Lx, endpoint=False)
+        frac_y          = np.linspace(0, 1, Ly, endpoint=False)
+        frac_z          = np.linspace(0, 1, Lz, endpoint=False)
         
         kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing='ij')
         
-        b1 = np.asarray(self._k1, float).reshape(3)
-        b2 = np.asarray(self._k2, float).reshape(3)
-        b3 = np.asarray(self._k3, float).reshape(3)
+        b1              = np.asarray(self._k1, float).reshape(3)
+        b2              = np.asarray(self._k2, float).reshape(3)
+        b3              = np.asarray(self._k3, float).reshape(3)
         
-        kgrid = (kx_frac[..., None] * b1 + 
-                ky_frac[..., None] * b2 + 
-                kz_frac[..., None] * b3)
-        k_vectors = kgrid.reshape(-1, 3)  # (Nc, 3)
+        kgrid           = (kx_frac[..., None] * b1 + 
+                           ky_frac[..., None] * b2 + 
+                           kz_frac[..., None] * b3)
+        k_vectors       = kgrid.reshape(-1, 3) # (Nc, 3)
         
         # Build block DFT matrix
         # Row index: ik*Nb + \alpha (k-point ik, sublattice \alpha)
         # Col index: i (site i in real space)
-        F_block = np.zeros((Nc * Nb, Ns), dtype=complex)
+        F_block         = np.zeros((Nc * Nb, Ns), dtype=complex)    # DFT matrix
+        norm            = np.sqrt(Nc)                               # Bloch normalization factor
+
+        # numpy path version (not used in loop)
+        phase_matrix    = np.exp(-1j * (k_vectors @ r_vectors.T)) / norm    # (Nc, Ns)
+        selector        = (sub_idx[None, :] == np.arange(Nb)[:, None])      # (Nb, Ns)
+        F               = phase_matrix[:, None, :] * selector[None, :, :]   # (Nc,Nb,Ns)
+        F_block         = F.reshape(Nc * Nb, Ns)
         
-        norm = np.sqrt(Nc)
-        for ik in range(Nc):
-            k = k_vectors[ik]
-            
-            # Phases for all sites at this k
-            phases = np.exp(-1j * (k @ r_vectors.T)) / norm  # (Ns,)
-            
-            # Fill rows for this k-point (one row per sublattice)
-            for alpha in range(Nb):
-                row_idx = ik * Nb + alpha
-                
-                # Only connect to sites of sublattice \alpha
-                for i in range(Ns):
-                    if sub_idx[i] == alpha:
-                        F_block[row_idx, i] = phases[i]
-        
+        self._dft       = F_block
         return F_block
+
+        # leave loop path
+        # for ik in range(Nc):
+        #     # Phases for all sites at this k
+        #     k       = k_vectors[ik]
+        #     phases  = np.exp(-1j * (k @ r_vectors.T)) / norm  # (Ns,)
+            
+        #     # Fill rows for this k-point (one row per sublattice)
+        #     for alpha in range(Nb):
+        #         row_idx = ik * Nb + alpha
+                
+        #         # Only connect to sites of sublattice \alpha
+        #         for i in range(Ns):
+        #             if sub_idx[i] == alpha:
+        #                 F_block[row_idx, i] = phases[i]
+        
+        # return F_block
     
     # -----------------------------------------------------------------------------
     #! NEAREST NEIGHBORS
@@ -1352,6 +1379,9 @@ class Lattice(ABC):
         """
         n_basis             = len(self._basis)
         self.coordinates    = []
+        self.cells          = []
+        self.fracs          = []
+        self.subs           = []
 
         for i in range(self.Ns):
             cell    = i // n_basis          # integer division
@@ -1364,8 +1394,15 @@ class Lattice(ABC):
             R       = nx * self._a1 + ny * self._a2 + nz * self._a3     # lattice vector
             r       = R + self._basis[sub]                              # add basis vector
             self.coordinates.append(r)
+            self.cells.append(R)
+            self.fracs.append((nx, ny, nz))
+            self.subs.append(sub)
+            
 
-        self.coordinates = np.array(self.coordinates)
+        self.coordinates    = np.array(self.coordinates)
+        self.cells          = np.array(self.cells)
+        self.fracs          = np.array(self.fracs)
+        self.subs           = np.array(self.subs)
         return self.coordinates
         
     def calculate_r_vectors(self):
@@ -1657,42 +1694,51 @@ class Lattice(ABC):
         return cell, sub
 
     # ============================================================
-    #  INVERSE BLOCH TRANSFORM
+    #  INVERSE BLOCH TRANSFORM & K-SPACE OPERATIONS
     # ============================================================
 
     def realspace_from_kspace(
         self,
-        Hk_grid                 : np.ndarray,
-        kpoints                 : Optional[np.ndarray] = None,
-        require_full_grid       : bool = False,
-        unitary_norm            : bool = True):
+        H_k                     : np.ndarray,
+        *,
+        block_diag              : bool = True,
+        kgrid                   : Optional[np.ndarray] = None):
         """
-        Inverse Bloch projector: H(k) ∈ C^{Nbtimes Nb} at each k -> H_real (Nstimes Ns), **order-respecting**.
+        Inverse Bloch transform: H(k) blocks -> H_real (Ns x Ns).
+        
+        See lattice_kspace.realspace_from_kspace for full documentation.
         """
-        from .tools.lattice_kspace import realspace_from_kspace
+        from .tools.lattice_kspace import realspace_from_kspace, full_k_space_transform
+        if block_diag is False:
+            return full_k_space_transform(lattice=self, mat_k=H_k, inverse=True)
         return realspace_from_kspace(
-            lattice                 = self,
-            Hk_grid                 = Hk_grid,
-            kpoints                 = kpoints,
-            require_full_grid       = require_full_grid,
-            unitary_norm            = unitary_norm)
+            lattice = self,
+            H_k     = H_k,
+            kgrid   = kgrid)
 
-    def kspace_from_realspace(
-        self,
-        H_real                 : np.ndarray,
-        kpoints                : Optional[np.ndarray] = None,
-        require_full_grid      : bool = False,
-        unitary_norm           : bool = True):
+    def kspace_from_realspace(self, mat: np.ndarray, block_diag: bool = False):
         """
-        Bloch projector: H_real (Nstimes Ns), **order-respecting** -> H(k) ∈ C^{Nbtimes Nb} at each k.
+        Transform real-space Hamiltonian to k-space.
+        
+        Parameters
+        ----------
+        mat : np.ndarray
+            Real-space matrix (Ns x Ns)
+        block_diag : bool
+            If True, return k-space blocks (Lx, Ly, Lz, Nb, Nb)
+            If False, return full transformed matrix (Ns x Ns)
+            
+        Returns
+        -------
+        If block_diag=True:
+            H_k, k_grid, k_frac : k-space blocks and grid
+        If block_diag=False:
+            H_k_full : full transformed matrix (Ns x Ns)
         """
-        from .tools.lattice_kspace import kspace_from_realspace
-        return kspace_from_realspace(
-            lattice                 = self,
-            H_real                  = H_real,
-            kpoints                 = kpoints,
-            require_full_grid       = require_full_grid,
-            unitary_norm            = unitary_norm)
+        from .tools.lattice_kspace import full_k_space_transform, kspace_from_realspace
+        if block_diag:
+            return kspace_from_realspace(lattice=self, H_real=mat)
+        return full_k_space_transform(lattice=self, mat=mat)
 
     # -------------------------------------------------------------------------
     #! Presentation helpers (text / plots)
