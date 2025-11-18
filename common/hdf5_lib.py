@@ -1,11 +1,16 @@
+import os
 import sys
-# Adds higher directory to python modules path.
-
-from .directories import *
+import logging
 from typing import List, Callable, Any
 import numpy as np
 import h5py
-import os
+# Adds higher directory to python modules path.
+
+try:
+    from .directories import *
+except ImportError as e:
+    raise ImportError(f"Failed to import directories module. Please check that the package installation is correct. Original error: {e}")
+
 
 ####################################################### READ HDF5 FILE #######################################################
 
@@ -13,19 +18,19 @@ def allbottomkeys(group):
     """
     Recursively collect all dataset keys in an HDF5 group.
     """
-    datasetJAX_RND_DEFAULT_KEYs = []
+    datasets = []
 
-    def collectJAX_RND_DEFAULT_KEYs(obj):
+    def collects(obj):
         if isinstance(obj, h5py.Group):
             for key, value in obj.items():
-                collectJAX_RND_DEFAULT_KEYs(value)
+                collects(value)
         else:
-            datasetJAX_RND_DEFAULT_KEYs.append(obj.name)
+            datasets.append(obj.name)
     
     # Start the recursive key collection
-    collectJAX_RND_DEFAULT_KEYs(group)
+    collects(group)
     
-    return datasetJAX_RND_DEFAULT_KEYs
+    return datasets
 
 ####################################################### READ HDF5 FILE #######################################################
 
@@ -702,7 +707,7 @@ class HDF5Handler:
                 dataset.append(obj.name)
 
         collects(group)
-        return datasetJAX_RND_DEFAULT_KEYs
+        return datasets
 
     ############### PUBLIC METHODS ################
     
