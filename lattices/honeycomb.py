@@ -98,8 +98,8 @@ class HoneycombLattice(Lattice):
         self.calculate_k_vectors()
 
         self._delta_x   = np.array([0.0, self.a, 0.0])
-        self._delta_y   = np.array([-np.sqrt(3) * self.a / 2.0, -self.a / 2.0, 0.0])
-        self._delta_z   = np.array([np.sqrt(3) * self.a / 2.0, -self.a / 2.0, 0.0])
+        self._delta_y   = np.array([-np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
+        self._delta_z   = np.array([ np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
 
         if self._ns < 100:
             self.calculate_dft_matrix()
@@ -120,7 +120,17 @@ class HoneycombLattice(Lattice):
     def __repr__(self):
         return self.__str__()
 
-    ################################### GETTERS #######################################
+    ################################### 
+    
+    def sublattice(self, site: int) -> int:
+        """
+        Return the sublattice index for a given site.
+        By default, returns 0 for all sites (single sublattice).
+        Override in subclasses for multi-sublattice lattices.
+        """
+        return site % self.multipartity
+
+    ###################################
 
     def get_real_vec(self, x: int, y: int, z: int):
         """
@@ -363,6 +373,71 @@ class HoneycombLattice(Lattice):
             elif idx == 0:
                 return Z_BOND_NEI
         return -1
+
+    ###############################################################################################
+    #! Plaquettes
+    ###############################################################################################
+    
+    def calculate_plaquettes(self):
+        """
+        Compute all hexagonal Kitaev plaquettes, matching the exact geometry
+        and numbering convention in the hand-drawn lattice.
+
+        Each plaquette is returned as 6 site indices in CCW order starting from
+        the bottom-left A-sublattice site of the hexagon.
+
+        Bond sequence:
+            1 --Z--> 2 --X--> 3 --Y--> 4 --Z--> 5 --X--> 6 --Y--> 1
+        """
+
+        Z           = Z_BOND_NEI
+        Y           = Y_BOND_NEI
+        X           = X_BOND_NEI
+
+        bond_cycle  = [Z, X, Y, Z, X, Y]
+
+        plaquettes  = []
+        seen        = set()
+
+        for i in range(self._ns):
+
+            # Only A sites (even indices) can be bottom-left of a plaquette
+            if self.sublattice(i) != 1:
+                continue
+
+            # Must have a valid Z-neighbor above (this ensures bottom-left anchor)
+            z1 = self.get_nn(i, Z)
+            if z1 < 0:
+                continue # boundary or missing hexagon here
+
+            # Now walk the cycle
+            loop    = [i]
+            cur     = i
+            valid   = True
+
+            for b in bond_cycle:
+                nxt = self.get_nn(cur, b)
+                if self.wrong_nei(nxt):
+                    valid = False
+                    break
+                loop.append(nxt)
+                cur = nxt
+
+            # Should return to starting site
+            if not valid or loop[-1] != i:
+                continue
+
+            # Keep exactly the 6 unique sites
+            hex_sites   = tuple(loop[:-1])
+
+            # Deduplicate by sorted site set
+            key         = tuple(sorted(hex_sites))
+            if key not in seen:
+                seen.add(key)
+                plaquettes.append(list(hex_sites))
+
+        self._plaquettes = plaquettes
+        return plaquettes
 
 # ---------------------------------------------------------------------------
 #! EOF

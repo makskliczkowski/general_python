@@ -487,6 +487,11 @@ class Logger:
         Decorator to measure and log the execution time of functions.
         Parameters:
             func : function to be timed
+            
+        Use as:
+            @logger.timing
+            def my_function(...):
+                ...
         """
         
         @functools.wraps(func)  # Decorator to preserve the original function's metadata

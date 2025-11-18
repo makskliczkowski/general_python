@@ -20,11 +20,11 @@ from numpy.typing import NDArray
 from typing import Optional, Callable, Literal, Union, Any
 
 try:
-    from .result import EigenResult, EigenSolver
-    from .exact import ExactEigensolver, ExactEigensolverScipy
-    from .lanczos import LanczosEigensolver, LanczosEigensolverScipy
-    from .arnoldi import ArnoldiEigensolver, ArnoldiEigensolverScipy
-    from .block_lanczos import BlockLanczosEigensolver, BlockLanczosEigensolverScipy
+    from .result            import EigenResult, EigenSolver
+    from .exact             import ExactEigensolver, ExactEigensolverScipy
+    from .lanczos           import LanczosEigensolver, LanczosEigensolverScipy
+    from .arnoldi           import ArnoldiEigensolver, ArnoldiEigensolverScipy
+    from .block_lanczos     import BlockLanczosEigensolver, BlockLanczosEigensolverScipy
 except ImportError as e:
     raise ImportError("Failed to import eigen solvers. Ensure all dependencies are installed.") from e
 
@@ -58,15 +58,15 @@ def choose_eigensolver(
     method          : Literal['exact', 'lanczos', 'arnoldi', 'block_lanczos', 'shift-invert', 
                               'scipy-eigh', 'scipy-eig', 'scipy-eigs', 'lobpcg', 
                               'jax-eigh', 'auto'] = 'auto',
-    A               : Optional[NDArray] = None,
-    matvec          : Optional[Callable[[NDArray], NDArray]] = None,
-    n               : Optional[int] = None,
-    k               : Optional[int] = 6,
-    hermitian       : bool = True,
-    which           : Union[str, Literal['smallest', 'largest', 'both']] = 'smallest',
-    backend         : Literal['numpy', 'scipy', 'jax'] = 'numpy',
-    use_scipy       : bool = False,
-    B               : Optional[NDArray] = None,
+    A               : Optional[NDArray]                                     = None,
+    matvec          : Optional[Callable[[NDArray], NDArray]]                = None,
+    n               : Optional[int]                                         = None,
+    k               : Optional[int]                                         = 6,
+    hermitian       : bool                                                  = True,
+    which           : Union[str, Literal['smallest', 'largest', 'both']]    = 'smallest',
+    backend         : Literal['numpy', 'scipy', 'jax']                      = 'numpy',
+    use_scipy       : bool                                                  = False,
+    B               : Optional[NDArray]                                     = None,
     **kwargs) -> EigenResult:
     r"""
     Unified interface for eigenvalue solvers.
@@ -180,16 +180,23 @@ def choose_eigensolver(
     # ----------------------------------------------    
     elif method == 'lanczos':
         # Lanczos for symmetric/Hermitian
+        # Note: Use backend='numpy' (native) for access to Krylov basis and tridiagonal matrix
+        # The scipy wrapper is faster but doesn't expose Lanczos internals
         if not hermitian:
             raise ValueError("Lanczos requires hermitian=True. Use 'arnoldi' for non-symmetric matrices")
         
         if use_scipy or backend == 'scipy':
             # Map 'smallest'/'largest' to SciPy's 'SA'/'LA'
             scipy_which = {'smallest': 'SA', 'largest': 'LA', 'both': 'BE'}.get(which, 'SA')
-            solver      = LanczosEigensolverScipy(k=k, which=scipy_which, **kwargs)
+            # Extract parameters that go to __init__ vs solve()
+            init_kwargs     = {k: v for k, v in kwargs.items() if k in ['tol', 'maxiter', 'v0', 'seed']}
+            solver          = LanczosEigensolverScipy(k=k, which=scipy_which, **init_kwargs)
+            solve_kwargs    = {k: v for k, v in kwargs.items() if k not in ['tol', 'maxiter', 'v0', 'seed']}
+            return solver.solve(A=A, matvec=matvec, n=n, k=k, **solve_kwargs)
         elif backend == 'jax':
             solver = LanczosEigensolver(k=k, which=which, backend='jax', **kwargs)
         else:
+            # Native numpy implementation - exposes Krylov basis and tridiagonal matrix
             solver = LanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
         return solver.solve(A=A, matvec=matvec, n=n, k=k)

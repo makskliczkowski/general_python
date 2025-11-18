@@ -299,9 +299,8 @@ class LanczosEigensolver(EigenSolver):
                     which           : Literal['smallest', 'largest', 'both'] = 'smallest',
                     reorthogonalize : bool  = True,
                     reorth_tol      : float = 1e-12,
-
                     ) -> EigenResult:
-        """
+        r"""
         NumPy implementation of Lanczos iteration.
         
         Parameters:
@@ -319,22 +318,35 @@ class LanczosEigensolver(EigenSolver):
         """
         
         # Initialize starting vector
+        probe           = np.ones(n)
+        probe_res       = matvec(probe)
+        needs_complex   = np.iscomplexobj(probe_res)
+
+        # Initialize starting vector with correct dtype
         if v0 is None:
             v0 = np.random.randn(n)
-            test_vec = matvec(np.ones(n, dtype=complex))
-            if np.iscomplexobj(test_vec) and np.max(np.abs(test_vec.imag)) > 1e-14:
-                v0 = v0 + 1j * np.random.randn(n)
-        
-        v0          = v0 / np.linalg.norm(v0) # start from this vector
+            if needs_complex:
+                v0 = v0.astype(np.complex128) + 1j * np.random.randn(n)
+        else:
+            v0 = np.asarray(v0)
+            if v0.shape != (n,):
+                raise ValueError("v0 has incompatible shape")
+            # If operator is complex but v0 is real, promote it
+            if needs_complex and not np.iscomplexobj(v0):
+                v0 = v0.astype(np.complex128)
+
+        dtype       = np.complex128 if needs_complex else np.float64
+        v0          = v0.astype(dtype, copy=False)
+        v0         /= np.linalg.norm(v0)
         
         # Storage for Krylov basis (columns are basis vectors)
-        V           = np.zeros((n, max_iter + 1), dtype=v0.dtype)
+        V           = np.zeros((n, max_iter + 1), dtype=dtype)
         V[:, 0]     = v0
         
         # Tridiagonal matrix elements
-        alpha       = np.zeros(max_iter, dtype=np.float64)
-        beta        = np.zeros(max_iter, dtype=np.float64)
-        
+        alpha       = np.zeros(max_iter, dtype=float)   # always real
+        beta        = np.zeros(max_iter, dtype=float)
+
         # Lanczos iteration
         v_prev      = np.zeros(n, dtype=v0.dtype)
         beta_prev   = 0.0
@@ -345,11 +357,13 @@ class LanczosEigensolver(EigenSolver):
             
             # Orthogonalize against current vector
             alpha[j]    = np.real(np.vdot(V[:, j], w))
-            w          -= alpha[j] * V[:, j] + beta_prev * v_prev
-            
+            w          -= alpha[j] * V[:, j]
+            if j > 0:   w -= beta_prev * v_prev
+                
             # Reorthogonalization (symmetric case): restrict to last two vectors to preserve 3-term recurrence
             if reorthogonalize:
-                for i in range(max(0, j - 1), j + 1):
+                i0 = j - 1 if j > 0 else 0
+                for i in (i0, j):
                     proj = np.vdot(V[:, i], w)
                     w   -= proj * V[:, i]
             
@@ -374,10 +388,16 @@ class LanczosEigensolver(EigenSolver):
 
         # Orthonormalize basis and form Rayleigh–Ritz matrix H = V^H A V
         V, _                = np.linalg.qr(V)
-        AV                  = np.column_stack([matvec(V[:, i]) for i in range(V.shape[1])])
+        m                   = V.shape[1]
+        AV                  = np.empty((n, m), dtype=dtype)
+        for i in range(m):
+            AV[:, i]        = matvec(V[:, i])
+        
+        # Construct Rayleigh–Ritz matrix
         H                   = V.T.conj() @ AV
         H                   = 0.5 * (H + H.T.conj())
         evals_H, evecs_H    = np.linalg.eigh(H)
+        
         # Select desired eigenvalues
         indices             = LanczosEigensolver._select_eigenvalues(evals_H, k, which)
         selected_evals      = evals_H[indices]
@@ -596,9 +616,15 @@ class LanczosEigensolverScipy(EigenSolver):
                 which   : Literal['SM', 'LM', 'SA', 'LA', 'BE'] = 'SA',
                 tol     : float = 0.0,
                 maxiter : Optional[int] = None,
-                v0      : Optional[NDArray] = None):
+                v0      : Optional[NDArray] = None,
+                seed    : Optional[int]     = None):
         """
         Initialize SciPy Lanczos eigensolver.
+        
+        Note: This wrapper does NOT expose the Krylov basis or tridiagonal matrix.
+        For access to Lanczos internals (alpha, beta, Krylov basis), use the native
+        LanczosEigensolver instead.
+        
         Parameters
         ----------
             k: int
@@ -610,7 +636,9 @@ class LanczosEigensolverScipy(EigenSolver):
             maxiter: Optional[int]
                 Maximum number of iterations
             v0: Optional[NDArray]
-                Initial vector
+                Initial vector (if None, a random vector with seed is used)
+            seed: Optional[int]
+                Random seed for reproducibility when v0 is None
         """
         
         if not SCIPY_AVAILABLE:
@@ -621,6 +649,7 @@ class LanczosEigensolverScipy(EigenSolver):
         self.tol        = tol
         self.maxiter    = maxiter
         self.v0         = v0
+        self.seed       = seed
 
     def solve(self, 
             A         : Optional[NDArray] = None,
@@ -629,12 +658,18 @@ class LanczosEigensolverScipy(EigenSolver):
             *,
             k         : int = None,
             which     : Literal['SM', 'LM', 'SA', 'LA', 'BE'] = 'SA',
-            tol       : float = 0.0,
-            maxiter   : Optional[int] = None,
-            v0        : Optional[NDArray] = None
+            tol       : float               = 0.0,
+            maxiter   : Optional[int]       = None,
+            v0        : Optional[NDArray]   = None,
+            seed      : Optional[int]       = None
             ) -> EigenResult:
         """
         Solve for eigenvalues using SciPy's eigsh.
+        
+        WARNING: This wrapper does NOT return Krylov basis or tridiagonal matrix.
+        Use LanczosEigensolver (native implementation) if you need:
+        - lanczos_alpha, lanczos_beta (tridiagonal matrix)
+        - krylov_basis (orthonormal Krylov vectors)
         
         Parameters:
         -----------
@@ -644,19 +679,36 @@ class LanczosEigensolverScipy(EigenSolver):
                 Matrix-vector product function (if A not provided)
             n: 
                 Dimension (required if matvec provided)
+            seed:
+                Random seed for reproducibility (only used if v0 is None)
 
         Returns:
-            EigenResult with eigenvalues and eigenvectors
+            EigenResult with eigenvalues and eigenvectors (but NO Krylov basis)
         """
         from scipy.sparse.linalg import LinearOperator
         
-        # Create LinearOperator if matvec provided
+        # Determine dimension
         if A is None and matvec is not None:
             if n is None:
                 raise ValueError("n must be provided when using matvec")
-            A = LinearOperator((n, n), matvec=matvec)
-        elif A is None:
+            dim = n
+        elif A is not None:
+            dim = A.shape[0] if hasattr(A, 'shape') else n
+        else:
             raise ValueError("Either A or matvec must be provided")
+        
+        # Create initial vector with reproducible random seed
+        use_seed = seed if seed is not None else self.seed
+        use_v0   = v0 if v0 is not None else self.v0
+        
+        if use_v0 is None and use_seed is not None:
+            rng     = np.random.RandomState(use_seed)
+            use_v0  = rng.randn(dim)
+            use_v0 /= np.linalg.norm(use_v0)
+        
+        # Create LinearOperator if matvec provided
+        if A is None and matvec is not None:
+            A = LinearOperator((dim, dim), matvec=matvec)
         
         # Call SciPy eigsh
         try:
@@ -666,7 +718,7 @@ class LanczosEigensolverScipy(EigenSolver):
                 which               = self.which if which is None else which,
                 tol                 = self.tol if tol == 0.0 else tol,
                 maxiter             = self.maxiter if maxiter is None else maxiter,
-                v0                  = self.v0 if v0 is None else v0,
+                v0                  = use_v0,
                 return_eigenvectors = True
             )
             
@@ -682,7 +734,11 @@ class LanczosEigensolverScipy(EigenSolver):
             eigenvectors    =   eigenvectors,
             iterations      =   iterations,
             converged       =   converged,
-            residual_norms  =   None
+            residual_norms  =   None,
+            # SciPy eigsh does not expose Krylov basis or tridiagonal matrix
+            lanczos_alpha   =   None,
+            lanczos_beta    =   None,
+            krylov_basis    =   None
         )
         
 # ------------------------------------------------------------------------------------------------

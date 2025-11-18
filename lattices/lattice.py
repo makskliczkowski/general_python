@@ -332,11 +332,13 @@ class Lattice(ABC):
     @property
     def ns(self):           return self._ns
     @property
-    def Ns(self):            return self._ns
+    def Ns(self):           return self._ns
     @property
     def sites(self):        return self._ns
     @property
     def size(self):         return self._ns
+    @property
+    def nsites(self):       return self._ns
 
     @ns.setter
     def ns(self, value):    self._ns = value
@@ -505,6 +507,18 @@ class Lattice(ABC):
     def cardinality(self):          return self.get_nn_forward_num_max()
     @cardinality.setter
     def cardinality(self, value):   self._nn_max_num = value
+    
+    # ------------------------------------------------------------------
+    #! Sublattice
+    # ------------------------------------------------------------------
+    
+    def sublattice(self, site: int) -> int:
+        """
+        Return the sublattice index for a given site.
+        By default, returns 0 for all sites (single sublattice).
+        Override in subclasses for multi-sublattice lattices.
+        """
+        return site % self.multipartity
     
     # ------------------------------------------------------------------
     #! K-space
@@ -1501,6 +1515,8 @@ class Lattice(ABC):
                 self._calculate_nn_sbc()
             case _:
                 raise ValueError("The boundary conditions are not implemented.")
+
+    def calculate_plaquettes(self):     raise NotImplementedError("Plaquette calculation not implemented for this lattice.")
 
     # -----------------------------------------------------------------------------
     #! Next nearest neighbors
