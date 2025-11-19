@@ -359,6 +359,129 @@ class Plotter:
                 ax.set_xlim(min_l, max_l)
     
     ###########################################################
+    #! Filter results
+    ###########################################################
+
+    @staticmethod
+    def filter_results(results, filters=None, get_params_fun: callable = lambda r: r['params']):
+        """
+        Filter results based on flexible parameter conditions.
+        For example, you can filter by:
+        [
+            { 'data' : [...], 'params' : {'Ns': 8, 'Gz': 0.5, 'hx': 0.3} },
+            { 'data' : [...], 'params' : {'Ns': 16, 'Gz': 1.0, 'hx': 0.7} },
+        ]
+        
+        Parameters:
+        -----------
+        results : list
+            List of result dictionaries. We assume it has data and parameters
+            For example, 
+        filters : dict
+            Dictionary of parameter filters. Each key is a parameter name, and value can be:
+            - Single value: param == value (e.g., {'Ns': 8})
+            - Tuple ('eq', value): param ==     value
+            - Tuple ('lt', value): param <      value
+            - Tuple ('le', value): param <=     value
+            - Tuple ('gt', value): param >      value
+            - Tuple ('ge', value): param >=     value
+            - Tuple ('between', (min, max)): min <= param <= max
+            - List of values: param in [values]
+        
+        Returns:
+        --------
+        filtered : list
+            Filtered list of results
+        
+        Examples:
+        ---------
+        # Equal to a value
+        filter_results(results, {'Ns': 8, 'Gz': 0.5})
+        
+        # Greater than
+        filter_results(results, {'hx': ('gt', 0.5)})
+        
+        # Between range
+        filter_results(results, {'hx': ('between', (0.2, 0.8))})
+        
+        # In list
+        filter_results(results, {'Gz': [0.0, 0.5, 1.0]})
+        
+        # Combined
+        filter_results(results, {
+            'Ns': 8,
+            'hx': ('between', (0.0, 1.0)),
+            'Gz': ('ge', 0.5)
+        })
+
+        >> filter_results(results, {'hx': ('lt', 0.5)})
+        """
+        if filters is None:
+            return results
+        
+        filtered = []
+        
+        for r in results:
+            params  = get_params_fun(r)
+            matches = True
+            
+            for param_name, condition in filters.items():
+                param_value = params.get(param_name, None)
+                
+                if param_value is None:
+                    matches = False
+                    break
+                
+                # Handle different condition types
+                if isinstance(condition, (list, tuple)) and len(condition) > 0:
+                    # Check if it's a comparison operator tuple
+                    if isinstance(condition, tuple) and len(condition) == 2 and isinstance(condition[0], str):
+                        op, value = condition
+                        
+                        if op == 'eq':
+                            if not abs(param_value - value) < 1e-9:
+                                matches = False
+                                break
+                        elif op == 'lt':
+                            if not param_value < value:
+                                matches = False
+                                break
+                        elif op == 'le':
+                            if not param_value <= value:
+                                matches = False
+                                break
+                        elif op == 'gt':
+                            if not param_value > value:
+                                matches = False
+                                break
+                        elif op == 'ge':
+                            if not param_value >= value:
+                                matches = False
+                                break
+                        elif op == 'between':
+                            min_val, max_val = value
+                            if not (min_val <= param_value <= max_val):
+                                matches = False
+                                break
+                        else:
+                            raise ValueError(f"Unknown operator: {op}")
+                    else:
+                        # It's a list of acceptable values
+                        if param_value not in condition:
+                            matches = False
+                            break
+                else:
+                    # Single value - exact match
+                    if abs(param_value - condition) >= 1e-9:
+                        matches = False
+                        break
+            
+            if matches:
+                filtered.append(r)
+        
+        return filtered
+    
+    ###########################################################
     
     @staticmethod
     def get_figsize(columnwidth, wf=0.5, hf=None, aspect_ratio=None):
@@ -742,11 +865,15 @@ class Plotter:
         - getcolor (function): A function that maps a value to a color.
         - colors (Colormap): The colormap object.
         - norm (Normalize): The normalization object.
+        
+        Example:
+        >>> getcolor, colors, norm = Plotter.get_colormap([1, 2, 3], cmap='viridis')
+        >>> color = getcolor(2.5)
         """
-        norm = Normalize(np.min(values), np.max(values))
-        colors = plt.get_cmap(cmap)
-        values = np.sort(values)
-        getcolor = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
+        norm        = Normalize(np.min(values), np.max(values))
+        colors      = plt.get_cmap(cmap)
+        values      = np.sort(values)
+        getcolor    = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
         return getcolor, colors, norm
 
     @staticmethod

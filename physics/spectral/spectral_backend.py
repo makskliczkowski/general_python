@@ -185,7 +185,7 @@ def greens_function_quadratic(
 
     If operator_a is provided (and operator_b optionally):
         Returns the full many-body zero-temperature Green's function:
-            G_AB(\omega) = Σ_{m,n} n_m (1 - n_n) A_{mn} B_{nm}
+            G_AB(\omega) = \Sum _{m,n} n_m (1 - n_n) A_{mn} B_{nm}
                                        / (\omega + i\eta - (ε_n - ε_m))
         where A_e = U^+ A U and similarly for B.
 
@@ -264,8 +264,8 @@ def _greens_function_quadratic_finite_T_scalar(ev, A, B, beta, mu, omega_val, et
     r"""
     Numba helper for finite-temperature many-body Green's function (scalar omega):
 
-        G(ω) = Σ_{m,n} f_m (1 - f_n) A[m,n] B[n,m] 
-                          / (ω + iη - (ε_n - ε_m))
+        G(w) = \Sum _{m,n} f_m (1 - f_n) A[m,n] B[n,m] 
+                          / (w + in - (ε_n - ε_m))
 
     where f_m = 1 / (1 + exp[β(ε_m - μ)]).
     Optimized with early exits and cached Fermi factors.
@@ -290,7 +290,7 @@ def _greens_function_quadratic_finite_T_scalar(ev, A, B, beta, mu, omega_val, et
             f[m] = 1.0 / (1.0 + np.exp(x))
 
     # -----------------------------------
-    # Complex frequency z = ω + iη
+    # Complex frequency z = w + in
     # -----------------------------------
     z_real = omega_val
     z_imag = eta
@@ -373,13 +373,13 @@ def greens_function_quadratic_finite_T(
 
     If operator_a is None:
         Return the single-particle finite-T resolvent:
-            G(ω) = U diag(1 / (ω + iη - ε_a)) U^†
+            G(w) = U diag(1 / (w + in - ε_a)) U^†
         (finite T does not change the resolvent itself)
 
     If operator_a is provided:
         Return the finite-temperature many-body Green's function:
-            G_AB(ω) = Σ_{m,n} f_m (1 - f_n) A_{mn} B_{nm}
-                                   / (ω + iη - (ε_n - ε_m)),
+            G_AB(w) = \Sum _{m,n} f_m (1 - f_n) A_{mn} B_{nm}
+                                   / (w + in - (ε_n - ε_m)),
         where f_m is the Fermi-Dirac factor.
 
     Parameters
@@ -535,7 +535,7 @@ def greens_function_manybody(
     # compute GF for each reference state
     for i, m in enumerate(mb):
         # energy differences DeltaE = E_n - E_m
-        deltaE = E - E[m]
+        deltaE      = E - E[m]
 
         # matrix elements:
         # A_mn = <m|A|n>, B_nm = <n|B|m>
@@ -1305,7 +1305,9 @@ def spectral_function(  greens_function     : Optional[Array]   = None,
                         mb_eigenvalues      : Optional[Array]   = None,
                         mb_operator_a       : Optional[Array]   = None,
                         mb_operator_b       : Optional[Array]   = None,
-                        mb_states           : Optional[Union[Array, int]] = None
+                        mb_states           : Optional[Union[Array, int]] = None,
+                        #
+                        return_greens       : bool              = False
                        ) -> Array:
     r"""
     Compute spectral function.
@@ -1381,14 +1383,14 @@ def spectral_function(  greens_function     : Optional[Array]   = None,
         
         # Determine which system type based on provided parameters
         # Priority: many-body if mb_states provided, else quadratic
-        if mb_eigenvalues is not None and mb_states is not None:
+        if mb_eigenvalues is not None:
             # Many-body system
             G = greens_function_manybody(
                 omega               = omega,
                 eigenvalues         = mb_eigenvalues,
                 operator_a          = mb_operator_a,
                 eta                 = eta,
-                mb_states           = mb_states,
+                mb_states           = mb_states if mb_states is not None else 0,
                 operator_b          = mb_operator_b,
                 backend             = backend,
                 kind                = kind
@@ -1411,9 +1413,10 @@ def spectral_function(  greens_function     : Optional[Array]   = None,
     
     # Compute spectral function: A(omega) = -(1/pi) Im[G(omega)]
     A = -be.imag(G) / np.pi
-    
-    return A
 
+    if return_greens:
+        return A, G
+    return A
 
 # =============================================================================
 # Momentum-Resolved Spectral Function
@@ -1701,7 +1704,7 @@ def operator_spectral_function_lehmann(
     r"""
     Compute operator-projected spectral function using Lehmann representation.
     
-    A_O(omega ) = Σ_{m,n} (ρ_m - ρ_n) |<m|O|n>|² delta (omega  - (E_n - E_m))
+    A_O(omega ) = \Sum _{m,n} (ρ_m - ρ_n) |<m|O|n>|² delta (omega  - (E_n - E_m))
     
     This represents the contribution of operator O to the spectrum:
     - Used for spin/charge/current response in many-body systems
@@ -1870,7 +1873,7 @@ def susceptibility_bubble(
     r"""
     Compute bare susceptibility (Lindhard function) from single-particle spectrum.
     
-    χ⁰(omega ) = Σ_{m,n} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
+    χ⁰(omega ) = \Sum _{m,n} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
     
     This is the bubble diagram contribution, valid for quadratic or mean-field
     Hamiltonians where Wick's theorem holds.
@@ -1939,7 +1942,7 @@ def susceptibility_bubble(
     else:
         occupation = be.asarray(occupation, dtype=be.float64)
     
-    # Bubble: χ⁰ = Σ_{mn} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
+    # Bubble: χ⁰ = \Sum _{mn} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
     chi = 0.0 + 0.0j
     for m in range(N):
         for n in range(N):
@@ -2019,7 +2022,7 @@ def conductivity_kubo_bubble(
     r"""
     Compute optical conductivity from Kubo-Greenwood formula (bubble diagram).
     
-    \sigma(omega ) = (1/(2omega )) Σ_{mn} (f_m - f_n) |<m|v|n>|² / (omega  + i\eta - (E_n - E_m))
+    \sigma(omega ) = (1/(2omega )) \Sum _{mn} (f_m - f_n) |<m|v|n>|² / (omega  + i\eta - (E_n - E_m))
     
     This is the single-particle bubble contribution, valid for non-interacting
     or mean-field Hamiltonians.
@@ -2106,7 +2109,7 @@ def kramers_kronig_transform(
     r"""
     Reconstruct Re[χ(omega )] from Im[χ(omega )] using Kramers-Kronig relations.
     
-    Re[χ(omega )] = (2/π) P int_0^∞ domega ' (omega ' Im[χ(omega ')] / (omega '² - omega ²))
+    Re[χ(omega )] = (2/pi) P int_0^∞ domega ' (omega ' Im[χ(omega ')] / (omega '² - omega ²))
     
     where P denotes principal value.
     
