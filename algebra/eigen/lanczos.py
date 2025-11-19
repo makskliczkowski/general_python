@@ -40,8 +40,8 @@ Date        : 2025-10-20
 """
 
 from typing import Optional, Callable, Tuple, Literal
-import numpy as np
 from numpy.typing import NDArray
+import numpy as np
 
 # ----------------------------------------------------------------------------------------
 #! Backend imports

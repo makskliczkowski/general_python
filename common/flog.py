@@ -444,7 +444,7 @@ class Logger:
             
     # --------------------------------------------------------------
 
-    def title(self, tail: str, desired_size: int, fill: str, lvl=0, verbose=True, color=None):
+    def title(self, tail: str, desired_size: int=50, fill: str = '=', lvl=0, verbose=True, color=None):
         """
         Create a formatted title with filler characters if verbosity is enabled.
 
