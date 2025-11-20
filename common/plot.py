@@ -310,8 +310,6 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
 
 ########################### plotter ###########################
 
-import seaborn as sns
-
 class Plotter:
     """ 
     A Plotter class that handles the methods of plotting.
@@ -363,7 +361,7 @@ class Plotter:
     ###########################################################
 
     @staticmethod
-    def filter_results(results, filters=None, get_params_fun: callable = lambda r: r['params']):
+    def filter_results(results, filters=None, get_params_fun: callable = lambda r: r['params'], *, tol=1e-9):
         """
         Filter results based on flexible parameter conditions.
         For example, you can filter by:
@@ -381,6 +379,7 @@ class Plotter:
             Dictionary of parameter filters. Each key is a parameter name, and value can be:
             - Single value: param == value (e.g., {'Ns': 8})
             - Tuple ('eq', value): param ==     value
+            - Tuple ('neq', value): param !=     value
             - Tuple ('lt', value): param <      value
             - Tuple ('le', value): param <=     value
             - Tuple ('gt', value): param >      value
@@ -438,8 +437,22 @@ class Plotter:
                     if isinstance(condition, tuple) and len(condition) == 2 and isinstance(condition[0], str):
                         op, value = condition
                         
+                        if isinstance(value, (list, tuple)):
+                            raise ValueError(f"Value for operator '{op}' cannot be a list or tuple.")
+                        
+                        if isinstance(value, str):
+                            # E.g., ('gt', 'other_param_name')
+                            value = float(params.get(value, None))
+                            if value is None:
+                                matches = False
+                                break
+                        
                         if op == 'eq':
-                            if not abs(param_value - value) < 1e-9:
+                            if not abs(param_value - value) < tol:
+                                matches = False
+                                break
+                        elif op == 'neq':
+                            if abs(param_value - value) < tol:
                                 matches = False
                                 break
                         elif op == 'lt':
@@ -472,6 +485,13 @@ class Plotter:
                             break
                 else:
                     # Single value - exact match
+                    if isinstance(condition, str):
+                        condition = float(params.get(condition, None)) # Convert string to float using params
+                    
+                    if condition is None:
+                        matches = False
+                        break
+                    
                     if abs(param_value - condition) >= 1e-9:
                         matches = False
                         break
@@ -852,7 +872,7 @@ class Plotter:
     ###########################################################
     
     @staticmethod
-    def get_colormap(values, cmap='PuBu', elsecolor='blue'):
+    def get_colormap(values, cmap='PuBu', elsecolor='blue', get_mappable=False, **kwargs):
         """
         Get a colormap for the given values.
         
@@ -874,6 +894,10 @@ class Plotter:
         colors      = plt.get_cmap(cmap)
         values      = np.sort(values)
         getcolor    = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
+        # get the mappable as well 
+        mappable    = plt.cm.ScalarMappable(norm=norm, cmap=colors)
+        if get_mappable:
+            return getcolor, colors, norm, mappable
         return getcolor, colors, norm
 
     @staticmethod
@@ -890,8 +914,8 @@ class Plotter:
         Returns:
         - img (AxesImage): The image object.
         """
-        norm = Normalize(np.min(data), np.max(data))
-        img = ax.imshow(data, cmap=cmap, norm=norm, **kwargs)
+        norm    = Normalize(np.min(data), np.max(data))
+        img     = ax.imshow(data, cmap=cmap, norm=norm, **kwargs)
         if colorbar:
             plt.colorbar(img, ax=ax)
         return img
@@ -913,7 +937,7 @@ class Plotter:
         cmap_name   = base.name + str(N)
         return ListedColormap(color_list, name=cmap_name)
     
-    ######################## A N N O T ########################
+    ##################################################
     
     @staticmethod
     def set_annotate(ax, elem: str, x: float = 0, y: float = 0, fontsize=None, xycoords='axes fraction', cond=True, zorder=50, boxaround=True, **kwargs):
@@ -1284,6 +1308,37 @@ class Plotter:
         """
         ax.fill_between(x, y1, y2, color=color, alpha=alpha, **kwargs)
 
+    ###################################################
+    
+    @staticmethod
+    def contourf(ax, x, y, z, **kwargs):
+        '''
+        contourf plotting
+        '''
+        cs = ax.contourf(x, y, z, **kwargs)
+        return cs
+    
+    @staticmethod
+    def grid(ax, **kwargs):
+        '''
+        grid plotting
+        
+        Kwargs include:
+        - which : {'major', 'minor', 'both'}, optional, default: 'major'
+            - Specifies which grid lines to apply the settings to.
+        - axis : {'both', 'x', 'y'}, optional, default: 'both
+            - Specifies which axis to apply the grid settings to.
+        - color : color, optional
+            - Color of the grid lines.
+        - linestyle : str, optional
+            - Style of the grid lines (e.g., '-', '--', '-.', ':').
+        - linewidth : float, optional
+            - Width of the grid lines.
+        - alpha : float, optional
+            - Transparency of the grid lines (0.0 to 1.0).
+        '''
+        return ax.grid(**kwargs)
+    
     #################### T I C K S ####################
     
     @staticmethod

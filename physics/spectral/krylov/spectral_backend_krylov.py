@@ -17,7 +17,7 @@ Description : Spectral function calculations using various backends.
 ----------------------------------------------------------------------------
 """
 
-from typing import Optional, Union, Tuple, Literal, Any, Callable
+from typing import Optional, Union, Tuple, Literal, Any, Callable, List
 import numpy as np
 import numba as nb
 
@@ -181,34 +181,200 @@ def _greens_lanczos_single_chain(omega, lanczos_eigenvalues, lanczos_eigenvector
     # Sum over M poles
     return be.sum(weights[None, :] / denom, axis=1)
 
-def _greens_lanczos_bilanczos(omega, H, A_op, B_op, eta=0.01, *, mb_states=0, 
-                              backend="default", kind="retarded", max_krylov=200):
-    """Bi-Lanczos for non-Hermitian cases."""
-    be = np
-    if isinstance(mb_states, int): mb_states = [mb_states]
+def _greens_lanczos_bilanczos(
+        omega               : Array,
+        H                   : Array,
+        A_op                : Array,
+        B_op                : Array,
+        eta                 : float = 0.01,
+        *,
+        mb_states           : Optional[Union[int, List[int]]] = 0,
+        ground_state_vec    : Optional[Array] = None,
+        backend             : str = "default",
+        kind                : str = "retarded",
+        max_krylov          : int = 200) -> Array:
+    """
+    General zero-T Green function G_AB using Bi-Lanczos iteration.
     
-    G_all = be.zeros((len(mb_states), len(omega)), dtype=be.complex128)
+    Calculates: G(w) = <0| A (w - H)^-1 B |0>
     
-    for idx, m0 in enumerate(mb_states):
-        # Simplified initialization for illustration
-        # In reality, we need the ground state vector |m0> passed in, 
-        # but this function signature assumed matrix indexing. 
-        # Ideally, pass vectors, but keeping API consistent:
+    Algorithm:
+    1. Start with |v_0> = B|0> and <w_0| = <0|A
+    2. Enforce biorthogonality: <w_n | v_m> = delta_nm
+    3. Construct non-Hermitian tridiagonal matrix elements (alpha, beta, gamma).
+    4. Evaluate G(w) using continued fraction.
+    """
+    be = np # forcing numpy for the iterative part
+    w_grid = be.atleast_1d(be.asarray(omega, dtype=be.complex128))
+    
+    # 1. Define Matrix-Vector Product helpers (Handle Sparse vs Dense)
+    if sp.issparse(H):
+        matvec_H = lambda x: H.dot(x)
+        matvec_H_dag = lambda x: H.conj().T.dot(x)
+    else:
+        matvec_H = lambda x: H @ x
+        matvec_H_dag = lambda x: H.conj().T @ x
         
-        # Create dummy unit vector if H is matrix
-        psi0 = np.zeros(H.shape[0]); psi0[m0] = 1.0
+    if sp.issparse(A_op): matvec_A_dag = lambda x: A_op.conj().T.dot(x)
+    else: matvec_A_dag = lambda x: A_op.conj().T @ x
         
-        v0 = B_op @ psi0
-        w0 = A_op.conj().T @ psi0 
+    if sp.issparse(B_op): matvec_B = lambda x: B_op.dot(x)
+    else: matvec_B = lambda x: B_op @ x
+
+    # 2. Handle Reference States
+    if mb_states is None: mb_indices = [0]
+    elif isinstance(mb_states, int): mb_indices = [mb_states]
+    else: mb_indices = mb_states
+
+    G_all = be.zeros((len(mb_indices), len(w_grid)), dtype=be.complex128)
+
+    for idx, m0 in enumerate(mb_indices):
         
-        s = be.vdot(w0, v0)
-        if be.abs(s) < 1e-14: continue
-        w0 = w0 / s
+        # -------------------------------------------------------
+        # A. Prepare Starting Vectors
+        # -------------------------------------------------------
+        # We need the actual Ground State Vector |psi_0>
+        if ground_state_vec is not None:
+            # If provided, use the vector (Correct Physics Path)
+            psi0 = be.asarray(ground_state_vec).flatten()
+        else:
+            # Fallback: Dummy unit vector (Only if H is a matrix and we want row m0)
+            psi0 = be.zeros(H.shape[0], dtype=be.complex128)
+            psi0[m0] = 1.0
+
+        # Ground State Energy (to shift poles)
+        # E0 = <psi0 | H | psi0>
+        # Note: Lanczos builds poles at Total Energy E_n. 
+        # G(w) requires (w - (E_n - E_0)). We shift w -> w + E0 later.
+        E0 = be.vdot(psi0, matvec_H(psi0)).real
+
+        # Right Start: |phi_R> = B |psi_0>
+        phi_R = matvec_B(psi0)
         
-        # ... (Standard Bi-Lanczos Loop similar to previous code) ...
-        # Omitted for brevity as Single Chain is primary for S(q,w)
-        pass 
+        # Left Start:  |phi_L> = A^dagger |psi_0>  (So that <phi_L| = <0|A)
+        phi_L = matvec_A_dag(psi0)
         
+        # Compute Static Overlap / Normalization
+        # The Green's function is scaled by <phi_L | phi_R> = <0|AB|0>
+        overlap_0 = be.vdot(phi_L, phi_R)
+        
+        if be.abs(overlap_0) < 1e-14:
+            # Orthogonal operators -> Zero spectral weight
+            continue
+
+        # Normalize starting vectors for the iteration
+        # We strictly enforce <w_0 | v_0> = 1 for the algorithm
+        v = phi_R / be.sqrt(be.abs(overlap_0))
+        w = phi_L * (overlap_0 / be.abs(overlap_0)) / be.sqrt(be.abs(overlap_0))
+        
+        # Sanity check: be.vdot(w, v) must be 1.0 now (or very close)
+
+        # -------------------------------------------------------
+        # B. Bi-Lanczos Iteration
+        # -------------------------------------------------------
+        
+        alphas = [] # Diagonal
+        betas  = [] # Off-diagonal (lower)
+        gammas = [] # Off-diagonal (upper)
+        
+        v_prev = be.zeros_like(v)
+        w_prev = be.zeros_like(w)
+        
+        # We rely on the recurrence:
+        # H v_j = alpha_j v_j + beta_{j+1} v_{j+1} + gamma_j v_{j-1}
+        # H^dag w_j = alpha_j^* w_j + gamma_{j+1}^* w_{j+1} + beta_j^* w_{j-1}
+        
+        current_krylov_dim = 0
+        
+        for j in range(max_krylov):
+            current_krylov_dim += 1
+            
+            # 1. Apply Hamiltonian
+            Hv = matvec_H(v)
+            Hw = matvec_H_dag(w)
+            
+            # 2. Compute Alpha (Diagonal)
+            # alpha_j = <w_j | H | v_j>
+            alpha = be.vdot(w, Hv)
+            alphas.append(alpha)
+            
+            # 3. Compute Residuals
+            # r = H v - alpha v - gamma_{j} v_{prev}
+            # l = H^dag w - alpha^* w - beta_{j}^* w_{prev}
+            
+            r = Hv - alpha * v
+            l = Hw - alpha.conj() * w
+            
+            if j > 0:
+                r -= gammas[-1] * v_prev
+                l -= betas[-1].conj() * w_prev
+            
+            # 4. Compute Overlap of residuals (delta = <l|r>)
+            delta = be.vdot(l, r)
+            
+            # Check breakdown
+            if be.abs(delta) < 1e-14:
+                # Lucky breakdown (invariant subspace found) or Unlucky (algorithm failure)
+                # Usually we assume Lucky for physics applications and stop.
+                break
+                
+            # 5. Determine Beta and Gamma
+            # Choice: beta = gamma = sqrt(delta) is common
+            # or beta = sqrt(|delta|), gamma = delta / beta
+            
+            beta_next = be.sqrt(be.abs(delta))
+            gamma_next = delta / beta_next
+            
+            betas.append(beta_next)
+            gammas.append(gamma_next)
+            
+            # 6. Update Vectors
+            v_prev = v
+            w_prev = w
+            
+            v = r / beta_next
+            w = l / gamma_next.conj() # Note the conj because <w| is w^dagger
+            
+        # -------------------------------------------------------
+        # C. Compute Continued Fraction
+        # -------------------------------------------------------
+        # G(z) = <0|AB|0> * [1 / (z - a0 - (b1*g1 / (z - a1 - ...)))]
+        
+        # Shift z by E0 because Lanczos generated poles at Total Energy, 
+        # but we want excitation energy.
+        # w_grid represents "omega". The poles should be at (E_n - E_0).
+        # So z - (E_n - E_0) = (z + E_0) - E_n
+        z_shifted = w_grid + E0 
+        
+        if kind == "retarded":
+            z_vals = z_shifted + 1j * eta
+        else:
+            z_vals = z_shifted - 1j * eta
+            
+        # Backward Iteration
+        # Start with 0 at the bottom of the fraction
+        cf = be.zeros_like(z_vals)
+        
+        # Iterate from last recursion step up to 0
+        for k in range(current_krylov_dim - 2, -1, -1):
+            # numerator: beta_{k+1} * gamma_{k+1}
+            numer = betas[k] * gammas[k]
+            
+            # denominator: z - alpha_{k+1} - (next_term)
+            denom = z_vals - alphas[k+1] - cf
+            
+            cf = numer / denom
+            
+        # Final step for G0
+        # G = overlap / (z - alpha_0 - cf)
+        G_final = overlap_0 / (z_vals - alphas[0] - cf)
+        
+        G_all[idx, :] = G_final
+
+    # Shape Handling
+    if len(mb_indices) == 1 and len(w_grid) == 1: return G_all[0, 0]
+    if len(mb_indices) == 1: return G_all[0, :]
+    if len(w_grid) == 1: return G_all[:, 0]
     return G_all
 
 # ============================================================================
