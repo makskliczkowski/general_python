@@ -1435,7 +1435,7 @@ class Lattice(ABC):
             ny      = (cell // self.Lx) % self.Ly if self._dim >= 2 else 0
             nz      = (cell // (self.Lx * self.Ly)) % self.Lz if self._dim >= 3 else 0
             
-            rv[i] = nx * self._a1 + ny * self._a2 + nz * self._a3 + self._basis[sub]
+            rv[i]   = nx * self._a1 + ny * self._a2 + nz * self._a3 + self._basis[sub]
         
         self.rvectors = rv
         return self.rvectors
