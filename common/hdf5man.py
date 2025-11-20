@@ -42,16 +42,18 @@ class HDF5Manager:
         return dataset_paths
 
     @staticmethod
-    def _validate_file(file_path):
+    def _validate_file(file_path, verbose: bool = False):
         """
         Validates if the file exists and is an HDF5 file.
         """
         if not os.path.exists(file_path):
-            _logger.error(f"File does not exist: {file_path}")
+            if verbose:
+                _logger.error(f"File does not exist: {file_path}")
             return False
         
         if not file_path.lower().endswith(('.h5', '.hdf5', '.hdf')):
-            _logger.error(f"File is not an HDF5 file (based on extension): {file_path}")
+            if verbose:
+                _logger.error(f"File is not an HDF5 file (based on extension): {file_path}")
             return False
         return True
 
@@ -89,7 +91,7 @@ class HDF5Manager:
             * strict_keys=False -> load only available keys
         """
         data: Dict[str, Any] = {}
-        if not HDF5Manager._validate_file(file_path):
+        if not HDF5Manager._validate_file(file_path, verbose):
             return data
 
         try:
