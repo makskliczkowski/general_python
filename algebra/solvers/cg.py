@@ -48,12 +48,12 @@ from typing import Optional, Callable, Union, Any, Tuple, Type
 from functools import partial
 import numpy as np
 
-from ...algebra.solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
+from ..solver import (Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc)
-from ...algebra.preconditioners import Preconditioner, PreconitionerApplyFun
+from ..preconditioners import Preconditioner, PreconitionerApplyFun
 
 # Import backend specifics and compilation tools
-from ...algebra.utils import JAX_AVAILABLE
+from ..utils import JAX_AVAILABLE
 
 if JAX_AVAILABLE:
     try:
@@ -119,8 +119,8 @@ def _cg_logic_numpy(matvec          : MatVecFunc,
     """
     x           = x0.copy()             # Work on a copy
     r           = b - matvec(x)         # Get the residual of the initial guess 
-    res_norm_sq = np.dot(r, r)
-    norm_b_sq   = np.dot(b, b)
+    res_norm_sq = np.real(np.vdot(r, r))  # Use vdot for proper complex norm
+    norm_b_sq   = np.real(np.vdot(b, b))  # Use vdot for proper complex norm
     
     # Use absolute tolerance if b is zero, otherwise relative
     tol_crit_sq = (tol**2) * norm_b_sq if norm_b_sq > 1e-15 else tol**2
@@ -138,23 +138,23 @@ def _cg_logic_numpy(matvec          : MatVecFunc,
     else:
         z       = r                     # z_0 = r_0
     p           = z.copy()              # p_0 = z_0
-    rs_old      = np.dot(r, z)          # rho_k = r_k^T z_k (initially rho_0)
+    rs_old      = np.vdot(r, z)          # rho_k = <r_k, z_k> (initially rho_0)
 
     for i in range(maxiter):
         iterations  = i + 1             # check the iterations of the algorithm
         ap          = matvec(p)         # v_k = A p_k
-        alpha_denom = np.dot(p, ap)     # p_k^T v_k
+        alpha_denom = np.vdot(p, ap)    # <p_k, v_k>
 
-        if alpha_denom <= 1e-15:
+        if np.abs(alpha_denom) <= 1e-15:
             print(f"Warning (CG NumPy): Potential breakdown/non-SPD at iter {iterations}. Denom={alpha_denom:.4e}")
-            res_norm_sq = np.dot(r, r)
+            res_norm_sq = np.real(np.vdot(r, r))
             converged   = res_norm_sq < tol_crit_sq
             return SolverResult(x=x, converged=converged, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
 
         alpha       = rs_old / alpha_denom  # alpha_k
         x          += alpha * p             # x_{k+1}
         r          -= alpha * ap            # r_{k+1}
-        res_norm_sq = np.dot(r, r)
+        res_norm_sq = np.real(np.vdot(r, r))
 
         if res_norm_sq < tol_crit_sq:
             return SolverResult(x=x, converged=True, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
@@ -166,9 +166,9 @@ def _cg_logic_numpy(matvec          : MatVecFunc,
                     f"Preconditioner output invalid shape/type: {z.shape} / {type(z)}")
         else:
             z       = r                     # z_{k+1} = r_{k+1}
-        rs_new      = np.dot(r, z)          # rho_{k+1} = r_{k+1}^T z_{k+1}
+        rs_new      = np.vdot(r, z)         # rho_{k+1} = <r_{k+1}, z_{k+1}>
 
-        if abs(rs_old) < 1e-15:
+        if np.abs(rs_old) < 1e-15:
             print(f"Warning (CG NumPy): rs_old near zero at iter {iterations}, potential breakdown.")
             converged = res_norm_sq < tol_crit_sq
             return SolverResult(x=x, converged=converged, iterations=iterations, residual_norm=np.sqrt(res_norm_sq))
@@ -223,20 +223,21 @@ if _NUMBA_AVAILABLE:
         x           = x0_nb.copy()
         r           = b_nb - matvec_nb(x)
         p           = r.copy()
-        rs_old      = np.dot(r, r)
-        norm_b_sq   = np.dot(b_nb, b_nb)
+        rs_old      = np.vdot(r, r)
+        norm_b_sq   = np.real(np.vdot(b_nb, b_nb))
         tol_crit_sq = (tol_nb**2) * norm_b_sq if norm_b_sq > 0 else tol_nb**2
         iterations  = 0
 
         def fallback(r, tol_crit_sq):
             """ Fallback for when rs_old is near zero. """
-            final_res_norm_sq   = np.dot(r, r)
+            final_res_norm_sq   = np.real(np.vdot(r, r))
             converged           = final_res_norm_sq < tol_crit_sq
             return final_res_norm_sq, converged
         
         # check the convergence already
-        if rs_old < tol_crit_sq:
-            return x, True, 0, np.sqrt(rs_old)
+        rs_old_real = np.real(rs_old)
+        if rs_old_real < tol_crit_sq:
+            return x, True, 0, np.sqrt(rs_old_real)
 
         # iterate over the maximum number of iterations
         # Note: Numba does not support Python's `break` statement in loops
@@ -245,7 +246,7 @@ if _NUMBA_AVAILABLE:
         for i in range(maxiter_nb):
             iterations  = i + 1
             Ap          = matvec_nb(p)
-            alpha_denom = np.dot(p, Ap)
+            alpha_denom = np.vdot(p, Ap)
             
             # Check for potential breakdown (denominator near zero)
             # This is a fallback for when rs_old is near zero
@@ -257,11 +258,12 @@ if _NUMBA_AVAILABLE:
             alpha       = rs_old / alpha_denom
             x          += alpha * p
             r          -= alpha * Ap
-            rs_new      = np.dot(r, r)
+            rs_new      = np.vdot(r, r)
+            rs_new_real = np.real(rs_new)
             
             # Check for convergence
-            if rs_new < tol_crit_sq:
-                return x, True, iterations, np.sqrt(rs_new)
+            if rs_new_real < tol_crit_sq:
+                return x, True, iterations, np.sqrt(rs_new_real)
             
             beta        = rs_new / rs_old
             p           = r + beta * p
@@ -271,7 +273,7 @@ if _NUMBA_AVAILABLE:
             # This is a fallback for when rs_old is near zero
             # and we cannot compute the denominator for alpha.
             if np.abs(rs_old) < 1e-15:
-                return x, rs_new < tol_crit_sq, iterations, np.sqrt(rs_new)
+                return x, rs_new_real < tol_crit_sq, iterations, np.sqrt(rs_new_real)
 
         final_res_norm_sq, converged = fallback(r, tol_crit_sq)
         return x, converged, iterations, np.sqrt(final_res_norm_sq)
@@ -312,11 +314,11 @@ if _NUMBA_AVAILABLE:
         r           = b_nb - matvec_nb(x)
         z           = precond_apply_nb(r)
         p           = z.copy()
-        rs_old      = np.dot(r, z)
-        norm_b_sq   = np.dot(b_nb, b_nb)
+        rs_old      = np.vdot(r, z)
+        norm_b_sq   = np.real(np.vdot(b_nb, b_nb))
         tol_crit_sq = (tol_nb**2) * norm_b_sq if norm_b_sq > 0 else tol_nb**2
         iterations  = 0
-        res_norm_sq = np.dot(r, r)
+        res_norm_sq = np.real(np.vdot(r, r))
 
         if res_norm_sq < tol_crit_sq:
             return x, True, 0, np.sqrt(res_norm_sq)
@@ -325,7 +327,7 @@ if _NUMBA_AVAILABLE:
         for i in range(maxiter_nb):
             iterations  = i + 1
             Ap          = matvec_nb(p)
-            alpha_denom = np.dot(p, Ap)
+            alpha_denom = np.vdot(p, Ap)
             
             # Check for potential breakdown (denominator near zero)
             if np.abs(alpha_denom) < 1e-15:
@@ -334,14 +336,14 @@ if _NUMBA_AVAILABLE:
             alpha       = rs_old / alpha_denom
             x          += alpha * p
             r          -= alpha * Ap
-            res_norm_sq = np.dot(r, r)
+            res_norm_sq = np.real(np.vdot(r, r))
 
             # Check for convergence
             if res_norm_sq < tol_crit_sq:
                 return x, True, iterations, np.sqrt(res_norm_sq)
 
             z           = precond_apply_nb(r)
-            rs_new      = np.dot(r, z)
+            rs_new      = np.vdot(r, z)
 
             # Check for potential breakdown (rs_old near zero)
             if np.abs(rs_old) < 1e-15:
@@ -351,7 +353,7 @@ if _NUMBA_AVAILABLE:
             p           = z + beta * p
             rs_old      = rs_new
 
-        final_res_norm_sq   = np.dot(r,r)
+        final_res_norm_sq   = np.real(np.vdot(r,r))
         converged           = final_res_norm_sq < tol_crit_sq
         return x, converged, iterations, np.sqrt(final_res_norm_sq)
 
@@ -378,6 +380,12 @@ if _NUMBA_AVAILABLE:
             precond_apply Callable[[np.ndarray], np.ndarray]:
                 Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
         """
+        # Check if matvec is a callable (function) - if so, use plain Python version
+        if callable(matvec):
+            # Matrix-free mode with Python function - can't use Numba
+            return _cg_logic_numpy(matvec, b, x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+        
+        # Otherwise use Numba-compiled version
         dtype   = b.dtype
         b_nb    = b.astype(dtype, copy=False)
         x0_nb   = x0.astype(dtype, copy=False)
@@ -549,14 +557,20 @@ class CgSolver(Solver):
         func: Callable = None
         if backend_module is jnp:
             if _cg_logic_jax_compiled is None:
-                print("Warning: Jax compiled function not available, returning Plain jax")
-                func = _cg_logic_jax_core
-            func = _cg_logic_jax_compiled
+                # JAX not available, fall back to NumPy
+                print("Warning: JAX compiled function not available, falling back to NumPy")
+                if _cg_logic_numpy_compiled is not None:
+                    func = _cg_logic_numpy_compiled
+                else:
+                    func = _cg_logic_numpy
+            else:
+                func = _cg_logic_jax_compiled
         elif backend_module is np:
             if _cg_logic_numpy_compiled is None:
                 print("Warning: Numba CG function not available, returning plain Python version.")
                 func = _cg_logic_numpy
-            func = _cg_logic_numpy_compiled
+            else:
+                func = _cg_logic_numpy_compiled
         else:
             raise ValueError(f"Unsupported backend module for CG: {backend_module}")
         return Solver._solver_wrap_compiled(backend_module, func,

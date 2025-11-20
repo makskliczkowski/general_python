@@ -1,3 +1,7 @@
+'''
+
+'''
+
 import numpy as np
 
 ##################################### RANDOM #####################################
@@ -12,11 +16,17 @@ def CUE_QR( n       :   int,
     '''
     if rng is None:
         rng = np.random.default_rng()
-    x       =   rng.random.Generator.normal(size = (n, n)) + 1j * rng.random.Generator.normal(size = (n, n))
+    # Complex Ginibre matrix with i.i.d. N(0, 1/2) entries for real and imaginary parts
+    x       =   rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
     x       /=  np.sqrt(2)
     Q, R    =   np.linalg.qr(x)
     if not simple:
+        # Adjust phases to ensure Haar measure on U(n)
         d       =   np.diagonal(R)
         ph      =   d / np.abs(d)
-        Q       =   np.matmul(Q, ph) * Q
+        Q       =   Q @ np.diag(ph)
     return Q
+
+# -------------------------------------------------------------------------------
+#! End of file
+# -------------------------------------------------------------------------------

@@ -1,13 +1,31 @@
+'''
+Binary manipulation functions using JAX.
+Provides functions to convert integers to binary/spin representations,
+and to flip bits in integers or arrays using JAX for performance.
 
+-----------
+File        : general_python/common/embedded/binary_jax.py
+description : JAX-based binary manipulation utilities.
+author      : Maksymilian Kliczkowski
+email       : maxgrom97@gmail.com
+version     : 1.0.0
+'''
 
 import time
 from typing import List, Optional
-from ...algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
+
+try:
+    from ...algebra.utils import JAX_AVAILABLE
+except ImportError:
+    JAX_AVAILABLE = False
+
+# --------------------------------------------------------------------------------------------------
 
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax
     from ...algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE
+    from ...algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
 
     def reverse_byte(b : int):
         """

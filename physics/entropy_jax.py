@@ -141,20 +141,20 @@ if JAX_AVAILABLE:
         r"""
         Compute the single-particle correlation entropy for a set of eigenvalues.
 
-        This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for q≠1)
-        associated with the eigenvalues of a correlation matrix. The eigenvalues λ are assumed to be in [-1, 1].
+        This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for q\neq 1)
+        associated with the eigenvalues of a correlation matrix. The eigenvalues \lambda are assumed to be in [-1, 1].
         The probabilities are defined as \( p = \frac{1}{2}(1 + \lambda) \).
 
         Formulas:
             - For q = 1 (von Neumann entropy):
                 \( S = -\sum_i \left[ p_i \log_b p_i + (1 - p_i) \log_b (1 - p_i) \right] \)
-            - For q ≠ 1 (Rényi entropy):
+            - For q \neq  1 (Rényi entropy):
                 \( S_q = \frac{1}{1 - q} \sum_i \log_b \left( p_i^q + (1 - p_i)^q \right) \)
 
         lam : jnp.ndarray
             Array of correlation-matrix eigenvalues (\(\lambda\)), each in the interval [-1, 1].
         q : float
-            Entropy order parameter. Use q=1 for von Neumann entropy, q≠1 for Rényi entropy.
+            Entropy order parameter. Use q=1 for von Neumann entropy, q\neq 1 for Rényi entropy.
             Logarithm base for entropy calculation (default: natural logarithm, e).
 
             The computed entropy value.
@@ -163,7 +163,7 @@ if JAX_AVAILABLE:
         -----
         - The function is numerically stable for probabilities close to 0 or 1.
         - For q=1, the result is the standard von Neumann entropy.
-        - For q≠1, the result is the Rényi entropy of order q.
+        - For q\neq 1, the result is the Rényi entropy of order q.
         """
         log_base = jnp.log(base)
         p        = 0.5 * (1.0 + lam)

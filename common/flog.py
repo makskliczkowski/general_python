@@ -3,11 +3,13 @@ This module provides a logger class for handling console and file logging with v
 It includes methods for printing messages with different log levels, formatting titles, and measuring execution time.
 and it is designed to be used in a quantum computing context, specifically for the Quantum EigenSolver package.
 
+-------------------------------------------------------
 file        :   general_python/common/flog.py
 author      :   Maksymilian Kliczkowski
 email       :   maksymilian.kliczkowski@pwr.edu.pl
 date        :   2025-05-01
 description :   This module provides a logger class for handling console and file logging with verbosity control.
+-------------------------------------------------------
 '''
 
 __name__        = "flog"
@@ -442,7 +444,7 @@ class Logger:
             
     # --------------------------------------------------------------
 
-    def title(self, tail: str, desired_size: int, fill: str, lvl=0, verbose=True, color=None):
+    def title(self, tail: str, desired_size: int=50, fill: str = '=', lvl=0, verbose=True, color=None):
         """
         Create a formatted title with filler characters if verbosity is enabled.
 
@@ -485,6 +487,11 @@ class Logger:
         Decorator to measure and log the execution time of functions.
         Parameters:
             func : function to be timed
+            
+        Use as:
+            @logger.timing
+            def my_function(...):
+                ...
         """
         
         @functools.wraps(func)  # Decorator to preserve the original function's metadata
@@ -584,8 +591,11 @@ def get_global_logger(**kwargs) -> Logger:
 
         # Print the banner only once per program (env is inherited by forked workers)
         if os.environ.get("GEN_PYTHON_LOGGER_INIT_DONE", "0") != "1":
-            logger.title("Global Logger initialized!", 50, '#', 0)
             os.environ["GEN_PYTHON_LOGGER_INIT_DONE"] = "1"
+            
+            # Print the banner            
+            if os.environ.get("PY_BACKEND_INFO", "1") != "0":
+                logger.title("Global Logger initialized!", 50, '#', 0)
 
         _G_LOGGER       = logger
         _G_LOGGER_PID   = pid

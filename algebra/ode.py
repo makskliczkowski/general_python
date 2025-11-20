@@ -1,7 +1,10 @@
 '''
-file    : general_python/common/ode.py
+This is a module for solving ordinary differential equations (ODEs)
+It provides a set of classes and methods to define and solve initial value problems (IVPs)
 
-
+File    : general_python/common/ode.py
+Author  : Maksymilian Kliczkowski
+email   : maxgrom97@gmail.com
 '''
 
 import numpy as np
@@ -10,8 +13,16 @@ import warnings
 import inspect
 from typing import Union, Any, Tuple, Callable
 from abc import ABC, abstractmethod
-from ..algebra.utils import get_backend, JAX_AVAILABLE
-from scipy.integrate import solve_ivp
+
+try:
+    from scipy.integrate import solve_ivp
+except ImportError as e:
+    raise ImportError("Failed to import scipy.integrate module. Ensure QES package is correctly installed.") from e
+
+try:
+    from ..algebra.utils import get_backend, JAX_AVAILABLE
+except ImportError as e:
+    raise ImportError("Failed to import algebra.utils module. Ensure QES package is correctly installed.") from e
 
 if JAX_AVAILABLE:
     import jax
@@ -284,7 +295,7 @@ class Heun(IVP):
     Parameters
     ----------
     dt : float
-        Fixed step size Δt (can be adapted externally).
+        Fixed step size delta t (can be adapted externally).
     backend : str
         'numpy' or 'jax'
     """
@@ -347,7 +358,7 @@ class AdaptiveHeun(IVP):
     Parameters
     ----------
     dt : float
-        Initial time step Δt.
+        Initial time step delta t.
     tol : float
         Error tolerance.
     max_step : float
@@ -429,7 +440,7 @@ class RK(IVP):
     c : array-like of length s
         Nodes (c = sum of rows of a).
     dt : float
-        Fixed step size Δt.
+        Fixed step size dt.
     backend : str
         'numpy' or 'jax'
 
@@ -438,18 +449,20 @@ class RK(IVP):
     For common orders, use the `from_order` classmethod.
     """
     def __init__(self,
-                a           : list,
-                b           : list,
-                c           : list,
-                dt          : float = 1e-3,
-                backend     : str   = 'numpy'):
-        super().__init__(backend)
+                a               : list, # Butcher tableau
+                b               : list, # Weights
+                c               : list, # Nodes
+                dt              : float = 1e-3,
+                backend         : str   = 'numpy',
+                rhs_prefactor   : float = 1.0):
+        
+        # Initialize base with rhs_prefactor for API consistency
+        super().__init__(backend, rhs_prefactor=rhs_prefactor, dt=dt)
         xp          = self.xp
         # Convert tableau to arrays
         self.a      = xp.array(a, dtype=xp.float64)
         self.b      = xp.array(b, dtype=xp.float64)
         self.c      = xp.array(c, dtype=xp.float64)
-        self._dt    = dt
         self.stages = len(self.b)
 
     @property
@@ -457,7 +470,7 @@ class RK(IVP):
         return len(self.b)
 
     @classmethod
-    def from_order(cls, order: int, dt: float = 1e-3, backend: str = 'numpy'):
+    def from_order(cls, order: int, dt: float = 1e-3, backend: str = 'numpy', rhs_prefactor: float = 1.0):
         """
         Create a Runge-Kutta method instance from a specified order.
         Parameters:
@@ -492,7 +505,7 @@ class RK(IVP):
             c = [0.0, 0.5, 0.5, 1.0]
         else:
             raise ValueError(f"Unsupported order: {order}")
-        return cls(a, b, c, dt=dt, backend=backend)
+        return cls(a, b, c, dt=dt, backend=backend, rhs_prefactor=rhs_prefactor)
 
     def step(self, f, t: float, y, **rhs_args):
         """
@@ -521,7 +534,7 @@ class RK(IVP):
         #! Combine
         yout = y
         for i in range(self.stages):
-            yout = yout + h * self.b[i] * k[i]
+            yout = yout + (self._rhs_prefactor * h) * self.b[i] * k[i]
         return yout, h, (step_info, other)
 
     def __repr__(self):
@@ -541,7 +554,7 @@ class ScipyRK(IVP):
     Parameters
     ----------
     dt : float
-        Initial and maximum time step Δt.
+        Initial and maximum time step delta t.
     tol : float
         Relative and absolute tolerance for solver.
     max_step : float or None
@@ -553,12 +566,13 @@ class ScipyRK(IVP):
 
     """
     def __init__(self,
-                dt          : float = 1e-3,
-                tol         : float = 1e-6,
-                max_step    : float = None,
-                method      : str = 'RK45',
-                backend     : str = 'numpy'):
-        super().__init__(backend)
+                dt           : float = 1e-3,
+                tol          : float = 1e-6,
+                max_step     : float = None,
+                method       : str   = 'RK45',
+                backend      : str   = 'numpy',
+                rhs_prefactor: float = 1.0):
+        super().__init__(backend, rhs_prefactor=rhs_prefactor, dt=dt)
         self._dt                = float(dt)
         self.tol                = float(tol)
         self.max_step           = float(max_step) if max_step is not None else None
@@ -582,7 +596,8 @@ class ScipyRK(IVP):
             Actual time step taken.
         """
         def _ode_system(t_i, y_i):
-            return f(y_i, t_i, **rhs_args)[0]
+            # Multiply RHS by prefactor for consistency with other integrators
+            return self._rhs_prefactor * f(y_i, t_i, **rhs_args)[0]
 
         t_span = (t, t + self._dt)
         sol = solve_ivp(

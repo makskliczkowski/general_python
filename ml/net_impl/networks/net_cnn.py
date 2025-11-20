@@ -158,7 +158,7 @@ class _FlaxCNN(nn.Module):
         """
         
         if s.ndim == 1:                     # shape (n_visible,)
-            s = s[jnp.newaxis, ...]         # → (1, n_visible)
+            s = s[jnp.newaxis, ...]         # -> (1, n_visible)
         
         # reshape to (B, *spatial, C)
         s = s.reshape((s.shape[0],) + self.reshape_dims + (self.input_channels,))

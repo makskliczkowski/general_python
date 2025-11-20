@@ -1,66 +1,108 @@
 """
-Mathematics Module for General Python Utilities.
+Mathematics utilities for the `general_python` toolkit.
 
-This module provides comprehensive mathematical utilities including general math functions,
-high-quality random number generators, and statistical analysis tools.
+The package aggregates mathematical helpers, high-quality random number
+generators, and statistical analysis routines.  Submodules are imported lazily
+to keep top-level imports lightweight and consistent with the modular QES
+design.
 
-Modules:
---------
-- math_utils : General mathematical functions and utilities
-- __random__ : High-quality pseudorandom number generators (e.g., Xoshiro256)
-- statistics : Statistical functions and data analysis utilities
+Available submodule aliases
+---------------------------
+- ``MathMod``      -> ``general_python.maths.math_utils``
+- ``RandomMod``    -> ``general_python.maths.random``
+- ``StatisticsMod``-> ``general_python.maths.statistics``
 
-Examples:
----------
->>> from general_python.maths import math_utils as MathMod
->>> from general_python.maths import __random__ as RandomMod
->>> from general_python.maths import statistics as StatisticsMod
->>> 
->>> # Use high-quality random number generator
->>> rng = RandomMod.Xoshiro256(seed=42)
->>> values = [rng.random() for _ in range(5)]
->>> 
->>> # Statistical analysis
->>> mean_val = StatisticsMod.mean(values)
-
-Author: Maksymilian Kliczkowski
-License: MIT
+---------------------------------------------------------------------------
+File        : general_python/maths/__init__.py
+Author      : Maksymilian Kliczkowski
+License     : MIT
+Copyright   : (c) 2021-2024 QES Group
+---------------------------------------------------------------------------
 """
 
-from . import math_utils as MathMod
-from . import __random__ as RandomMod
-from . import statistics as StatisticsMod
+from __future__ import annotations
 
-__all__ = ["MathMod", "RandomMod", "StatisticsMod"]
+from importlib import import_module
+from typing import Dict, List
 
-# Importing modules from the maths package
+# Description used by QES.registry
+MODULE_DESCRIPTION = (
+    "Mathematical utilities, random number generators, and statistical analysis tools."
+)
 
-def get_module_description(module_name):
+# ---------------------------------------------------------------------------
+# Lazy submodule registry
+
+_ALIAS_TO_MODULE: Dict[str, str] = {
+    "MathMod": "math_utils",
+    "RandomMod": "random",
+    "StatisticsMod": "statistics",
+}
+
+__all__: List[str] = [
+    *tuple(_ALIAS_TO_MODULE.keys()),
+    "get_module_description",
+    "list_available_modules",
+]
+
+_DESCRIPTIONS: Dict[str, str] = {
+    "MathMod": "Provides general mathematical functions and utilities.",
+    "RandomMod": "High-quality pseudorandom number generators and CUE matrices.",
+    "StatisticsMod": "Statistical functions and data analysis utilities.",
+}
+
+# ---------------------------------------------------------------------------
+
+def _load_alias(name: str):
+    """Import the requested maths submodule on first access."""
+    module_path = _ALIAS_TO_MODULE.get(name)
+    if module_path is None:
+        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+    module = import_module(f".{module_path}", __name__)
+    globals()[name] = module  # cache to avoid repeated imports
+    return module
+
+
+def __getattr__(name: str):
     """
-    Get the description of a specific module in the maths package.
-    
-    Parameters:
-    - module_name (str): The name of the module.
-    
-    Returns:
-    - str: The description of the module.
-    """
-    descriptions = {
-        "MathMod": "Provides general mathematical functions and utilities.",
-        "RandomMod": "Provides functions for random number generation.",
-        "StatisticsMod": "Provides statistical functions and utilities."
-    }
-    return descriptions.get(module_name, "Module not found.")
+    Provide lazy access to maths submodules using friendly aliases.
 
-def list_available_modules():
+    Examples
+    --------
+    >>> from general_python.maths import MathMod
+    >>> MathMod  # doctest: +SKIP
+    <module 'general_python.maths.math_utils' ...>
     """
-    List all available modules in the maths package.
-    
-    Returns:
-    - list: A list of available module names.
-    """
-    return ["MathMod", "RandomMod", "StatisticsMod"]
+    return _load_alias(name)
 
-# Example usage
-# print(get_module_description("MathMod"))
-# print(list_available_modules())
+
+def __dir__() -> List[str]:  # pragma: no cover - trivial shell helper
+    return sorted(set(globals()) | set(_ALIAS_TO_MODULE))
+
+
+def get_module_description(module_name: str) -> str:
+    """
+    Return a human-readable description for a maths submodule alias.
+
+    Parameters
+    ----------
+    module_name : str
+        Alias registered in :data:`_ALIAS_TO_MODULE`.
+    """
+    return _DESCRIPTIONS.get(module_name, "Module not found.")
+
+
+def list_available_modules() -> List[str]:
+    """
+    Return the list of available maths submodule aliases.
+
+    Returns
+    -------
+    list of str
+        Sorted list of alias names (e.g., ``['MathMod', 'RandomMod', ...]``).
+    """
+    return sorted(_ALIAS_TO_MODULE.keys())
+
+# ---------------------------------------------------------------------------
+#! EOF
+# -------------------------------------------------------------------------

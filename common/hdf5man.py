@@ -51,7 +51,7 @@ class HDF5Manager:
                 _logger.error(f"File does not exist: {file_path}")
             return False
         
-        if not file_path.lower().endswith(('.h5', '.hdf5', '.hdf')):
+        if not str(file_path).lower().endswith(('.h5', '.hdf5', '.hdf')):
             if verbose:
                 _logger.error(f"File is not an HDF5 file (based on extension): {file_path}")
             return False

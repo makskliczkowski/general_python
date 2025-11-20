@@ -5,6 +5,10 @@ __pycache__/
 
 # C extensions
 *.so
+
+# Setuptools src layout (symlinked for editable install)
+src/
+
 ############################################### M Y    F I L E S ###############################################
 desktop.ini
 

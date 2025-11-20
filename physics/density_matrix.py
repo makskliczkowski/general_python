@@ -60,7 +60,7 @@ def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
     Computes the reduced density matrix \rho from a pure state vector using NumPy.
     Given a state vector representing a bipartite quantum system of dimensions (dimA, dimB),
     this function reshapes the state into a matrix of shape (dimA, dimB) using column-major
-    order (Fortran order), and then computes the density matrix \rho = ψ ψ\dag.
+    order (Fortran order), and then computes the density matrix \rho = \psi  \psi \dag.
     Args:
         state (Array):
             The state vector of the composite quantum system.
@@ -72,7 +72,7 @@ def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
         Array: The density matrix \rho of shape (dimA, dimA).
     """
     
-    # reshape as (dimA, dimB) and call BLAS gemm \rho = ψ ψ\dag
+    # reshape as (dimA, dimB) and call BLAS gemm \rho = \psi  \psi \dag
     if dimA <= dimB:
         psi = state.reshape(dimA, dimB, order="F") # column-major
     else:
@@ -122,11 +122,14 @@ def rho_mask(state : np.ndarray,
     return psi
 
 def schmidt_numpy( state : Array,
-                    dimA    : int,
-                    dimB    : int,
-                    eig     : bool) -> Tuple[np.ndarray, np.ndarray]:
+                    dimA            : int,
+                    dimB            : int,
+                    eig             : bool,
+                    *,
+                    return_square   : bool = True           # shall return squared Schmidt coefficients to be consistent with density matrix eigenvalues?
+                    ) -> Tuple[np.ndarray, np.ndarray]:
     r"""
-    Schmidt decomposition for a bipartite pure state |ψ⟩ \in H_A \otimes H_B.
+    Schmidt decomposition for a bipartite pure state |\psi > \in H_A \otimes H_B.
 
     Returns
     -------
@@ -144,22 +147,22 @@ def schmidt_numpy( state : Array,
     - If `eig=True`, we diagonalize the reduced density matrix of the smaller subsystem.
     - If `eig=False`, we take SVD of the reshaped state and square singular values.
     """
-    d_small = dimA if dimA <= dimB else dimB
-    d_large = dimB if dimA <= dimB else dimA
+    d_small         = dimA if dimA <= dimB else dimB
+    d_large         = dimB if dimA <= dimB else dimA
 
-    psi = state.reshape(d_small, d_large, order="F")
-    rho = None
+    psi             = state.reshape(d_small, d_large, order="F")
+    rho             = None
     if eig:
         # Reduced density matrix of the smaller subsystem
-        rho        = psi @ psi.conj().T
-        vals, vecs = np.linalg.eigh(rho)                 # ascending eigenvalues
-        vals       = np.clip(vals.real, 0.0, None)       # numerical safety
-        vals       = vals[::-1]                          # descending
-        vecs       = vecs[:, ::-1]
+        rho         = psi @ psi.conj().T
+        vals, vecs  = np.linalg.eigh(rho)                 # ascending eigenvalues
+        vals        = np.clip(vals.real, 0.0, None)       # numerical safety
+        vals        = vals[::-1]                          # descending
+        vecs        = vecs[:, ::-1]
     else:
         # SVD: psi = U S V\dag ; U are Schmidt vectors of the smaller subsystem
-        vecs, s, _ = np.linalg.svd(psi, full_matrices=False)
-        vals       = (s * s).real                        # already descending in s
+        vecs, s, _  = np.linalg.svd(psi, full_matrices=False)
+        vals        = (s * s).real if return_square else s.real
     return vals, vecs, rho
 
 #! Numba

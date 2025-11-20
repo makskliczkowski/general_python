@@ -17,16 +17,28 @@ import numpy as np
 class SquareLattice(Lattice):
     '''
     Square Lattice Class for 1D, 2D, and 3D lattices. The lattice vectors are defined as:
-    a = [1, 0, 0], b = [0, 1, 0], c = [0, 0, 1]
+    - a = [1, 0, 0],
+    - b = [0, 1, 0],
+    - c = [0, 0, 1]
     and the reciprocal lattice vectors are:
-    a* = [2*pi, 0, 0], b* = [0, 2*pi, 0], c* = [0, 0, 2*pi]
+    - a* = [2*pi, 0, 0], 
+    - b* = [0, 2*pi, 0], 
+    - c* = [0, 0, 2*pi]
     '''
 
-    def __init__(self, dim, lx, ly=1, lz=1, bc=LatticeBC.PBC, **kwargs):
+    def __init__(self, lx=1, ly=1, lz=1, dim=None, bc=LatticeBC.PBC, **kwargs):
         '''
         Initializer of the square lattice
-        '''
-        super().__init__(dim, lx, ly, lz, bc, **kwargs)
+        '''     
+        if dim is None:
+            if lz > 1:
+                dim = 3
+            elif ly > 1:
+                dim = 2
+            else:
+                dim = 1
+
+        super().__init__(dim=dim, lx=lx, ly=ly, lz=lz, bc=bc, **kwargs)
 
         self._type      = LatticeType.SQUARE                            # Lattice type
         self._vectors   = LatticeBackend.array([[SquareLattice.a, 0, 0],
@@ -38,8 +50,9 @@ class SquareLattice(Lattice):
         self._a1        = self._vectors[:, 0]
         self._a2        = self._vectors[:, 1]
         self._a3        = self._vectors[:, 2]
-        
-        match(dim):
+
+                
+        match self.dim:
             case 1:
                 self._lx            = lx
                 self._ly            = 1
@@ -47,9 +60,9 @@ class SquareLattice(Lattice):
                 self._nn_forward    = [0]
                 self._nnn_forward   = [0]
             case 2:
-                self._lx = lx
-                self._ly = ly
-                self._lz = 1
+                self._lx            = lx
+                self._ly            = ly
+                self._lz            = 1
                 self._nn_forward    = [0, 1]
                 self._nnn_forward   = [0, 1]
             case 3:
@@ -202,6 +215,9 @@ class SquareLattice(Lattice):
         return switcher.get(direction, self._nn[site][0])
     
     # ---------------------------------------------------------------------------------
+    
+    def get_nn_forward_num_max(self):
+        return 2 * self.dim
     
     def get_nn_forward(self, site: int, num: int = -1):
         """ Returns the forward nearest neighbors of a given site. """

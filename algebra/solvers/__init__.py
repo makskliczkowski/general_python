@@ -1,6 +1,9 @@
 '''
-file:       general_python/algebra/solvers/__init__.py
-author:     Maksymilian Kliczkowski
+Solver module for various linear algebra solvers.
+
+File        : general_python/algebra/solvers/__init__.py
+Author      : Maksymilian Kliczkowski
+License     : MIT
 
 Initialization file for the solvers module. Exports solver classes,
 the SolverType enum, and the choose_solver factory function.
@@ -11,17 +14,18 @@ from typing import Union, Optional, Any, Type
 from enum import Enum, auto, unique
 
 # Import base classes and types from solver.py (assuming it's in the parent directory or path)
-from ...algebra.solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
+from ..solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
 
 # Import concrete solver implementations
-from ...algebra.solvers.cg import CgSolver, CgSolverScipy
-from ...algebra.solvers.direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
-from ...algebra.solvers.pseudoinverse import PseudoInverseSolver
-from ...algebra.solvers.minres_qlp import MinresQLPSolver
+from .cg import CgSolver
+from .direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
+from .pseudoinverse import PseudoInverseSolver
+from .minres_qlp import MinresQLPSolver
+from .minres import MinresSolverScipy, MinresSolver
 
 # Import utility and preconditioner chooser
-from ...algebra.utils import get_backend, JAX_AVAILABLE
-from ...algebra.preconditioners import Preconditioner, choose_precond
+from ..utils import get_backend, JAX_AVAILABLE
+from ..preconditioners import Preconditioner, choose_precond
 
 # -----------------------------------------------------------------------------
 #! Helper function: choose_solver
@@ -39,14 +43,14 @@ _SOLVER_TYPE_TO_CLASS_MAP: dict[SolverType, Type[Solver]] = {
     # Iterative Solvers
     #! symmetric
     SolverType.CG               : CgSolver,
+    SolverType.MINRES           : MinresSolver,         # Native MINRES (WIP - prefer SCIPY_MINRES)
     SolverType.MINRES_QLP       : MinresQLPSolver,
-    # SolverType.MINRES: MinresSolver, # Add when implemented
     #! general
     # SolverType.GMRES: GmresSolver, # Add when implemented
 
     # Iterative Solvers (SciPy Wrappers)
-    SolverType.SCIPY_CG         : CgSolverScipy,
-    # SolverType.SCIPY_MINRES: MinresScipy, # Add when implemented
+    # SolverType.SCIPY_CG         : CgSolverScipy,  # Not implemented yet
+    SolverType.SCIPY_MINRES     : MinresSolverScipy,
     # SolverType.SCIPY_GMRES: GmresScipy, # Add when implemented
 
     # Others
@@ -223,9 +227,9 @@ __all__ = [
     'Solver', 'SolverResult', 'SolverError', 'SolverErrorMsg', 'SolverType',
     'Array', 'MatVecFunc', 'StaticSolverFunc',
     # Concrete Solver Classes
-    'CgSolver', 'CgSolverScipy',
+    'CgSolver',
     'DirectSolver', 'DirectScipy', 'DirectJaxScipy', 'DirectInvSolver',
-    'PseudoInverseSolver',
+    'PseudoInverseSolver', 'MinresSolverScipy',
     # Factory function
     'choose_solver',
     # Testing utility
@@ -251,4 +255,6 @@ __description__ = """
                 linear algebra problems.
                 """
 
+# -----------------------------------------------------------------------------
+#! EOF
 # -----------------------------------------------------------------------------

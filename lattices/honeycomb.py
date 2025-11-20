@@ -1,14 +1,33 @@
-import numpy as np
-from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+'''
+Contains the Honeycomb lattice implementation.
+This module defines the HoneycombLattice class, which extends the base Lattice class
+to represent a 2D honeycomb lattice structure. It includes methods for calculating
+nearest and next-nearest neighbors, as well as lattice vectors and coordinates.
+
+---------------------------------
+File        : general_python/lattices/honeycomb.py
+Author      : Maksymilian Kliczkowski
+Date        : 2025-11-01
+License     : MIT
+---------------------------------
+'''
 
 import numpy as np
-from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
 
-import sys, os 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from maths import MathMod
+try:
+    from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+    from ..maths.math_utils import mod_euc
+except ImportError:
+    raise ImportError("Could not import Lattice base classes. Ensure the module is in the PYTHONPATH.")
 
 ################################### LATTICE IMPLEMENTATION #######################################
+
+X_BOND_NEI = 2
+Y_BOND_NEI = 1
+Z_BOND_NEI = 0
+# X_BOND_NEI = 0
+# Y_BOND_NEI = 1
+# Z_BOND_NEI = 2
 
 class HoneycombLattice(Lattice):
     """
@@ -31,7 +50,7 @@ class HoneycombLattice(Lattice):
         rvectors  : Real-space vectors.
     """
 
-    def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):
+    def __init__(self, *, dim=2, lx=3, ly=1, lz=1, bc='pbc', **kwargs):
         """
         Initialize a honeycomb lattice.
         
@@ -40,7 +59,7 @@ class HoneycombLattice(Lattice):
             lx, ly, lz (int)    : Lattice sizes in x, y, z directions.
             bc                  : Boundary condition (e.g. LatticeBC.PBC or LatticeBC.OBC)
         """
-        super().__init__(dim, lx, ly, lz, bc, *args, **kwargs)
+        super().__init__(dim, lx, ly, lz, bc, **kwargs)
 
         self._type = LatticeType.HONEYCOMB  # Lattice type
 
@@ -55,17 +74,32 @@ class HoneycombLattice(Lattice):
             self._lz = lz
 
         # For the honeycomb lattice there are two sites per unit cell.
-        self._ns = 2 * self.Lx * self.Ly * self.Lz
+        self._ns        = 2 * self.Lx * self.Ly * self.Lz
 
-        # Initialize the primitive vectors
-        self._a1 = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a2 = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a3 = np.array([0, 0, self.c])
+        # Define lattice parameters
+        # self._a1        = np.array([np.sqrt(3) * self.a, 0, 0])
+        # self._a2        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        # self._a3        = np.array([0, 0, self.c])
+        self._a1        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a3        = np.array([0, 0, self.c])
 
+        self._basis     = np.array([
+                            [0.0, 0.0, 0.0],      # A sublattice
+                            [0.0, self.a, 0.0]    # B sublattice
+                        ])
+
+        # Initialize the k vectors
+        self.calculate_reciprocal_vectors()
+        
         # Compute lattice properties.
         self.calculate_coordinates()
         self.calculate_r_vectors()
         self.calculate_k_vectors()
+
+        self._delta_x   = np.array([0.0, self.a, 0.0])
+        self._delta_y   = np.array([-np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
+        self._delta_z   = np.array([ np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
 
         if self._ns < 100:
             self.calculate_dft_matrix()
@@ -75,11 +109,10 @@ class HoneycombLattice(Lattice):
         self.calculate_nnn()
         self.calculate_norm_sym()
         
-        # Initialize the k vectors
-        self._k1 = np.array([2 * np.pi / self.a, 0, 0])
-        self._k2 = np.array([-np.pi / self.a, np.sqrt(3) * np.pi / self.a, 0])
-        self._k3 = np.array([-np.pi / self.a, -np.sqrt(3) * np.pi / self.a, 0])
-        
+        # Initialize the normal vectors along the bonds
+        self._n1    = self._delta_x / np.linalg.norm(self._delta_x)
+        self._n2    = self._delta_y / np.linalg.norm(self._delta_y)
+        self._n3    = self._delta_z / np.linalg.norm(self._delta_z)
 
     def __str__(self):
         return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
@@ -87,14 +120,28 @@ class HoneycombLattice(Lattice):
     def __repr__(self):
         return self.__str__()
 
-    ################################### GETTERS #######################################
+    ################################### 
+    
+    def sublattice(self, site: int) -> int:
+        """
+        Return the sublattice index for a given site.
+        By default, returns 0 for all sites (single sublattice).
+        Override in subclasses for multi-sublattice lattices.
+        """
+        return site % self.multipartity
+
+    ###################################
 
     def get_real_vec(self, x: int, y: int, z: int):
         """
         Returns the real-space vector for a given (x, y, z) coordinate.
-        (Here we use a simple linear combination of the primitive vectors.)
         """
-        return x * self._a1[0] + y * self._a2[1] + z * self._a3[2]
+        cell_x = x
+        # coordinates are stored as (x, 2*y + sublattice, z)
+        cell_y = y // 2
+        sub = y % 2
+        base = cell_x * self._a1 + cell_y * self._a2
+        return base + self._basis[sub] + z * self._a3
 
     def get_norm(self, x: int, y: int, z: int):
         """
@@ -136,58 +183,7 @@ class HoneycombLattice(Lattice):
                 return self._nnn_forward[site]
             return self._nnn_forward[site][num] if num < len(self._nnn_forward[site]) else -1
         return -1
-
-    ################################### COORDINATE SYSTEM #######################################
-
-    def calculate_coordinates(self):
-        """
-        Calculates the coordinates for each lattice site.
-        
-        Here we use the common honeycomb convention:
-            For site index i, we use:
-              x = (i // 2) mod Lx,
-              y = ((i // 2) // Lx) mod Ly, then mapped to (2*y + (i mod 2))
-              z = ((i // 2) // (Lx * Ly)) mod Lz.
-        """
-        self.coordinates = []
-        for i in range(self.Ns):
-            x = (i // 2) % self.Lx
-            y = ((i // 2) // self.Lx) % self.Ly
-            z = ((i // 2) // (self.Lx * self.Ly)) % self.Lz
-            self.coordinates.append((x, 2 * y + (i % 2), z))
-
-    def calculate_k_vectors(self):
-        """
-        Calculates the reciprocal lattice vectors.
-        """
-        two_pi_over_Lx = 2 * np.pi / self.Lx
-        two_pi_over_Ly = 2 * np.pi / self.Ly
-        two_pi_over_Lz = 2 * np.pi / self.Lz
-
-        self.kvectors = np.array([
-            [-np.pi + two_pi_over_Lx * qx,
-             -np.pi + two_pi_over_Ly * qy,
-             -np.pi + two_pi_over_Lz * qz]
-            for qx in range(self.Lx) for qy in range(self.Ly) for qz in range(self.Lz)
-        ])
-
-    def calculate_r_vectors(self):
-        """
-        Calculates the real-space vectors for each site.
-        """
-        
-        self.rvectors = np.zeros((self.Ns, 3))
-        for i in range(self.Ns):
-            # y will give us the move to the right as well 
-            x, y, z = self.coordinates[i]
-            
-            self.rvectors[i] = (x + y // 2) * (self._a1 - self._a2) + y * (self._a1 + self._a2) + z * self._a3
-        
-        # self.rvectors = np.array([
-        #     self.get_real_vec(x, y, z)
-        #     for x in range(self.Lx) for y in range(self.Ly) for z in range(self.Lz)
-        # ])
-
+    
     ################################### NEIGHBORHOOD CALCULATORS #######################################
 
     def calculate_nn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
@@ -203,7 +199,7 @@ class HoneycombLattice(Lattice):
         # Helper function to apply periodic boundary conditions.
         def _bcfun(_i, _l, _pbc):
             if _pbc:
-                return MathMod.mod_euc(_i, _l)
+                return mod_euc(_i, _l)
             return _i if 0 <= _i < _l else -1
         
         # 1D: Each site has two neighbors.
@@ -284,7 +280,7 @@ class HoneycombLattice(Lattice):
         """
         def _bcfun(_i, _L, _pbc):
             if _pbc:
-                return MathMod.mod_euc(_i, _L)
+                return mod_euc(_i, _L)
             return _i if 0 <= _i < _L else -1
 
         self._nnn = [[] for _ in range(self.Ns)]
@@ -333,7 +329,7 @@ class HoneycombLattice(Lattice):
         Here we simply use the Euclidean norm of the coordinate as a symmetry measure.
         In a more advanced implementation, this might account for sublattice or other symmetries.
         """
-        self.norm_sym = {i: self.get_norm(*coord) for i, coord in enumerate(self.coordinates)}
+        self.norm_sym = {i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns)}
 
     ################################### SYMMETRY & INDEXING #######################################
 
@@ -360,3 +356,89 @@ class HoneycombLattice(Lattice):
         Placeholder for symmetry checking.
         """
         return True
+    
+    def get_bond_type(self, site1: int, site2: int):
+        """
+        Determines the bond type between two sites.
+        
+        Returns:
+            int: 0 for x-bond, 1 for y-bond, 2 for z-bond, -1 if no bond exists.
+        """
+        if site2 in self._nn[site1]:
+            idx = self._nn[site1].index(site2)
+            if idx == 2:
+                return X_BOND_NEI
+            elif idx == 1:
+                return Y_BOND_NEI
+            elif idx == 0:
+                return Z_BOND_NEI
+        return -1
+
+    ###############################################################################################
+    #! Plaquettes
+    ###############################################################################################
+    
+    def calculate_plaquettes(self):
+        """
+        Compute all hexagonal Kitaev plaquettes, matching the exact geometry
+        and numbering convention in the hand-drawn lattice.
+
+        Each plaquette is returned as 6 site indices in CCW order starting from
+        the bottom-left A-sublattice site of the hexagon.
+
+        Bond sequence:
+            1 --Z--> 2 --X--> 3 --Y--> 4 --Z--> 5 --X--> 6 --Y--> 1
+        """
+
+        Z           = Z_BOND_NEI
+        Y           = Y_BOND_NEI
+        X           = X_BOND_NEI
+
+        bond_cycle  = [Z, X, Y, Z, X, Y]
+
+        plaquettes  = []
+        seen        = set()
+
+        for i in range(self._ns):
+
+            # Only A sites (even indices) can be bottom-left of a plaquette
+            if self.sublattice(i) != 1:
+                continue
+
+            # Must have a valid Z-neighbor above (this ensures bottom-left anchor)
+            z1 = self.get_nn(i, Z)
+            if z1 < 0:
+                continue # boundary or missing hexagon here
+
+            # Now walk the cycle
+            loop    = [i]
+            cur     = i
+            valid   = True
+
+            for b in bond_cycle:
+                nxt = self.get_nn(cur, b)
+                if self.wrong_nei(nxt):
+                    valid = False
+                    break
+                loop.append(nxt)
+                cur = nxt
+
+            # Should return to starting site
+            if not valid or loop[-1] != i:
+                continue
+
+            # Keep exactly the 6 unique sites
+            hex_sites   = tuple(loop[:-1])
+
+            # Deduplicate by sorted site set
+            key         = tuple(sorted(hex_sites))
+            if key not in seen:
+                seen.add(key)
+                plaquettes.append(list(hex_sites))
+
+        self._plaquettes = plaquettes
+        return plaquettes
+
+# ---------------------------------------------------------------------------
+#! EOF
+# -------------------------------------------------------------------------

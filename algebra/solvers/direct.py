@@ -12,13 +12,13 @@ from typing import Optional, Callable, Union, Any, NamedTuple, Type
 import numpy as np
 import inspect
 
-from ...algebra.solver import (
+from ..solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc
 )
-from ...algebra.preconditioners import Preconditioner
+from ..preconditioners import Preconditioner
 
-from ...algebra.utils import JAX_AVAILABLE, get_backend
+from ..utils import JAX_AVAILABLE, get_backend
 try:
     import jax
     import jax.numpy as jnp
@@ -71,21 +71,37 @@ class DirectSolver(Solver):
                         use_matrix      : bool = False,
                         sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
-        Returns a lambda function wrapping the static `DirectSolver.solve`.
+        Returns a backend-adapted function compatible with the common solver wrapper.
 
-        Note: The returned function adheres to the StaticSolverFunc signature
-        but ignores iterative parameters and requires matrix 'A' via kwargs.
+        The returned function conforms to the StaticSolverFunc signature used by
+        Solver._solver_wrap_compiled and internally calls DirectSolver.solve,
+        forwarding the matrix as kwarg 'A' (accepting either 'a' or 'A').
+        Iterative params (tol, maxiter, precond) are ignored by the direct method.
 
-        Args:
-            backend_module (Any): The backend module (numpy or jax.numpy).
-
+        Parameters
+        ----------
+            backend_module:
+                numpy or jax.numpy
         Returns:
-            StaticSolverFunc: A callable wrapper for the direct solve.
+            StaticSolverFunc
         """
-        # This lambda matches the expected signature but calls the specific static solve
-        return lambda matvec, b, x0, tol, maxiter, precond_apply, backend_mod, **kwargs: \
-                    DirectSolver.solve(matvec=matvec, b=b, x0=x0, tol=tol, maxiter=maxiter,
-                                         precond_apply=precond_apply, backend_module=backend_mod, **kwargs)
+        def func(matvec, b, x0, tol, maxiter, precond_apply, **kwargs):
+            # Accept both 'a' and 'A' from wrapper callers
+            A_kw = kwargs.get('A', kwargs.get('a', None))
+            return DirectSolver.solve(
+                matvec          = matvec,
+                b               = b,
+                x0              = x0,
+                tol             = 0.0 if tol is None else tol,
+                maxiter         = 1,
+                precond_apply   = None,
+                backend_module  = backend_module,
+                A               = A_kw,
+                sigma           = sigma
+            )
+
+        return Solver._solver_wrap_compiled(backend_module, func,
+                                            use_matvec, use_fisher, use_matrix, sigma)
 
     @staticmethod
     def solve(

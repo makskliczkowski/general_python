@@ -95,7 +95,7 @@ class EntropyPredictions:
 
         @staticmethod
         def free_fermions_half(L : int, f : float):
-            '''
+            r'''
             PRL 119, 020601 (2017)
             - La: subsystem size
             - f : filling
@@ -104,7 +104,7 @@ class EntropyPredictions:
     
         @staticmethod
         def random_gaussian_th(L: int, f: float):
-            """
+            r"""
             Random Gaussian states in the thermodynamic limit.
 
             Parameters:
@@ -118,7 +118,7 @@ class EntropyPredictions:
 
         @staticmethod
         def random_gaussian_u1_th(L: int, f: float, n: float = 0.5):
-            """
+            r"""
             Random Gaussian states with U(1) conservation in the thermodynamic limit.
 
             Parameters:
@@ -134,7 +134,7 @@ class EntropyPredictions:
 
         @staticmethod
         def page_th(L: int, f: float):
-            """
+            r"""
             Page value in the thermodynamic limit.
 
             Parameters:
@@ -148,7 +148,7 @@ class EntropyPredictions:
 
         @staticmethod
         def page(da: int, db: int):
-            """
+            r"""
             Page value for given subsystem sizes.
 
             Parameters: 
@@ -164,7 +164,7 @@ class EntropyPredictions:
 
         @staticmethod
         def page_u1(La: int, Lb: int, n: float = 0.5):
-            """
+            r"""
             Page result with the correction for U(1) symmetry.
 
             Parameters:
@@ -180,7 +180,7 @@ class EntropyPredictions:
 
             Notes:
             This implements the Page value calculation for systems with U(1) charge conservation,
-            following the formula: 〈SA〉N = ∑(dA dB / dN)[〈SA〉 + ψ(dN + 1) - ψ(dA dB + 1)]
+            following the formula: 〈SA〉N = ∑(dA dB / dN)[〈SA〉 + \psi (dN + 1) - \psi (dA dB + 1)]
             """
             
             if La <= 0 or Lb <= 0:
@@ -362,7 +362,7 @@ def _eigvals_numba(rho: np.ndarray) -> np.ndarray:
 
 @numba.njit(cache=True)
 def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
-    """Clip negatives & zeros from round-off, renormalise."""
+    r"""Clip negatives & zeros from round-off, renormalise."""
     q   = np.where(p < eps, 0.0, p)
     s   = q.sum()
     return q / s if s != 1.0 else q
@@ -370,7 +370,7 @@ def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
 # ----------------------------------
 
 def purity(dens_or_vals: np.ndarray):
-    """
+    r"""
     Calculates the purity of a quantum state represented by its density matrix.
 
     Args:
@@ -390,7 +390,7 @@ def purity(dens_or_vals: np.ndarray):
 
 @numba.njit(cache=True)
 def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
-    """
+    r"""
     Calculates the von Neumann entropy for a given probability distribution.
 
     Parameters
@@ -418,7 +418,7 @@ def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
 
 @numba.njit(cache=True)
 def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e, threshold: float = 1e-12) -> float:
-    """
+    r"""
     Calculates the Rényi entropy of a probability distribution.
 
     The Rényi entropy is a generalization of the Shannon (von Neumann) entropy, parameterized by q.
@@ -455,7 +455,7 @@ def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e, threshold: floa
 
 # @numba.njit(cache=True)
 def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> float:
-    """
+    r"""
     Compute the Tsallis entropy for a given probability distribution.
 
     The Tsallis entropy is a generalization of the standard von Neumann entropy,
@@ -471,7 +471,7 @@ def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> floa
         float: The Tsallis entropy of the input distribution.
 
     References:
-        - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479–487 (1988).
+        - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479-487 (1988).
     """
     if 1.0 - threshold < q < 1.0 + threshold:
         return vn_entropy(lam)
@@ -480,7 +480,7 @@ def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> floa
 
 @numba.njit(cache=True)
 def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):    
-    """
+    r"""
     Compute the single-particle correlation entropy for a set of eigenvalues.
     This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for generic q)
     of a set of eigenvalues `lam` (typically from a correlation matrix), after mapping each eigenvalue
@@ -488,7 +488,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     Parameters
     ----------
     lam : np.ndarray
-        Array of eigenvalues (λ), each in the interval [-1, 1].
+        Array of eigenvalues (\lambda), each in the interval [-1, 1].
     q : float
         Entropy order parameter. If q == 1, computes the von Neumann entropy; otherwise, computes the Rényi entropy.
     base : float, optional
@@ -500,10 +500,10 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     Notes
     -----
     - For q == 1, the function computes the von Neumann entropy:
-          S = -Σ [p * log(p) + (1-p) * log(1-p)]
-      where p = 0.5 * (1 + λ).
-    - For q ≠ 1, the function computes the Rényi entropy:
-          S_q = (1 / (1-q)) * Σ log(p^q + (1-p)^q)
+          S = -\Sigma  [p * log(p) + (1-p) * log(1-p)]
+      where p = 0.5 * (1 + \lambda).
+    - For q \neq  1, the function computes the Rényi entropy:
+          S_q = (1 / (1-q)) * \Sigma  log(p^q + (1-p)^q)
     - The entropy is normalized by the logarithm of the specified base.
     """
     
@@ -518,7 +518,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
                 s += (1.0 + l) * (np.log1p(l) - LOG_TWO)
             if l < 1.0:
                 s += (1.0 - l) * (np.log1p(-l) - LOG_TWO)
-        return -0.5 * s
+        return -0.5 * s  # Negative sign to match von Neumann entropy definition
 
     #! Rényi entropy (generic q)
     inv_1mq = 1.0 / (1.0 - q)
@@ -549,7 +549,7 @@ def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     out : float or np.ndarray
         Scalar entropy if input was 1D, else 1D array of length m.
     """
-    # reshape 1D → 2D(n,1)
+    # reshape 1D -> 2D(n,1)
     if states.ndim == 1:
         S = states.reshape(states.shape[0], 1)
         single = True
@@ -611,7 +611,7 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
                     acc += p * math.log(p)
             out[j] = -acc
         else:
-            # Rényi‐type: sum p^q, then (1/(1−q))·ln(...)
+            # Rényi‐type: sum p^q, then (1/(1-q))\cdot ln(...)
             for i in range(n):
                 c   = states[i, j]
                 p   = abs(c) ** q
@@ -674,15 +674,15 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
             return participation_entropy(lam, q, kwargs.get('threshold', 1e-12))
     elif backend.lower() == 'jax' and JAX_AVAILABLE:
         if typek == Entanglement.VN:
-            return jnp.vn_entropy(lam, base)
+            return entropy_jax.vn_entropy_jax(lam, base)
         elif typek == Entanglement.RENYI:
-            return jnp.renyi_entropy(lam, q, base)
+            return entropy_jax.renyi_entropy_jax(lam, q, base)
         elif typek == Entanglement.TSALLIS:
-            return jnp.tsallis_entropy(lam, q, base)
+            return entropy_jax.tsallis_entropy_jax(lam, q, base)
         elif typek == Entanglement.SINGLE:
-            return jnp.sp_correlation_entropy(lam, q, base)
+            return entropy_jax.sp_correlation_entropy_jax(lam, q, base)
         elif typek == Entanglement.PARTIC:
-            return jnp.participation_entropy(lam, q, kwargs.get('threshold', 1e-12))
+            return entropy_jax.participation_entropy_jax(lam, q, kwargs.get('threshold', 1e-12))
     else:
         raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
 

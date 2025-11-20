@@ -38,15 +38,15 @@ import numpy as np
 import inspect
 
 # Assuming these are correctly imported from the solver module
-from ...algebra.solver import (
+from ..solver import (
     Solver, SolverResult, SolverError, SolverErrorMsg,
     SolverType, Array, MatVecFunc, StaticSolverFunc
 )
 # Preconditioner import might not be strictly needed here
-from ...algebra.preconditioners import Preconditioner
+from ..preconditioners import Preconditioner
 
 # Backend/Compilation tools
-from ...algebra.utils import JAX_AVAILABLE, get_backend
+from ..utils import JAX_AVAILABLE, get_backend
 try:
     import jax
     import jax.numpy as jnp
@@ -227,44 +227,30 @@ class PseudoInverseSolver(Solver):
                         use_matrix      : bool = False,
                         sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
-        Returns the core pseudo-inverse solve function, potentially compiled.
+        Returns a backend-adapted function compatible with the common solver wrapper.
 
-        Note: Numba compilation for pinv is limited.
+        The returned function conforms to the StaticSolverFunc signature used by
+        Solver._solver_wrap_compiled and internally calls PseudoInverseSolver.solve,
+        forwarding the matrix as kwarg 'A' (accepting either 'a' or 'A').
 
-        Args:
-            backend_module (Any): The numerical backend (numpy or jax.numpy).
-
-        Returns:
-            StaticSolverFunc: Callable wrapping the core pinv logic.
+        Note: For NumPy, a Numba-compiled core may be used; for JAX, JIT is supported.
         """
-        func: Callable = None
-        
-        # Get the appropriate core logic function (compiled if possible)
-        if backend_module is jnp:
-            if _pinv_solve_logic_jax_compiled is None:
-                raise ImportError("JAX pinv function not available/compiled.")
+        def func(matvec, b, x0, tol, maxiter, precond_apply, **kwargs):
+            A_kw   = kwargs.get('A', kwargs.get('a', None))
+            return PseudoInverseSolver.solve(
+                matvec          = matvec,
+                b               = b,
+                x0              = x0,
+                tol             = 0.0 if tol is None else tol,
+                maxiter         = 1,
+                precond_apply   = None,
+                backend_module  = backend_module,
+                A               = A_kw,
+                sigma           = sigma
+            )
 
-            @partial(jax.jit, static_argnums = (0, 5))
-            def tmp_fun(matvec = None, b = None, x0 = None, tol = None, maxiter = None, precond_apply = None, **kwargs):
-                # JAX pinv logic
-                inverse_solution = _pinv_solve_logic_jax_compiled(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol)
-                return SolverResult(x=inverse_solution, converged=True, iterations=1, residual_norm=0.0)
-            func = tmp_fun
-
-        elif backend_module is np:
-            if _pinv_solve_logic_numba_compiled is None: # Should point to wrapper or python func
-                print("Warning: Numba pinv function not available, using plain Python logic.")
-                core_func = lambda A, b, sigma, rtol, backend_mod: _pinv_solve_logic(A, b, sigma, rtol, np)
-            else:
-                core_func = _pinv_solve_logic_numba_compiled
-
-            # Return lambda adapting the NumPy logic
-            return lambda matvec, b, x0, tol, maxiter = None, precond_apply = None, backend_mod = None, **kwargs: \
-                SolverResult(*core_func(A=kwargs['A'], b=b, sigma=kwargs.get('sigma'), pinv_rtol=tol, backend_mod=np), converged=True, iterations=1)
-        else:
-            raise ValueError(f"Unsupported backend module for PseudoInverseSolver: {backend_module}")
-        
-        return Solver._solver_wrap_compiled(backend_module, func, use_matvec, use_fisher, use_matrix, sigma)
+        return Solver._solver_wrap_compiled(backend_module, func,
+                                            use_matvec, use_fisher, use_matrix, sigma)
 
     # --------------------------------------------------
 

@@ -12,7 +12,7 @@ notebook cell.  All helper names start with `display_…` to make tab-completion
 useful.
 
 The module does **not** depend on your project-specific `bin_mod`; if you have a
-custom integer→binary converter just pass it as the optional `to_bin`
+custom integer->binary converter just pass it as the optional `to_bin`
 parameter.
 """
 
@@ -62,9 +62,9 @@ def _default_to_bin(state: int, ns: int) -> str:
     return strtex
 
 def _format_coeff(c: complex | float) -> str:
-    """
+    r"""
     Return LaTeX for a numeric coefficient with phase/amplitude split,
-    using multiples of π for phase.
+    using multiples of \pi for phase.
     
     Parameters
     ----------
@@ -81,7 +81,7 @@ def _format_coeff(c: complex | float) -> str:
         phase   = np.angle(c)
         if amp == 0:
             return "0"
-        # Express phase as a multiple of π if close
+        # Express phase as a multiple of \pi if close
         pi_mult = phase / np.pi
         # Use a tolerance for floating point comparison
         tol     = 1e-8
@@ -113,11 +113,11 @@ def _format_coeff(c: complex | float) -> str:
         return str(c)
 
 # ---------------------------------------------------------------------------
-#! |ψ⟩  and  ⟨ψ|  helpers
+#! |\psi >  and  <\psi |  helpers
 # ---------------------------------------------------------------------------
 
 def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
-    r"""LaTeX code for a computational-basis ket |(int) b...⟩.
+    r"""LaTeX code for a computational-basis ket |(int) b...>.
 
     Example
     -------
@@ -130,7 +130,7 @@ def ket(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None)
     return fr"\left|{to_bin((state + 1) // 2, ns)}\right\rangle"
 
 def bra(state: int, ns: int, *, to_bin: Callable[[int, int], str] | None = None) -> str:
-    r"""LaTeX code for the bra ⟨ψ| corresponding to :pyfunc:`ket`."""
+    r"""LaTeX code for the bra <\psi | corresponding to :pyfunc:`ket`."""
     return ket(state, ns, to_bin=to_bin).replace(r"\\left|", r"\\left\langle").replace(r"\\right\\rangle", r"\\right|")
 
 # ---------------------------------------------------------------------------
@@ -180,20 +180,20 @@ def display_operator_action(op_tex    : str,
                             to_bin    : Callable[[int, int], str] | None = None
                             ) -> None:
     r"""
-    Show the action  Ô₍site₎ |ψ⟩ = Σₖ cₖ |φₖ⟩  (or 0).
+    Show the action  Ô₍site₎ |\psi > = \Sigma _k  c_k  |φ_k >  (or 0).
 
     Parameters
     ----------
     op_tex : str
         LaTeX operator label without subscript, e.g. ``'c^\\dagger'``.
     site : int | tuple[int,…]
-        Site index (or indices) → subscript in Ô₍site₎.
+        Site index (or indices) -> subscript in Ô₍site₎.
     in_state : int | ndarray | list[int]
         Input basis state or wave-function label shown on the LHS.
     ns : int
         Number of lattice sites (binary string length for integer states).
     out_state : int | list[int] | None
-        Output basis state(s).  *None* ⇒ result is 0.
+        Output basis state(s).  *None* -> result is 0.
     coeff : number | complex | list[number|complex]
         Corresponding amplitude(s).  Must match *out_state* length.
     """
@@ -230,7 +230,7 @@ def display_operator_action(op_tex    : str,
         if len(out_list) != len(coeff_list):
             raise ValueError("out_state and coeff must have equal length")
 
-        # build Σ_k c_k |φ_k⟩
+        # build \sum _k c_k |φ_k>
         terms = []
         for c, s in zip(coeff_list, out_list):
             if c == 0:            # skip zero amplitudes
@@ -251,9 +251,10 @@ def superposition(terms : Sequence[Tuple[complex, int]],
                 ns      : int,
                 *, 
                 to_bin  : Callable[[int, int], str] | None = None) -> str:
-    """Return LaTeX for Σₖ aₖ |k⟩ given *(coeff, state)* pairs."""
-    parts: List[str] = []
-    to_bin = _default_to_bin if to_bin is None else to_bin
+    r"""Return LaTeX for \Sigma _k  a_k  |k> given *(coeff, state)* pairs."""
+    
+    parts: List[str]    = []
+    to_bin              = _default_to_bin if to_bin is None else to_bin
     for amp, st in terms:
         amp_tex = f"{amp:g}" if amp not in (-1, 1) else ("-" if amp == -1 else "")
         parts.append(fr"{amp_tex}{ket(st, ns, to_bin=to_bin)}")

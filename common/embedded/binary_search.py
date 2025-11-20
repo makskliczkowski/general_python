@@ -1,6 +1,14 @@
-'''
+r'''
+Binary Search Implementation. 
+This module provides a binary search function that can operate on
+Python lists as well as NumPy and JAX arrays, with optional tolerance for floating-point comparisons.
 
-
+--------------------------------
+File        : general_python/common/embedded/binary_search.py
+Author      : Maksymilian Kliczkowski
+Email       : maxgrom97@gmail.com
+Version     : 1.0.0
+--------------------------------
 '''
 
 import numpy as np
@@ -41,9 +49,35 @@ def _binary_search_backend(arr, l_point, r_point, elem, backend: str = 'default'
     return int(idx)
 
 @numba.njit
-def binary_search_numpy(arr, l_point, r_point, elem) -> int:
+def binary_search_numpy(arr, l_point, r_point, elem):
     '''
     Perform a binary search for 'elem' in the sorted NumPy array 'arr'.
+    
+    Note: Numba may emit a reflected list deprecation warning during compilation.
+    This is a known numba limitation - the function works correctly with numpy arrays
+    and the warning can be safely ignored. The reflected list path is not actually used
+    at runtime when proper numpy arrays are passed.
+    
+    Parameters
+    ----------
+    arr : np.ndarray
+        Sorted numpy array to search in (must be numpy array, not list)
+    l_point : int
+        Left boundary index (inclusive)
+    r_point : int
+        Right boundary index (inclusive)
+    elem : int
+        Element to search for
+    
+    Returns
+    -------
+    int
+        Index of element if found, -1 otherwise
+    
+    Notes
+    -----
+    Type hints are omitted because numba doesn't support Python type annotations.
+    This function expects a numpy array - passing a list will trigger deprecation warnings.
     '''
     if l_point < 0 or r_point >= len(arr):
         return _BAD_BINARY_SEARCH_STATE

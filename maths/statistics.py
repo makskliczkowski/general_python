@@ -584,9 +584,9 @@ class Histogram:
         idx  = np.searchsorted(self.bin_edges, vals, side='right')
         if idx.size == 0:
             raise ValueError("No bins found for the provided values.")
-        # underflow → bin 0
+        # underflow -> bin 0
         idx[vals <  self.bin_edges[0]] = 0
-        # overflow  → last bin
+        # overflow  -> last bin
         idx[vals >= self.bin_edges[-1]] = self.n_bins
         # update counts
         

@@ -9,7 +9,7 @@ or vectors.
 It includes functions to:
 - check if a number is a power of 2,
 - check a given bit in an integer or an indexable vector,
-- convert an integer to a base representation (spin: ±value or binary 0/1),
+- convert an integer to a base representation (spin: +/- value or binary 0/1),
 - convert a base representation back to an integer or a binary string or a vector of values,
 - flip bits (all at once or a single bit),
 - reverse the bits of a 64 - bit integer,
@@ -44,8 +44,6 @@ from ..common.embedded import binary_search as bin_search
 ####################################################################################################
 #! Global functions
 ####################################################################################################
-
-
 
 def set_global_defaults(repr_value : float, spin : bool):
     """
@@ -186,7 +184,7 @@ def int2base_np(n,
         n (int)             : The integer to convert.
         size (int)          : The number of bits in the representation.
         dtype               : The desired NumPy dtype for the output array.
-        spin (bool)         : If True, outputs spin values (±spin_value) instead of {0,1}.
+        spin (bool)         : If True, outputs spin values (+/- spin_value) instead of {0,1}.
         spin_value (float)  : The value to use for spin representation.
     Returns:
         np.ndarray          : The binary (or spin) representation of the integer.
@@ -208,7 +206,7 @@ def int2base(n          : int,
             spin        : bool  = True,
             spin_value  : float = BACKEND_REPR):
     '''
-    Convert an integer to a base representation (spin: ±value or binary 0/1).
+    Convert an integer to a base representation (spin: +/- value or binary 0/1).
 
     Args:
         n (int)             : The integer to convert.
@@ -230,7 +228,7 @@ def int2base(n          : int,
 
 def base2int_spin(vec : Array, spin_value: float = BACKEND_REPR) -> int:
     '''
-    Convert a base representation (spin: ±value or binary 0/1) back to an integer.
+    Convert a base representation (spin: +/- value or binary 0/1) back to an integer.
     Args:
         vec (np.ndarray or jnp.ndarray): The binary representation of the integer.
         spin (bool)                    : A flag to indicate whether to use spin values.
@@ -773,7 +771,8 @@ def popcount(n : int, spin : bool = BACKEND_DEF_SPIN, backend : str = 'default')
         int: The number of 1-bits in the binary representation of the input integer.
     """
     if isinstance(n, int):
-        return n.bit_count('1')
+        # Python's int.bit_count() returns the number of set bits; no argument required
+        return n.bit_count()
     return int(_popcount_spin(n, backend) if spin else _popcount_nspin(n, backend))
     
 
@@ -1067,7 +1066,7 @@ class BinaryFunctionTests(GeneralAlgebraicTest):
             mask_size    (int): Number of bits to represent the mask. If None, defaults to size.
             positions    (list): Bit positions to prepare a mask from (default: [0, 1, 3]).
             bit_position (int): Bit position to test for flip and check operations (default: 2).
-            spin         (bool): Whether to use spin representation (±spin_value) for conversion.
+            spin         (bool): Whether to use spin representation (+/- spin_value) for conversion.
             spin_value   (float): The value representing spin-up in spin representation.
         """
         

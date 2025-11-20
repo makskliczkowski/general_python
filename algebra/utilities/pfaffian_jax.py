@@ -1,4 +1,4 @@
-from ...algebra.utils import JAX_AVAILABLE, Array
+from ..utils import JAX_AVAILABLE, Array
 import numpy as np
 
 #! jax
