@@ -158,6 +158,9 @@ class Lattice(ABC):
         
         # helping lists
         self._coords        = []
+        self._cells         = []
+        self._fracs         = []
+        self._subs          = []
         self._spatial_norm  = [[[]]]                                # three dimensional array for the spatial norm
         
         # matrices for real space and inverse space vectors
@@ -221,6 +224,7 @@ class Lattice(ABC):
         This method sets up all necessary neighbor lists and lattice properties required for further computations.
         """
 
+        self.calculate_reciprocal_vectors()
         self.calculate_coordinates()
         if verbose: print(" Lattice: Calculated coordinates.")
         
@@ -281,6 +285,11 @@ class Lattice(ABC):
         
         self.calculate_norm_sym()
         if verbose: print(" Lattice: Calculated normalization/symmetry.")
+    
+        # Initialize the normal vectors along the bonds
+        self._n1    = self._delta_x / np.linalg.norm(self._delta_x)
+        self._n2    = self._delta_y / np.linalg.norm(self._delta_y)
+        self._n3    = self._delta_z / np.linalg.norm(self._delta_z)
     
     ################################### GETTERS ###################################
     

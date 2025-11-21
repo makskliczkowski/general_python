@@ -63,16 +63,6 @@ class HoneycombLattice(Lattice):
 
         self._type = LatticeType.HONEYCOMB  # Lattice type
 
-        # Adjust lattice properties based on dimension
-        if dim == 1:
-            self._ly = 1
-            self._lz = 1
-        elif dim == 2:
-            self._lz = 1
-        else:
-            self._ly = ly
-            self._lz = lz
-
         # For the honeycomb lattice there are two sites per unit cell.
         self._ns        = 2 * self.Lx * self.Ly * self.Lz
 
@@ -89,31 +79,11 @@ class HoneycombLattice(Lattice):
                             [0.0, self.a, 0.0]    # B sublattice
                         ])
 
-        # Initialize the k vectors
-        self.calculate_reciprocal_vectors()
-        
-        # Compute lattice properties.
-        self.calculate_coordinates()
-        self.calculate_r_vectors()
-        self.calculate_k_vectors()
-
         self._delta_x   = np.array([0.0, self.a, 0.0])
         self._delta_y   = np.array([-np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
         self._delta_z   = np.array([ np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
-
-        if self._ns < 100:
-            self.calculate_dft_matrix()
-
-        # Calculate neighbors using internal methods.
-        self.calculate_nn()
-        self.calculate_nnn()
-        self.calculate_norm_sym()
+        self.init(**kwargs)
         
-        # Initialize the normal vectors along the bonds
-        self._n1    = self._delta_x / np.linalg.norm(self._delta_x)
-        self._n2    = self._delta_y / np.linalg.norm(self._delta_y)
-        self._n3    = self._delta_z / np.linalg.norm(self._delta_z)
-
     def __str__(self):
         return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
 

@@ -30,16 +30,7 @@ class SquareLattice(Lattice):
         '''
         Initializer of the square lattice
         '''     
-        if dim is None:
-            if lz > 1:
-                dim = 3
-            elif ly > 1:
-                dim = 2
-            else:
-                dim = 1
-
         super().__init__(dim=dim, lx=lx, ly=ly, lz=lz, bc=bc, **kwargs)
-
         self._type      = LatticeType.SQUARE                            # Lattice type
         self._vectors   = LatticeBackend.array([[SquareLattice.a, 0, 0],
                                                 [0, SquareLattice.b, 0],
@@ -50,7 +41,11 @@ class SquareLattice(Lattice):
         self._a1        = self._vectors[:, 0]
         self._a2        = self._vectors[:, 1]
         self._a3        = self._vectors[:, 2]
-
+        self._basis     = np.array([[0.0, 0.0, 0.0 ]])
+        self._delta_x   = np.array([self.a, 0.0, 0.0])
+        self._delta_y   = np.array([0.0, self.b, 0.0])
+        self._delta_z   = np.array([0.0, 0.0, self.c])
+        
                 
         match self.dim:
             case 1:
