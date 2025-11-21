@@ -412,7 +412,7 @@ def spectral_function(  greens_function     : Optional[Array]   = None,
                         mb_states           : Optional[Union[Array, int]] = None,
                         #
                         return_greens       : bool              = True
-                       ) -> Array:
+                    ) -> Array:
     r"""
     Compute spectral function.
     

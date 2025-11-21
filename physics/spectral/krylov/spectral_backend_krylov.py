@@ -64,8 +64,8 @@ def greens_function_lanczos(
     # Bi-Lanczos (Cross Correlation A != B dagger)
     if operator_b is not None:
         if hamiltonian is None or operator_a is None:
-             raise ValueError("Bi-Lanczos requires hamiltonian, operator_a, and operator_b.")
-             
+            raise ValueError("Bi-Lanczos requires hamiltonian, operator_a, and operator_b.")
+        
         return _greens_lanczos_bilanczos(
             omega       =   w,
             H           =   hamiltonian,
