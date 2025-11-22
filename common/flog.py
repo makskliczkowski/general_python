@@ -32,6 +32,7 @@ __all__         = [
 ]
 
 import os
+import re
 import sys
 import functools
 import logging
@@ -121,6 +122,16 @@ class Colors:
             int: Length of the color string.
         """
         return len(self.color)
+
+# Regex for ANSI colour codes (CSI sequences: ESC [ … m)
+_ansi_escape = re.compile(r'\x1B\[[0-9;]*[mK]')
+
+class StripAnsiFormatter(logging.Formatter):
+    def format(self, record):
+        msg         = super().format(record)    # First get the formatted message with colours possibly in `record.msg`
+        clean_msg   = _ansi_escape.sub('', msg) # Then strip ANSI codes
+        return clean_msg
+
 
 ######################################################
 #! PRINT THE OUTPUT WITH A GIVEN LEVEL
@@ -253,10 +264,10 @@ class Logger:
         
         # Write initial log file header if the log file is created
         if not self.handler_added:
-            self._f_handler         = logging.FileHandler(self.logfile, encoding='utf-8')
-            self._f_format          = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M_%S")
+            self._f_handler = logging.FileHandler(self.logfile, encoding='utf-8')
             self._f_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
-            self._f_handler.setFormatter(self._f_format)
+            self._f_handler.setFormatter(StripAnsiFormatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M-%S"))
+            self.logger.addHandler(self._f_handler)
             self.logger.addHandler(self._f_handler)
 
             # Add a stream handler for console output
