@@ -158,61 +158,82 @@ def greens_function_manybody(
     ... )
     >>> G
     """
-    be  = get_backend(backend)
-    E   = be.asarray(eigenvalues)
-
-    # prepare omega array
-    w   = be.atleast_1d(be.asarray(omega, dtype=be.complex128))
-
-    # reference states
-    if mb_states is None:
-        mb = be.asarray([0], dtype=int)
-    elif isinstance(mb_states, int):
-        mb = be.asarray([mb_states], dtype=int)
-    else:
-        mb = be.asarray(mb_states, dtype=int)
-
-    # Hermitian Conjugate
-    if operator_b is None:
-        # MUST be conjugate transpose, not just conjugate
-        operator_b = operator_a.conj().T 
-
-    A       = be.asarray(operator_a)
-    B       = be.asarray(operator_b)
-
-    # output
-    G       = be.zeros((len(mb), len(w)), dtype=be.complex128)
-    zeta    = 1.0 if statistic == "boson" else -1.0
     
-    # compute GF for each reference state
-    for i, m in enumerate(mb):
-        deltaE  = E - E[m]
-        A_mn    = A[m, :]
-        B_nm    = B[:, m]
-
-        # 1. Particle / Excitation Term (Standard S(q,w) term)
-        # Poles at w = +DeltaE
-        denom_pos   = w[None, :] - deltaE[:, None]
+    be = get_backend(backend)
+    if operator_a.ndim == 1:
+        # We assume reference is Ground State (E[0])
+        # operator_a represents vectors projected onto eigenbasis:
+        # trans_a[n] = <n | A_op^dagger | 0> 
+        # trans_b[n] = <n | B_op | 0>
         
-        if kind == "retarded":      denom_pos += 1j * eta
-        elif kind == "advanced":    denom_pos -= 1j * eta
+        trans_a     = operator_a
+        trans_b     = operator_b if operator_b is not None else trans_a
         
-        G[i, :]    += be.sum((A_mn[:, None] * B_nm[:, None]) / denom_pos, axis=0)
+        # Consistency check
+        if len(trans_a) != len(eigenvalues):
+            raise ValueError(f"Vector shape {trans_a.shape} must match eigenvalues {eigenvalues.shape}")
 
-        # 2. Hole / De-excitation Term (Required for full Susceptibility)
-        # Poles at w = -DeltaE
-        # For T=0 and w > 0, this term is negligible (non-resonant background).
-        denom_neg   = w[None, :] + deltaE[:, None]
-        if kind == "retarded":      denom_neg += 1j * eta
-        elif kind == "advanced":    denom_neg -= 1j * eta
+        # Weights W_n = <0|A|n><n|B|0>
+        # Note: <0|A|n> = (<n|A^dagger|0>)* = trans_a[n].conj()
+        numerator   = trans_a.conj() * trans_b
+        
+        # Energies relative to Ground State
+        deltaE      = eigenvalues - eigenvalues[0]
+        
+        # Vectorized Sum (Particle Term Only)
+        # S(q, w) at T=0 only has the particle excitation term.
+        denom       = (omega[:, None] - deltaE[None, :]).astype(be.complex128)
+        
+        if kind == "retarded":   denom += 1j * eta
+        elif kind == "advanced": denom -= 1j * eta
+            
+        # Sum over eigenstates (axis 1)
+        return be.sum(numerator[None, :] / denom, axis=1)
 
-        # Note the MINUS sign for Bosons (Commutator)
-        G[i, :]    -= zeta * be.sum((B_nm[:, None] * A_mn[:, None]) / denom_neg, axis=0)
+    # Matrix Input (General Case)
+    else:
+        # Reference states
+        if mb_states is None:
+            mb = be.asarray([0], dtype=int)
+        elif isinstance(mb_states, int):
+            mb = be.asarray([mb_states], dtype=int)
+        else:
+            mb = be.asarray(mb_states, dtype=int)
 
-    if len(mb) == 1 and len(w) == 1:    return G[0, 0]
-    if len(mb) == 1:                    return G[0, :]
-    if len(w) == 1:                     return G[:, 0]
-    return G
+        if operator_b is None:
+            operator_b = operator_a.conj().T 
+
+        A       = be.asarray(operator_a)
+        B       = be.asarray(operator_b)
+        G       = be.zeros((len(mb), len(omega)), dtype=be.complex128)
+        zeta    = 1.0 if statistic == "boson" else -1.0
+        
+        for i, m in enumerate(mb):
+            deltaE = eigenvalues - eigenvalues[m]
+            
+            # A_mn = <m|A|n>, B_nm = <n|B|m>
+            A_mn        = A[m, :]
+            B_nm        = B[:, m]
+
+            # Term 1: Particle (w - deltaE)
+            denom_pos   = omega[:, None] - deltaE[None, :]
+            if kind == "retarded": denom_pos += 1j * eta
+            elif kind == "advanced": denom_pos -= 1j * eta
+            
+            G[i, :] += be.sum((A_mn[None, :] * B_nm[None, :]) / denom_pos, axis=1)
+
+            # Term 2: Hole (w + deltaE) - irrelevant for T=0 structure factor usually
+            denom_neg = omega[:, None] + deltaE[None, :]
+            if kind == "retarded": denom_neg += 1j * eta
+            elif kind == "advanced": denom_neg -= 1j * eta
+
+            G[i, :] -= zeta * be.sum((B_nm[None, :] * A_mn[None, :]) / denom_neg, axis=1)
+
+        # Formatting output shape
+        if len(mb) == 1 and len(omega) == 1:    return G[0, 0]
+        if len(mb) == 1:                        return G[0, :]
+        if len(omega) == 1:                     return G[:, 0]
+        return G
 
 def greens_function_manybody_finite_T(
         omega           : Union[float, Array],

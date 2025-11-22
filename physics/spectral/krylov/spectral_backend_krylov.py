@@ -120,6 +120,92 @@ def greens_function_lanczos(
         
         return G_norm * (norm_weight**2)
 
+def greens_function_lanczos_vectors(
+        omega       : np.ndarray,
+        hamiltonian,
+        v_right     : np.ndarray,
+        v_left      : np.ndarray,
+        E0          : float,
+        eta         : float = 0.05,
+        max_krylov  : int = 200) -> np.ndarray:
+    """
+    Computes G(w) = <v_left | (w - (H-E0))^{-1} | v_right>
+    No operator matrices required.
+    """
+    w           = np.atleast_1d(np.asarray(omega, dtype=complex))
+    
+    #! Normalize Starting Vectors
+    # We are effectively computing <w0 | v0>
+    # Note: v_left input is usually (A^dag|0>). 
+    # In the math <L| ... |R>, <L| is the conjugate of v_left.
+    
+    overlap_0   = np.vdot(v_left, v_right)
+    
+    if np.abs(overlap_0) < 1e-14:
+        return np.zeros_like(w)
+
+    norm_v      = np.sqrt(np.abs(overlap_0))
+    
+    # Initialize Lanczos vectors
+    # v correspond to |ket>, w correspond to <bra| (stored as ket)
+    v           = v_right / norm_v
+    w_vec       = v_left * (overlap_0 / np.abs(overlap_0)) / norm_v
+    
+    #! Bi-Lanczos Iteration
+    alphas      = []
+    betas       = []
+    gammas      = []
+    v_prev      = np.zeros_like(v)
+    w_prev      = np.zeros_like(w_vec)
+    
+    # Define H application (handle Sparse or Dense)
+    if sp.issparse(hamiltonian):
+        apply_H     = lambda x: hamiltonian.dot(x)
+        apply_H_dag = lambda x: hamiltonian.conj().T.dot(x)
+    else:
+        apply_H     = lambda x: hamiltonian @ x
+        apply_H_dag = lambda x: hamiltonian.conj().T @ x
+
+    for j in range(max_krylov):
+        # Apply H
+        Hv          = apply_H(v)
+        Hw          = apply_H_dag(w_vec)
+        
+        alpha       = np.vdot(w_vec, Hv)
+        alphas.append(alpha)
+        
+        r           = Hv - alpha * v - (gammas[-1] * v_prev if j > 0 else 0.0)
+        l           = Hw - alpha.conj() * w_vec - (betas[-1].conj() * w_prev if j > 0 else 0.0)
+        delta       = np.vdot(l, r)
+        
+        if np.abs(delta) < 1e-14: break
+        
+        beta_next   = np.sqrt(np.abs(delta))
+        gamma_next  = delta / beta_next
+        
+        betas.append(beta_next)
+        gammas.append(gamma_next)
+        
+        v_prev      = v
+        w_prev      = w_vec
+        v           = r / beta_next
+        w_vec       = l / gamma_next.conj()
+
+    #! Continued Fraction
+    z_vals          = w + E0 + 1j * eta
+    next_term       = np.zeros_like(z_vals)
+    
+    # Backward recurrence
+    m = len(alphas)
+    for k in range(m - 2, -1, -1):
+        numer       = betas[k] * gammas[k]
+        denom       = z_vals - alphas[k+1] - next_term
+        next_term   = numer / denom
+        
+    G_final = overlap_0 / (z_vals - alphas[0] - next_term)
+    
+    return G_final
+
 # ============================================================================
 # Lanczos Helpers
 # ============================================================================
