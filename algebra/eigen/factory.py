@@ -187,7 +187,7 @@ def choose_eigensolver(
         
         if use_scipy or backend == 'scipy':
             # Map 'smallest'/'largest' to SciPy's 'SA'/'LA'
-            scipy_which = {'smallest': 'SA', 'largest': 'LA', 'both': 'BE'}.get(which, 'SA')
+            scipy_which     = {'smallest': 'SA', 'largest': 'LA', 'both': 'BE'}.get(which, 'SA')
             # Extract parameters that go to __init__ vs solve()
             init_kwargs     = {k: v for k, v in kwargs.items() if k in ['tol', 'maxiter', 'v0', 'seed']}
             solver          = LanczosEigensolverScipy(k=k, which=scipy_which, **init_kwargs)
@@ -199,7 +199,8 @@ def choose_eigensolver(
             # Native numpy implementation - exposes Krylov basis and tridiagonal matrix
             solver = LanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
-        return solver.solve(A=A, matvec=matvec, n=n, k=k)
+        return solver.solve(A=A, matvec=matvec, n=n, k=k, 
+                max_iter=kwargs.get('max_iter', None), reorthogonalize=kwargs.get('reorthogonalize', True))
     # ----------------------------------------------    
     elif method == 'arnoldi':
         # Arnoldi for general matrices
@@ -229,11 +230,7 @@ def choose_eigensolver(
             which_map   = {'smallest': 'LM', 'largest': 'LM', 'both': 'LM'}
             which_si    = which_map.get(which, 'LM')
             
-            eigenvalues, eigenvectors = scipy_eigsh(
-                                            A, k=k, sigma=sigma, which=which_si, 
-                                            tol=kwargs.get('tol', 0), 
-                                            maxiter=kwargs.get('max_iter', None)
-                                        )
+            eigenvalues, eigenvectors = scipy_eigsh(A, k=k, sigma=sigma, which=which_si, tol=kwargs.get('tol', 0), maxiter=kwargs.get('max_iter', None))
                                         
             # Sort by eigenvalue
             idx             = np.argsort(eigenvalues)
@@ -265,7 +262,7 @@ def choose_eigensolver(
         else:
             solver  = BlockLanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
             
-        return solver.solve(A=A, matvec=matvec, n=n)
+        return solver.solve(A=A, matvec=matvec, n=n, max_iter=kwargs.get('max_iter', None), k=k, X0=kwargs.get('X0', None))
     # ----------------------------------------------
     elif method == 'scipy-eigh':
         # SciPy dense Hermitian/symmetric eigenvalue solver
@@ -415,7 +412,7 @@ def choose_eigensolver(
             converged       = True,
             residual_norms  = None
         )
-    
+    # ----------------------------------------------
     elif method == 'jax-eigh':
         # JAX Hermitian eigenvalue solver (GPU-accelerated)
         if not JAX_AVAILABLE:

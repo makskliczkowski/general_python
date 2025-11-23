@@ -165,6 +165,95 @@ def schmidt_numpy( state : Array,
         vals        = (s * s).real if return_square else s.real
     return vals, vecs, rho
 
+# -----------------------------------------------------------------------------
+
+def rho_single_site(psi, site, ns):
+    """
+    Returns the 2x2 reduced density matrix for site `site` of state psi.
+    Args:
+        psi (Array):
+            The quantum state vector of the full system.
+        site (int):
+            The site index for which the reduced density matrix is computed.
+        ns (int):
+            The total number of sites (qubits) in the system.
+    Returns:
+        Array:
+            The 2x2 reduced density matrix for the specified site.
+    Example:
+        >>> psi = np.array([1, 0, 0, 0, 0, 0, 0, 1]) / np.sqrt(2)  # 3-qubit GHZ state
+        >>> site = 1
+        >>> ns = 3
+        >>> rho = rho_single_site(psi, site, ns)
+        >>> print(rho)
+        [[0.5 0. ]
+         [0.  0.5]]
+    """
+    
+    # Map a basis index k to its bit at `site`
+    extract_a = lambda k: (k >> site) & 1 # Example k=1, ns=3, site=1 -> (0b001 >> 1) & 1 = 0b000 & 1 = 0
+
+    # Map k to all the other bits except `site`
+    def extract_b(k):
+        low  = k & ((1 << site) - 1)
+        high = k >> (site + 1)
+        return (high << site) | low
+
+    psi_mat = rho_mask(
+        state      = psi,
+        extract_a  = extract_a,
+        extract_b  = extract_b,
+        size_a     = 1,
+        size       = ns,
+        tol        = 1e-12,
+    )
+
+    rho = psi_mat @ psi_mat.conj().T
+    rho = 0.5 * (rho + rho.conj().T)
+    return rho
+
+def rho_two_sites(psi, site_i, site_j, ns):
+    """
+    Returns the 4x4 reduced density matrix for sites (i,j).
+    """
+
+    # Sort so i < j
+    if site_j < site_i:
+        site_i, site_j = site_j, site_i
+
+    # Extract two bits
+    def extract_a(k):
+        b0 = (k >> site_i) & 1
+        b1 = (k >> site_j) & 1
+        return (b1 << 1) | b0 # little-endian (00,01,10,11)
+
+    # Extract remaining bits
+    def extract_b(k):
+        # remove bit j:
+        low_j  = k & ((1 << site_j) - 1)
+        high_j = k >> (site_j + 1)
+        k1     = (high_j << site_j) | low_j
+
+        # remove bit i:
+        low_i  = k1 & ((1 << site_i) - 1)
+        high_i = k1 >> (site_i + 1)
+        k2     = (high_i << site_i) | low_i
+        return k2
+
+    psi_mat = rho_mask(
+        state      = psi,
+        extract_a  = extract_a,
+        extract_b  = extract_b,
+        size_a     = 2,
+        size       = ns,
+        tol        = 1e-12,
+    )
+    rho = psi_mat @ psi_mat.conj().T
+    rho = 0.5 * (rho + rho.conj().T)
+    return rho
+
+# -----------------------------------------------------------------------------
+
 #! Numba
 if numba:
     
@@ -332,3 +421,7 @@ try:
     from ..physics import density_matrix_jax as jnp
 except ImportError:
     jnp = np
+    
+# ###############################################################################
+#! End of file
+###############################################################################

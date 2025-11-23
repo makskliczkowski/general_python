@@ -686,6 +686,40 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
     else:
         raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
 
+def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> float:
+    r"""
+    Calculate the mutual information between two single sites in a quantum state.
+    Parameters:
+        psi (Array): The quantum state vector.
+        i (int): Index of the first site.
+        j (int): Index of the second site.
+        ns (int): Number of sites in the system.
+        q (float, optional): Order parameter for Rényi and Tsallis entropies. Default is 1.0.
+        base (float, optional): Logarithm base for entropy calculations. Default is the natural logarithm (np.e).
+        typek (Entanglement, optional): Type of entanglement entropy to compute.
+        backend (str, optional): Backend to use for entropy calculations ('numpy' or 'jax'). Default is 'numpy'.
+    """
+    from .density_matrix import rho_single_site, rho_two_sites
+    
+    rho_i   = rho_single_site(psi, i, ns)
+    rho_j   = rho_single_site(psi, j, ns)
+    rho_ij  = rho_two_sites(psi, i, j, ns)
+
+    vals_i  = np.linalg.eigvalsh(rho_i)
+    vals_i  = vals_i[vals_i > 1e-14]
+    
+    vals_j  = np.linalg.eigvalsh(rho_j)
+    vals_j  = vals_j[vals_j > 1e-14]
+    
+    vals_ij = np.linalg.eigvalsh(rho_ij)
+    vals_ij = vals_ij[vals_ij > 1e-14]
+
+    Si      = entropy(vals_i, q, base, typek=typek, backend=backend, **kwargs)
+    Sj      = entropy(vals_j, q, base, typek=typek, backend=backend, **kwargs)
+    Sij     = entropy(vals_ij, q, base, typek=typek, backend=backend, **kwargs)
+    
+    return Si + Sj - Sij, (Si, Sj, Sij)
+
 ####################################
 
 class Fractal:
