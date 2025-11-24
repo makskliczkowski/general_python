@@ -318,118 +318,132 @@ class LanczosEigensolver(EigenSolver):
         """
         
         # Initialize starting vector
-        probe           = np.ones(n)
+        probe           = np.zeros(n)
+        probe[0]        = 1.0
         probe_res       = matvec(probe)
         needs_complex   = np.iscomplexobj(probe_res)
-
+        dtype           = np.complex128 if needs_complex else np.float64
+        
         # Initialize starting vector with correct dtype
         if v0 is None:
-            v0 = np.random.randn(n)
-            if needs_complex:
-                v0 = v0.astype(np.complex128) + 1j * np.random.randn(n)
-        else:
-            v0 = np.asarray(v0)
-            if v0.shape != (n,):
-                raise ValueError("v0 has incompatible shape")
-            # If operator is complex but v0 is real, promote it
-            if needs_complex and not np.iscomplexobj(v0):
-                v0 = v0.astype(np.complex128)
-
-        dtype       = np.complex128 if needs_complex else np.float64
-        v0          = v0.astype(dtype, copy=False)
-        v0         /= np.linalg.norm(v0)
+            v0  = np.random.randn(n) + (1j * np.random.randn(n) if dtype == np.complex128 else 0)
+            
+        v0              = np.asarray(v0).astype(dtype)
+        v0             /= np.linalg.norm(v0)
         
         # Storage for Krylov basis (columns are basis vectors)
-        V           = np.zeros((n, max_iter + 1), dtype=dtype)
-        V[:, 0]     = v0
+        V               = np.zeros((n, max_iter + 1), dtype=dtype)
+        V[:, 0]         = v0
         
         # Tridiagonal matrix elements
-        alpha       = np.zeros(max_iter, dtype=float)   # always real
-        beta        = np.zeros(max_iter, dtype=float)
+        alpha           = np.zeros(max_iter, dtype=float)   # always real
+        beta            = np.zeros(max_iter - 1, dtype=float)
 
         # Lanczos iteration
-        v_prev      = np.zeros(n, dtype=v0.dtype)
-        beta_prev   = 0.0
+        w               = matvec(v0) # First matvec
         
-        for j in range(max_iter):
-            # Apply matrix
-            w           = matvec(V[:, j])
+        # Initial projection alpha_0 = v0* . A . v0
+        alpha[0]        = np.real(np.vdot(v0, w))
+        w               = w - alpha[0] * v0             # Orthogonalize w against v0 to start the next step
+        m_steps         = max_iter
+        
+        for j in range(1, max_iter):
             
-            # Orthogonalize against current vector
-            alpha[j]    = np.real(np.vdot(V[:, j], w))
-            w          -= alpha[j] * V[:, j]
-            if j > 0:   w -= beta_prev * v_prev
-                
-            # Reorthogonalization (symmetric case): restrict to last two vectors to preserve 3-term recurrence
-            if reorthogonalize:
-                i0 = j - 1 if j > 0 else 0
-                for i in (i0, j):
-                    proj = np.vdot(V[:, i], w)
-                    w   -= proj * V[:, i]
+            # Compute beta_{j-1} = || w ||
+            beta_val    = np.linalg.norm(w)
             
-            # Compute beta and normalize - next basis vector
-            beta[j] = np.linalg.norm(w)
-
-            # Check for breakdown (lucky breakdown - exact invariant subspace)
-            if beta[j] < reorth_tol * 1e-2:
-                max_iter    = j + 1
-                alpha       = alpha[:max_iter]
-                beta        = beta[:max_iter]
-                V           = V[:, :max_iter]
+            # Lucky breakdown check (invariant subspace found)
+            if beta_val < 1e-12:
+                m_steps = j
                 break
+                
+            beta[j-1]   = beta_val
             
-            # Normalize new vector
-            if j < max_iter - 1:
-                V[:, j + 1] = w / beta[j]
-                v_prev      = V[:, j].copy()
-                beta_prev   = beta[j]
-        else:
-            V = V[:, :max_iter]
+            # Normalize to get next basis vector v_j
+            v_next      = w / beta_val
+            V[:, j]     = v_next
+            
+            # Apply Matrix: w = A * v_j
+            w           = matvec(v_next)
+            
+            # Standard Lanczos Orthogonalization (3-term recurrence)
+            # w = A v_j - beta_{j-1} v_{j-1}
+            w           = w - beta[j-1] * V[:, j-1]
+            
+            # Calculate alpha_j = v_j* . A . v_j
+            alpha_val   = np.real(np.vdot(v_next, w))
+            alpha[j]    = alpha_val
+            
+            # Orthogonalize w against v_j
+            # w = w - alpha_j v_j
+            w           = w - alpha_val * v_next
+            
+            # FULL REORTHOGONALIZATION
+            # We must ensure w is orthogonal to ALL previous V[:, 0...j]
+            if reorthogonalize:
+                # Gram-Schmidt against all previous vectors
+                overlaps    = V[:, :j+1].conj().T @ w           # Using Matrix-Vector mul for speed: overlaps = V[:, :j+1].H @ w
+                w           = w - V[:, :j+1] @ overlaps         # Subtract projections: w = w - V @ overlaps
 
-        # Orthonormalize basis and form Rayleigh–Ritz matrix H = V^H A V
-        V, _                = np.linalg.qr(V)
-        m                   = V.shape[1]
-        AV                  = np.empty((n, m), dtype=dtype)
-        for i in range(m):
-            AV[:, i]        = matvec(V[:, i])
+        # Truncate if we stopped early
+        alpha   = alpha[:m_steps]
+        beta    = beta[:m_steps-1]
+        V       = V[:, :m_steps]
+
+        # Solve Tridiagonal Problem
+        # ----------------------------
+        # Instead of calculating V.T @ A @ V (expensive), we use the T matrix we just built.
+        # T is symmetric tridiagonal: diag=alpha, off_diag=beta
         
-        # Construct Rayleigh–Ritz matrix
-        H                   = V.T.conj() @ AV
-        H                   = 0.5 * (H + H.T.conj())
-        evals_H, evecs_H    = np.linalg.eigh(H)
+        # scipy.linalg.eigh_tridiagonal is extremely fast O(m^2)
+        import scipy.linalg
+        evals_T, evecs_T = scipy.linalg.eigh_tridiagonal(alpha, beta)
         
-        # Select desired eigenvalues
-        indices             = LanczosEigensolver._select_eigenvalues(evals_H, k, which)
-        selected_evals      = evals_H[indices]
-        selected_evecs_H    = evecs_H[:, indices]
-        # Ritz vectors in original space
-        eigenvectors        = V @ selected_evecs_H
-        # Refine eigenvalues via Rayleigh quotients in the original space
-        selected_evals      = np.array([
-                                    np.vdot(eigenvectors[:, i], matvec(eigenvectors[:, i])).real
-                                    for i in range(eigenvectors.shape[1])
-                                ])
+        # Extract Results
+        # ------------------
+        # Select eigenvalues based on 'which'
+        if which == 'smallest':
+            indices         = np.argsort(evals_T)[:k]
+        elif which == 'largest':
+            indices         = np.argsort(evals_T)[-k:][::-1] # Reverse for largest first
+        else: # both
+            idx_s           = np.argsort(evals_T)[:k]
+            idx_l           = np.argsort(evals_T)[-k:]
+            indices         = np.unique(np.concatenate((idx_s, idx_l)))
 
-        # Compute residual norms: ||A v - \lambda v||
-        residual_norms      = np.zeros(len(selected_evals))
-        for i, (lam, vec) in enumerate(zip(selected_evals, eigenvectors.T)):
-            residual            = matvec(vec) - lam * vec
-            residual_norms[i]   = np.linalg.norm(residual)
-
-        # Check convergence
-        converged           = np.all(residual_norms < reorth_tol)
+        selected_evals      = evals_T[indices]
+        selected_evecs_T    = evecs_T[:, indices]
+        
+        # Compute Ritz vectors (lift back to full space)
+        # eigenvectors = V @ y
+        eigenvectors        = V @ selected_evecs_T
+        
+        # Convergence Check (Residual Norms)
+        # -------------------------------------
+        # Using the Lanczos relation: || A x - lambda x || = |beta_m * y_m|
+        # where y_m is the last component of the tridiagonal eigenvector.
+        # This avoids doing extra matvecs A@x for checking convergence!
+        
+        # Last component of the Ritz eigenvectors in the T-basis
+        bottom_elements     = selected_evecs_T[-1, :] 
+        
+        # Residual = |beta_{last} * bottom_element|
+        # Note: if we stopped early, use the last computed beta
+        last_beta           = beta[-1] if len(beta) > 0 else 0.0    # Handle 1-step case
+        residual_norms      = np.abs(last_beta * bottom_elements)   # Residual norms for each eigenpair
+        converged           = np.all(residual_norms < 1e-8)         # Relaxed tol for iterative
 
         return EigenResult(
             eigenvalues     = selected_evals,
             eigenvectors    = eigenvectors,
             subspacevectors = V,
-            iterations      = max_iter,
+            iterations      = m_steps,
             converged       = converged,
             residual_norms  = residual_norms,
             # Lanczos coefficients specifically
+            krylov_basis    = V,
             lanczos_alpha   = alpha,
-            lanczos_beta    = beta,
-            krylov_basis    = V
+            lanczos_beta    = beta
         )
     
     # ------------------------------------------------------------------------------------
