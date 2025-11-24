@@ -40,7 +40,6 @@ except ImportError:
 
 # Optional JAX imports
 try:
-    import jax
     import jax.numpy as jnp
     import jax.scipy.linalg as jax_scipy_linalg
     JAX_AVAILABLE           = True
@@ -165,6 +164,7 @@ def choose_eigensolver(
             # Large non-symmetric - use Arnoldi
             method = 'arnoldi'
     # ----------------------------------------------    
+    
     if method == 'exact':
         # Exact diagonalization - compute all eigenvalues
         if use_scipy or backend == 'scipy':
@@ -176,7 +176,8 @@ def choose_eigensolver(
         
         if A is None:
             raise ValueError("Exact diagonalization requires explicit matrix A")
-        return solver.solve(A)
+        return solver.solve(A=A)
+    
     # ----------------------------------------------    
     elif method == 'lanczos':
         # Lanczos for symmetric/Hermitian
@@ -199,8 +200,8 @@ def choose_eigensolver(
             # Native numpy implementation - exposes Krylov basis and tridiagonal matrix
             solver = LanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
-        return solver.solve(A=A, matvec=matvec, n=n, k=k, 
-                max_iter=kwargs.get('max_iter', None), reorthogonalize=kwargs.get('reorthogonalize', True))
+        return solver.solve(A=A, matvec=matvec, n=n, k=k, max_iter=kwargs.get('max_iter', None), reorthogonalize=kwargs.get('reorthogonalize', True))
+    
     # ----------------------------------------------    
     elif method == 'arnoldi':
         # Arnoldi for general matrices
@@ -212,13 +213,32 @@ def choose_eigensolver(
             solver = ArnoldiEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
         return solver.solve(A=A, matvec=matvec, n=n)
+    
     # ----------------------------------------------
     elif method == 'shift-invert':
+        from scipy.sparse.linalg import LinearOperator, gmres, minres
+        from scipy import sparse
+        
+        def get_spectral_shift_operator(A, sigma, n):
+            """
+            Returns a LinearOperator that approximates (A - sigma*I)^-1
+            using an iterative solver (low memory) instead of LU (high memory).
+            """
+            
+            def matvec(v):
+                # We want to solve: (A - sigma*I) x = v
+                # for Hermitian A, use minres. For non-Hermitian, use gmres.
+                # tol controls accuracy of the 'inversion'. 
+                # It doesn't need to be machine precision for early iterations.
+                x, info     = minres(A - sigma * sparse.eye(n), v, tol=1e-10)
+                if info != 0: print(f"Warning: Linear solver did not converge (info={info})")
+                return x
+            return LinearOperator((n, n), matvec=matvec, dtype=A.dtype)
+        
         # Shift-invert mode for interior eigenvalues
         if not hermitian:
             raise ValueError("Shift-invert requires hermitian=True. Use 'arnoldi' for non-symmetric matrices")
         
-        sigma = kwargs.get('sigma', 0.0)  # Shift value
         # Use scipy's eigsh with shift-invert mode
         try:
             from scipy.sparse.linalg import eigsh as scipy_eigsh
@@ -227,19 +247,21 @@ def choose_eigensolver(
                 raise ValueError("Shift-invert requires explicit matrix A")
             
             # eigsh with sigma uses shift-invert mode
-            which_map   = {'smallest': 'LM', 'largest': 'LM', 'both': 'LM'}
-            which_si    = which_map.get(which, 'LM')
-            
-            eigenvalues, eigenvectors = scipy_eigsh(A, k=k, sigma=sigma, which=which_si, tol=kwargs.get('tol', 0), maxiter=kwargs.get('max_iter', None))
+            which_map       = { 'smallest': 'LM', 'largest': 'SM', 'both': 'LM' }
+            which_si        = which_map.get(which, 'LM')                            # Use 'LM' for shift-invert
+            OP              = get_spectral_shift_operator(A, sigma, n)              # Create shift-invert operator
+            sigma           = kwargs.get('sigma', 0.0)                              # Shift value
+            evals, evecs    = scipy_eigsh(A, k=k, sigma=sigma, which=which_si, tol=kwargs.get('tol', 0), maxiter=kwargs.get('max_iter', None))
+            true_evals      = sigma + 1.0 / evals
                                         
             # Sort by eigenvalue
-            idx             = np.argsort(eigenvalues)
-            eigenvalues     = eigenvalues[idx]
-            eigenvectors    = eigenvectors[:, idx]
-            
+            idx             = np.argsort(true_evals)
+            true_evals      = true_evals[idx]
+            evecs           = evecs[:, idx]
+
             return EigenResult(
-                eigenvalues     = eigenvalues,
-                eigenvectors    = eigenvectors,
+                eigenvalues     = true_evals,
+                eigenvectors    = evecs,
                 iterations      = None,
                 converged       = True,
                 residual_norms  = None
@@ -247,6 +269,7 @@ def choose_eigensolver(
             
         except ImportError:
             raise ImportError("Shift-invert mode requires scipy.sparse.linalg.eigsh")
+        
     # ----------------------------------------------    
     elif method == 'block_lanczos':
         # Block Lanczos for multiple eigenpairs
@@ -301,6 +324,7 @@ def choose_eigensolver(
             residual_norms  =   None
         )
     # ----------------------------------------------    
+    
     elif method == 'scipy-eig':
         # SciPy dense general eigenvalue solver
         if not SCIPY_AVAILABLE:
@@ -337,6 +361,7 @@ def choose_eigensolver(
             residual_norms  = None
         )    
     # ----------------------------------------------
+    
     elif method == 'scipy-eigs':
         # SciPy sparse general eigenvalue solver (for non-Hermitian)
         if not SCIPY_AVAILABLE:
@@ -369,6 +394,7 @@ def choose_eigensolver(
             residual_norms  = None
         )
     # ----------------------------------------------    
+    
     elif method == 'lobpcg':
         # Locally Optimal Block Preconditioned Conjugate Gradient
         if not SCIPY_AVAILABLE:
@@ -378,29 +404,44 @@ def choose_eigensolver(
         if not hermitian:
             raise ValueError("lobpcg requires hermitian=True")
         
+        from scipy.sparse import sparse, issparse
+        from scipy.sparse.linalg import lobpcg
+        
         # Generate random initial vectors
-        X       = np.random.randn(n if n is not None else A.shape[0], k)
+        X           = np.random.randn(n if n is not None else A.shape[0], k)    # Initial guess
+        X, _        = np.linalg.qr(X)                                           # force orthonormality
         
         # Extract preconditioner
-        M       = kwargs.get('M', None)
+        M           = kwargs.get('M', None)
+        
+        if issparse(A) and M is None:
+            # Extract diagonal
+            diag_A      = A.diagonal()
+            # Shift to avoid zero division if necessary
+            M_diag      = 1.0 / (np.abs(diag_A) + 1.0) 
+            M           = sparse.diags([M_diag], [0])
         
         # Handle generalized eigenvalue problem
-        b_mat   = B
-        
+        b_mat       = B.toarray() if (B is not None and hasattr(B, 'toarray')) else B
+    
         # Map which to largest parameter
-        largest = (which in ['largest', 'LA', 'LM'])
+        largest     = (which in ['largest', 'LA', 'LM'])
+        tol         = kwargs.get('tol', 1e-8)
+        max_iter    = kwargs.get('max_iter', 1000)
         
         # Call scipy.sparse.linalg.lobpcg
-        eigenvalues, eigenvectors = scipy_sparse_linalg.lobpcg(
-            A, X, B=b_mat, M=M, 
-            tol=kwargs.get('tol', None),
-            maxiter=kwargs.get('max_iter', 20),
-            largest=largest
+        eigenvalues, eigenvectors   = lobpcg(
+            A, 
+            X, 
+            M       = M, 
+            tol     = tol, 
+            maxiter = max_iter, 
+            largest = largest, 
         )
         
         # Sort eigenvalues
-        idx       = np.argsort(eigenvalues)
-        if largest: idx = idx[::-1]
+        idx             = np.argsort(eigenvalues)
+        if largest:     idx = idx[::-1]
         
         eigenvalues     = eigenvalues[idx]
         eigenvectors    = eigenvectors[:, idx]
@@ -408,10 +449,11 @@ def choose_eigensolver(
         return EigenResult(
             eigenvalues     = eigenvalues,
             eigenvectors    = eigenvectors,
-            iterations      = None,
+            iterations      = max_iter,
             converged       = True,
             residual_norms  = None
         )
+        
     # ----------------------------------------------
     elif method == 'jax-eigh':
         # JAX Hermitian eigenvalue solver (GPU-accelerated)
