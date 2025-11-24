@@ -549,323 +549,201 @@ class Plotter:
     ####################### C O L O R S #######################
 
     @staticmethod
-    def add_colorbar(
-        axes,
-        fig,
-        cmap,
-        title         = '',
-        norm          = None,
-        orientation   = 'vertical',
-        position      = 'right',
-        size          = '5%',
-        pad           = 0.05,
-        shrink        = 1.0,
-        aspect        = 20,
-        anchor        = (0.0, 0.5),
-        extend        = 'neither',
-        extendfrac    = None,
-        ticks         = None,
-        **kwargs):
+    def add_colorbar(fig                : mpl.figure.Figure,
+                    pos                 : List[float],
+                    mappable            : Union[np.ndarray, list, mpl.cm.ScalarMappable],
+                    cmap                : Union[str, mpl.colors.Colormap] = 'viridis',
+                    norm                : Optional[mpl.colors.Normalize] = None,
+                    vmin                : Optional[float] = None,
+                    vmax                : Optional[float] = None,
+                    scale               : str = 'linear',
+                    orientation         : str = 'vertical',
+                    label               : str = '',
+                    label_kwargs        : dict = None,
+                    title               : str = '',
+                    title_kwargs        : dict = None,
+                    ticks               : Optional[Union[List, np.ndarray]] = None,
+                    ticklabels          : Optional[List[str]] = None,
+                    tick_location       : str = 'auto', 
+                    tick_params         : dict = None,
+                    extend              : str = 'neutral',
+                    format              : Optional[Union[str, mpl.ticker.Formatter]] = None,
+                    discrete            : Union[bool, int] = False,
+                    boundaries          : List[float] = None,
+                    invert              : bool = False,
+                    remove_pdf_lines    : bool = True,
+                    **kwargs) -> Tuple[mpl.colorbar.Colorbar, mpl.axes.Axes]:
         """
-        Add a shared colorbar to one or more axes.
-
-        Parameters:
-            axes        : single axis or list of axes to which the colorbar corresponds
-            fig         : matplotlib figure object
-            cmap        : matplotlib colormap
-            title       : title of the colorbar
-            norm        : matplotlib normalization instance
-            orientation : 'vertical' or 'horizontal'
-            position    : position of colorbar if using `make_axes_locatable` ('right', 'left', etc.)
-            size        : size of the colorbar (as a fraction or absolute)
-            pad         : spacing between the colorbar and axes
-            shrink      : shrink factor for the colorbar
-            aspect      : aspect ratio of the colorbar
-            anchor      : anchor position (if needed)
-            extend      : 'neither', 'both', 'min', 'max'
-            ticks       : optional tick locations
-            kwargs      : passed to `fig.colorbar`
-        """
-
-        if not isinstance(axes, (list, tuple, np.ndarray)):
-            axes = [axes]
-
-        sm = mpl.colormaps.ScalarMappable(norm=norm, cmap=cmap)
-        sm.set_array([])
-
-        # Combine bounding boxes of all axes
-        bbox = Bbox.union([ax.get_position(fig.transFigure) for ax in axes])
-
-        if orientation == 'vertical':
-            cax_position = [
-                bbox.x1 + pad, bbox.y0,
-                float(size) if isinstance(size, float) else 0.02,
-                bbox.height
-            ]
-        elif orientation == 'horizontal':
-            cax_position = [
-                bbox.x0, bbox.y0 - pad,
-                bbox.width,
-                float(size) if isinstance(size, float) else 0.02
-            ]
-        else:
-            raise ValueError(f"Invalid orientation: {orientation}")
-
-        # Add colorbar axis
-        cax     = fig.add_axes(cax_position)
-        cbar    = fig.colorbar(sm, cax=cax, orientation=orientation,
-                            shrink=shrink, aspect=aspect,
-                            extend=extend, extendfrac=extendfrac,
-                            ticks=ticks, **kwargs)
-
-        if title:
-            if orientation == 'vertical':
-                cbar.ax.set_title(title, pad=10)
-            else:
-                cbar.ax.set_xlabel(title, labelpad=10)
-
-        return cbar
-    
-    @staticmethod
-    def add_colorbar_to_subplot(axes, 
-                                fig, 
-                                cmap, 
-                                title           =   '', 
-                                norm            =   None, 
-                                position        =   'right', 
-                                size            =   '5%', 
-                                pad             =   0.1, 
-                                within_plot     =   False, 
-                                locator_kwargs  =   None, 
-                                xlabel          =   None,
-                                xlabelcords     =   None,
-                                xlabelpos       =   'bottom',
-                                ylabel          =   None,
-                                ylabelcords     =   None,
-                                ylabelpos       =   'left',
-                                xtickscords     =   None,
-                                xtickpos        =   None,
-                                ytickscords     =   None,
-                                ytickpos        =   None,
-                                rotation        =   None,
-                                xticks          =   None,
-                                yticks          =   None,
-                                single          =   False,
-                                *args, **kwargs):
-        '''
-        Add a colorbar within or next to a specific subplot axis (or multiple axes).
-        - axes           : axis or list of axes to add the colorbar to
-        - fig            : figure to add the colorbar to
-        - cmap           : colormap to use
-        - title          : title of the colorbar
-        - norm           : normalization of the colorbar
-        - position       : position of the colorbar ('right', 'left', 'top', 'bottom') or within the plot
-        - size           : size of the colorbar (e.g., '5%') for external positioning
-        - pad            : padding between the colorbar and the axes (for external positioning)
-        - within_plot    : if True, places the colorbar within the plot using an automatic locator
-        - locator_kwargs : dictionary of kwargs for locating the colorbar within the plot (applies if within_plot=True)
-        '''
-
-        # Create a ScalarMappable for the colorbar
-        sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-        sm.set_array([])
-
-        if not isinstance(axes, (list, np.ndarray)):        # Handle single or multiple axes input
-            axes = [axes]
-
-        locator_kwargs = locator_kwargs or {}               # Ensure locator_kwargs is always a valid dictionary
-
-        colorbars = []                                      # Add a colorbar to each subplot axis
-        if within_plot:                                     # Add colorbar as a legend-like object within the plot
-            for ax in axes:
-                # Set up a proxy patch for the colorbar
-                proxy_patch = Rectangle((0, 0), 1, 1, fc=cmap(0.5), edgecolor="none")
-                legend = Legend(ax, [proxy_patch], [''], loc='best', handler_map={proxy_patch: HandlerPatch()}, **locator_kwargs)
-                ax.add_artist(legend)
-        else:                                               # Add colorbar to the side of the plot
-            if len(axes) > 1 or not single:                # When more than one axis is present, combine them for a unified colorbar
-                                                            # Ensure `size` is numerical, converting percentage strings if necessary
-                bbox = axes[0].get_position()               # Determine the bounding box for all the axes
-                for ax in axes[1:]:
-                    other_bbox = ax.get_position()
-                    bbox = Bbox.union([bbox, other_bbox])  # Combine the bounding boxes of all axes 
-
-                # Create a new axis for the colorbar based on the combined bounding box
-                fig_width, fig_height = fig.get_size_inches()
-                
-                if isinstance(size, str) and size.endswith('%'):
-                    size = float(size.strip('%')) / 100 * fig_height
-                
-                # Determine the position and orientation of the colorbar
-                if position in ['right', 'left']:
-                    if position == 'right':
-                        cax_position = [bbox.x1 + pad / fig_width, bbox.y0, size / fig_width, bbox.height]
-                    else:  # 'left'
-                        cax_position = [bbox.x0 - size / fig_width - pad / fig_width, bbox.y0, size / fig_width, bbox.height]
-                    orientation = 'vertical'
-                elif position in ['top', 'bottom']:
-                    if position == 'top':
-                        cax_position = [bbox.x0, bbox.y1 + pad / fig_height, bbox.width, size / fig_height]
-                    else:  # 'bottom'
-                        cax_position = [bbox.x0, bbox.y0 - size / fig_height - pad / fig_height, bbox.width, size / fig_height]
-                    orientation = 'horizontal'
-                else:
-                    raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
-
-                # Add colorbar that spans across the axes
-                cax     = fig.add_axes(cax_position)
-                cbar    = fig.colorbar(sm, cax=cax, orientation=orientation, *args, **kwargs)
-                cbar.ax.set_title(title, pad=10 if position in ['top', 'bottom'] else 5)
-                colorbars.append(cbar)
-            else:                                           # When there is only one axis, add a colorbar to it
-                for ax in axes:
-                    divider = make_axes_locatable(ax)
-                    if position in ['right', 'left']:
-                        cax = divider.append_axes(position, size=size, pad=pad)
-                    elif position in ['top', 'bottom']:
-                        cax = divider.append_axes(position, size=size, pad=pad)
-                    else:
-                        raise ValueError(f"Invalid position '{position}'. Use 'right', 'left', 'top', 'bottom'.")
-
-                    # Add colorbar to the created axis
-                    cbar = fig.colorbar(sm, cax=cax, orientation='horizontal' if position in ['top', 'bottom'] else 'vertical', *args, **kwargs)
-                    cbar.ax.set_title(title, pad=10 if position in ['top', 'bottom'] else 5)
-                    colorbars.append(cbar)
-        
-        for cbar in colorbars:
-            # set the labels
-            if xlabel is not None:
-                cbar.ax.set_xlabel(xlabel)
-                # adjust tick positions
-                if xlabelpos == 'top':
-                    cbar.ax.xaxis.set_label_coords(0.5, 1.1)
-                if xlabelcords is not None and isinstance(xlabelcords, tuple):
-                    cbar.ax.xaxis.set_label_coords(xlabelcords[0], xlabelcords[1])
-                if rotation is not None:
-                    cbar.ax.xaxis.label.set_rotation(rotation)
-            if xtickpos is not None:
-                cbar.ax.xaxis.set_ticks_position(xtickpos)
-            if xtickscords is not None and isinstance(xtickscords, tuple):
-                cbar.ax.xaxis.set_ticks_position(xtickscords)
-            
-            if ylabel is not None:
-                cbar.ax.set_ylabel(ylabel)
-                if ylabelpos == 'right':
-                    cbar.ax.yaxis.set_label_coords(1.1, 0.5)
-                else:
-                    cbar.ax.yaxis.set_label_coords(-0.1, 0.5)
-                if ylabelcords is not None and isinstance(ylabelcords, tuple):
-                    cbar.ax.yaxis.set_label_coords(ylabelcords[0], ylabelcords[1])
-                if rotation is not None:
-                    cbar.ax.yaxis.label.set_rotation(rotation)
-                    
-            if ytickpos is not None:
-                cbar.ax.yaxis.set_ticks_position(ytickpos)
-            # adjust tick positions
-            if ytickscords is not None and isinstance(ytickscords, tuple):
-                cbar.ax.yaxis.set_ticks_position(ytickscords)
-            # unset ticks if specified
-            if xticks is not None and xticks == []:
-                # cbar.ax.set_xticks([])
-                cbar.ax.set_xticklabels([])
-            if yticks is not None and yticks == []:
-                # cbar.ax.set_yticks([])
-                cbar.ax.set_yticklabels([])
-        return colorbars    
-    
-    @staticmethod
-    def add_colorbar_pos(fig,
-                        cmap,
-                        mapable,
-                        pos,
-                        norm=None,
-                        vmin=None,
-                        vmax=None,
-                        orientation='vertical',
-                        xlabel='',
-                        xlabelcords=(0.5, -0.05),
-                        ylabel='',
-                        ylabelcords=(-0.05, 0.5),
-                        xticks=None,
-                        yticks=None,
-                        xtickspos=None,
-                        ytickspos=None,
-                        aspect=20,
-                        shrink=1.0) -> Tuple[mpl.colorbar.Colorbar, mpl.axes.Axes]:
-        """
-        Add a colorbar to the given figure.
+        Add a fully customizable colorbar to the figure at a specific position.
 
         Parameters
         ----------
-        fig : matplotlib.figure.Figure
-            Figure to add the colorbar to.
-        cmap : str or Colormap
-            Colormap to use.
-        mapable : array-like or ScalarMappable
-            Data or existing ScalarMappable to normalize.
+        fig : Figure
+            Parent figure.
         pos : list[float]
-            Position of the colorbar axes [left, bottom, width, height].
+            [left, bottom, width, height] in figure coordinates (0-1).
+        mappable : array-like or ScalarMappable
+            Data array or existing plot object.
+        cmap : str or Colormap
+            Colormap scheme.
         norm : Normalize, optional
-            Normalization for the colormap. If None, inferred from vmin/vmax or data.
+            Manual normalization.
         vmin, vmax : float, optional
-            Value range for normalization (used if norm is None).
-        orientation : {'vertical', 'horizontal'}, default='vertical'
-            Orientation of the colorbar.
-        xlabel, ylabel : str
-            Labels for the colorbar.
-        xlabelcords, ylabelcords : tuple
-            Label coordinates.
-        xticks, yticks : list, optional
-            Tick locations for x/y axes of the colorbar.
-        xtickspos, ytickspos : str, optional
-            Position of ticks ('top'/'bottom'/'left'/'right').
-        aspect : int, default=20
-            Aspect ratio of the colorbar.
-        shrink : float, default=1.0
-            Fraction by which to shrink the colorbar.
-        
+            Data limits.
+        scale : {'linear', 'log', 'symlog'}
+            Scale type.
+        orientation : {'vertical', 'horizontal'}
+            Orientation of the bar.
+        label : str
+            Text label along the long axis (e.g., "Intensity").
+        title : str
+            Text title at the end/top of the bar (e.g., "(a)").
+        ticks : list
+            Manual tick positions.
+        ticklabels : list
+            Manual tick strings.
+        tick_location : {'auto', 'left', 'right', 'top', 'bottom'}
+            Where to place ticks/labels.
+        discrete : bool or int
+            If True, discretizes cmap into distinct steps. If int, uses that many steps.
+        boundaries : list
+            Specific values for discrete color transitions (creates BoundaryNorm).
+        invert : bool
+            If True, flips the axis direction.
+        remove_pdf_lines : bool
+            Fixes white lines between color segments in PDF exports.
+        format : str or Formatter
+            Tick format (e.g., '%.2e').
+        **kwargs : 
+            Passed to fig.colorbar (e.g., alpha, spacing).
+
         Returns
         -------
-        cbar : Colorbar
-            The created colorbar.
-        cax : Axes
-            The colorbar axes.
-        """
+        cbar, cax
         
-        # Handle normalization
-        if isinstance(mapable, mpl.cm.ScalarMappable):
-            sm = mapable
-            if norm is None:
-                norm = sm.norm
+        Examples
+        --------
+        >>> # 1. Standard Linear Colorbar (Vertical)
+        >>> cbar, cax = Plotter.add_colorbar(fig, [0.92, 0.15, 0.02, 0.7], data_array, 
+        ...                                      label='Magnetization $M_z$')
+
+        >>> # 2. Log-Scale with Scientific Notation (Horizontal)
+        >>> # Places ticks on top, adds arrows for clipping, formats as 1e-5
+        >>> cbar, cax = Plotter.add_colorbar(fig, [0.2, 0.9, 0.6, 0.03], data_array,
+        ...                                      scale='log', orientation='horizontal',
+        ...                                      format='%.0e', extend='both', 
+        ...                                      tick_location='top', label='Conductance')
+
+        >>> # 3. Discrete Phase Diagram (Categorical)
+        >>> # Divides colormap into 3 distinct blocks with custom labels
+        >>> cbar, cax = Plotter.add_colorbar(fig, [0.85, 0.1, 0.03, 0.8], 
+        ...                                      mappable=[0, 1, 2], cmap='Set1', 
+        ...                                      discrete=3,
+        ...                                      ticklabels=['Insulator', 'Metal', 'Supercond.'])
+
+        >>> # 4. Custom Boundaries (Non-uniform steps)
+        >>> # Useful for contour plots with specific threshold levels
+        >>> cbar, cax = Plotter.add_colorbar(fig, pos, data, 
+        ...                                      boundaries=[0, 0.5, 2.0, 10.0],
+        ...                                      spacing='proportional')        
+        """
+        import matplotlib.colors as mcolors
+        import matplotlib.ticker as mticker
+        
+        # 1. Handle Normalization and Mappable
+        if isinstance(mappable, mpl.cm.ScalarMappable):
+            sm = mappable
+            if vmin is not None or vmax is not None:
+                sm.set_clim(vmin, vmax)
+            # If a mappable is passed, we might need to extract the cmap/norm for modifications
+            if norm is None: norm = sm.norm
+            if cmap == 'viridis': cmap = sm.cmap # Only override default if specific one not passed
         else:
-            if norm is None:
-                data = np.ravel(mapable)
-                norm = mpl.colors.Normalize(vmin=vmin if vmin is not None else np.nanmin(data),
-                                            vmax=vmax if vmax is not None else np.nanmax(data))
+            data    = np.asarray(mappable)
+            _vmin   = vmin if vmin is not None else np.nanmin(data)
+            _vmax   = vmax if vmax is not None else np.nanmax(data)
+
+            # Discrete Boundaries (e.g., for Phase Diagrams)
+            if boundaries is not None:
+                cmap_obj    = mpl.colormaps[cmap] if isinstance(cmap, str) else cmap
+                norm        = mcolors.BoundaryNorm(boundaries, cmap_obj.N, clip=True)
+            
+            # Standard Scales
+            elif norm is None:
+                if scale == 'log':
+                    if _vmin <= 0: _vmin = 1e-10
+                    norm = mcolors.LogNorm(vmin=_vmin, vmax=_vmax)
+                elif scale == 'symlog':
+                    norm = mcolors.SymLogNorm(linthresh=0.1, vmin=_vmin, vmax=_vmax)
+                else:
+                    norm = mcolors.Normalize(vmin=_vmin, vmax=_vmax)
+
+            # Discretize Colormap (e.g. 10 distinct colors)
+            if discrete:
+                cmap_obj    = mpl.colormaps[cmap] if isinstance(cmap, str) else cmap
+                n_bins      = discrete if isinstance(discrete, int) and discrete > 1 else 10
+                cmap        = cmap_obj.resampled(n_bins)
+
             sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
             sm.set_array([])
 
-        # Create axes
-        cax = fig.add_axes(pos)
-        cbar = fig.colorbar(sm, cax=cax, orientation=orientation, aspect=aspect)
+        # Formatting
+        if isinstance(format, str):
+            format = mticker.FormatStrFormatter(format)
 
-        # Labels
-        if xlabel:
-            cbar.ax.set_xlabel(xlabel)
-            cbar.ax.xaxis.set_label_coords(*xlabelcords)
-        if ylabel:
-            cbar.ax.set_ylabel(ylabel)
-            cbar.ax.yaxis.set_label_coords(*ylabelcords)
+        # Create Axes and Colorbar
+        # Pass boundaries to colorbar if they exist (ensures spacing is correct)
+        cax         = fig.add_axes(pos)
+        cbar_kwargs = kwargs.copy()
+        if boundaries is not None:
+            cbar_kwargs['boundaries']   = boundaries
+            cbar_kwargs['spacing']      = kwargs.get('spacing', 'proportional')
+            
+        cbar        = fig.colorbar(sm, cax=cax, orientation=orientation, extend=extend, format=format, **cbar_kwargs)
 
-        # Ticks
-        if xticks is not None:
-            cbar.ax.set_xticks(xticks)
-        if yticks is not None:
-            cbar.ax.set_yticks(yticks)
-        if xtickspos is not None:
-            cbar.ax.xaxis.set_ticks_position(xtickspos)
-        if ytickspos is not None:
-            cbar.ax.yaxis.set_ticks_position(ytickspos)
+        # Labels and Titles
+        if label:
+            l_kwargs = label_kwargs or {}
+            cbar.set_label(label, **l_kwargs)
+        
+        if title:
+            # Smart default padding for title
+            t_kwargs    = title_kwargs or {}
+            pad         = t_kwargs.pop('pad', 10)
+            if orientation == 'vertical':
+                cbar.ax.set_title(title, pad=pad, **t_kwargs)
+            else:
+                # For horizontal, title usually makes sense as a side label or top label
+                cbar.ax.text(1.05, 0.5, title, transform=cbar.ax.transAxes, va='center', ha='left', **t_kwargs)
+
+        # Tick Customization
+        if ticks is not None:
+            cbar.set_ticks(ticks)
+        if ticklabels is not None:
+            cbar.set_ticklabels(ticklabels)
+        
+        # Tick Location (Top/Bottom/Left/Right)
+        if tick_location != 'auto':
+            if orientation == 'horizontal':
+                cax.xaxis.set_ticks_position(tick_location)
+                cax.xaxis.set_label_position(tick_location)
+            else:
+                cax.yaxis.set_ticks_position(tick_location)
+                cax.yaxis.set_label_position(tick_location)
+
+        if tick_params:
+            cbar.ax.tick_params(**tick_params)
+
+        # Utilities
+        if invert:
+            cbar.ax.invert_axis()
+            
+        if scale == 'log' and ticks is None and boundaries is None:
+            cbar.ax.minorticks_on()
+
+        # PDF Export Fix (Removes white lines between colors)
+        if remove_pdf_lines:
+            cbar.solids.set_edgecolor("face")
 
         return cbar, cax
     
@@ -1040,18 +918,46 @@ class Plotter:
         condition   = True,
         zorder      = 50,
         boxaround   = True,
+        fontweight  = 'bold',
+        color       = 'black',
         **kwargs        
         ):
-        '''
+        """
         Annotate plot with the letter.
-        - ax        : axis to annotate on
-        - iter      : iteration number
-        - x         : x coordinate
-        - y         : y coordinate
-        - fontsize  : fontsize 
-        '''
+        
+        Params:
+        -----------
+        ax: 
+            axis to annotate on
+        iter: 
+            iteration number
+        x: 
+            x coordinate
+        y: 
+            y coordinate
+        fontsize: 
+            fontsize 
+        xycoords: 
+            how to interpret the coordinates (from MPL)
+        addit: 
+            additional string to add after the letter
+        condition: 
+            condition to make the annotation
+        zorder: 
+            zorder of the annotation
+        boxaround: 
+            whether to put a box around the annotation
+        kwargs: 
+            additional arguments for annotation
+            - color : color of the text
+            - weight: weight of the text
+            
+        Example:
+        --------
+        >>> Plotter.set_annotate_letter(ax, 0, x=0.1, y=0.9, fontsize=14, addit=' Test', color='red')
+        """
         Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, 
-                            fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, boxaround = boxaround, **kwargs)
+                fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, boxaround = boxaround, **kwargs)
     
     @staticmethod
     def set_arrow(  ax,
@@ -1079,17 +985,18 @@ class Plotter:
         - arrowprops:   properties of the arrow
         - startcolor:   color of the arrow at the start
         - endcolor  :   color of the arrow in the end
+        - kwargs    :   additional arguments for annotation
         '''
         ax.annotate(start_T,
-                   xy           =   xystart, 
-                   xytext       =   xystart_T, 
-                   arrowprops   =   arrowprops, 
-                   color        =   startcolor)
+                xy           =   xystart, 
+                xytext       =   xystart_T, 
+                arrowprops   =   arrowprops, 
+                color        =   startcolor)
         
         ax.annotate(end_T,
-                       xy       =   xyend, 
-                       xytext   =   xyend_T, 
-                       color    =   endcolor)
+                    xy       =   xyend, 
+                    xytext   =   xyend_T, 
+                    color    =   endcolor)
 
     ##################### F I T S #####################
     
@@ -1225,7 +1132,7 @@ class Plotter:
         ax.scatter(x, y, linewidths = linewidths,
                 s=s, c=c, marker=marker, 
                 alpha=alpha, label=label if labelcond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
-        
+    
     #################### P L O T S ####################
     
     @staticmethod
@@ -1636,7 +1543,7 @@ class Plotter:
         # check the title
         if len(title) != 0:
             ax.set_title(title)    
-            
+    
     @staticmethod 
     def set_label_cords(ax, 
                         which   : str,
@@ -1871,7 +1778,7 @@ class Plotter:
         Plotter.unset_ticks(ax, xticks = xticks, yticks = yticks, erease = erease, spines = spines)
     
     ################### F O R M A T ###################
-        
+    
     @staticmethod
     def set_formater(ax, 
                      formater = "%.1e",
@@ -2366,6 +2273,7 @@ class Plotter:
                 format      =   'pdf',
                 dpi         =   200,
                 adjust      =   True,
+                fig         =   None,
                 **kwargs):
         '''
         Save figure to a specific directory. 
@@ -2375,9 +2283,12 @@ class Plotter:
         - dpi       : dpi of the file
         - adjust    : adjust the figure
         '''
+        if fig is None:
+            fig = plt.gcf()
+            
         if adjust:
             plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
-        plt.savefig(directory + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
+        plt.savefig(directory + "/" + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
     
     ###############################
     
@@ -2447,7 +2358,7 @@ class Plotter:
 
 import numpy as np
 import json
-    
+
 class PlotterSave:
     
 #################################################
