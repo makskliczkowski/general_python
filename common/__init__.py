@@ -14,7 +14,7 @@ This module provides essential utility functions and classes for general-purpose
 
 **Data Processing:**
 - Data handling utilities for scientific computing
-- Matrix operations and data transformations
+- Matrix operations and data transformation
 - Statistical analysis tools
 
 **Binary Operations:**
@@ -43,7 +43,7 @@ from .plot import (
     markersCycle, markersList
 )
 from .datah import DataHandler, complement_indices, indices_from_mask
-from .hdf5_lib import HDF5Handler
+from .hdf5man import HDF5Manager
 # Description of the modules
 """
 Common Utilities Module

@@ -1,16 +1,49 @@
 '''
 A collection of functions to read, write, and process HDF5 files. 
 '''
-
+from __future__ import annotations
+from pathlib import Path
 import os
 import numpy as np
 import h5py
 from typing import List, Dict, Any, Optional, Union, Generator, Tuple, Callable
-from ..common.flog import Logger, get_global_logger
-from ..common.directories import Directories
 
+try:
+    from ..common.flog import Logger, get_global_logger
+    from ..common.directories import Directories
+except ImportError:
+    raise ImportError("Required modules from 'common' package are missing.")
+
+# --------------------------------
 #! Logger
 _logger = get_global_logger()
+
+
+class LazyHDF5Entry:
+    """A proxy that holds metadata but loads data only on demand."""
+    def __init__(self, filepath, params):
+        self.filepath   = filepath
+        self.filename   = Path(filepath).name
+        self.params     = params
+        self._cache     = {}
+
+    def __getitem__(self, key):
+        """Behaves like a dict, but loads from HDF5 on the fly."""
+        if key in self._cache:
+            return self._cache[key]
+        
+        data = HDF5Manager.read_hdf5(self.filepath, keys=[key], verbose=False)
+        if key in data:
+            self._cache[key] = data[key]
+            return data[key]
+        raise KeyError(f"Key '{key}' not found in {self.filename}")
+
+    def load_all(self):
+        """Force load everything if needed."""
+        self._cache = HDF5Manager.read_hdf5(self.filepath, verbose=False)
+        return self
+
+# --------------------------------
 
 #! HDF5Manager
 class HDF5Manager:
@@ -96,12 +129,16 @@ class HDF5Manager:
 
         try:
             with h5py.File(file_path, "r") as hf:
-                keys_available = HDF5Manager._get_all_dataset_paths(hf)
-                keys_to_read   = dataset_keys or keys_available
+
+                if dataset_keys:
+                    keys_to_read = dataset_keys
+                else:
+                    # Only scan tree if we want EVERYTHING
+                    keys_to_read = HDF5Manager._get_all_dataset_paths(hf)
 
                 # strict key check
                 if dataset_keys and strict_keys:
-                    missing = [k for k in dataset_keys if k not in keys_available]
+                    missing = [k for k in dataset_keys if k not in keys_to_read]
                     if missing:
                         if verbose:
                             _logger.warning(f"Skipping file {file_path}: missing keys {missing}")
@@ -111,13 +148,14 @@ class HDF5Manager:
                     _logger.info(f"Reading {len(keys_to_read)} datasets from {file_path}")
 
                 for key in keys_to_read:
-                    if key in keys_available:
+                    if key in hf:
                         data_in = HDF5Manager._read_data_key(hf, key)
                         if data_in is not None:
                             data[key] = data_in
-                    elif not strict_keys:
-                        if verbose:
-                            _logger.debug(f"Key {key} not found in {file_path}, skipping.")
+                    elif strict_keys:
+                        if verbose: 
+                            _logger.warning(f"Missing strict key: {key}")
+                        return {} # Fail fast
 
             if data:  # only attach filename if some data loaded
                 data["filename"] = file_path
