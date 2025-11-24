@@ -18,7 +18,6 @@ except ImportError:
 #! Logger
 _logger = get_global_logger()
 
-
 class LazyHDF5Entry:
     """A proxy that holds metadata but loads data only on demand."""
     def __init__(self, filepath, params):
@@ -37,6 +36,36 @@ class LazyHDF5Entry:
             self._cache[key] = data[key]
             return data[key]
         raise KeyError(f"Key '{key}' not found in {self.filename}")
+
+    def get(self, key, default=None):
+        """Get method with default value."""
+        try:
+            return self.__getitem__(key)
+        except KeyError:
+            return default
+        
+    def __contains__(self, key):
+        """Check if key exists without loading data."""
+        if key in self._cache:
+            return True
+        data = HDF5Manager.read_hdf5(self.filepath, keys=[key], verbose=False)
+        return key in data
+    
+    def __len__(self):
+        """Number of keys available (may require loading)."""
+        if self._cache:
+            return len(self._cache)
+        data = HDF5Manager.read_hdf5(self.filepath, verbose=False)
+        self._cache.update(data)
+        return len(self._cache)
+    
+    def keys(self):
+        """List of keys available (may require loading)."""
+        if self._cache:
+            return self._cache.keys()
+        data = HDF5Manager.read_hdf5(self.filepath, verbose=False)
+        self._cache.update(data)
+        return self._cache.keys()
 
     def load_all(self):
         """Force load everything if needed."""

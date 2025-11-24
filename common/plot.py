@@ -578,74 +578,102 @@ class Plotter:
 
         Parameters
         ----------
-        fig : Figure
-            Parent figure.
-        pos : list[float]
-            [left, bottom, width, height] in figure coordinates (0-1).
-        mappable : array-like or ScalarMappable
-            Data array or existing plot object.
-        cmap : str or Colormap
-            Colormap scheme.
-        norm : Normalize, optional
-            Manual normalization.
+        fig : matplotlib.figure.Figure
+            Parent figure onto which the colorbar axis is added.
+        pos : list[float] | tuple[float, float, float, float]
+            [left, bottom, width, height] in figure coordinates (0..1).
+        mappable : array-like | matplotlib.cm.ScalarMappable
+            - If array-like: a new ScalarMappable is built from `cmap`/`norm` (and `scale`, `vmin`, `vmax`).
+            - If ScalarMappable: it is used directly. `vmin`/`vmax` update its clim; `norm` is taken from it
+            when not provided. Note: in this case `discrete`/`boundaries` resampling is not applied.
+        cmap : str | Colormap, default='viridis'
+            Colormap name or object. If `mappable` is a ScalarMappable, its cmap is used unless `cmap`
+            is explicitly different from the default and a new mappable is constructed (array-like path).
+        norm : matplotlib.colors.Normalize, optional
+            Normalization to map data to 0-1. Ignored if `mappable` is ScalarMappable and `norm` is None
+            (then the mappable's norm is used).
         vmin, vmax : float, optional
-            Data limits.
-        scale : {'linear', 'log', 'symlog'}
-            Scale type.
-        orientation : {'vertical', 'horizontal'}
-            Orientation of the bar.
-        label : str
-            Text label along the long axis (e.g., "Intensity").
-        title : str
-            Text title at the end/top of the bar (e.g., "(a)").
-        ticks : list
-            Manual tick positions.
-        ticklabels : list
-            Manual tick strings.
-        tick_location : {'auto', 'left', 'right', 'top', 'bottom'}
-            Where to place ticks/labels.
-        discrete : bool or int
-            If True, discretizes cmap into distinct steps. If int, uses that many steps.
-        boundaries : list
-            Specific values for discrete color transitions (creates BoundaryNorm).
-        invert : bool
-            If True, flips the axis direction.
-        remove_pdf_lines : bool
-            Fixes white lines between color segments in PDF exports.
-        format : str or Formatter
-            Tick format (e.g., '%.2e').
-        **kwargs : 
-            Passed to fig.colorbar (e.g., alpha, spacing).
+            Data limits. When `scale='log'`, non-positive `vmin` is clamped internally.
+        scale : {'linear', 'log', 'symlog'}, default='linear'
+            Creates a suitable Normalize when `mappable` is array-like and `norm` is None.
+            - 'linear'  -> Normalize
+            - 'log'     -> LogNorm (vmin<=0 clamped to ~1e-10)
+            - 'symlog'  -> SymLogNorm with linthresh=0.1
+        orientation : {'vertical', 'horizontal'}, default='vertical'
+            Colorbar orientation.
+        label : str, default=''
+            Axis label along the long side of the colorbar.
+        label_kwargs : dict, optional
+            Passed to ColorbarBase.set_label (e.g., dict(fontsize=..., labelpad=...)).
+        title : str, default=''
+            Title text set at the end/top of the colorbar. For horizontal bars, the title is placed to the side.
+        title_kwargs : dict, optional
+            Text properties for the title (e.g., dict(fontsize=..., pad=...)).
+        ticks : list[float] | np.ndarray, optional
+            Explicit major tick locations.
+        ticklabels : list[str], optional
+            Custom labels for the ticks (same length as `ticks`).
+        tick_location : {'auto','left','right','top','bottom'}, default='auto'
+            Side on which to draw ticks/labels (respects `orientation`).
+        tick_params : dict, optional
+            Passed to cbar.ax.tick_params (e.g., dict(length=4, width=1, direction='in')).
+        extend : {'neither','both','min','max','neutral'}, default='neutral'
+            Colorbar extension behavior. Standard Matplotlib values are 'neither', 'both', 'min', 'max'.
+            'neutral' is treated as a pass-through here and may behave like 'neither' depending on Matplotlib.
+        format : str | matplotlib.ticker.Formatter, optional
+            Tick formatting. If str (e.g., '%.2e'), uses FormatStrFormatter.
+        discrete : bool | int, default=False
+            Discretize colormap when building from array-like:
+            - True  -> 10 bins
+            - int N -> N bins
+            Ignored when `mappable` is a ScalarMappable.
+        boundaries : list[float], optional
+            Discrete bin edges. Enables BoundaryNorm and passes `boundaries` to fig.colorbar
+            (default spacing='proportional', overridable via kwargs['spacing']).
+        invert : bool, default=False
+            If True, invert the colorbar axis direction.
+        remove_pdf_lines : bool, default=True
+            Set solids edgecolor to 'face' to avoid white hairlines in vector exports (PDF/SVG).
+        **kwargs :
+            Additional arguments forwarded to `fig.colorbar`, e.g.:
+            - alpha, spacing ('uniform'|'proportional'), fraction, pad, shrink, aspect, drawedges, etc.
 
         Returns
         -------
-        cbar, cax
-        
+        (cbar, cax) : tuple[matplotlib.colorbar.Colorbar, matplotlib.axes.Axes]
+            The created colorbar and its axes.
+
+        Notes
+        -----
+        - When `mappable` is a ScalarMappable, this helper does not modify its colormap discretization.
+            To use `discrete`/`boundaries`, pass raw data (array-like) instead.
+        - For 'log' scale, ensure your data are strictly positive (this function clamps vmin if needed).
+
         Examples
         --------
-        >>> # 1. Standard Linear Colorbar (Vertical)
-        >>> cbar, cax = Plotter.add_colorbar(fig, [0.92, 0.15, 0.02, 0.7], data_array, 
-        ...                                      label='Magnetization $M_z$')
+        # Vertical, linear scale from raw data
+        cbar, cax = Plotter.add_colorbar(fig, [0.92, 0.15, 0.02, 0.7], data, label='Mz')
 
-        >>> # 2. Log-Scale with Scientific Notation (Horizontal)
-        >>> # Places ticks on top, adds arrows for clipping, formats as 1e-5
-        >>> cbar, cax = Plotter.add_colorbar(fig, [0.2, 0.9, 0.6, 0.03], data_array,
-        ...                                      scale='log', orientation='horizontal',
-        ...                                      format='%.0e', extend='both', 
-        ...                                      tick_location='top', label='Conductance')
+        # Horizontal, log scale with sci formatting and extensions
+        cbar, cax = Plotter.add_colorbar(
+            fig, [0.2, 0.9, 0.6, 0.03], data,
+            scale='log', orientation='horizontal',
+            format='%.0e', extend='both',
+            tick_location='top', label='Conductance'
+        )
 
-        >>> # 3. Discrete Phase Diagram (Categorical)
-        >>> # Divides colormap into 3 distinct blocks with custom labels
-        >>> cbar, cax = Plotter.add_colorbar(fig, [0.85, 0.1, 0.03, 0.8], 
-        ...                                      mappable=[0, 1, 2], cmap='Set1', 
-        ...                                      discrete=3,
-        ...                                      ticklabels=['Insulator', 'Metal', 'Supercond.'])
+        # Discrete categorical-like bar with custom tick labels
+        cbar, cax = Plotter.add_colorbar(
+            fig, [0.85, 0.1, 0.03, 0.8], [0, 1, 2],
+            cmap='Set1', discrete=3,
+            ticklabels=['Insulator', 'Metal', 'SC']
+        )
 
-        >>> # 4. Custom Boundaries (Non-uniform steps)
-        >>> # Useful for contour plots with specific threshold levels
-        >>> cbar, cax = Plotter.add_colorbar(fig, pos, data, 
-        ...                                      boundaries=[0, 0.5, 2.0, 10.0],
-        ...                                      spacing='proportional')        
+        # Non-uniform boundaries
+        cbar, cax = Plotter.add_colorbar(
+            fig, [0.86, 0.15, 0.02, 0.7], data,
+            boundaries=[0, 0.5, 2.0, 10.0], spacing='proportional'
+        )
         """
         import matplotlib.colors as mcolors
         import matplotlib.ticker as mticker
@@ -750,7 +778,8 @@ class Plotter:
     ###########################################################
     
     @staticmethod
-    def get_colormap(values, cmap='PuBu', elsecolor='blue', get_mappable=False, **kwargs):
+    def get_colormap(values: Optional[np.ndarray] = None, vmin=None, vmax=None, *,
+            cmap='PuBu', elsecolor='blue', get_mappable=False, norm=None, scale='linear', **kwargs):
         """
         Get a colormap for the given values.
         
@@ -768,12 +797,38 @@ class Plotter:
         >>> getcolor, colors, norm = Plotter.get_colormap([1, 2, 3], cmap='viridis')
         >>> color = getcolor(2.5)
         """
-        norm        = Normalize(np.min(values), np.max(values))
-        colors      = plt.get_cmap(cmap)
-        values      = np.sort(values)
-        getcolor    = lambda x: colors((x - values[0]) / (values[-1] - values[0])) if len(values) != 1 else elsecolor
-        # get the mappable as well 
-        mappable    = plt.cm.ScalarMappable(norm=norm, cmap=colors)
+        from matplotlib.colors import Normalize, LogNorm, SymLogNorm
+        
+        # Resolve vmin/vmax
+        if values is None and (vmin is None or vmax is None):
+            raise ValueError("Either 'values' or both 'vmin' and 'vmax' must be provided.")
+        
+        if vmin is None: vmin = np.nanmin(values)
+        if vmax is None: vmax = np.nanmax(values)
+
+        # Create Norm (if not provided externally)
+        if norm is None:
+            if scale == 'log':
+                if vmin <= 0: 
+                    vmin = 1e-10 
+                norm = LogNorm(vmin=vmin, vmax=vmax)
+            elif scale == 'symlog':
+                norm = SymLogNorm(linthresh=0.1, vmin=vmin, vmax=vmax)
+            else:
+                norm = Normalize(vmin=vmin, vmax=vmax)
+        
+        colors = plt.get_cmap(cmap)
+        
+        # Create getcolor function
+        # Use norm(x) instead of manual math to respect Log vs Linear
+        if vmin == vmax:
+            getcolor = lambda x: elsecolor
+        else:
+            getcolor = lambda x: colors(norm(x))
+
+        # Create Mappable
+        mappable = plt.cm.ScalarMappable(norm=norm, cmap=colors)
+        
         if get_mappable:
             return getcolor, colors, norm, mappable
         return getcolor, colors, norm
@@ -956,7 +1011,7 @@ class Plotter:
         --------
         >>> Plotter.set_annotate_letter(ax, 0, x=0.1, y=0.9, fontsize=14, addit=' Test', color='red')
         """
-        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, 
+        Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, color = color, fontweight = fontweight,
                 fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, boxaround = boxaround, **kwargs)
     
     @staticmethod
@@ -2289,6 +2344,11 @@ class Plotter:
         if adjust:
             plt.subplots_adjust(left=0, bottom=0, right=1, top=1, wspace=0, hspace=0)
         plt.savefig(directory + "/" + filename, format = format, dpi = dpi, bbox_inches = 'tight', **kwargs)
+    
+    # alias
+    @staticmethod
+    def savefig(directory, filename, format, dpi, adjust, fig = None, **kwargs):
+        return Plotter.save_fig(directory, filename, format=format, dpi=dpi, adjust=adjust, fig=fig, **kwargs)
     
     ###############################
     

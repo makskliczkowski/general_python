@@ -26,7 +26,7 @@ try:
                                     reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
                                     build_translation_operators
                                     )
-    from ..common import hdf5_lib as HDF5Mod
+    from ..common import hdf5man as HDF5Mod
     from ..common import directories as DirectoriesMod
 except ImportError:
     raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")

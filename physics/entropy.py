@@ -11,7 +11,6 @@ It includes analytical and semi-analytical formulas for entanglement entropy, in
 
 # Adds higher directory to python modules path.
 from enum import Enum, unique
-from ..common.hdf5_lib import *
 from scipy.special import digamma, polygamma, binom, psi
 import numpy as np
 import numba
