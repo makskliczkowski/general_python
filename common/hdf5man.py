@@ -397,106 +397,134 @@ class HDF5Manager:
     # ---------------------------------
     
     @staticmethod
-    def save_data_to_file(directory             : str, 
-                        filename                : str,
-                        data_to_save            : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
-                        target_shape            : Optional[Tuple[int, ...]] = None,
-                        dataset_names_config    : Optional[Union[List[str], str]] = None,
-                        overwrite               : bool = True):
-        if not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
-        
-        # Ensure filename has .h5 extension
-        base, ext = os.path.splitext(filename)
-        if ext.lower() not in [".h5", ".hdf5"]:
-            filename = base + ".h5"
-        
-        # Determine file mode
-        path = os.path.join(directory, filename)
-        
-        if overwrite and os.path.exists(path):
-            _logger.debug(f"Overwriting existing file: {path}")
-            os.remove(path)
-        
-        mode = "w" if overwrite else "w-"
-        with h5py.File(path, mode) as hf:
-            if isinstance(data_to_save, dict):
-                for k, arr in data_to_save.items():
-                    dtype   = np.complex128 if np.iscomplexobj(arr) else np.float64
-                    arr     = np.array(arr, dtype=dtype)
-                    if target_shape:
-                        arr = arr.reshape(target_shape)
-                    hf.create_dataset(k, data=arr)
-            else:
-                if isinstance(data_to_save, np.ndarray):
-                    datasets = [data_to_save]
-                else:
-                    datasets = list(data_to_save)
-                names = HDF5Manager._generate_dataset_names(len(datasets), dataset_names_config)
-                
-                # Save each dataset
-                for n, arr in zip(names, datasets):
-                    dtype   = np.complex128 if np.iscomplexobj(arr) else np.float64
-                    arr     = np.array(arr, dtype=dtype)
-                    if target_shape:
-                        arr = arr.reshape(target_shape)
-                    hf.create_dataset(n, data=arr)
+    def _get_standard_dtype(arr: Any):
+        if np.iscomplexobj(arr): return np.complex128
+        if arr.dtype.kind in np.typecodes['AllInteger']: return np.int64
+        return np.float64
     
+    @staticmethod
+    def _create_labels_dataset(data, keys : list | dict, shape : tuple = ()) -> list:
+        if len(keys) == len(data) or shape != ():
+            return keys
+        elif len(keys) == 1:
+            return keys
+        elif len(keys) > 1:
+            return [keys[0] + "_" + str(i) for i in range(len(data))]
+        else:
+            return ['data_' + str(i) for i in range(len(data))]
 
     @staticmethod
-    def append_data_to_file(directory                       : str,
-                            filename                        : str,
-                            new_data                        : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
-                            dataset_names_config            : Optional[Union[List[str], str]] = None,
-                            overwrite_existing_datasets     : bool = True,
-                            allow_dataset_creation          : bool = True):
-        # Ensure directory exists
-        base, ext = os.path.splitext(filename)
-        
-        if ext.lower() not in [".h5", ".hdf5"]:
-            filename = base + ".h5"
-        
-        # Open file in append mode or create if it doesn't exist
-        path = os.path.join(directory, filename)
-        if not os.path.exists(path):
-            return HDF5Manager.save_data_to_file(directory, filename, new_data, dataset_names_config=dataset_names_config)
-        
-        # Append or overwrite datasets
-        with h5py.File(path, "a") as hf:
-            if isinstance(new_data, dict):
-                items = new_data.items()
-            else:
-                if isinstance(new_data, np.ndarray):
-                    datasets = [new_data]
+    def save_data_to_file(directory: str, filename: str, data: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]], shape: Tuple = (), keys: list = []):
+        '''
+        Creates and saves data to an HDF5 file. (Refactored to use robust logic).
+        - filename  : name of the file to be saved
+        - data      : data to be saved (can be a list of data or a dictionary)
+        - shape     : shape of which the data shall be (if not the same as the data)
+        - keys      : keys/labels for the datasets (if data is a list/array)
+        '''
+        if not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+            
+        # Ensure filename has .h5 extension
+        filename = filename if (filename.endswith(".h5") or filename.endswith(".hdf5")) else filename + ".h5"
+        path     = os.path.join(directory, filename)
+
+        # Use 'w' mode (overwrite/truncate is implied by the original function's behavior)
+        # The original function did not check for existence, so 'w' is the correct mode.
+        # If the original function relied on explicit os.remove, this is simplified here.
+        try:
+            with h5py.File(path, 'w') as hf:
+                if isinstance(data, dict):
+                    # Process Dictionary Input
+                    for key, arr in data.items():
+                        dtype   = HDF5Manager._get_standard_dtype(arr)
+                        arr     = np.array(arr, dtype=dtype)
+                        if shape:
+                            arr = arr.reshape(shape)
+                        hf.create_dataset(key, data=arr)
                 else:
-                    datasets = list(new_data)
-                names = HDF5Manager._generate_dataset_names(len(datasets), dataset_names_config)
-                items = zip(names, datasets)
-                
-            # Process each dataset
-            for k, arr in items:
-                arr = np.array(arr)
-                if k in hf:
-                    if overwrite_existing_datasets:
-                        del hf[k]
-                        hf.create_dataset(
-                            k,
-                            data=arr,
-                            maxshape=(None,) + arr.shape[1:]
-                            if arr.ndim > 0
-                            else (None,),
-                        )
+                    # Process List/Array Input
+                    datasets = [data] if isinstance(data, np.ndarray) else list(data)
+                    
+                    # Determine labels: Use keys if provided, otherwise rely on the external
+                    if keys and len(keys) == len(datasets):
+                        labels = keys
                     else:
-                        hf[k].resize(hf[k].shape[0] + arr.shape[0], axis=0)
-                        hf[k][-arr.shape[0] :] = arr
-                elif allow_dataset_creation:
-                    hf.create_dataset(
-                        k,
-                        data=arr,
-                        maxshape=(None,) + arr.shape[1:]
-                        if arr.ndim > 0
-                        else (None,),
-                    )
+                        labels = HDF5Manager._create_labels_dataset(data, keys, shape) 
+
+                    # Save each dataset
+                    for lbl, arr in zip(labels, datasets):
+                        dtype = HDF5Manager._get_standard_dtype(arr)
+                        arr   = np.array(arr, dtype=dtype)
+                        if shape:
+                            arr = arr.reshape(shape)
+                        hf.create_dataset(lbl, data=arr)
+        except Exception as e:
+            _logger.error(f"Error saving HDF5 file {path}: {e}")
+            raise
+    
+    @staticmethod
+    def append_data_to_file(directory: str, filename: str, new_data: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]], 
+                    keys: list = [], override: bool = True):
+        """
+        Append new data to an existing HDF5 file. (Refactored to use robust logic).
+        - directory: Directory where the file is located.
+        - filename: Name of the HDF5 file.
+        - new_data: Data to be appended (can be a list of data or a dictionary).
+        - keys: Keys for the new data.
+        - override: If True, overwrite datasets instead of appending (original function's 'override').
+        """
+        
+        # Ensure filename has .h5 extension
+        filename    = filename if (filename.endswith(".h5") or filename.endswith(".hdf5")) else filename + ".h5"
+        path        = os.path.join(directory, filename)
+
+        # Check existence and fallback to save_hdf5 (matching original logic)
+        if not os.path.exists(path):
+            return HDF5Manager.save_data_to_file(directory, filename, new_data, shape=(), keys=keys)
+                
+        # Append or overwrite datasets
+        try:
+            with h5py.File(path, 'a') as hf:
+                
+                # Determine labels/items for iteration
+                if isinstance(new_data, dict):
+                    items = new_data.items()
+                else:
+                    datasets = [new_data] if isinstance(new_data, np.ndarray) else list(new_data)
+                    
+                    # Determine labels
+                    if keys and len(keys) == len(datasets):
+                        labels = keys
+                    else:
+                        # NOTE: This call relies on an external definition.
+                        labels = HDF5Manager._create_labels_dataset(new_data, keys) 
+                        
+                    items = zip(labels, datasets)
+
+                # Process each dataset
+                for k, arr in items:
+                    arr = np.array(arr)
+                    
+                    if k in hf:
+                        if override:
+                            del hf[k]
+                            hf.create_dataset(k, data=arr)
+                        else:
+                            if arr.ndim == 0:
+                                raise ValueError(f"Cannot append scalar data to existing dataset '{k}'. Use override=True.")
+
+                            hf[k].resize(hf[k].shape[0] + arr.shape[0], axis=0)
+                            hf[k][-arr.shape[0]:] = arr
+                    else:
+                        # Create new dataset
+                        # Use maxshape=(None,) for append compatibility in future calls
+                        maxshape_val = (None,) + arr.shape[1:] if arr.ndim > 0 else (None,)
+                        hf.create_dataset(k, data=arr, maxshape=maxshape_val)
+                        
+        except Exception as e:
+            _logger.error(f"Error appending HDF5 file {path}: {e}")
+            raise
 
     save_hdf5   = save_data_to_file 
     append_hdf5 = append_data_to_file
