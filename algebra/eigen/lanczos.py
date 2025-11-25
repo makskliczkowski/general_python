@@ -216,7 +216,8 @@ class LanczosEigensolver(EigenSolver):
                 raise ValueError(f"A must be square, got shape {A.shape}")
             
             n       = A.shape[0]
-            _matvec = lambda x: A @ x
+            def _matvec(x: NDArray) -> NDArray:
+                return A @ x
             
             # Check symmetry
             if not EigenSolver._is_hermitian(A):
@@ -308,11 +309,11 @@ class LanczosEigensolver(EigenSolver):
             matvec: 
                 Matrix-vector product function
             n: 
-                Dimension of the problem
+                Dimension of the problem - required - original matrix size
             v0: 
                 Initial vector
             max_iter: 
-                Maximum number of Lanczos iterations
+                Maximum number of Lanczos iterations - required - maximum number of Lanczos iterations
         Returns:
             EigenResult with eigenvalues, eigenvectors, and convergence info
         """

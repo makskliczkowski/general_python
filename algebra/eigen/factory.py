@@ -163,6 +163,22 @@ def choose_eigensolver(
         else:
             # Large non-symmetric - use Arnoldi
             method = 'arnoldi'
+            
+    # ----------------------------------------------
+    #! handle matrix-vector product or explicit matrix A
+    # ----------------------------------------------
+    
+    if A is None and matvec is None:
+        raise ValueError("Must provide either matrix A or matvec function")
+    
+    if A is None and n is None:
+        raise ValueError("Must provide dimension n when using matvec without A")
+    
+    if A is not None and matvec is None:
+        # Define matvec from A
+        def matvec(x: NDArray) -> NDArray:
+            return A @ x
+            
     # ----------------------------------------------    
     
     if method == 'exact':
@@ -287,6 +303,7 @@ def choose_eigensolver(
             
         return solver.solve(A=A, matvec=matvec, n=n, max_iter=kwargs.get('max_iter', None), k=k, X0=kwargs.get('X0', None))
     # ----------------------------------------------
+    
     elif method == 'scipy-eigh':
         # SciPy dense Hermitian/symmetric eigenvalue solver
         if not SCIPY_AVAILABLE:
