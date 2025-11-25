@@ -566,7 +566,7 @@ class Plotter:
                     ticklabels          : Optional[List[str]] = None,
                     tick_location       : str = 'auto', 
                     tick_params         : dict = None,
-                    extend              : str = 'neutral',
+                    extend              : str = None,
                     format              : Optional[Union[str, mpl.ticker.Formatter]] = None,
                     discrete            : Union[bool, int] = False,
                     boundaries          : List[float] = None,
