@@ -95,7 +95,7 @@ def get_lanczos_parameters(hilbert_dim              : int,
                            ns                       : int,
                            requested_k              : Optional[int] = None,
                            requested_max_iter       : Optional[int] = None,
-                           convergence_factor       : float = 3.0,
+                           convergence_factor       : float = 2.5,
                            logger                   : Optional['Logger'] = None
                            ) -> Dict[str, int]:
     """
@@ -319,6 +319,7 @@ class LanczosEigensolver(EigenSolver):
             which               : Literal['smallest', 'largest', 'both']    = None,
             max_iter            : Optional[int]                             = None,
             reorthogonalize     : bool                                      = True,
+            dtype               : Optional[np.dtype]                        = None,
             reorth_tol          : float                                     = 1e-12) -> EigenResult:
         """
         Solve for eigenvalues and eigenvectors.
@@ -351,6 +352,11 @@ class LanczosEigensolver(EigenSolver):
                 - subspacevectors: Krylov basis vectors used in computation
         """
         
+        if v0 is not None:
+            v0 = np.asarray(v0)
+            if dtype is not None:
+                v0 = v0.astype(dtype)
+        
         # Determine dimension and matvec function
         if A is not None:
             if A.ndim != 2 or A.shape[0] != A.shape[1]:
@@ -371,6 +377,8 @@ class LanczosEigensolver(EigenSolver):
             
         else:
             raise ValueError("Either A or matvec must be provided")
+        
+        # ------------------------
         
         # Determine max iterations
         # Default: Use min(n, max(50, 3*k)) for better convergence
@@ -773,6 +781,7 @@ class LanczosEigensolverScipy(EigenSolver):
                 tol     : float = 0.0,
                 maxiter : Optional[int] = None,
                 v0      : Optional[NDArray] = None,
+                dtype   : Optional[np.dtype]= None,
                 seed    : Optional[int]     = None):
         """
         Initialize SciPy Lanczos eigensolver.
@@ -817,7 +826,9 @@ class LanczosEigensolverScipy(EigenSolver):
             tol       : float               = 0.0,
             maxiter   : Optional[int]       = None,
             v0        : Optional[NDArray]   = None,
-            seed      : Optional[int]       = None
+            seed      : Optional[int]       = None,
+            dtype     : Optional[np.dtype]  = None,
+            **kwargs
             ) -> EigenResult:
         """
         Solve for eigenvalues using SciPy's eigsh.
@@ -843,31 +854,43 @@ class LanczosEigensolverScipy(EigenSolver):
         """
         from scipy.sparse.linalg import LinearOperator
         
-        # Determine dimension
+        # Determine Dimension and Dtype
         if A is None and matvec is not None:
             if n is None:
                 raise ValueError("n must be provided when using matvec")
-            dim = n
+            dim         = n
+            op_dtype    = dtype if dtype is not None else np.complex128        
         elif A is not None:
-            dim = A.shape[0] if hasattr(A, 'shape') else n
+            dim         = A.shape[0] if hasattr(A, 'shape') else n
+            op_dtype    = A.dtype if hasattr(A, 'dtype')    else (dtype or np.complex128)
         else:
             raise ValueError("Either A or matvec must be provided")
         
-        # Create initial vector with reproducible random seed
-        use_seed = seed if seed is not None else self.seed
-        use_v0   = v0 if v0 is not None else self.v0
+        # Setup Random Seed
+        use_seed        = seed if seed is not None else self.seed
+        rng             = np.random.RandomState(use_seed) if use_seed is not None else np.random
+
+        # Initialize v0 (Must match Operator Dtype!)
+        use_v0          = v0 if v0 is not None else self.v0
         
-        if use_v0 is None and use_seed is not None:
-            rng     = np.random.RandomState(use_seed)
-            use_v0  = rng.randn(dim)
+        if use_v0 is None:
+            # Generate random vector
+            if np.issubdtype(op_dtype, np.complexfloating):
+                use_v0  = (rng.randn(dim) + 1j * rng.randn(dim)).astype(op_dtype)
+            else:
+                use_v0  = rng.randn(dim).astype(op_dtype)
             use_v0 /= np.linalg.norm(use_v0)
+        else:
+            # Ensure provided v0 matches dtype
+            use_v0 = np.asarray(use_v0, dtype=op_dtype)
         
-        # Create LinearOperator if matvec provided
+        # Create LinearOperator
         if A is None and matvec is not None:
-            A = LinearOperator((dim, dim), matvec=matvec)
+            A = LinearOperator((dim, dim), matvec=matvec, dtype=op_dtype)
         
         # Call SciPy eigsh
         try:
+            # CRITICAL FIX: Pass **kwargs to allow 'ncv' (Lanczos basis size) control
             eigenvalues, eigenvectors = eigsh(
                 A,
                 k                   = self.k if k is None else k,
@@ -875,14 +898,17 @@ class LanczosEigensolverScipy(EigenSolver):
                 tol                 = self.tol if tol == 0.0 else tol,
                 maxiter             = self.maxiter if maxiter is None else maxiter,
                 v0                  = use_v0,
-                return_eigenvectors = True
+                return_eigenvectors = True,
+                sigma               = kwargs.get('sigma', None),
+                ncv                 = kwargs.get('ncv', None),
+                mode                = kwargs.get('mode', 'normal')
             )
             
             converged   = True
-            iterations  = None  # SciPy doesn't return iteration count directly
+            iterations  = None 
 
         except Exception as e:
-            # Handle convergence failure
+             # ArpackNoConvergence is common, handled here
             raise RuntimeError(f"SciPy eigsh failed: {e}")
         
         return EigenResult(
@@ -891,12 +917,10 @@ class LanczosEigensolverScipy(EigenSolver):
             iterations      =   iterations,
             converged       =   converged,
             residual_norms  =   None,
-            # SciPy eigsh does not expose Krylov basis or tridiagonal matrix
             lanczos_alpha   =   None,
             lanczos_beta    =   None,
             krylov_basis    =   None
         )
-        
 # ------------------------------------------------------------------------------------------------
 #! EOF
 # ------------------------------------------------------------------------------------------------
