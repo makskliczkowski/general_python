@@ -68,13 +68,13 @@ def check_memory_for_operation(required_gb: float, operation_name: str, safety_f
         logger.info(f"Memory check passed for {operation_name}: {required_gb:.2f} GB / {available:.2f} GB available", lvl=2)
     return True
 
-def log_memory_status(context: str = "", logger: Optional["Logger"] = None) -> None:
+def log_memory_status(context: str = "", logger: Optional["Logger"] = None, lvl: int = 0) -> None:
     """Log current memory usage."""
     if PSUTIL_AVAILABLE:
         used        = get_used_memory_gb()
         available   = get_available_memory_gb()
         if logger is not None:
-            logger.info(f"Memory [{context}]: Used={used:.2f}GB, Available={available:.2f}GB", lvl=2, color='yellow')
+            logger.info(f"Memory [{context}]: Used={used:.2f}GB, Available={available:.2f}GB", lvl=lvl, color='yellow')
 
 # --------------------------------------------------------------------------------
 #! End of File

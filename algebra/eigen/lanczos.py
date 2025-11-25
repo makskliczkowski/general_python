@@ -870,18 +870,43 @@ class LanczosEigensolverScipy(EigenSolver):
         use_seed        = seed if seed is not None else self.seed
         rng             = np.random.RandomState(use_seed) if use_seed is not None else np.random
 
-        # Initialize v0 (Must match Operator Dtype!)
-        use_v0          = v0 if v0 is not None else self.v0
+        # Resolve Parameters
+        k               = self.k if k is None else k
+        which           = self.which if which is None else which
+        maxiter         = self.maxiter if maxiter is None else maxiter
+        tol             = self.tol if tol == 0.0 else tol
         
+        # Extract special args
+        sigma           = kwargs.get('sigma', None)
+        ncv             = kwargs.get('ncv', None)
+
+        # NCV Logic
+        if ncv is None:
+            # Standard rule: 2*k + 1 is efficient.
+            # 20 is a safe minimum floor for convergence stability.
+            desired_ncv = max(2 * k + 1, 20)
+            ncv         = min(dim, desired_ncv)
+            
+            # ARPACK Constraint: ncv must be > k
+            if ncv <= k:
+                ncv = min(dim, k + 1)
+                if ncv <= k:
+                    raise ValueError(f"k={k} is too large for dim={dim}. ARPACK requires k < ncv <= n.")
+        
+        # Shift-Invert Validation
+        if sigma is not None and A is None:
+            if 'OPinv' not in kwargs:
+                raise ValueError("Matrix-Free Shift-Invert mode ('sigma') requires 'OPinv' argument. SciPy cannot invert your function automatically.")
+
+        # Initialize v0
+        use_v0 = v0 if v0 is not None else self.v0
         if use_v0 is None:
-            # Generate random vector
             if np.issubdtype(op_dtype, np.complexfloating):
-                use_v0  = (rng.randn(dim) + 1j * rng.randn(dim)).astype(op_dtype)
+                use_v0 = (rng.randn(dim) + 1j * rng.randn(dim)).astype(op_dtype)
             else:
-                use_v0  = rng.randn(dim).astype(op_dtype)
+                use_v0 = rng.randn(dim).astype(op_dtype)
             use_v0 /= np.linalg.norm(use_v0)
         else:
-            # Ensure provided v0 matches dtype
             use_v0 = np.asarray(use_v0, dtype=op_dtype)
         
         # Create LinearOperator
@@ -890,30 +915,39 @@ class LanczosEigensolverScipy(EigenSolver):
         
         # Call SciPy eigsh
         try:
-            # CRITICAL FIX: Pass **kwargs to allow 'ncv' (Lanczos basis size) control
+            # Remove arguments we handled explicitly to avoid collisions
+            # But KEEP everything else (like OPinv, mode, etc.)
+            call_kwargs = kwargs.copy()
+            call_kwargs.pop('sigma', None)
+            call_kwargs.pop('ncv', None)
+            call_kwargs.pop('max_iter', None)
+            call_kwargs.pop('v0', None) 
+            call_kwargs.pop('tol', None)
+            call_kwargs.pop('which', None)
+            call_kwargs.pop('k', None)
+            call_kwargs.pop('return_eigenvectors', None)
+            call_kwargs.pop('maxiter', None)
+            
             eigenvalues, eigenvectors = eigsh(
                 A,
-                k                   = self.k if k is None else k,
-                which               = self.which if which is None else which,
-                tol                 = self.tol if tol == 0.0 else tol,
-                maxiter             = self.maxiter if maxiter is None else maxiter,
+                k                   = k,
+                which               = which,
+                tol                 = tol,
+                maxiter             = maxiter,
                 v0                  = use_v0,
                 return_eigenvectors = True,
-                sigma               = kwargs.get('sigma', None),
-                ncv                 = kwargs.get('ncv', None),
-                mode                = kwargs.get('mode', 'normal')
+                sigma               = sigma,
+                ncv                 = ncv,
+                **call_kwargs       # <--- Pass remaining args (Critical for Shift-Invert)
             )
             
             converged           = True
             iterations          = None 
-
-            # sort the eigenvalues and eigenvectors according to eigenvalues
             order               = np.argsort(eigenvalues)        
             eigenvalues         = eigenvalues[order]
             eigenvectors        = eigenvectors[:, order]
 
         except Exception as e:
-            # ArpackNoConvergence is common, handled here
             raise RuntimeError(f"SciPy eigsh failed: {e}")
         
         return EigenResult(
@@ -926,6 +960,7 @@ class LanczosEigensolverScipy(EigenSolver):
             lanczos_beta    =   None,
             krylov_basis    =   None
         )
+
 # ------------------------------------------------------------------------------------------------
 #! EOF
 # ------------------------------------------------------------------------------------------------

@@ -388,7 +388,7 @@ def flip_array_np(n         : Array,
         return flip_array_np_spin(n, k)
     return flip_array_np_nspin(n, k, spin_value)
 
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_array_np_multi(n           : Array,
                         ks          : Array,
                         spin        : bool  = BACKEND_DEF_SPIN,
@@ -407,14 +407,14 @@ def flip_array_np_multi(n           : Array,
         return flip_array_np_spin_multi(n, ks)
     return flip_array_np_nspin_multi(n, ks, spin_value)
 
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_int(n : int, k : int):
     '''
     Flip a single bit in an integer.
     '''
     return n - lookup_binary_power[k] if check_int(n, k) else n + lookup_binary_power[k]
 
-@numba.njit
+@numba.njit(inline = 'always')
 def flip_int_multi(n: int, ks: Array):
     """
     Flip multiple bits in an integer representation.
