@@ -212,7 +212,8 @@ def choose_eigensolver(
             init_kwargs     = {k: v for k, v in kwargs.items() if k in ['tol', 'maxiter', 'v0', 'seed']}
             solver          = LanczosEigensolverScipy(k=k, which=scipy_which, dtype=dtype, **init_kwargs)
             solve_kwargs    = {k: v for k, v in kwargs.items() if k not in ['tol', 'maxiter', 'v0', 'seed']}
-            return solver.solve(A=A, matvec=matvec, n=n, k=k, dtype=dtype, **solve_kwargs)
+            result          = solver.solve(A=A, matvec=matvec, n=n, k=k, dtype=dtype, **solve_kwargs)
+            return result
         elif backend == 'jax':
             solver = LanczosEigensolver(k=k, which=which, backend='jax', **kwargs)
         else:

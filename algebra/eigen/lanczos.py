@@ -904,11 +904,16 @@ class LanczosEigensolverScipy(EigenSolver):
                 mode                = kwargs.get('mode', 'normal')
             )
             
-            converged   = True
-            iterations  = None 
+            converged           = True
+            iterations          = None 
+
+            # sort the eigenvalues and eigenvectors according to eigenvalues
+            order               = np.argsort(eigenvalues)        
+            eigenvalues         = eigenvalues[order]
+            eigenvectors        = eigenvectors[:, order]
 
         except Exception as e:
-             # ArpackNoConvergence is common, handled here
+            # ArpackNoConvergence is common, handled here
             raise RuntimeError(f"SciPy eigsh failed: {e}")
         
         return EigenResult(
