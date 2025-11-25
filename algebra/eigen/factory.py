@@ -17,7 +17,9 @@ Date        : 2025-10-26
 
 import numpy as np
 from numpy.typing import NDArray
-from typing import Optional, Callable, Literal, Union, Any
+from typing import Optional, Callable, Literal, Union, Any, Dict
+
+# ----------------------------------------------------------------------------------------
 
 try:
     from .result            import EigenResult, EigenSolver
@@ -569,6 +571,34 @@ def decide_method(n         : int,
     else:
         # Moderate case - standard iterative
         return 'lanczos' if hermitian else 'arnoldi'
+
+# ----------------------------------------------------------------------------------------
+#! MEMORY UTILITY FUNCTIONS
+# ----------------------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------------------
+#! Memory Utilities
+# ----------------------------------------------------------------------------------------
+
+def estimate_hilbert_memory_gb(hilbert_dim: int, dtype=np.complex128) -> Dict[str, float]:
+    """
+    Estimate memory requirements for various operations.
+    
+    Returns dict with memory estimates in GB for:
+    - single_vector: one state vector
+    - hamiltonian_dense: full dense Hamiltonian matrix
+    - hamiltonian_sparse: estimated sparse Hamiltonian (assuming ~ns*nh non-zeros)
+    - eigenvectors_k: k eigenvector storage
+    """
+    bytes_per_element   = np.dtype(dtype).itemsize
+    single_vec_bytes    = hilbert_dim * bytes_per_element
+    dense_ham_bytes     = hilbert_dim * hilbert_dim * bytes_per_element
+    
+    return {
+        'single_vector'         : single_vec_bytes  / (1024**3),
+        'hamiltonian_dense'     : dense_ham_bytes   / (1024**3),
+        'per_lanczos_vector'    : single_vec_bytes  / (1024**3),
+    }
 
 # ----------------------------------------------------------------------------------------
 #! End of File

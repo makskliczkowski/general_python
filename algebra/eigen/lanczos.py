@@ -39,7 +39,7 @@ Email       : maxgrom97@gmail.com
 Date        : 2025-10-20
 """
 
-from typing import Optional, Callable, Tuple, Literal
+from typing import Optional, Callable, Tuple, Literal, TYPE_CHECKING, Dict, Union
 from numpy.typing import NDArray
 import numpy as np
 
@@ -49,6 +49,10 @@ import numpy as np
 
 try:
     from ..utils import JAX_AVAILABLE, jax, jnp, jcfg
+    
+    if TYPE_CHECKING:
+        from ...common.flog import Logger
+    
     # If utils didn't load JAX (because PREFER_JAX was False), try direct import
     if not JAX_AVAILABLE:
         try:
@@ -82,6 +86,143 @@ try:
     from .result import EigenResult, EigenSolver
 except ImportError:
     raise ImportError("EigenResult class not found. Ensure 'result.py' is available.")
+
+# ----------------------------------------------------------------------------------------
+#! Scalable Lanczos Parameters
+# ----------------------------------------------------------------------------------------
+
+def get_lanczos_parameters(hilbert_dim              : int, 
+                           ns                       : int,
+                           requested_k              : Optional[int] = None,
+                           requested_max_iter       : Optional[int] = None,
+                           convergence_factor       : float = 3.0,
+                           logger                   : Optional['Logger'] = None
+                           ) -> Dict[str, int]:
+    """
+    Compute optimal Lanczos parameters that scale with system size.
+    
+    The key insight is that for convergence:
+    - k (number of eigenvalues) should be enough to capture the pbhysics. We don't need much more than the low-energy spectrum.
+        - usually k ~ 10-200 for typical systems.
+    - max_iter should be >> k for good convergence (typically 2-5x k)
+    - Reorthogonalization is ESSENTIAL for numerical stability. Always enable it.
+    
+    For state-of-the-art sizes (N_s ~ 32-48 spins, dim ~ 10^9 - 10^14):
+    - We want k ~ 20-100    low-energy states
+    - max_iter  ~ 200-500   depending on gap structure and the degeneracy
+    
+    Rules of thumb:
+    - min(k)    = 10 (to capture ground state + some excitations reliably)
+    - max(k)    = min(5000, dim/10) (don't exceed 10% of Hilbert space)
+    - max_iter >= convergence_factor * k (typically 2-5x, higher for gapless systems)
+    
+    Args:
+        hilbert_dim:
+            Dimension of Hilbert space
+        ns: 
+            Number of sites
+        requested_k: 
+            User-requested number of eigenvalues (None for auto)
+        requested_max_iter: 
+            User-requested max iterations (None for auto)
+        target_gap_resolution: 
+            Target relative resolution for energy gaps
+        convergence_factor: 
+            max_iter / k ratio (higher for harder problems)
+    
+    Returns:
+        Dict with 'k', 'max_iter', 'tol', 'reorthogonalize' parameters
+    """
+    
+    # Base k scaling: starts at ~20 for small systems, grows logarithmically
+    # For physics: want enough states to see the spectrum structure
+    base_k          = max(20, int(10 * np.log2(max(ns, 4))))  # ~20 for 4 sites, ~60 for 32 sites
+    max_k_fraction  = 0.1  # Never compute more than 10% of states
+    max_k_absolute  = 2000  # Hard cap for memory
+    max_k           = min(max_k_absolute, int(hilbert_dim * max_k_fraction))
+    
+    # Determine actual k
+    if requested_k is not None:
+        k = min(requested_k, max_k, hilbert_dim - 1)
+    else:
+        k = min(base_k, max_k, hilbert_dim - 1)
+    
+    # Ensure minimum k for reliable ground state
+    k               = max(k, min(10, hilbert_dim - 1))
+    
+    # max_iter scaling: needs to be larger than k for convergence
+    # For gapped systems: 2-3x k is often enough
+    # For gapless/critical: may need 5-10x k
+    # Scale with system size as larger systems tend to have denser spectra
+    
+    size_factor     = 1.0 + 0.5 * np.log2(max(ns / 8, 1))           # Increases with system size
+    base_max_iter   = int(k * convergence_factor * size_factor)     # Base scaling
+    
+    # Additional buffer for large systems
+    if hilbert_dim > 1e6:
+        base_max_iter = int(base_max_iter * 1.5)
+    if hilbert_dim > 1e9:
+        base_max_iter = int(base_max_iter * 2.0)
+    
+    # Cap max_iter at Hilbert dimension and reasonable compute time
+    max_iter_cap = min(hilbert_dim, 10000)                          # 10000 iterations is usually overkill
+    
+    if requested_max_iter is not None:
+        max_iter = min(requested_max_iter, max_iter_cap)
+    else:
+        max_iter = min(base_max_iter, max_iter_cap)
+    
+    # Ensure max_iter > k
+    max_iter = max(max_iter, k + 50)
+    
+    # Tolerance: tighter for smaller systems, relaxed for huge systems
+    if hilbert_dim < 1e4:
+        tol = 1e-12
+    elif hilbert_dim < 1e6:
+        tol = 1e-10
+    elif hilbert_dim < 1e9:
+        tol = 1e-8
+    else:
+        tol = 1e-6  # For truly massive systems, accept slightly lower precision
+    
+    params = {
+        'k'                 : k,
+        'max_iter'          : max_iter,
+        'tol'               : tol,
+        'reorthogonalize'   : True, # ALWAYS reorthogonalize for numerical stability
+    }
+    if logger:
+        logger.info(f"Lanczos parameters for dim={hilbert_dim:.2e}, ns={ns}:", lvl=1, color='green')
+        logger.info(f"k={k}, max_iter={max_iter}, tol={tol:.0e}", lvl=2, color='green')
+    
+    return params
+
+def get_lanczos_memory_estimate_gb(hilbert_dim: int, max_iter: int, dtype=np.complex128) -> float:
+    """
+    Estimate memory needed for Lanczos iteration.
+    
+    Lanczos stores:
+    - ~3 current vectors (v, v_old, w) during iteration
+    - If full reorthogonalization: all max_iter Krylov vectors
+    - Tridiagonal matrix: negligible
+    
+    For SciPy's eigsh with full reorthogonalization, it stores the Lanczos basis.
+    """
+    
+    bytes_per_element   = np.dtype(dtype).itemsize
+    vec_size            = hilbert_dim * bytes_per_element
+    
+    # Basic iteration: 3 vectors
+    basic_memory        = 3 * vec_size
+    
+    # Full reorthogonalization: store all Krylov vectors
+    krylov_memory       = max_iter * vec_size
+    
+    # Eigenvector storage (at end)
+    # Usually much smaller than Krylov basis
+    
+    total_bytes         = basic_memory + krylov_memory
+    return total_bytes / (1024**3)
 
 # ----------------------------------------------------------------------------------------
 #! LanczosEigensolver

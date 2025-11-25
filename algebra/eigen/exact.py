@@ -230,10 +230,7 @@ class ExactEigensolverScipy(EigenSolver):
         
         if self.hermitian:
             # Use eigh for symmetric/Hermitian
-            eigenvalues, eigenvectors = scipy_linalg.eigh(
-                A, 
-                driver=self.driver
-            )
+            eigenvalues, eigenvectors = scipy_linalg.eigh(A, driver=self.driver)
             eigenvalues = eigenvalues.real
         else:
             # Use eig for general matrices

@@ -122,7 +122,7 @@ def greens_function_lanczos(
 
 def greens_function_lanczos_vectors(
         omega       : np.ndarray,
-        hamiltonian,
+        hamiltonian : np.ndarray,       # can be Matrix or function (matrix vector product)
         v_right     : np.ndarray,
         v_left      : np.ndarray,
         E0          : float,
@@ -162,6 +162,9 @@ def greens_function_lanczos_vectors(
     if sp.issparse(hamiltonian):
         apply_H     = lambda x: hamiltonian.dot(x)
         apply_H_dag = lambda x: hamiltonian.conj().T.dot(x)
+    elif callable(hamiltonian):
+        apply_H     = hamiltonian
+        apply_H_dag = hamiltonian   # Assume H is Hermitian if function
     else:
         apply_H     = lambda x: hamiltonian @ x
         apply_H_dag = lambda x: hamiltonian.conj().T @ x
