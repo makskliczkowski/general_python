@@ -437,7 +437,7 @@ class HDF5Manager:
                 if isinstance(data, dict):
                     # Process Dictionary Input
                     for key, arr in data.items():
-                        dtype   = HDF5Manager._get_standard_dtype(arr)
+                        dtype   = HDF5Manager._get_standard_dtype(np.array(arr))
                         arr     = np.array(arr, dtype=dtype)
                         if shape:
                             arr = arr.reshape(shape)
@@ -454,7 +454,7 @@ class HDF5Manager:
 
                     # Save each dataset
                     for lbl, arr in zip(labels, datasets):
-                        dtype = HDF5Manager._get_standard_dtype(arr)
+                        dtype = HDF5Manager._get_standard_dtype(np.array(arr))
                         arr   = np.array(arr, dtype=dtype)
                         if shape:
                             arr = arr.reshape(shape)
