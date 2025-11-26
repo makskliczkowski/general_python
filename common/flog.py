@@ -124,15 +124,15 @@ class Colors:
         return len(self.color)
 
 # Regex for ANSI colour codes (CSI sequences: ESC [ … m)
-_ansi_escape = re.compile(r'\x1B\[[0-9;]*[mK]')
+_ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 
 class StripAnsiFormatter(logging.Formatter):
     def format(self, record):
-        msg         = super().format(record)    # First get the formatted message with colours possibly in `record.msg`
-        clean_msg   = _ansi_escape.sub('', msg) # Then strip ANSI codes
-        return clean_msg
-
-
+        # Format the message using the parent class (inserts time, level, etc.)
+        msg = super().format(record)
+        # Strip the ANSI codes from the entire formatted string
+        return _ansi_escape.sub('', msg)
+    
 ######################################################
 #! PRINT THE OUTPUT WITH A GIVEN LEVEL
 ######################################################
@@ -178,7 +178,7 @@ class Logger:
         self.lvl                = Logger.LEVELS_R.get(lvl, logging.INFO) if isinstance(lvl, str) else lvl
         self.handler_added      = False
         self.use_console_ts     = use_ts_in_cmd
-        self.has_colors         = ENV_LOGGER_COLORS not in os.environ or os.environ[ENV_LOGGER_COLORS] != '0'
+        self.has_colors         = sys.stdout.isatty() and os.environ.get(ENV_LOGGER_COLORS, '1') != '0'
         
         # Set up logging: always show timestamp in console if use_ts_in_cmd is True
         self.logger             = logging.getLogger(__name__)
