@@ -2,10 +2,6 @@ r"""
 general_python.algebra.utils
 ===========================
 
-Author: Maks Kliczkowski
-Email: maxgrom97@gmail.com
-Date: 01.10.25
-
 This module provides utilities for importing and managing the linear algebra backend (NumPy/JAX),
 random number generation, JIT compilation, and backend configuration for the QES package.
 
@@ -47,6 +43,12 @@ Test coverage includes:
 - NQS training and evaluation
 
 See the `test/` directory for details.
+
+------------------------------------------------------------------------
+File            : algebra/utils.py
+Author          : Maks Kliczkowski
+Email           : maksymilian.kliczkowski@pwr.edu.pl
+------------------------------------------------------------------------
 """
 
 # Import the required modules
@@ -152,7 +154,7 @@ PY_BACKEND              : str               = os.environ.get(PY_BACKEND_STR, DEF
 os.environ[PY_BACKEND_STR]                  = PY_BACKEND
 
 # Define PY_JAX_DONT_USE before using it
-PY_JAX_DONT_USE         : bool                       = os.environ.get(PY_JAX_DONT_USE_STR, "0") in ("1", "true", "True")
+PY_JAX_DONT_USE         : bool              = os.environ.get(PY_JAX_DONT_USE_STR, "0") in ("1", "true", "True")
 
 # by default, use numpy (can override with PY_JAX_DONT_USE)
 PREFER_JAX              : bool              = (PY_BACKEND == "jax") and not PY_JAX_DONT_USE

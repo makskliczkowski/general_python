@@ -1,8 +1,4 @@
 '''
-file: general_python/ml/activation_functions.py
-
-author  : Maksymilian Kliczkowski
-email   : maksymilian.kliczkowski@pwr.edu.pl
 
 This module provides various activation functions for neural networks with both JAX and NumPy implementations.
 The module supports common activation functions like sigmoid, tanh, ReLU variants, and more specialized functions.
@@ -10,6 +6,12 @@ Each function has both NumPy and JAX (when available) implementations to support
 
 Functions are accessible through the get_activation factory function that returns the appropriate implementation
 based on the specified backend.
+
+--------------------------------------------------------------
+file    : general_python/ml/activation_functions.py
+author  : Maksymilian Kliczkowski
+email   : maksymilian.kliczkowski@pwr.edu.pl
+--------------------------------------------------------------
 '''
 
 import numpy as np

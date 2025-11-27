@@ -3,6 +3,9 @@ This module provides a logger class for handling console and file logging with v
 It includes methods for printing messages with different log levels, formatting titles, and measuring execution time.
 and it is designed to be used in a quantum computing context, specifically for the Quantum EigenSolver package.
 
+@note If one wants to use file logging, the environment variable PYLOGFILE should be set to a non-zero value.
+@note If one wants to disable colored output, the environment variable PYLOGCOLORS should be set to '0'.
+
 -------------------------------------------------------
 file        :   general_python/common/flog.py
 author      :   Maksymilian Kliczkowski
@@ -197,7 +200,7 @@ class Logger:
         self.logger.addHandler(ch)
         
         # Set the log file name
-        if logfile is not None and ENV_LOGGER_FILE in os.environ and os.environ[ENV_LOGGER_FILE] != '0':
+        if logfile is not None and os.environ.get(ENV_LOGGER_FILE, '0') != '0':
             self.logfile = (logfile.split('.log')[0] if logfile.endswith('.log') else f'{logfile}') if len(logfile) > 0 else self.now_str
             if append_ts:
                 self.logfile += f'_{self.now_str}'
@@ -605,7 +608,7 @@ def get_global_logger(**kwargs) -> Logger:
             os.environ["GEN_PYTHON_LOGGER_INIT_DONE"] = "1"
             
             # Print the banner            
-            if os.environ.get("PY_BACKEND_INFO", "1") != "0":
+            if os.environ.get("PY_BACKEND_INFO", "0") != "0":
                 logger.title("Global Logger initialized!", 50, '#', 0)
 
         _G_LOGGER       = logger

@@ -1,8 +1,15 @@
 """
+
+A general neural network implementation, which can be used as a template
+for building more complex networks. This can be also a simple callable
+network that generates random complex outputs.
+
+---------------------------------------------------------------
 file    : general_python/ml/net_simple.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-03-10
+---------------------------------------------------------------
 """
 
 import numpy as np
@@ -574,8 +581,6 @@ class GeneralNet(ABC):
         """
         pass
     
-    
-
 #########################################################
 #! JUST FROM A CALLABLE - EASY FUNCTION
 #########################################################

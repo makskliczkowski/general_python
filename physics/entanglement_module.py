@@ -483,8 +483,8 @@ class EntanglementModule:
         -----
         Algorithm:
         1. Reshape state vector according to bipartition:
-           |ψ⟩ → ψ_{A,B} (matrix form)
-        2. Perform Schmidt decomposition: |ψ⟩ = Σ √λ_i |i_A⟩|i_B⟩
+           |psi⟩ → psi_{A,B} (matrix form)
+        2. Perform Schmidt decomposition: |psi⟩ = Σ √λ_i |i_A⟩|i_B⟩
         3. Compute von Neumann entropy: S = -Σ λ_i log(λ_i)
         
         This method is EXACT for any quantum state, including:

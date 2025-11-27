@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 from functools import wraps
 from typing import Callable, Iterable, Optional, Dict, List, Tuple, Any, List
 from enum import Enum
@@ -309,27 +310,111 @@ class Timer:
             return wrapper
         return deco
 
-################################################################################
+#################################################################################
 # Utility: function timing with optional synchronizer (JAX, etc.)
-def timeit(fn: Callable, *args, synchronizer: Optional[Callable[[Any], None]] = None, **kwargs) -> Tuple[Any, float]:
+# Try to import JAX for PyTree handling
+#################################################################################
+
+try:
+    import jax
+    HAS_JAX = True
+except ImportError:
+    HAS_JAX = False
+
+# ------------------------------------------------------
+# Synchronization Logic
+# ------------------------------------------------------
+
+def _block_if_jax(leaf: Any):
     """
-    Measures wall time for a callable. If `synchronizer` is provided, it will be called
-    on the result (and on tuple elements) to force completion.
-    Returns (result, elapsed_seconds).
+    Helper to block JAX arrays until computation is done.
+    """
+    if hasattr(leaf, 'block_until_ready'):
+        leaf.block_until_ready()
+    return leaf
+
+def _synchronize(result: Any):
+    """
+    Forces synchronization on the result.
+    - If JAX is available, it maps over the PyTree (dicts, lists, tuples).
+    - If not, it attempts basic iteration or direct blocking.
+    """
+    if result is None:
+        return
+
+    if HAS_JAX:
+        # State-of-the-Art: Use JAX to traverse ANY structure (dict, custom obj, etc)
+        # and block only the leaves (arrays).
+        jax.tree_util.tree_map(_block_if_jax, result)
+    else:
+        # Fallback for pure Numpy/Torch environments
+        if hasattr(result, 'block_until_ready'):
+            result.block_until_ready()
+        elif isinstance(result, (tuple, list)):
+            for x in result:
+                _synchronize(x)
+        elif isinstance(result, dict):
+            for x in result.values():
+                _synchronize(x)
+
+# ------------------------------------------------------
+# The Timer
+# ------------------------------------------------------
+
+def _now_ns():
+    return time.perf_counter_ns()
+
+def timeit(fn: Callable[..., Any], *args, **kwargs) -> Tuple[Any, float]:
+    """
+    Functional wrapper to time a callable.
+    
+    Usage:
+        res, dt = timeit(my_function, arg1, arg2)
     """
     t0 = _now_ns()
+    
+    # 1. Run Function
     res = fn(*args, **kwargs)
-    if synchronizer is not None:
-        try:
-            synchronizer(res)
-        except Exception:
-            if isinstance(res, tuple):
-                for x in res:
-                    try:
-                        synchronizer(x)
-                    except Exception:
-                        pass
+    
+    # 2. Force Completion (Crucial for JAX/GPU)
+    try:
+        _synchronize(res)
+    except Exception as e:
+        # Don't crash metrics if sync fails, just warn
+        print(f"Warning: timeit synchronization failed: {e}")
+
+    # 3. Measure Wall Time
     dt = (_now_ns() - t0) / 1e9
+    
     return res, dt
+
+# ------------------------------------------------------
+#  Context Manager (For 'with' blocks)
+# ------------------------------------------------------
+
+@contextmanager
+def benchmark(name: str = "Block", sync: bool = True):
+    """
+    Context manager for timing blocks of code.
+    
+    Usage:
+        with benchmark("Gradient Step") as t:
+            train_step()
+        print(t.elapsed)
+    """
+    t0      = _now_ns()
+    stats   = type('Stats', (), {'elapsed': 0.0})()
+    yield stats
+    
+    if sync and HAS_JAX:
+        # We can't easily sync the *result* of a with-block, 
+        # so we force a barrier on the device if possible.
+        # Note: This is a heuristic. For precise per-op timing, use the functional wrapper.
+        try:
+            jax.effects_barrier() 
+        except:
+            pass
+
+    stats.elapsed = (_now_ns() - t0) / 1e9
 
 ################################################################################

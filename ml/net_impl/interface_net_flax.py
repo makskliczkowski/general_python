@@ -1,7 +1,3 @@
-#   file    : general_python/ml/net_impl/interface_net_flax.py
-#   author  : Maksymilian Kliczkowski
-#   date    : 2025-04-02
-
 """
 FlaxNetInterface - A Generic Flax-Based Network Interface
 
@@ -50,6 +46,12 @@ Notes:
     - The input shape is expected to be a tuple representing the dimensions of the input
     - The dtype is set to jnp.float32 by default, but can be changed
     - The network can be evaluated using the apply_jax method, which requires the network to be initialized
+    
+----------------------------------------------------------------
+file        : general_python/ml/net_impl/interface_net_flax.py
+author      : Maksymilian Kliczkowski
+date        : 2025-04-02
+----------------------------------------------------------------
 """
 
 import numpy as np
@@ -203,17 +205,20 @@ class FlaxInterface(GeneralNet):
         Compiles JITted version of the apply function.
         This method uses JAX's JIT compilation to optimize the apply function.
         """
-        if not self._initialized or self._apply_jax_handle is None:
-            raise RuntimeError(self._ERR_NET_NOT_INITIALIZED + " Cannot compile functions.")
+        if not self._initialized:
+            raise RuntimeError(self._ERR_NET_NOT_INITIALIZED)
         
-        # Avoid closure over apply_handle
-        def compiled_apply(p, x):
-            return self._apply_jax_handle({'params': p}, x)
-
-        # Compile once
-        # self._compiled_apply_fn = jax.jit(compiled_apply)
-        #!TODO: Should I compile it or not?
-        self._compiled_apply_fn = compiled_apply
+        # 1. Define the Pure Function
+        # We must decouple the 'apply' logic from 'self' for JAX to digest it safely.
+        # We capture the unbound apply method from the module class/instance.
+        apply_fn = self._flax_module.apply        
+        
+        def _forward_pass(params, x):
+            # We assume 'params' is the frozen dict
+            return apply_fn({'params': params}, x)        
+        
+        # We store the JIT-ed function.
+        self._compiled_apply_fn = jax.jit(_forward_pass)
     
     def _initialize_activations(self, act_fun_specs: Any) -> Tuple[Callable, ...]:
         """
@@ -269,6 +274,8 @@ class FlaxInterface(GeneralNet):
             net_kwargs['act_fun']       = self._initialized_act_funs
         else:
             self._initialized_act_funs  = () # No activations specified
+    
+    # ------------------------------------------------------
     
     def force_init(self):
         """
@@ -455,8 +462,6 @@ class FlaxInterface(GeneralNet):
             array-like
                 Output of the network.
         """
-        # if not self.initialized:
-            # raise ValueError(self._ERR_NET_NOT_INITIALIZED)
         return self._compiled_apply_fn(self._parameters, x.astype(self._dtype))
 
     #########################################################
@@ -559,94 +564,75 @@ class FlaxInterface(GeneralNet):
             bool: True if the check indicates holomorphicity within tolerance `_TOL_HOLOMORPHIC`, False otherwise.
         """
         
-        # Check if the network is initialized.
-        if not self.initialized:
-            
-            # Attempt initialization if not done yet
-            self.log("Warning: check_holomorphic called before explicit init(). Attempting initialization.",
-                    log='warning', lvl=2, color=self._dcol)
-            try:
-                self.init()
-            except Exception as e:
-                self.log(f"Initialization failed in check_holomorphic: {e}", log='error', lvl=1, color='red')
-                self._holomorphic = False
-                return False
-        
-        # Check if the network is already checked.
         if self._holomorphic is not None:
             return self._holomorphic
         
-        if not self.is_complex:
-            self.log("Holomorphic check skipped: Parameters are real.",
-                    log='warning', lvl=2, color=self._dcol)
+        if not self._initialized:
+            self.log("Warning: check_holomorphic called before explicit init(). Attempting initialization.", log='warning', lvl=2, color=self._dcol)
+            self.init()
+        if not self.is_complex: 
+            self.log("Holomorphic check skipped: Parameters are real.", log='warning', lvl=2, color=self._dcol)
             self._holomorphic = False
             return False
         
         # Ensure parameters are complex too
-        param_leaves, _ = tree_flatten(self._parameters)
+        current_params          = self.get_params()
+        param_leaves, _         = tree_flatten(current_params)
+        
         if not all(jnp.issubdtype(p.dtype, jnp.complexfloating) for p in param_leaves):
             self.log("Holomorphic check requires complex parameters.", log='error', lvl=1, color='red')
-            self._holomorphic = False
+            self._holomorphic   = False
             return False
         
         # Check if the network is holomorphic.
-        dummy_input             = jnp.ones((1, self.input_dim), dtype=self.dtype)
-        current_params          = self.get_params()
-
-        try:
-            # Define the function Re[f(p)] for differentiation
-            apply_handle = self._apply_jax_handle
-            if apply_handle is None: raise RuntimeError("Internal apply handle not set.")
-
-            def real_part_of_output(p_tree):
-                output = apply_handle({'params': p_tree}, dummy_input)
-                return jnp.real(output).sum() # Sum for scalar output needed by grad
-
-            def imag_part_of_output(p_tree):
-                output = apply_handle({'params': p_tree}, dummy_input)
-                return jnp.imag(output).sum() # Sum for scalar output needed by grad
-            
+        key                     = jax.random.PRNGKey(self._seed) # Use stored seed
+        dummy_input             = jax.random.normal(key, (1, self.input_dim)).astype(self.dtype)
+        apply_handle            = self._flax_module.apply
+        if apply_handle is None:
+            raise RuntimeError("Internal apply handle not set.")
+        
+        def u_fun(p): return jnp.real(apply_handle({'params': p}, dummy_input)).sum()
+        def v_fun(p): return jnp.imag(apply_handle({'params': p}, dummy_input)).sum()        
+        
+        try:            
             # grad_u_tree = ∇p(Re[f]) = (∂u/∂pR) + i(∂u/∂pI)
-            grad_u_tree         = jax.grad(real_part_of_output)(current_params)
+            grad_u_tree         = jax.grad(u_fun)(current_params)
             # grad_v_tree = ∇p(Im[f]) = (∂v/∂pR) + i(∂v/∂pI)
-            grad_v_tree         = jax.grad(imag_part_of_output)(current_params)
-
+            grad_v_tree         = jax.grad(v_fun)(current_params)
+            flat_u, _           = tree_flatten(grad_u_tree)
+            flat_v, _           = tree_flatten(grad_v_tree)       
+            vec_u               = jnp.concatenate([x.ravel() for x in flat_u])
+            vec_v               = jnp.concatenate([x.ravel() for x in flat_v])                 
+                 
             #! Check CR Condition: grad_u ≈ i * grad_v
             # Calculate the difference: diff = grad_u - i * grad_v
-            # This should be close to zero if CR equations hold.
-            diff_tree           = tree_map(lambda u, v: u - 1j * v, grad_u_tree, grad_v_tree)
-
             # Check Cauchy-Riemann: dRe/dx = dIm/dy, dRe/dy = -dIm/dx
+            # This should be close to zero if CR equations hold.
+            # Note: In standard Wirtinger calc, 2 * d/dz* = (du/dx - du/idy) + i(dv/dx - dv/idy)
+            # This implementation checks the Cauchy-Riemann equations:
+            # du/dx = dv/dy and du/dy = -dv/dx
+            # This is equivalent to checking if the Wirtinger derivative d/dz* is zero.
+
             # Here, x, y are real/imag parts of params. Check d(Re(f))/dp_real vs d(Im(f))/dp_imag, etc.
             # A simpler proxy: check if grad(Re(f)) approx equals i * grad(Im(f)) for complex params
             # This requires careful handling of complex gradients.
             # Flatten the difference and one of the gradients (e.g., grad_u) for norm comparison
-            diff_leaves, _      = tree_flatten(diff_tree)
-            grad_u_leaves, _    = tree_flatten(grad_u_tree)
-
-            if not grad_u_leaves: # Handle empty parameters/gradients
-                self.log("Warning: Holomorphic check encountered empty gradient trees.",
-                        log='warning', lvl=2, color=self._dcol)
-                self._holomorphic   = True
-            else:
-                # Concatenate leaves into flat vectors
-                flat_diff_vec       = jnp.concatenate([leaf.ravel() for leaf in diff_leaves])
-                flat_grad_u_vec     = jnp.concatenate([leaf.ravel() for leaf in grad_u_leaves])
-
-                # Calculate norms
-                norm_diff           = jnp.linalg.norm(flat_diff_vec)
-                norm_grad_u         = jnp.linalg.norm(flat_grad_u_vec)
-
-                # Check if the relative difference is small
-                # Avoid division by zero if norm_grad_u is zero
-                relative_diff       = norm_diff / (norm_grad_u + 1e-12) # Add epsilon for stability
-                self._holomorphic   = jnp.allclose(relative_diff, 0.0, atol=self._TOL_HOLOMORPHIC)
+            # Check: || grad_u - (i * grad_v) ||
+            diff                = vec_u - (1j * vec_v)
+            
+            norm_diff           = jnp.linalg.norm(diff)
+            norm_base           = jnp.linalg.norm(vec_u) + 1e-12
+            
+            self._holomorphic   = float(norm_diff / norm_base) < self._TOL_HOLOMORPHIC
+            
+            self.log(f"Holomorphic Check: Relative Residual = {float(norm_diff / norm_base):.2e}", lvl=1, log='info')
+            return self._holomorphic
+        
         except Exception as e:
             self.log(f"Error during Cauchy-Riemann check: {e}", lvl=0, log='error', color='red')
-            self._holomorphic = False # Default to False on error
+            self._holomorphic   = False # Default to False on error
 
-        self.log(f"Holomorphic check result (||∇Re[f] - i*∇Im[f]|| / ||∇Re[f]|| ≈ 0): {self._holomorphic}",
-                log='info', lvl=1, color=self._dcol)
+        self.log(f"Holomorphic check result (||∇Re[f] - i*∇Im[f]|| / ||∇Re[f]|| ≈ 0): {self._holomorphic}", log='info', lvl=1, color=self._dcol)
         return self._holomorphic
 
     #########################################################
@@ -707,4 +693,6 @@ class FlaxInterface(GeneralNet):
     
     #########################################################
     
+#############################################################
+#! END OF FILE
 #############################################################

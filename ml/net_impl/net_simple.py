@@ -1,8 +1,4 @@
 """
-file    : general_python/ml/net_impl/net_simple.py
-author  : Maksymilian Kliczkowski
-email   : maksymilian.kliczkowski@pwr.edu.pl
-date    : 2025-03-10
 
 A simple network implementation that generates random complex outputs.
 
@@ -23,6 +19,13 @@ Returns:
 Note:
     This implementation doesn't actually use the input values for computation;
     it simply generates random outputs based on the batch size.
+
+---------------------------------------------------------------
+file    : general_python/ml/net_impl/net_simple.py
+author  : Maksymilian Kliczkowski
+email   : maksymilian.kliczkowski@pwr.edu.pl
+date    : 2025-03-10
+---------------------------------------------------------------
 """
 
 import numpy as np
