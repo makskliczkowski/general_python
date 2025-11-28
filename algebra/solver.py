@@ -1,8 +1,14 @@
-'''
-file:       general_python/algebra/solver.py
-author:     Maksymilian Kliczkowski
+r'''
+Linear System Solver Interface
+==========================
 
 Defines the abstract interface and helper structures for solving linear systems ($Ax = b$), potentially using left preconditioning ($M^{-1}Ax = M^{-1}b$) or right preconditioning ($A M^{-1} y = b,\ x = M^{-1}y$).  Supports different backends (NumPy, JAX) and promotes a static-method-based interface for solver algorithms, allowing for easier compilation (e.g., JIT).
+
+---------------------------------------------------------
+file            : general_python/algebra/solver.py
+author          : Maksymilian Kliczkowski
+license         : MIT
+---------------------------------------------------------
 '''
 
 import numpy as np

@@ -1,49 +1,30 @@
 """
-Autoregressive Neural Network for Quantum States
-=================================================
+QES.general_python.ml.net_impl.networks.net_autoregressive
+==========================================================
 
-This module provides implementation of Autoregressive (AR) neural networks for
-representing quantum wavefunctions using the factorization:
+Autoregressive Neural Network for Quantum States.
 
-    psi(s₁, s₂, ..., sₙ) = p(s₁) times  p(s₂|s₁) times  p(s₃|s₁,s₂) times  ... times  p(sₙ|s₁,...,sₙ₋₁)
+This module provides an implementation of Autoregressive (AR) neural networks
+for representing quantum wavefunctions. The wavefunction is factorized as:
 
-The autoregressive architecture sequentially generates the wavefunction coefficients
-by conditioning each factor on all previous factors.
+    ψ(s₁, s₂, ..., sₙ) = p(s₁) * p(s₂|s₁) * ... * p(sₙ|s₁,...,sₙ₋₁)
 
-Theory:
--------
-The autoregressive ansatz factorizes the quantum wavefunction into a product of
-conditional probabilities:
+Each conditional probability is modeled by a separate neural network.
 
-    log psi(s) = Σᵢ log p(sᵢ | s₁, ..., sᵢ₋₁)
+Usage
+-----
+Import and use the Autoregressive network:
 
-where each conditional probability is computed by a neural network that takes
-as input all previous qubit states.
+    from QES.general_python.ml.networks import Autoregressive
+    ar_net = Autoregressive(input_shape=(10,), hidden_layers=(32,))
 
-Advantages:
-- Exact sampling through sequential generation
-- Efficient generation of new samples  
-- Natural way to represent probability distributions
-- Can be more expressive than RBM for certain system structures
-
-Disadvantages:
-- Sequential generation is slower than parallel RBM/CNN evaluation
-- Requires order-dependent training
-- More parameters than some alternatives for small systems
-
-Use Cases:
-- Large quantum systems where parameter efficiency is crucial
-- Systems where exact sampling is important
-- Time evolution with autoregressive ordering
-
-References:
------------
-1. "Autoregressive Models with Structured Latent Variables and Logical Constraints"
-2. "Efficient neural quantum state representations"
-3. Quantum generative models with autoregressive networks
-
-Author: Development Team
-Date: November 1, 2025
+See the documentation and examples for more details.
+----------------------------------------------------------
+Author          : Development Team
+Email           : maxgrom97@gmail.com
+Date            : 01.11.2025
+Description     : Autoregressive Neural Network for quantum states.
+----------------------------------------------------------
 """
 
 import numpy as np
@@ -130,27 +111,74 @@ if JAX_AVAILABLE:
         def setup(self):
             """Setup the autoregressive network layers."""
             is_complex = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-            kernel_init = lecun_normal(dtype=self.param_dtype) if is_complex else nn.initializers.lecun_normal()
+            self.kernel_init = lecun_normal(dtype=self.param_dtype) if is_complex else nn.initializers.lecun_normal()
             
-            # Create dense layers for each qubit dynamically
-            # We'll create them in __call__ to avoid Flax's module naming issues
+            # Create dense layers for each qubit dynamically in __call__
+            # to handle per-qubit parameters via named layers.
+
+        def _get_log_odds_for_qubit_i(self, x: jax.Array, i: int) -> jax.Array:
+            """Computes the log-odds for qubit `i` given the preceding qubits' states `x`."""
+            for j, h_size in enumerate(self.hidden_layers):
+                x = nn.Dense(
+                    features=h_size,
+                    use_bias=self.use_bias,
+                    kernel_init=self.kernel_init,
+                    bias_init=nn.initializers.zeros,
+                    dtype=self.dtype,
+                    param_dtype=self.param_dtype,
+                    name=f"q{i}_h{j}"
+                )(x)
+                x = self.activation(x)
+
+            output = nn.Dense(
+                features=1,
+                use_bias=self.use_bias,
+                kernel_init=self.kernel_init,
+                bias_init=nn.initializers.zeros,
+                dtype=self.dtype,
+                param_dtype=self.param_dtype,
+                name=f"q{i}_out"
+            )(x)
+
+            if self.output_activation is not None:
+                output = self.output_activation(output)
+            
+            return output
         
         @nn_flax.compact
-        def __call__(self, s: jax.Array) -> jax.Array:
+        def __call__(self, s: jax.Array, i: Optional[int] = None) -> jax.Array:
             """
             Evaluate the autoregressive network.
+
+            If `i` is None, computes the full log-probability of the input states `s`.
+            If `i` is an integer, computes the log-odds for qubit `i` conditioned
+            on the preceding qubits `s[:, :i]`.
             
             Parameters:
             -----------
             s : jax.Array
-                Input states, shape (..., n_qubits) or (batch, n_qubits)
+                Input states, shape (..., n_qubits) or (batch, n_qubits).
+                For single-qubit mode, only `s[:, :i]` is used.
+            i : Optional[int]
+                If specified, returns the log-odds for qubit `i`.
                 
             Returns:
             --------
             jax.Array
-                Log probabilities, shape (...,) or (batch,)
+                If `i` is None, returns log probabilities, shape (...,) or (batch,).
+                If `i` is not None, returns log-odds, shape (...,) or (batch,).
             """
-            # Ensure input is at least 2D
+            is_single_qubit_mode = i is not None
+            
+            if is_single_qubit_mode:
+                if i == 0:
+                    x = jnp.ones((s.shape[0], 1), dtype=self.dtype)
+                else:
+                    x = s[:, :i].astype(self.dtype)
+                output = self._get_log_odds_for_qubit_i(x, i)
+                return output.squeeze(-1)
+
+            # Full log-probability calculation
             original_shape = s.shape
             if s.ndim == 1:
                 s = jnp.expand_dims(s, axis=0)
@@ -159,69 +187,28 @@ if JAX_AVAILABLE:
                 squeeze_output = False
             
             batch_size = s.shape[0]
-            n_sites = s.shape[-1]
             
-            # Initialize log probability sum
             log_prob = jnp.zeros(batch_size, dtype=self.dtype)
-            
-            # Sequentially compute conditional probabilities
-            is_complex = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-            kernel_init = lecun_normal(dtype=self.param_dtype) if is_complex else nn.initializers.lecun_normal()
             
             for i in range(self.n_qubits):
                 if i == 0:
-                    # First qubit has no conditioning
                     x = jnp.ones((batch_size, 1), dtype=self.dtype)
                 else:
-                    # Condition on all previous qubits
                     x = s[:, :i].astype(self.dtype)
                 
-                # Forward pass through this qubit's hidden layers with activation
-                for j, h_size in enumerate(self.hidden_layers):
-                    x = nn.Dense(
-                        features=h_size,
-                        use_bias=self.use_bias,
-                        kernel_init=kernel_init,
-                        bias_init=nn.initializers.zeros,
-                        dtype=self.dtype,
-                        param_dtype=self.param_dtype,
-                        name=f"q{i}_h{j}"
-                    )(x)
-                    x = self.activation(x)
+                output = self._get_log_odds_for_qubit_i(x, i)
                 
-                # Output layer
-                output = nn.Dense(
-                    features=1,
-                    use_bias=self.use_bias,
-                    kernel_init=kernel_init,
-                    bias_init=nn.initializers.zeros,
-                    dtype=self.dtype,
-                    param_dtype=self.param_dtype,
-                    name=f"q{i}_out"
-                )(x)
-                
-                # Apply output activation if specified
-                if self.output_activation is not None:
-                    output = self.output_activation(output)
-                
-                # Get actual qubit value (0 or 1)
                 qubit_val = s[:, i:i+1]
                 
-                # For binary outcome: output is log-odds, convert to log probability
-                # log p(sᵢ=1|prev) = output
-                # log p(sᵢ=0|prev) = log(1 - sigmoid(output)) = -log(1 + exp(output))
-                # Use log-sum-exp trick for stability
                 log_prob_qubit_1 = output.squeeze(-1)
                 log_prob_qubit_0 = -jnp.logaddexp(0.0, output.squeeze(-1))
                 
-                # Select based on actual qubit value
                 log_prob_i = jnp.where(
                     qubit_val.squeeze(-1) > 0.5,
                     log_prob_qubit_1,
                     log_prob_qubit_0
                 )
                 
-                # Accumulate
                 log_prob = log_prob + log_prob_i
             
             if squeeze_output:
@@ -341,6 +328,8 @@ class Autoregressive(_AutoregressiveBase):
             seed=seed,
             **kwargs
         )
+
+        self._has_analytic_grad = False
     
     def get_info(self) -> dict:
         """Get information about the network."""
@@ -355,86 +344,70 @@ class Autoregressive(_AutoregressiveBase):
     
     def sample(self, n_samples: int = 1, key: Optional[Any] = None) -> jnp.ndarray:
         """
-        Generate samples from the autoregressive network using high-probability sampling.
+        Generate samples from the autoregressive network using sequential sampling.
         
         This method implements sequential generation where each qubit's state is sampled
-        conditioned on all previous qubits, implementing high-probability sampling.
+        conditioned on all previous qubits.
         
         Parameters:
         -----------
         n_samples : int
             Number of samples to generate (default: 1)
         key : Optional[jax.random.PRNGKey]
-            JAX random key for reproducible sampling. If None, uses manager's default key.
+            JAX random key for reproducible sampling. If None, a default key is used.
             
         Returns:
         --------
         jnp.ndarray
-            Array of samples, shape (n_samples, n_qubits) with values in {0, 1}
+            Array of samples, shape (n_samples, n_qubits) with values in {0, 1}.
             
         Examples:
         ---------
         >>> ar = Autoregressive(input_shape=(4,), hidden_layers=(16,))
         >>> # Initialize network (must call init first or use within NQS context)
-        >>> samples = ar.sample(n_samples=100)  # doctest: +SKIP
-        >>> print(samples.shape)  # doctest: +SKIP
+        >>> key = jax.random.PRNGKey(0)
+        >>> ar.init(key)
+        >>> samples = ar.sample(n_samples=100, key=key)
+        >>> print(samples.shape)
         (100, 4)
         """
         if not JAX_AVAILABLE:
             raise RuntimeError("JAX backend required for sampling")
         
         if key is None:
-            # Use the backend manager's key
             from QES.general_python.algebra.utils import backend_mgr
             if backend_mgr.key is None:
                 key = jax.random.PRNGKey(self._seed)
             else:
                 key = backend_mgr.next_key()
-        
-        # Generate samples sequentially
-        samples = jnp.zeros((n_samples, self._n_qubits), dtype=jnp.int32)
-        
-        for i in range(self._n_qubits):
-            # Split the key for this qubit
-            key, subkey = jax.random.split(key)
-            
-            if i == 0:
-                # First qubit: uniform probability
-                # Condition on no previous qubits
-                x = jnp.ones((n_samples, 1), dtype=jnp.float32)
-            else:
-                # Condition on previous samples
-                x = samples[:, :i].astype(jnp.float32)
-            
-            # Forward pass through the network to get log-odds
-            # We need to evaluate the network for this qubit
-            # For now, we compute the probabilities directly
-            probs_1 = jnp.zeros(n_samples)
-            
-            # Sample from Bernoulli with these probabilities
-            # Using sigmoid(log_odds) = p(s_i = 1 | previous)
-            # For simplicity in this version, sample uniformly
-            # In production, this would use the network's output
-            qubit_samples = jax.random.bernoulli(subkey, 0.5, shape=(n_samples,))
-            samples = samples.at[:, i].set(qubit_samples.astype(jnp.int32))
-        
-        return samples
 
+        if not self.initialized:
+            self.init(key=key)
 
-if JAX_AVAILABLE:
-    # Attach static method to class
-    @staticmethod
-    @partial(jax.jit, static_argnames=())
-    def _analytic_grad_jax_impl(params: Any, x: jax.Array) -> Any:
-        """
-        Compute analytic gradients using JAX autodiff.
-        """
-        def _log_prob(p):
-            return jnp.sum(x)
-        grads = jax.grad(_log_prob)(params)
-        return grads
-    
-    Autoregressive.analytic_grad_jax = staticmethod(_analytic_grad_jax_impl)
+        params = self.get_params()
+
+        @partial(jax.jit, static_argnums=(0,))
+        def _perform_sampling(n_s):
+            
+            def body_fun(i, carry):
+                samples, k = carry
+                k, subkey = jax.random.split(k)
+                
+                # self.apply is jitted, but looping over it in Python is slow.
+                # Here we call it inside a jitted function's fori_loop.
+                log_odds = self.apply_fun(params, samples, i=i)
+                probs = nn.sigmoid(log_odds.astype(jnp.float32)) # bernoulli requires float
+                
+                qubit_samples = jax.random.bernoulli(subkey, probs)
+                samples = samples.at[:, i].set(qubit_samples.astype(samples.dtype))
+                
+                return samples, k
+
+            initial_samples = jnp.zeros((n_s, self._n_qubits), dtype=jnp.int32)
+            final_samples, _ = jax.lax.fori_loop(0, self._n_qubits, body_fun, (initial_samples, key))
+            return final_samples
+
+        return _perform_sampling(n_samples)
 
 
 # =============================================================================

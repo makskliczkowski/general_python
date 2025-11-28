@@ -161,15 +161,17 @@ For detailed derivations and benchmarks, refer to:
 - "Efficient optimization of deep neural quantum states toward machine precision",
 '''
 
+import numba
 import numpy as np
 from enum import Enum, auto
-from typing import Union, Tuple, Callable, Optional, NamedTuple
+from typing import TYPE_CHECKING
 from functools import partial
-from abc import ABC, abstractmethod
+from abc import ABC
 
 try:
     from ..utils import JAX_AVAILABLE, get_backend, Array
-    from .. import solver as solver_utils
+    if TYPE_CHECKING:
+        from ..solver import Solver
 except ImportError:
     raise ImportError("Please install the 'general_python' package to use stochastic_rcnfg module.")
 
@@ -191,176 +193,177 @@ if JAX_AVAILABLE:
     import jax.numpy as jnp
     
     @jax.jit
-    def center_data(data: jnp.ndarray, mean_val: Optional[jnp.ndarray] = None) -> jnp.ndarray:
-        """Calculates A_centered = A - <A>."""
-        if mean_val is None:
-            mean_val = jnp.mean(data, axis=0)
-        return data - mean_val
+    def loss_centered_jax(loss: jnp.ndarray, loss_m: jnp.ndarray) -> jnp.ndarray:
+        """L_c = L - <L>"""
+        return loss - loss_m
 
     @jax.jit
-    def compute_forces(O_dag: jnp.ndarray, E_c: jnp.ndarray, n_samples: float) -> jnp.ndarray:
+    def loss_centered_jax_modified_ratios(loss, loss_m, betas, r_el, r_le):
         """
-        Computes Force vector F = (1/N) * O^dag @ E_c
-        O_dag: (N_params, N_samples)
-        E_c:   (N_samples,)
+        Adjusts local energy vector to include excited state penalties.
+        This allows solving (S * dt = F_total) using the standard solver infrastructure.
         """
-        return jnp.dot(O_dag, E_c) / n_samples
+        
+        # 1. Standard centering
+        loss_c      = loss - loss_m 
+
+        # 2. Penalty Correction (Effective Energy modification)
+        # Force F_penalty = sum_j beta_j * (<psi|psi_j><psi_j|O|psi> - ...)
+        # We map this to E_eff so that <O E_eff> = F_total
+        
+        # r_el: ratios excited/lower on configs
+        # r_le: ratios lower/excited on configs_j (lower samples)
+        
+        # Mean overlaps
+        r_el_mean   = jnp.mean(r_el, axis=1) # <psi_exc | psi_low>
+        r_le_mean   = jnp.mean(r_le, axis=1) # <psi_low | psi_exc>
+
+        # Centered term on lower samples
+        delta_r_le  = r_le - r_le_mean[:, None]
+
+        # Correction vector (broadcasted)
+        # This implementation assumes we approximate the mixed expectation values 
+        # by reweighting the current samples.
+        # Simplified proxy for the full orthogonality force:
+        corr        = jnp.sum(betas[:, None] * delta_r_le * r_el_mean[:, None], axis=0)
+        
+        return loss_c + corr
 
     @jax.jit
-    def compute_fisher_matrix(O_c: jnp.ndarray, O_dag: jnp.ndarray, n_samples: float) -> jnp.ndarray:
-        """
-        Computes Fisher Matrix S = (1/N) * O^dag @ O
-        Returns shape (N_params, N_params) -- WARNING: Large for deep nets.
-        """
-        return jnp.matmul(O_dag, O_c) / n_samples
+    def derivatives_centered_jax(derivatives: jnp.ndarray, derivatives_m: jnp.ndarray) -> jnp.ndarray:
+        """O_c = O - <O>"""
+        return derivatives - derivatives_m
 
     @jax.jit
-    def compute_ntk_matrix(O_c: jnp.ndarray, O_dag: jnp.ndarray, n_samples: float) -> jnp.ndarray:
-        """
-        Computes Neural Tangent Kernel 
-            T = (1/N) * O @ O^dag
-        Returns shape (N_samples, N_samples) -- Efficient for MinSR.
-        """
-        # O_c is (N_s, N_p), O_dag is (N_p, N_s) -> result (N_s, N_s)
-        return jnp.matmul(O_c, O_dag) / n_samples
+    def gradient_jax(derivatives_c_h: jnp.ndarray, loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+        """F = (1/N) * O^dag @ E_c"""
+        return jnp.matmul(derivatives_c_h, loss_c) / n_samples
 
+    @jax.jit
+    def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+        """S = (1/N) * O^dag @ O (Standard SR)"""
+        return jnp.matmul(derivatives_c_h, derivatives_c) / n_samples
+
+    @jax.jit
+    def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+        """T = (1/N) * O @ O^dag (MinSR)"""
+        # Note: derivatives_c is    (N_samples, N_params)
+        # We want                   (N_s, N_s).
+        # Correct math:             T = O . O^dag
+        # Input derivatives_c_h is usually O^dag (N_p, N_s)
+        return jnp.matmul(derivatives_c, derivatives_c_h) / n_samples    
+    
     # -------------------------------------------------------
-    # Preparation Routine
-    # -------------------------------------------------------
-
+    
     @jax.jit
     def solve_jax_prepare(loss: jnp.ndarray, var_deriv: jnp.ndarray):
-        """
-        Preprocessing step. 
-        Returns (loss_centered, O_centered, O_dag_centered, n_samples)
-        """
-        n_samples   = loss.shape[0]
-        
-        # Center Loss (Energy)
-        loss_m      = jnp.mean(loss, axis=0)
-        loss_c      = loss - loss_m
+        """Standard preprocessing."""
+        n_samples       = loss.shape[0]
+        loss_m          = jnp.mean(loss, axis=0)
+        loss_c          = loss_centered_jax(loss, loss_m)
 
-        # Center Derivatives (O)
-        var_deriv_m = jnp.mean(var_deriv, axis=0)
-        O_c         = var_deriv - var_deriv_m       # Shape (N_s, N_p)
-        O_dag       = jnp.conj(O_c.T)               # Shape (N_p, N_s)
+        full_size       = var_deriv.shape[1]
+        var_deriv_m     = jnp.mean(var_deriv, axis=0)
+        var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
+        var_deriv_c_h   = jnp.conj(var_deriv_c.T)
         
-        return loss_c, O_c, O_dag, n_samples, var_deriv.shape[1]
+        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
 
-    # -------------------------------------------------------
+    @jax.jit
+    def solve_jax_prepare_modified_ratios(loss: jnp.ndarray, var_deriv: jnp.ndarray, betas: jnp.ndarray, r_el: jnp.ndarray, r_le: jnp.ndarray):
+        """Excited state preprocessing."""
+        n_samples       = loss.shape[0]
+        loss_m          = jnp.mean(loss, axis=0)
+        
+        # Use the modified loss calculator
+        loss_c          = loss_centered_jax_modified_ratios(loss, loss_m, betas, r_el, r_le)
+
+        full_size       = var_deriv.shape[1]
+        var_deriv_m     = jnp.mean(var_deriv, axis=0)
+        var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
+        var_deriv_c_h   = jnp.conj(var_deriv_c.T)
+        
+        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
+
     # Unified Solver Logic
-    # -------------------------------------------------------
 
-    @partial(jax.jit, static_argnames=('solve_func', 'mode', 'maxiter', 'tol'))
-    def solve_jax(
-        solve_func      : Callable,
-        loss            : jnp.ndarray,
-        var_deriv       : jnp.ndarray,
-        mode            : SRMode,
-        x0              : Optional[jnp.ndarray] = None,
-        precond_apply   : Optional[Callable] = None,
-        maxiter         : int = 500,
-        tol             : float = 1e-8
-    ):
+    @partial(jax.jit, static_argnames=('solve_func', 'min_sr', 'precond_apply', 'maxiter', 'tol'))
+    def solve_jax(solve_func, loss: jnp.ndarray, var_deriv: jnp.ndarray, min_sr: bool, x0=None, precond_apply=None, maxiter=500, tol=1e-8):
         """
-        Main JAX entry point for SR/MinSR optimization.
-        
-        Parameters
-        ----------
-        solve_func : Callable
-            The linear solver function (e.g. from QES.algebra.solvers).
-            Signature: (A, b, x0, ...) -> solution
-        loss : Array
-            Raw local energies/loss (N_samples,)
-        var_deriv : Array
-            Raw logarithmic derivatives (N_samples, N_params)
-        mode : SRMode
-            STANDARD or MINSR.
+        Unified solver entry point.
         """
-        # 1. Prepare Data
-        E_c, O_c, O_dag, N, _ = solve_jax_prepare(loss, var_deriv)
         
-        # 2. Branch based on Mode
-        if mode == SRMode.MINSR:
-            # MinSR Path (N_s x N_s)
-            # Solve: T * x = E_c
-            # Note: We normalize both sides by 1/N for numerical stability
+        # Prepare
+        loss_c, O_c, O_dag, N, _ = solve_jax_prepare(loss, var_deriv)
+        
+        if min_sr:
+            # MinSR: T = (1/N) O O^dag. Solve T x = E/N. Update = O^dag x.
+            # Calculate T
+            T       = covariance_jax_minsr(O_c, O_dag, N)
+            rhs     = loss_c / N
             
-            # Construct T = (1/N) O O^dag
-            # NOTE: O_c is (N_s, N_p), O_dag is (N_p, N_s). Result is (N_s, N_s).
-            # Correct order for MinSR: O @ O^dag
-            T       = compute_ntk_matrix(O_c, O_dag, N)
+            # Solve T x = rhs
+            # We pass T as 's' to the generic solver
+            x_minsr = solve_func(s=T, s_p=None, b=rhs, x0=None, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
             
-            # RHS must also be normalized by 1/N to match T
-            rhs     = E_c / N
-            
-            # Solve T * x = rhs
-            # x0 for MinSR is size N_samples. If x0 provided is N_params, ignore or project it.
-            # (Usually x0 is None for dense solves)
-            x_minsr = solve_func(s=T, s_p=None, b=rhs, # Pass T as the matrix 's'
-                x0=None, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
-            
-            # Transform back to parameter space: update = O^dag @ x
-            # update shape: (N_p, N_s) @ (N_s, 1) -> (N_p, 1)
+            # Map back to params
             return jnp.matmul(O_dag, x_minsr)
-
         else:
-            # Standard SR Path (N_p x N_p)
-            # Solve: S * update = F
+            # Standard: S = (1/N) O^dag O. Solve S x = F.
+            F       = gradient_jax(O_dag, loss_c, N)
             
-            # 1. Compute Forces F = (1/N) O^dag E_c
-            F = compute_forces(O_dag, E_c, N)
-            
-            # 2. Solver interaction
-            # If solver supports 'gram' (lazy evaluation), we pass O and O_dag.
-            # If solver needs 'matrix', we assume it calculates O_dag @ O itself or we do it.
-            # Here, we stick to the interface expected by `solvers.py`:
-            # It likely expects (s, s_p) to form s @ s_p.
-            
-            # For Standard SR, S = O^dag @ O. So s=O_dag, s_p=O_c.
-            return solve_func(s=O_dag, s_p=O_c, b=F,  x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
+            # Solve S x = F
+            # Pass (O^dag, O) so solver can form S lazily or explicitly
+            return solve_func(s=O_dag, s_p=O_c, b=F, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)    
 
 #####################################
 # NumPy Implementation (Legacy/CPU)
 #####################################
 
 if True:
-    # Numba-optimized helper for numpy backend
-    # (Keeping it simple here, assuming parallel logic to JAX)
+    @numba.njit
+    def loss_centered(loss, loss_m):
+        return loss - loss_m
     
-    def solve_numpy(solver, loss, var_deriv, min_sr: bool, **kwargs):
-        # 1. Prepare
-        loss_mean   = np.mean(loss, axis=0)
-        E_c         = loss - loss_mean
-        
-        grad_mean   = np.mean(var_deriv, axis=0)
-        O_c         = var_deriv - grad_mean
-        O_dag       = O_c.conj().T
-        N           = loss.shape[0]
+    @numba.njit
+    def derivatives_centered(derivatives, derivatives_m):
+        return derivatives - derivatives_m
+    
+    @numba.njit
+    def gradient_np(derivatives_c_h, loss_c, num_samples):
+        return np.matmul(derivatives_c_h, loss_c) / num_samples
+
+    @numba.njit
+    def covariance_np(derivatives_c, derivatives_c_h, num_samples):
+        return np.matmul(derivatives_c_h, derivatives_c) / num_samples
+
+    @numba.njit
+    def covariance_np_minsr(derivatives_c, derivatives_c_h, num_samples):
+        return np.matmul(derivatives_c, derivatives_c_h) / num_samples
+
+    @numba.njit
+    def solve_numpy_prepare(loss, var_deriv):
+        n_samples = loss.shape[0]
+        loss_m = np.mean(loss, axis=0)
+        loss_c = loss_centered(loss, loss_m)
+        var_deriv_m = np.mean(var_deriv, axis=0)
+        var_deriv_c = derivatives_centered(var_deriv, var_deriv_m)
+        var_deriv_c_h = np.conj(var_deriv_c).T
+        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, var_deriv.shape[1]
+
+    # NumPy solver wrapper (simplified)
+    def solve_numpy(solver, loss, var_deriv, min_sr, **kwargs):
+        loss_c, O_c, O_dag, N, _ = solve_numpy_prepare(loss, var_deriv)
         
         if min_sr:
-            # MinSR: T = (1/N) O @ O^dag
-            T       = np.matmul(O_c, O_dag) / N
-            rhs     = E_c / N
-            
-            # Use solver directly on the dense matrix T
-            if hasattr(solver, 'init_from_matrix'):
-                solver.init_from_matrix(T, rhs)
-                
-            x_minsr = solver.solve(rhs, **kwargs)
-            
-            # Map back: update = O^dag @ x
-            return np.matmul(O_dag, x_minsr)
-            
+            T = covariance_np_minsr(O_c, O_dag, N)
+            rhs = loss_c / N
+            if hasattr(solver, 'init_from_matrix'): solver.init_from_matrix(T, rhs)
+            x_sol = solver.solve(rhs, **kwargs)
+            return np.matmul(O_dag, x_sol)
         else:
-            # Standard SR: S = (1/N) O^dag @ O
-            F = np.matmul(O_dag, E_c) / N
-            
-            # Initialize solver with Gram vectors if supported
-            if hasattr(solver, 'init_from_fisher'):
-                # Pass O^dag and O. S = O^dag @ O
-                solver.init_from_fisher(O_dag, O_c, F, **kwargs)
-                
+            F = gradient_np(O_dag, loss_c, N)
+            if hasattr(solver, 'init_from_fisher'): solver.init_from_fisher(O_dag, O_c, F)
             return solver.solve(F, **kwargs)
         
 #####################################
@@ -370,53 +373,32 @@ class StochasticReconfiguration(ABC):
     High-level handler for SR updates.
     '''
     
-    def __init__(self, solver, backend: str = 'default'):
-        self._backend_type  = get_backend(backend)
-        self._isjax         = (self._backend_type != np)
-        self._solver        = solver
-        self._solution      = None
+    def __init__(self, solver: 'Solver', backend: str = 'default'):
+        self._backend_type      = get_backend(backend)
+        self._isjax             = (self._backend_type != np)
+        self._solver: Solver    = solver
+        self._solution          = None
 
-    def solve(self, loss, var_deriv, use_minsr: bool = False, **kwargs):
-        """
-        Solves the SR equation.
-        
-        Parameters
-        ----------
-        loss : array (N_samples,)
-            Local energies.
-        var_deriv : array (N_samples, N_params)
-            Log-derivatives of the wavefunction.
-        use_minsr : bool
-            If True, uses the efficient N_s x N_s Neural Tangent Kernel formulation.
-            Recommended when N_params >> N_samples (Deep Networks).
-        """
-        
-        mode = SRMode.MINSR if use_minsr else SRMode.STANDARD
-        
+        # Expose JIT-compiled functions to call depending on backend
         if self._isjax:
-            # Extract the pure function handle from the solver object
-            # The solver object in QES usually has a 'solve' or 'get_solver_func' method
-            # We assume 'self._solver' is already the callable function or has a wrapper.
-            
-            # If self._solver is a class instance, get its callable
-            solve_fn = self._solver.solve if hasattr(self._solver, 'solve') else self._solver
-            
-            self._solution = solve_jax(
-                                solve_func  =   solve_fn,
-                                loss        =   loss,
-                                var_deriv   =   var_deriv,
-                                mode        =   mode,
-                                **kwargs
-                            )
+            self._gradient_fun                      = gradient_jax
+            self._covariance_fun                    = covariance_jax
+            self._covariance_minres_fun             = covariance_jax_minsr
+            self._prepare_fun                       = solve_jax_prepare
+            # Add back missing hooks
+            self.solve_jax_prepare                  = solve_jax_prepare
+            self.solve_jax_prepare_modified_ratios  = solve_jax_prepare_modified_ratios
         else:
-            self._solution = solve_numpy(
-                                solver      =   self._solver,
-                                loss        =   loss,
-                                var_deriv   =   var_deriv,
-                                min_sr      =   use_minsr,
-                                **kwargs
-                            )
-            
-        return self._solution
+            raise NotImplementedError("Only JAX backend is supported currently.")
+            # self._gradient_fun                      = gradient_np
+            # self._covariance_fun                    = covariance_np
+            # self._prepare_fun                       = solve_numpy_prepare
+
+    def solve(self, loss: Array, var_deriv: Array, use_minsr=False, **kwargs):
+        solve_fn = self._solver.solve if hasattr(self._solver, 'solve') else self._solver
+        if self._isjax:
+            return solve_jax(solve_fn, loss, var_deriv, use_minsr, **kwargs)
+        else:
+            return solve_numpy(self._solver, loss, var_deriv, use_minsr, **kwargs)
 
 ######################################

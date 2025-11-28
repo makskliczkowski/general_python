@@ -130,7 +130,7 @@ def _get_presets() -> Dict[str, List[LearningPhase]]:
         "kitaev": [
             LearningPhase(
                 name            =   "pre", 
-                lr              =   1e-1, 
+                lr              =   5e-2, 
                 lr_schedule     =   "step", 
                 lr_kwargs       =   {'step_size': 25, 'lr_decay': 0.5},
                 reg             =   5e-2
@@ -204,8 +204,7 @@ class PhaseScheduler:
             
         # Logging
         if self.logger:
-            self.logger(f"Phase '{phase.name}': Init {self.param_type.upper()} scheduler '{sched_type}' "
-                        f"val={init_val:.2e}, epochs={phase.epochs}", color='cyan')
+            self.logger.info(f"Phase '{phase.name}': Init {self.param_type.upper()} scheduler '{sched_type}, val={init_val:.2e}, epochs={phase.epochs}", color='cyan')
 
         # Instantiate via your factory
         self._active_engine     = choose_scheduler(

@@ -157,10 +157,9 @@ class Lattice(ABC):
         self._nnn_forward   = [[]]
         
         # helping lists
-        self._coords        = []
-        self._cells         = []
-        self._fracs         = []
-        self._subs          = []
+        self._cells         = []                                    # real space coordinates
+        self._fracs         = []                                    # fractional coordinates
+        self._subs          = []                                    # sub-lattice indices
         self._spatial_norm  = [[[]]]                                # three dimensional array for the spatial norm
         
         # matrices for real space and inverse space vectors
@@ -478,9 +477,9 @@ class Lattice(ABC):
     def nnn_forward(self, value):   self._nnn_forward = value
     
     @property
-    def coordinates(self):          return self._coords
+    def coordinates(self):          return self._coordinates
     @coordinates.setter
-    def coordinates(self, value):   self._coords = value
+    def coordinates(self, value):   self._coordinates = value
     
     @property
     def subs(self):                 return self._subs
@@ -907,8 +906,8 @@ class Lattice(ABC):
         
         # Get site coordinates
         # r_vectors       = np.asarray(self.coordinates, dtype=float)  # (Ns, 3)
-        r_vectors       = np.asarray(self.cells, dtype=float)  # (Ns, 3)
-        if not r_vectors.shape[0] == Ns:
+        cells           = np.asarray(self._cells, dtype=float)  # (Ns, 3)
+        if not cells.shape[0] == Ns:
             raise ValueError("Mismatch in number of sites and coordinates.")
 
         sub_idx         = self.subs # (Ns,)
@@ -936,7 +935,7 @@ class Lattice(ABC):
         norm            = np.sqrt(Nc)                               # Bloch normalization factor
 
         # numpy path version (not used in loop)
-        phase_matrix    = np.exp(-1j * (k_vectors @ r_vectors.T)) / norm    # (Nc, Ns)
+        phase_matrix    = np.exp(-1j * (k_vectors @ cells.T)) / norm        # (Nc, Ns)
         selector        = (sub_idx[None, :] == np.arange(Nb)[:, None])      # (Nb, Ns)
         F               = phase_matrix[:, None, :] * selector[None, :, :]   # (Nc,Nb,Ns)
         F_block         = F.reshape(Nc * Nb, Ns)
@@ -1308,9 +1307,9 @@ class Lattice(ABC):
     #! Standard getters
     # -----------------------------------------------------------------------------
 
-    def get_coordinates(self, *args):           return self.coordinates if len(args) == 0 else self.coordinates[args[0]]
-    def get_r_vectors(self,*args):              return self.rvectors if len(args) == 0 else self.rvectors[args[0]]
-    def get_k_vectors(self, *args):             return self.kvectors if len(args) == 0 else self.kvectors[args[0]]
+    def get_coordinates(self, *args):           return self._coordinates    if len(args) == 0 else self._coordinates[args[0]]
+    def get_r_vectors(self,*args):              return self._rvectors       if len(args) == 0 else self._rvectors[args[0]]
+    def get_k_vectors(self, *args):             return self._kvectors       if len(args) == 0 else self._kvectors[args[0]]
     def get_site_diff(self, i: int, j: int):    return self.get_coordinates(j) - self.get_coordinates(i)
     def get_k_vec_idx(self, sym = False):       pass
 
@@ -1401,10 +1400,10 @@ class Lattice(ABC):
         Works for any lattice with defined self._a1, _a2, _a3 and self._basis list.
         """
         n_basis             = len(self._basis)
-        self.coordinates    = []
-        self.cells          = []
-        self.fracs          = []
-        self.subs           = []
+        coordinates         = []
+        cells               = []
+        fracs               = []
+        subs                = []
 
         for i in range(self.Ns):
             cell    = i // n_basis          # integer division
@@ -1416,17 +1415,16 @@ class Lattice(ABC):
 
             R       = nx * self._a1 + ny * self._a2 + nz * self._a3     # lattice vector
             r       = R + self._basis[sub]                              # add basis vector
-            self.coordinates.append(r)
-            self.cells.append(R)
-            self.fracs.append((nx, ny, nz))
-            self.subs.append(sub)
+            coordinates.append(r)
+            cells.append(R)
+            fracs.append((nx, ny, nz))
+            subs.append(sub)
             
-
-        self.coordinates    = np.array(self.coordinates)
-        self.cells          = np.array(self.cells)
-        self.fracs          = np.array(self.fracs)
-        self.subs           = np.array(self.subs)
-        return self.coordinates
+        self._coordinates   = np.array(coordinates)
+        self._cells         = np.array(cells)
+        self._fracs         = np.array(fracs)
+        self._subs          = np.array(subs)
+        return self._coordinates
         
     def calculate_r_vectors(self):
         """
@@ -1689,11 +1687,11 @@ class Lattice(ABC):
         sub_idx  : (Ns,) int array in [0, Nb-1]
         """
 
-        coords      = np.asarray(self.coordinates, float)          # (Ns,3)
+        coords      = np.asarray(self._coordinates, float)          # (Ns,3)
         a1          = np.asarray(self._a1, float).reshape(3)
         a2          = np.asarray(self._a2, float).reshape(3)
         a3          = np.asarray(self._a3, float).reshape(3)
-        A           = np.column_stack([a1, a2, a3])                # (3,3)
+        A           = np.column_stack([a1, a2, a3])                 # (3,3)
         Ainv        = np.linalg.inv(A)
 
         Nb          = len(self._basis)

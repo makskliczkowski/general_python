@@ -34,7 +34,7 @@ class HoneycombLattice(Lattice):
     Implementation of the Honeycomb Lattice.
     
     The honeycomb lattice is a 2D lattice with a hexagonal structure. The lattice consists of
-    two sublattices (A and B) arranged in a hexagonal pattern. Nearest and next-nearest neighbors
+    two flattices (A and B) arranged in a hexagonal pattern. Nearest and next-nearest neighbors
     are computed based on a hexagonal unit cell.
     
     References:

@@ -17,7 +17,7 @@ from enum import Enum, auto, unique
 from ..solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
 
 # Import concrete solver implementations
-from .cg import CgSolver
+from .cg import CgSolver, CgSolverScipy
 from .direct import DirectSolver, DirectScipy, DirectJaxScipy, DirectInvSolver
 from .pseudoinverse import PseudoInverseSolver
 from .minres_qlp import MinresQLPSolver
@@ -49,7 +49,7 @@ _SOLVER_TYPE_TO_CLASS_MAP: dict[SolverType, Type[Solver]] = {
     # SolverType.GMRES: GmresSolver, # Add when implemented
 
     # Iterative Solvers (SciPy Wrappers)
-    # SolverType.SCIPY_CG         : CgSolverScipy,  # Not implemented yet
+    SolverType.SCIPY_CG         : CgSolverScipy,  # Not implemented yet
     SolverType.SCIPY_MINRES     : MinresSolverScipy,
     # SolverType.SCIPY_GMRES: GmresScipy, # Add when implemented
 
@@ -60,7 +60,10 @@ _SOLVER_TYPE_TO_CLASS_MAP: dict[SolverType, Type[Solver]] = {
 # -----------------------------------------------------------------------------
 
 def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
-                sigma           : Optional[float] = None,
+                sigma           : Optional[float]           = None,
+                is_gram         : bool                      = False,
+                default_precond : Optional[Preconditioner]  = None,
+                backend         : str                       = "default",
                 *args,
                 **kwargs) -> Solver:
     """
@@ -94,49 +97,67 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
     """
     #! Handle Instance Passthrough
     if isinstance(solver_id, Solver):
-        if kwargs:
-            print(f"Warning: Solver instance provided; ignoring kwargs: {kwargs}")
+        if kwargs and kwargs.get('logger', None) is not None:
+            logger = kwargs.get('logger')
+            logger.warning(f"Solver instance provided; ignoring kwargs: {kwargs}")
         return solver_id
+    
+    init_kwargs = kwargs.copy()
+    init_kwargs.update({
+        'sigma'             : sigma,
+        'is_gram'           : is_gram,
+        'default_precond'   : default_precond,
+        'backend'           : backend
+    })
 
     #! Handle Class Passthrough
+    target_class: Type[Solver] = None
     if isinstance(solver_id, type) and issubclass(solver_id, Solver):
         target_class = solver_id
         print(f"Instantiating provided solver class: {target_class.__name__}")
     else:
         #! Resolve ID (str, int, Enum) to Enum Type
-        solver_type: Optional[SolverType] = None
+        solver_type = None
         if isinstance(solver_id, str):
             try:
                 solver_type = SolverType[solver_id.upper()]
-            except KeyError as e:
-                raise ValueError(f"Unknown solver name: '{solver_id}'. Valid names: {[e.name for e in SolverType]}") from e
+            except KeyError:
+                raise ValueError(f"Unknown solver: {solver_id}")
         elif isinstance(solver_id, int):
-            try:
-                solver_type = SolverType(solver_id)
-            except ValueError as e:
-                raise ValueError(f"Unknown solver value: {solver_id}. Valid values: {[e.value for e in SolverType]}") from e
+            solver_type = SolverType(solver_id)
         elif isinstance(solver_id, SolverType):
             solver_type = solver_id
-        else:
-            raise TypeError(f"Unsupported type for solver_id: {type(solver_id)}. Expected Solver class/instance, Enum, str, or int.")
+            
+        if solver_type:
+            target_class = _SOLVER_TYPE_TO_CLASS_MAP.get(solver_type)
 
-        #! Map Enum to Class
-        target_class = _SOLVER_TYPE_TO_CLASS_MAP.get(solver_type)
-        if target_class is None:
-            raise NotImplementedError(f"Solver type '{solver_type.name}' is not currently mapped to an implemented class.")
-
-    #! Filter Kwargs for Constructor and Instantiate
+    if target_class is None:
+        raise ValueError(f"Could not map solver_id '{solver_id}' to a class.")
+    
     try:
-        valid_args      = inspect.signature(target_class.__init__).parameters
-        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_args or k in Solver.__init__.__code__.co_varnames}
-        ignored_kwargs  = {k: v for k, v in kwargs.items() if k not in filtered_kwargs and k != 'self'}
-
-        if ignored_kwargs:
-            print(f"Warning: Ignoring potentially invalid kwargs for {target_class.__name__}: {ignored_kwargs}")
+        # Get the signature of the specific solver class
+        sig             = inspect.signature(target_class.__init__)
+        valid_params    = sig.parameters
+        
+        # Also check the base Solver class for generic args (like backend)
+        base_params     = Solver.__init__.__code__.co_varnames
+        
+        # Build the final dictionary
+        filtered_kwargs = {}
+        for k, v in init_kwargs.items():
+            # We pass the argument if:
+            # a) The class explicitly asks for it (in __init__)
+            # b) It accepts **kwargs (v.kind == VAR_KEYWORD)
+            # c) It's a standard base class argument
+            if k in valid_params or k in base_params:
+                filtered_kwargs[k] = v
+            elif any(p.kind == inspect.Parameter.VAR_KEYWORD for p in valid_params.values()):
+                filtered_kwargs[k] = v
+                
         return target_class(**filtered_kwargs)
+        
     except Exception as e:
-        print(f"Error instantiating {target_class.__name__} with kwargs {filtered_kwargs}: {e}")
-        raise
+        raise RuntimeError(f"Failed to instantiate {target_class.__name__}: {e}")
 
 # -----------------------------------------------------------------------------
 #! Random test method (Keep as provided in solver.py - maybe move to testing utils?)

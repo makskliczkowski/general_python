@@ -410,20 +410,6 @@ class GeneralNet(ABC):
         return self._seed
 
     # ---------------------------------------------------
-    #! SETTERS
-    # ---------------------------------------------------
-    
-    @abstractmethod
-    def set_params(self, params: dict):
-        """
-        Set the network parameters.
-        
-        Parameters:
-            params (dict): Network parameters.
-        """
-        pass
-    
-    # ---------------------------------------------------
     #! GETTERS
     # ---------------------------------------------------
     
@@ -435,6 +421,16 @@ class GeneralNet(ABC):
             dict: Network parameters.
         """
         return self._parameters
+    
+    @property
+    def params(self): 
+        """
+        Get the network parameters.
+        
+        Returns:
+            dict: Network parameters.
+        """
+        return self.get_params()        
     
     # ---------------------------------------------------
     #! METHODS
@@ -521,7 +517,31 @@ class GeneralNet(ABC):
             array-like: Output of the network.
         """
         return self.apply(params=params, x=x, use_jax=self._use_jax)
+
+    # ---------------------------------------------------
+    #! SETTERS
+    # ---------------------------------------------------
     
+    @abstractmethod
+    def set_params(self, params: dict):
+        """
+        Set the network parameters.
+        
+        Parameters:
+            params (dict): Network parameters.
+        """
+        pass
+
+    @params.setter
+    def params(self, value: dict):
+        """
+        Set the network parameters.
+        
+        Parameters:
+            value (dict): Network parameters.
+        """
+        self.set_params(value)
+
     # ---------------------------------------------------
     #! CHECKER
     # ---------------------------------------------------

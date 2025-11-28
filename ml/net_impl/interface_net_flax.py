@@ -136,6 +136,13 @@ class FlaxInterface(GeneralNet):
         #! Ensure dtype consistency in kwargs passed to the module
         net_kwargs_processed        = net_kwargs.copy()
         net_kwargs_processed.setdefault('dtype', self._dtype)
+        # pop the kwargs that are not meant for the Flax module
+        net_kwargs_processed.pop('in_activation', None)
+        net_kwargs_processed.pop('backend', None)
+        net_kwargs_processed.pop('input_shape', None)
+        net_kwargs_processed.pop('seed', None)
+        
+        #! Handle activation functions if specified
         self._handle_activations(net_kwargs_processed)
         
         #! Create the internal Flax module.
@@ -219,6 +226,7 @@ class FlaxInterface(GeneralNet):
         
         # We store the JIT-ed function.
         self._compiled_apply_fn = jax.jit(_forward_pass)
+        # self._compiled_apply_fn = _forward_pass
     
     def _initialize_activations(self, act_fun_specs: Any) -> Tuple[Callable, ...]:
         """
@@ -298,8 +306,7 @@ class FlaxInterface(GeneralNet):
         """
         
         if self._initialized:
-            self.log(f"Warning: Network {self.__class__} already initialized. Re-initializing.",
-                    log = 'warning', lvl = 1, color = self._dcol)
+            self.log(f"Warning: Network {self.__class__} already initialized. Re-initializing.", log = 'debug', lvl = 1, color = self._dcol)
 
         if key is None:
             key = random.PRNGKey(self._seed)

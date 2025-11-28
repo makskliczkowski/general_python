@@ -1,10 +1,29 @@
 """
-file    : QES/general_python/ml/net_impl/networks/net_rbm.py
-author  : Maksymilian Kliczkowski
-date    : 2025-04-01
+QES.general_python.ml.net_impl.networks.net_rbm
+===============================================
 
-Flax implementations of Restricted Boltzmann Machines (RBMs) using the
-FlaxInterface wrapper for compatibility with the QES framework.
+Restricted Boltzmann Machine (RBM) for Quantum States.
+
+This module provides a Flax-based implementation of a Restricted Boltzmann
+Machine (RBM) suitable for representing quantum wavefunctions. It supports
+both real and complex-valued parameters.
+
+Usage
+-----
+Import and use the RBM network:
+
+    from QES.general_python.ml.networks import RBM
+    rbm_net = RBM(input_shape=(10,), n_hidden=20)
+
+The implementation is wrapped in the `FlaxInterface` for seamless integration
+with the QES framework.
+
+----------------------------------------------------------
+Author          : Maksymilian Kliczkowski
+Email           : maxgrom97@gmail.com
+Date            : 01.04.2025
+Description     : Flax implementation of Restricted Boltzmann Machines (RBMs).
+----------------------------------------------------------
 """
 
 import numpy as np
@@ -174,8 +193,7 @@ class RBM(FlaxInterface):
         # Determine dtypes
         final_dtype             = jnp.dtype(dtype)
         final_param_dtype       = jnp.dtype(param_dtype) if param_dtype is not None else final_dtype
-        self._is_cpx            = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
-
+        
         # Basic type compatibility check
         is_final_cpx            = jnp.issubdtype(final_dtype, jnp.complexfloating)
         self._is_cpx            = jnp.issubdtype(final_param_dtype, jnp.complexfloating)
@@ -211,8 +229,8 @@ class RBM(FlaxInterface):
         )
 
         #! For the analytic gradient, we need to compile the function
-        self._compiled_grad_fn = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
-        # self._has_analytic_grad = True
+        self._compiled_grad_fn  = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
+        self._has_analytic_grad = False
 
     # ------------------------------------------------------------
     #! Analytic Gradient

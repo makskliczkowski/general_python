@@ -1,14 +1,45 @@
-'''
-file    :   general_python/ml/net_impl/networks/net_cnn.py
-author  :   Maksymilian Kliczkowski
-date    :   2025-05-07
-brief   :   Convolutional Neural Network (CNN) implementation using Flax.
-            This module defines a CNN class that can be used for various tasks,
-            such as image classification, feature extraction, etc.
-            The CNN is designed to work with JAX and Flax, leveraging their
-            capabilities for efficient computation and automatic differentiation. 
-        
-'''
+"""
+QES.general_python.ml.net_impl.networks.net_cnn
+===============================================
+
+Convolutional Neural Network (CNN) for Quantum States.
+
+This module provides a Flax-based implementation of a Convolutional Neural
+Network (CNN), designed for representing quantum wavefunctions on a lattice.
+It processes 1D input vectors by reshaping them into spatial structures (e.g., a 2D grid)
+and applying convolutional layers.
+
+Usage
+-----
+Import and use the CNN network from the central factory for simplicity.
+The factory will correctly instantiate the `CNN` class from this module.
+
+    from QES.general_python.ml.networks import choose_network
+    
+    # Define parameters for a CNN on a 64-site lattice, reshaped to 8x8
+    cnn_params = {
+        'input_shape'   : (64,),
+        'reshape_dims'  : (8, 8),
+        'features'      : (16, 32),
+        'kernel_sizes'  : ((3, 3), (3, 3))
+    }
+    
+    # Create a real-valued CNN
+    real_cnn_net = choose_network('cnn', **cnn_params)
+    
+    # Create a complex-valued CNN by specifying the dtype
+    complex_cnn_net = choose_network('cnn', dtype='complex64', **cnn_params)
+
+The implementation is wrapped in the `FlaxInterface` for seamless integration
+with the QES framework.
+
+----------------------------------------------------------
+Author          : Maksymilian Kliczkowski
+Email           : maxgrom97@gmail.com
+Date            : 07.05.2025
+Description     : Flax implementation of a Convolutional Neural Network (CNN).
+----------------------------------------------------------
+"""
 
 
 import numpy as np
@@ -191,6 +222,38 @@ class CNN(FlaxInterface):
     Interprets 1D input vectors as configurations on a lattice, processes them
     through convolutional layers, and outputs features of a specified shape.
 
+    Example:
+    --------
+        >>> import numpy as np
+        >>> from QES.general_python.ml.net_impl.networks.net_cnn import CNN
+        >>>
+        >>> # --- Real-valued CNN for a 1D system ---
+        >>> cnn_1d = CNN(
+        ...     input_shape=(16,),      # 16 sites in a 1D chain
+        ...     reshape_dims=(16,),     # Reshape to (16,) for 1D convolution
+        ...     features=[8, 16],       # Two conv layers with 8 and 16 channels
+        ...     kernel_sizes=[3, 3],    # 3x1 kernel for both layers
+        ...     output_shape=(1,)       # Scalar output for log-amplitude
+        ... )
+        >>> print(f"1D CNN (Real): {cnn_1d}")
+        >>>
+        >>> # --- Complex-valued CNN for a 2D system ---
+        >>> cnn_2d_cplx = CNN(
+        ...     input_shape=(36,),      # 36 sites on a 6x6 lattice
+        ...     reshape_dims=(6, 6),    # Reshape to a 6x6 grid
+        ...     features=[16],          # One conv layer with 16 channels
+        ...     kernel_sizes=[(3, 3)],  # Single 3x3 kernel
+        ...     output_shape=(1,),
+        ...     dtype='complex64'       # Use complex numbers for weights
+        ... )
+        >>> print(f"2D CNN (Complex): {cnn_2d_cplx}")
+        >>>
+        >>> # Pass a random batch of 2 configurations
+        >>> random_configs = np.random.randint(0, 2, size=(2, 36))
+        >>> log_amplitudes = cnn_2d_cplx(random_configs)
+        >>> print(f"Output shape for batch of 2: {log_amplitudes.shape}")
+
+
     Parameters:
         input_shape (tuple):
             Shape of the *1D* input vector (e.g., (n_visible,)).
@@ -231,6 +294,7 @@ class CNN(FlaxInterface):
                 output_shape        : Tuple[int, ...]                                       = (1,),
                 in_activation       : Optional[Callable]                                    = None,
                 final_activation    : Union[str, Callable, None]                            = None,
+                *,
                 dtype               : Any                                                   = DEFAULT_JP_FLOAT_TYPE,
                 param_dtype         : Optional[Any]                                         = None,
                 seed                : int                                                   = 0,
@@ -369,28 +433,45 @@ class CNN(FlaxInterface):
 
 # Example usage:
 if __name__ == "__main__":
-    # Example configuration
-    input_shape     = (64,)             # 1D input vector of length 64
-    reshape_dims    = (8, 8)            # Reshape to 8x8 spatial dimensions
-    features        = [16, 32]          # Number of output channels for each conv layer
-    kernel_sizes    = [(3, 3), (3, 3)]  # Kernel sizes for each conv layer
-    activations     = ['relu', 'relu']  # Activation functions for each conv layer
-    output_shape    = (1,)              # Desired output shape (e.g., scalar output)
     
-    cnn = CNN(input_shape   =   input_shape,
-            reshape_dims    =   reshape_dims,
-            features        =   features,
-            kernel_sizes    =   kernel_sizes,
-            activations     =   activations,
-            output_shape    =   output_shape)
+    print("--- Defining a Real-valued CNN for a 2D lattice (8x8) ---")
+    cnn_real = CNN(
+        input_shape     =   (64,),
+        reshape_dims    =   (8, 8),
+        features        =   [16, 32],
+        kernel_sizes    =   [(3, 3), (3, 3)],
+        activations     =   ['relu', 'relu'],
+        output_shape    =   (1,)
+    )
+    print(cnn_real)
+    
+    # Create a random batch of 2 configurations {0, 1}
+    x_real      = np.random.randint(0, 2, size=(2, 64))
+    output_real = cnn_real(x_real)
+    print(f"Output shape for real CNN: {output_real.shape}")
+    print(f"Example output: {output_real[0]}")
+    print("-" * 20)
 
-    print(cnn)
-    # Example input
-    x = np.random.rand(1, 64)  # Batch of 1 with input shape (64,)
-    # Forward pass
-    output = cnn(x)
-    print("Output shape:", output.shape)  # Should be (1, 1) after reshaping
-    print("Output:", output)  # Output values
-    # Note: The output will depend on the random initialization of the network parameters.
-    # You can also check the number of parameters
-    print("Number of parameters:", cnn.nparams)  # Number of trainable parameters in the model
+    print("\n--- Defining a Complex-valued CNN for a 1D chain (16 sites) ---")
+    cnn_cplx    = CNN(
+        input_shape     =   (16,),
+        reshape_dims    =   (16,),
+        features        =   [8],
+        kernel_sizes    =   [3], # Kernel is automatically expanded to (3,)
+        output_shape    =   (2,), # Example of a 2-component output
+        dtype           =   'complex64'
+    )
+    print(cnn_cplx)
+
+    x_cplx      = np.random.randint(0, 2, size=(2, 16))
+    output_cplx = cnn_cplx(x_cplx)
+    print(f"Output shape for complex CNN: {output_cplx.shape}")
+    print(f"Example output: {output_cplx[0]}")
+    print("-" * 20)
+    
+    print(f"\nTotal parameters in real CNN: {cnn_real.nparams}")
+    print(f"Total parameters in complex CNN: {cnn_cplx.nparams}")
+
+# --------------------------------------------------------------
+#! End of File
+# --------------------------------------------------------------

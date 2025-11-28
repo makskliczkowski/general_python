@@ -19,11 +19,11 @@ from .lattice   import (
     handle_boundary_conditions,
     handle_dim,
 )
-from .square    import SquareLattice
-from .hexagonal import HexagonalLattice
-from .honeycomb import HoneycombLattice
-from .graph     import GraphLattice
-from ..common.plot import colorsCycle
+from .square        import SquareLattice
+from .hexagonal     import HexagonalLattice
+from .honeycomb     import HoneycombLattice
+from .graph         import GraphLattice
+from ..common.plot  import colorsCycle
 from .visualization import (
     format_lattice_summary,
     format_vector_table,
@@ -64,9 +64,8 @@ __all__ = [
     "run_lattice_tests",
 ]
 
-LatticeFactory = Type[Lattice]
-_LATTICE_REGISTRY: "OrderedDict[str, LatticeFactory]" = OrderedDict()
-
+LatticeFactory      = Type[Lattice]
+_LATTICE_REGISTRY   : "OrderedDict[str, LatticeFactory]" = OrderedDict()
 
 def register_lattice(name: str, lattice_cls: LatticeFactory, *aliases: str, overwrite: bool = False):
     """
@@ -91,10 +90,10 @@ def available_lattices() -> Tuple[str, ...]:
 
 
 # Default registrations
-register_lattice("square", SquareLattice, "SquareLattice")
-register_lattice("hexagonal", HexagonalLattice, "HexagonalLattice")
-register_lattice("honeycomb", HoneycombLattice, "HoneycombLattice")
-register_lattice("graph", GraphLattice, "GraphLattice")
+register_lattice("square",      SquareLattice,      "SquareLattice")
+register_lattice("hexagonal",   HexagonalLattice,   "HexagonalLattice")
+register_lattice("honeycomb",   HoneycombLattice,   "HoneycombLattice")
+register_lattice("graph",       GraphLattice,       "GraphLattice")
 
 ####################################################################################################
 # Test the lattice module

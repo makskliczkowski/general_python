@@ -41,11 +41,12 @@ class SquareLattice(Lattice):
         self._a1        = self._vectors[:, 0]
         self._a2        = self._vectors[:, 1]
         self._a3        = self._vectors[:, 2]
+        
         self._basis     = np.array([[0.0, 0.0, 0.0 ]])
+        
         self._delta_x   = np.array([self.a, 0.0, 0.0])
         self._delta_y   = np.array([0.0, self.b, 0.0])
         self._delta_z   = np.array([0.0, 0.0, self.c])
-        
                 
         match self.dim:
             case 1:
@@ -105,39 +106,6 @@ class SquareLattice(Lattice):
             return LatticeBackend.arange(self.Ns).tolist()
 
     ################################### CALCULATORS ###################################
-
-    def calculate_coordinates(self):
-        """
-        Calculates the real lattice coordinates for each site.
-        """
-        self.coordinates = [
-            (i % self.Lx, (i // self.Lx) % self.Ly, (i // (self.lxly)) % self.Lz)
-            for i in range(self.Ns)
-        ]
-
-    def calculate_k_vectors(self):
-        """
-        Calculates the inverse space (reciprocal lattice) vectors.
-        """
-        two_pi_over_lx = 2 * LatticeBackend.pi / SquareLattice.a / self.lx
-        two_pi_over_ly = 2 * LatticeBackend.pi / SquareLattice.b / self.ly
-        two_pi_over_lz = 2 * LatticeBackend.pi / SquareLattice.c / self.lz
-
-        self.kvectors = LatticeBackend.array([
-            [-LatticeBackend.pi + two_pi_over_lx * qx,
-             -LatticeBackend.pi + two_pi_over_ly * qy,
-             -LatticeBackend.pi + two_pi_over_lz * qz]
-            for qx in range(self.lx) for qy in range(self.ly) for qz in range(self.lz)
-        ])
-
-    def calculate_r_vectors(self):
-        """
-        Calculates all possible real space vectors in the lattice.
-        """
-        self.rvectors = LatticeBackend.array([
-            self._vectors[:, 0] * x + self._vectors[:, 1] * y + self._vectors[:, 2] * z
-            for z in range(self.Lz) for y in range(self.Ly) for x in range(self.Lx)
-        ])
 
     def calculate_norm_sym(self):
         """
