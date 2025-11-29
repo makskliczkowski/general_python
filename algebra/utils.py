@@ -935,7 +935,9 @@ class BackendManager:
             backend_name = backend_spec.lower()
         elif backend_spec is np or backend_spec is self._np_module:
             backend_name = "numpy"
-        elif self.is_jax_available and self._jnp_module and (backend_spec is jnp or backend_spec is self._jnp_module):
+        elif self.is_jax_available and (backend_spec is jax or backend_spec is self._jax_module):
+            backend_name = "jax"
+        elif self.is_jax_available and self._jnp_module and (backend_spec is jnp or backend_spec is self._jnp_module or backend_spec is self._jax_module):
             backend_name = "jax"
         else:
             raise ValueError(f"Unsupported backend specification: {backend_spec}")

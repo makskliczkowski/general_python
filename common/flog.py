@@ -184,7 +184,7 @@ class Logger:
         self.has_colors         = sys.stdout.isatty() and os.environ.get(ENV_LOGGER_COLORS, '1') != '0'
         
         # Set up logging: always show timestamp in console if use_ts_in_cmd is True
-        self.logger             = logging.getLogger(__name__)
+        self.logger             = logging.getLogger(name or __name__)
         self.logger.setLevel(self.lvl)
         self.logger.propagate   = False
         
@@ -375,6 +375,8 @@ class Logger:
         if color is not None and self.has_colors:
             msg = self.colorize(msg, color)
         self.logger.info(Logger.print(msg, lvl))
+        
+    def inf(self, msg: str, lvl=0, verbose=True, color=None):   return self.info(msg, lvl, verbose, color)
 
     # --------------------------------------------------------------
     
@@ -393,10 +395,12 @@ class Logger:
         if color is not None and self.has_colors:
             msg = self.colorize(msg, color)
         self.logger.debug(Logger.print(msg, lvl))
+        
+    def dbg(self, msg: str, lvl=0, verbose=True, color=None):   return self.debug(msg, lvl, verbose, color)
 
     # --------------------------------------------------------------
     
-    def warning(self, msg: str, lvl=0, verbose=True):
+    def warning(self, msg: str, lvl=0, verbose=True, color='yellow'):
         """
         Log a warning message if verbosity is enabled.
 
@@ -408,12 +412,14 @@ class Logger:
         if not verbose:
             return
         if self.has_colors:
-            msg = self.colorize(msg, 'yellow')
+            msg = self.colorize(msg, color)
         self.logger.warning(Logger.print(msg, lvl))
+        
+    def warn(self, msg: str, lvl=0, verbose=True, color='yellow'): return self.warning(msg, lvl, verbose, color)
 
     # --------------------------------------------------------------
 
-    def error(self, msg: str, lvl=0, verbose=True):
+    def error(self, msg: str, lvl=0, verbose=True, color='red'):
         """
         Log an error message if verbosity is enabled.
 
@@ -428,6 +434,8 @@ class Logger:
         if self.has_colors:
             msg = self.colorize(msg, 'red')
         self.logger.error(Logger.print(msg, lvl))
+        
+    def err(self, msg: str, lvl=0, verbose=True, color='red'): return self.error(msg, lvl, verbose, color)    
         
     # --------------------------------------------------------------
     
