@@ -32,17 +32,17 @@ from functools import partial
 
 try:
     # Base Interface (essential)
-    from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.activation_functions import log_cosh_jnp
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    from ....ml.net_impl.interface_net_flax     import FlaxInterface
+    from ....ml.net_impl.activation_functions   import log_cosh_jnp
+    from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
+    from ....algebra.utils                      import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 except ImportError as e:
     print(f"Error importing QES base modules: {e}")
     class FlaxInterface:
         pass
     JAX_AVAILABLE = False
 
-# --- JAX / Flax Imports ---
+# JAX / Flax Imports
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
@@ -50,7 +50,6 @@ if JAX_AVAILABLE:
     import flax.linen as nn
 else:
     raise ImportError("JAX is not available. Please install JAX to use this module.")
-
 
 ##########################################################
 #! INNER FLAX RBM MODULE DEFINITION
@@ -146,7 +145,6 @@ class _FlaxRBM(nn.Module):
             log_psi    += jnp.sum(v * bias, axis=-1)
 
         return log_psi if self.islog else jnp.exp(log_psi)
-
 
 ##########################################################
 #! RBM WRAPPER CLASSES USING FlaxInterface

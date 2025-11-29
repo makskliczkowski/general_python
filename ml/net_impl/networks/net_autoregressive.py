@@ -7,7 +7,7 @@ Autoregressive Neural Network for Quantum States.
 This module provides an implementation of Autoregressive (AR) neural networks
 for representing quantum wavefunctions. The wavefunction is factorized as:
 
-    ψ(s₁, s₂, ..., sₙ) = p(s₁) * p(s₂|s₁) * ... * p(sₙ|s₁,...,sₙ₋₁)
+    ψ(s1, s2, ..., sn) = p(s1) * p(s2|s1) * ... * p(sn|s1,...,sn-1)
 
 Each conditional probability is modeled by a separate neural network.
 
@@ -20,431 +20,326 @@ Import and use the Autoregressive network:
 
 See the documentation and examples for more details.
 ----------------------------------------------------------
-Author          : Development Team
+Author          : Maksymilian Kliczkowski
 Email           : maxgrom97@gmail.com
 Date            : 01.11.2025
-Description     : Autoregressive Neural Network for quantum states.
+Description     : Autoregressive Neural Network for quantum states. We implement
+                  MADE-like architecture using Flax. MADE (Masked Autoencoder for
+                  Distribution Estimation) is a well-known autoregressive model.
 ----------------------------------------------------------
 """
 
+from typing import Sequence, Callable, Any, Tuple
 import numpy as np
-from typing import Tuple, Optional, Any, Callable
-from functools import partial
 
 try:
-    from QES.general_python.ml.net_impl.interface_net_flax import FlaxInterface
-    from QES.general_python.ml.net_impl.activation_functions import log_cosh_jnp, elu_jnp
-    from QES.general_python.ml.net_impl.utils.net_init_jax import lecun_normal
-    from QES.general_python.algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
-except ImportError as e:
-    print(f"Warning: Could not import QES base modules: {e}")
-    class FlaxInterface:
-        pass
-    JAX_AVAILABLE = False
-    DEFAULT_JP_FLOAT_TYPE = np.float32
-    DEFAULT_JP_CPX_TYPE = np.complex64
-
-if JAX_AVAILABLE:
+    from QES.general_python.ml.net_impl.interface_net_flax import FlaxInterface, JAX_AVAILABLE
+    
+    if not JAX_AVAILABLE:
+        raise ImportError("JAX is required to use Autoregressive networks.")
+    
     import jax
     import jax.numpy as jnp
-    from jax import nn
-    import flax
-    from flax import linen as nn_flax
-    import flax.linen as nn
-    try:
-        from jax._src.prng import threefry_prng_impl as prng_impl
-    except ImportError:
-        from jax._src.random import threefry_prng_impl as prng_impl
-else:
-    # Define placeholder for when JAX not available
-    class nn_flax:
-        Module = object
-    class nn:
-        Dense = None
-        tanh = None
-        relu = None
-        sigmoid = None
-        initializers = None
+    from flax import linen as nn
+except ImportError:
+    raise ImportError("JAX and Flax are required to use Autoregressive network.")
 
+# ---------------------------------------------------------
+# Masked Dense Layer
+# ---------------------------------------------------------
 
-# =============================================================================
-#! Autoregressive Network Implementation
-# =============================================================================
-
-if JAX_AVAILABLE:
-    class _FlaxAutoregressive(nn_flax.Module):
-        """
-        Flax implementation of Autoregressive neural network for quantum states.
-        
-        Architecture:
-        - For each qubit i (1 to N):
-            - Input: all previous qubit states s₁, ..., sᵢ₋₁ (concatenated)
-            - Hidden layers: Dense layers with nonlinear activations
-            - Output: log probability of qubit i
-        
-        Parameters:
-        -----------
-        n_qubits : int
-            Number of qubits in the system
-        hidden_layers : List[int]
-            Sizes of hidden layers (e.g., [32, 32] for two 32-unit layers)
-        activation : Callable
-            Activation function (default: tanh)
-        output_activation : Optional[Callable]
-            Output activation for final layer (default: identity)
-        use_bias : bool
-            Whether to use bias in dense layers
-        param_dtype : jnp.dtype
-            Data type for parameters (default: complex64)
-        dtype : jnp.dtype
-            Data type for computations (default: complex64)
-        """
-        
-        n_qubits: int
-        hidden_layers: Tuple[int, ...]  = (32, 32)
-        activation: Callable            = nn_flax.tanh
-        output_activation: Optional[Callable] = None
-        use_bias: bool                  = True
-        param_dtype: Any                = DEFAULT_JP_CPX_TYPE
-        dtype: Any                      = DEFAULT_JP_CPX_TYPE
-        
-        def setup(self):
-            """Setup the autoregressive network layers."""
-            is_complex = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-            self.kernel_init = lecun_normal(dtype=self.param_dtype) if is_complex else nn.initializers.lecun_normal()
-            
-            # Create dense layers for each qubit dynamically in __call__
-            # to handle per-qubit parameters via named layers.
-
-        def _get_log_odds_for_qubit_i(self, x: jax.Array, i: int) -> jax.Array:
-            """Computes the log-odds for qubit `i` given the preceding qubits' states `x`."""
-            for j, h_size in enumerate(self.hidden_layers):
-                x = nn.Dense(
-                    features=h_size,
-                    use_bias=self.use_bias,
-                    kernel_init=self.kernel_init,
-                    bias_init=nn.initializers.zeros,
-                    dtype=self.dtype,
-                    param_dtype=self.param_dtype,
-                    name=f"q{i}_h{j}"
-                )(x)
-                x = self.activation(x)
-
-            output = nn.Dense(
-                features=1,
-                use_bias=self.use_bias,
-                kernel_init=self.kernel_init,
-                bias_init=nn.initializers.zeros,
-                dtype=self.dtype,
-                param_dtype=self.param_dtype,
-                name=f"q{i}_out"
-            )(x)
-
-            if self.output_activation is not None:
-                output = self.output_activation(output)
-            
-            return output
-        
-        @nn_flax.compact
-        def __call__(self, s: jax.Array, i: Optional[int] = None) -> jax.Array:
-            """
-            Evaluate the autoregressive network.
-
-            If `i` is None, computes the full log-probability of the input states `s`.
-            If `i` is an integer, computes the log-odds for qubit `i` conditioned
-            on the preceding qubits `s[:, :i]`.
-            
-            Parameters:
-            -----------
-            s : jax.Array
-                Input states, shape (..., n_qubits) or (batch, n_qubits).
-                For single-qubit mode, only `s[:, :i]` is used.
-            i : Optional[int]
-                If specified, returns the log-odds for qubit `i`.
-                
-            Returns:
-            --------
-            jax.Array
-                If `i` is None, returns log probabilities, shape (...,) or (batch,).
-                If `i` is not None, returns log-odds, shape (...,) or (batch,).
-            """
-            is_single_qubit_mode = i is not None
-            
-            if is_single_qubit_mode:
-                if i == 0:
-                    x = jnp.ones((s.shape[0], 1), dtype=self.dtype)
-                else:
-                    x = s[:, :i].astype(self.dtype)
-                output = self._get_log_odds_for_qubit_i(x, i)
-                return output.squeeze(-1)
-
-            # Full log-probability calculation
-            original_shape = s.shape
-            if s.ndim == 1:
-                s = jnp.expand_dims(s, axis=0)
-                squeeze_output = True
-            else:
-                squeeze_output = False
-            
-            batch_size = s.shape[0]
-            
-            log_prob = jnp.zeros(batch_size, dtype=self.dtype)
-            
-            for i in range(self.n_qubits):
-                if i == 0:
-                    x = jnp.ones((batch_size, 1), dtype=self.dtype)
-                else:
-                    x = s[:, :i].astype(self.dtype)
-                
-                output = self._get_log_odds_for_qubit_i(x, i)
-                
-                qubit_val = s[:, i:i+1]
-                
-                log_prob_qubit_1 = output.squeeze(-1)
-                log_prob_qubit_0 = -jnp.logaddexp(0.0, output.squeeze(-1))
-                
-                log_prob_i = jnp.where(
-                    qubit_val.squeeze(-1) > 0.5,
-                    log_prob_qubit_1,
-                    log_prob_qubit_0
-                )
-                
-                log_prob = log_prob + log_prob_i
-            
-            if squeeze_output:
-                log_prob = log_prob.squeeze()
-            
-            return log_prob
-
-
-# Base class definition (conditional on JAX availability)
-if JAX_AVAILABLE:
-    _AutoregressiveBase = FlaxInterface
-else:
-    _AutoregressiveBase = object
-
-
-class Autoregressive(_AutoregressiveBase):
+class MaskedDense(nn.Dense):
     """
-    Autoregressive neural network for quantum state representation.
-    
-    The autoregressive ansatz factorizes the wavefunction as a product of
-    conditional probabilities, each computed by a neural network.
-    
+    A Dense layer where connections are masked to enforce autoregressive ordering.
+    """
+    mask: jnp.ndarray = None # The binary mask (in_features, out_features)
+
+    @nn.compact
+    def __call__(self, inputs):
+        # We wrap the standard dense call but inject the mask into the kernel
+        kernel          = self.param('kernel', self.kernel_init, (inputs.shape[-1], self.features), self.param_dtype)
+        masked_kernel   = kernel * self.mask
+        y               = jax.lax.dot_general(inputs, masked_kernel, (((inputs.ndim - 1,), (0,)), ((), ())))
+        
+        if self.use_bias:
+            bias    = self.param('bias', self.bias_init, (self.features,), self.param_dtype)
+            y       = y + bias
+        return y
+
+# ---------------------------------------------------------
+# Topology Helper (Mask Generation)
+# ---------------------------------------------------------
+
+def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32):
+    """
+    Creates masks for MADE. The masks enforce the autoregressive property:
+    - Each output unit k can only depend on input units with indices less than k.
+    - Each hidden unit has a degree that enforces the autoregressive property.
     Parameters:
     -----------
-    input_shape : tuple
-        Shape of input (n_qubits,) - only the spatial dimension is used
-    hidden_layers : tuple
-        Sizes of hidden layers (default: (32, 32))
-    activation : str
-        Activation function name: 'tanh', 'relu', 'elu', etc.
-    output_activation : Optional[str]
-        Output activation (default: None for linear)
-    use_bias : bool
-        Whether to use bias in dense layers
-    dtype : jnp.dtype
-        Data type for computation
-    param_dtype : jnp.dtype
-        Data type for parameters
-    seed : int
-        Random seed for initialization
+    n_in : int
+        Number of input units (e.g., number of sites).
+    hidden_sizes : Sequence[int]
+        Sizes of hidden layers.
+    n_out_per_site : int
+        Number of output units per input site (e.g., 2 for spin up/down logits).
+    Returns:
+    --------
+    List of masks (jnp.ndarray) for each layer. Each mask is a binary matrix where
+    a 1 indicates a connection is allowed, and 0 indicates no connection.
+    The masks are ordered from input to first hidden, between hidden layers,
+    and from last hidden to output.
     
-    Examples:
-    ---------
-    >>> from QES.Algebra.hilbert import HilbertSpace
-    >>> hilbert = HilbertSpace(8)
-    >>> n_qubits = 2**hilbert.Ns
-    >>> ar = Autoregressive(
-    ...     input_shape=(n_qubits,),
-    ...     hidden_layers=(32, 32),
-    ...     activation='tanh'
-    ... )
-    >>> # Evaluate on sample states
-    >>> states = np.array([[0, 1, 0, 1], [1, 0, 1, 0]], dtype=np.float32)
-    >>> log_probs = ar(states)
+    Ensures output k depends only on inputs < k. This is done by assigning
+    degrees to hidden units and constructing masks accordingly.
+    """
+    L           = len(hidden_sizes)
+    masks       = []
+    
+    # degrees[0]    -> input degrees (0 to N-1)
+    # degrees[1..L] -> hidden layer degrees
+    degrees     = [np.arange(n_in)]
+    
+    # Generate random degrees for hidden layers
+    for i, h in enumerate(hidden_sizes):
+        # connectivity constraint: m^l_k >= m^{l-1}_k
+        prev_m  = degrees[-1]
+        m       = np.random.randint(low=np.min(prev_m), high=n_in - 1, size=h)
+        degrees.append(m)
+    
+    # Construct masks
+    # Input -> Hidden 1
+    masks.append(degrees[1][:, None] >= degrees[0][None, :])
+    
+    # Hidden -> Hidden
+    for i in range(1, L):
+        masks.append(degrees[i+1][:, None] >= degrees[i][None, :])
+        
+    # Hidden -> Output
+    # For site k, we want outputs that predict state k.
+    # To predict state k, we need info from < k. 
+    # So output k connects to hidden units with degree < k.
+    
+    # We repeat degrees for the output layer (e.g. 2 outputs per site for spin up/down log-prob)
+    out_degrees = np.arange(n_in) 
+    out_degrees = np.repeat(out_degrees, n_out_per_site)
+    
+    masks.append(out_degrees[:, None] > degrees[-1][None, :])
+    
+    return [jnp.array(m.T, dtype=dtype) for m in masks]
+
+# ---------------------------------------------------------
+# The Flax Module
+# ---------------------------------------------------------
+
+class FlaxMADE(nn.Module):
+    """
+    Flax implementation of the Masked Autoencoder for Distribution Estimation (MADE).
+    This module constructs an autoregressive neural network using masked dense layers,
+    ensuring that each output only depends on the appropriate subset of inputs as defined
+    by the autoregressive property. The masks are statically generated at initialization.
+    
+    Attributes:
+        n_sites (int): 
+            Number of input/output sites (features).
+        hidden_dims (Sequence[int]): 
+            List of hidden layer sizes.
+        dtype (Any): 
+            Data type for the layers (default: jnp.complex128).
+    Methods:
+        setup():
+            Initializes the masked dense layers and generates the masks for each layer.
+        __call__(x):
+            Forward pass through the masked network.
+            Args:
+                x (jnp.ndarray): Input tensor of shape (batch_size, n_sites).
+            Returns:
+                jnp.ndarray: Output tensor of shape (batch_size, n_sites), representing logits.
+    """
+
+    n_sites         : int
+    hidden_dims     : Sequence[int]
+    dtype           : Any = jnp.complex128
+    
+    def setup(self):
+        # Generate static masks (frozen at init)
+        # Note: We output 1 value per site (logit for sigmoid) or 2 for softmax
+        # Let's use 1 value per site (log-odds) for binary spins
+        masks_np    = create_masks(self.n_sites, self.hidden_dims, n_out_per_site=1)
+        self.masks  = [m for m in masks_np]
+        self.layers = []
+        
+        # Hidden Layers
+        for i, h_dim in enumerate(self.hidden_dims):
+            self.layers.append(MaskedDense(features=h_dim, mask=self.masks[i], dtype=self.dtype))
+            
+        # Output Layer
+        self.layers.append(MaskedDense(features=self.n_sites, mask=self.masks[-1], dtype=self.dtype))
+
+    def __call__(self, x):
+        # x shape: (Batch, N_sites)
+        
+        # Standard MLP pass with masked weights
+        for layer in self.layers[:-1]:
+            x = nn.relu(layer(x))   # or tanh/elu
+            
+        x = self.layers[-1](x)      # No activation on output (logits)
+        return x
+    
+# ---------------------------------------------------------
+# Combined Complex Autoregressive Network
+# ---------------------------------------------------------
+
+class PhaseDense(nn.Module):
+    """
+    A simple Feed-Forward network to estimate the Phase angle theta(s).
     """
     
+    hidden_dims : Sequence[int]
+    activation  : Any               = nn.tanh
+    dtype       : Any               = jnp.float32
+    
+    @nn.compact
+    def __call__(self, x):
+        # x shape: (Batch, N_sites)
+        
+        # Flatten input if needed (though Dense handles last dim)
+        x = x.astype(self.dtype)
+        
+        for h in self.hidden_dims:
+            x = nn.Dense(features=h, dtype=self.dtype)(x)
+            x = self.activation(x)
+            
+        # Final layer: Output single scalar theta per sample
+        # We initialize with small weights to start with ~0 phase
+        x = nn.Dense(features=1, kernel_init=nn.initializers.normal(0.01), dtype=self.dtype)(x)
+        
+        # Output shape: (Batch, 1) -> Squeeze to (Batch,)
+        return x.squeeze(axis=-1)
+
+class FlaxComplexAutoregressive(nn.Module):
+    """
+    Combined Model: 
+    1. Autoregressive Amplitude (MADE)
+    2. Dense Phase
+    """
+    
+    n_sites         : int
+    ar_hidden       : Sequence[int]
+    phase_hidden    : Sequence[int]
+    dtype           : Any               = jnp.complex128    # Data type for complex outputs
+    mu              : float             = 2.0               # Scaling factor for phase network output -> distribution from which phase is drawn
+    
+    def setup(self):
+        ''' Initialize sub-networks '''
+        from .net_autoregressive import FlaxMADE 
+        self.amplitude_net  = FlaxMADE(n_sites=self.n_sites, hidden_dims=self.ar_hidden, dtype=self.dtype)
+        self.phase_net      = PhaseDense(hidden_dims=self.phase_hidden, dtype=self.dtype)
+
+    def __call__(self, x):
+        """
+        Returns full complex log_psi(s).
+        Used by the Trainer for gradients.
+        """
+        
+        # 1. Get Log Probabilities (Real)
+        # MADE outputs logits. We need to compute log_prob of the specific configuration x.
+        # We delegate this calculation to a helper to keep __call__ clean
+        log_prob    = self._compute_log_prob_from_logits(x)
+        
+        # 2. Get Phase (Real scalar)
+        theta       = self.phase_net(x)
+        
+        # 3. Combine: log_psi = 0.5 * log_P + i * theta
+        return log_prob / self.mu + 1j * theta
+
+    def _compute_log_prob_from_logits(self, x):
+        """
+        Helper to extract log P(s) from the MADE logits.
+        """
+        
+        # logits shape: (Batch, N_sites) - representing logit for spin +1
+        logits = self.amplitude_net(x)
+        
+        # Calculate log_prob for the specific input configuration x (assuming 0/1 inputs)
+        # x must be 0 or 1 here.
+        # log_p(1) = -softplus(-logit)
+        # log_p(0) = -softplus(logit)
+
+        log_p_1         = -nn.softplus(-logits)
+        log_p_0         = -nn.softplus(logits)
+        
+        # Select based on x
+        log_p_per_site  = jnp.where(x > 0.5, log_p_1, log_p_0)
+        
+        # Sum over sites to get total log probability of the configuration
+        return jnp.sum(log_p_per_site, axis=-1)
+
+    # Methods for the Sampler
+    
+    def get_logits(self, x):
+        """
+        Used by ARSampler to generate samples. 
+        Only runs the amplitude network.
+        """
+        return self.amplitude_net(x)
+
+    def get_phase(self, x):
+        """
+        Used by ARSampler to compute the phase after sampling.
+        """
+        return self.phase_net(x)
+    
+# ---------------------------------------------------------
+
+class ComplexAR(FlaxInterface):
+    """
+    Autoregressive Neural Quantum State with Phase.
+    
+    Wraps FlaxComplexAR to provide standard interface.
+    """
     def __init__(self,
-                input_shape: tuple,
-                hidden_layers: Tuple[int, ...] = (32, 32),
-                activation: str = 'tanh',
-                output_activation: Optional[str] = None,
-                use_bias: bool = True,
-                dtype: Any = DEFAULT_JP_CPX_TYPE,
-                param_dtype: Optional[Any] = None,
-                seed: int = 0,
+                input_shape     : tuple,
+                ar_hidden       : Tuple[int, ...]   = (32, 32),
+                phase_hidden    : Tuple[int, ...]   = (32, 32),
+                dtype           : Any               = jnp.complex128,
+                seed            : int               = 0,
                 **kwargs):
-        """Initialize the Autoregressive network."""
         
         if not JAX_AVAILABLE:
             raise RuntimeError("JAX is required for Autoregressive networks")
         
-        if param_dtype is None:
-            param_dtype = dtype
-        
-        # Extract number of qubits from input shape
-        n_qubits = input_shape[0]
-        
-        # Map activation function names to Flax functions
-        activation_map = {
-            'tanh': nn_flax.tanh if JAX_AVAILABLE else None,
-            'relu': nn.relu if JAX_AVAILABLE else None,
-            'elu': elu_jnp if JAX_AVAILABLE else None,
-            'sigmoid': nn.sigmoid if JAX_AVAILABLE else None,
-            'log_cosh': log_cosh_jnp if JAX_AVAILABLE else None,
+        n_sites     = input_shape[0] if isinstance(input_shape, tuple) else input_shape
+        net_kwargs  = {
+            'n_sites'       : n_sites,
+            'ar_hidden'     : ar_hidden,
+            'phase_hidden'  : phase_hidden,
+            'dtype'         : dtype,
         }
         
-        activation_fn = activation_map.get(activation, nn_flax.tanh)
-        
-        if output_activation is not None:
-            output_activation_fn = activation_map.get(output_activation, None)
-        else:
-            output_activation_fn = None
-        
-        # Store configuration for get_info and other uses
-        self._seed = seed
-        self._dtype = dtype
-        self._param_dtype = param_dtype
-        self._n_qubits = n_qubits
-        self._shape = input_shape
-        self._hidden_layers = hidden_layers
-        
-        # Initialize using FlaxInterface parent
+        # Initialize parent FlaxInterface
         super().__init__(
-            net_module=_FlaxAutoregressive,
-            net_kwargs={
-                'n_qubits': n_qubits,
-                'hidden_layers': hidden_layers,
-                'activation': activation_fn,
-                'output_activation': output_activation_fn,
-                'use_bias': use_bias,
-                'dtype': dtype,
-                'param_dtype': param_dtype,
-            },
-            input_shape=input_shape,
-            backend='jax',
-            dtype=dtype,
-            seed=seed,
+            net_module      =   FlaxComplexAutoregressive,
+            net_kwargs      =   net_kwargs,
+            input_shape     =   input_shape,
+            backend         =   'jax',
+            dtype           =   dtype,
+            seed            =   seed,
             **kwargs
         )
+        
+        # AR networks typically don't have analytic gradients implemented manually
+        self._has_analytic_grad = False 
 
-        self._has_analytic_grad = False
-    
     def get_info(self) -> dict:
-        """Get information about the network."""
         return {
-            'name': 'Autoregressive',
-            'type': 'autoregressive',
-            'n_qubits': self._n_qubits,
-            'hidden_layers': self._hidden_layers,
-            'dtype': str(self._dtype),
-            'param_dtype': str(self._param_dtype),
-        }
+            'name'          :   'ComplexAR',
+            'type'          :   'autoregressive',
+            'n_sites'       :   self.input_dim,
+            'ar_layers'     :   self._flax_module.ar_hidden,
+            'phase_layers'  :   self._flax_module.phase_hidden
+        }    
     
-    def sample(self, n_samples: int = 1, key: Optional[Any] = None) -> jnp.ndarray:
-        """
-        Generate samples from the autoregressive network using sequential sampling.
-        
-        This method implements sequential generation where each qubit's state is sampled
-        conditioned on all previous qubits.
-        
-        Parameters:
-        -----------
-        n_samples : int
-            Number of samples to generate (default: 1)
-        key : Optional[jax.random.PRNGKey]
-            JAX random key for reproducible sampling. If None, a default key is used.
-            
-        Returns:
-        --------
-        jnp.ndarray
-            Array of samples, shape (n_samples, n_qubits) with values in {0, 1}.
-            
-        Examples:
-        ---------
-        >>> ar = Autoregressive(input_shape=(4,), hidden_layers=(16,))
-        >>> # Initialize network (must call init first or use within NQS context)
-        >>> key = jax.random.PRNGKey(0)
-        >>> ar.init(key)
-        >>> samples = ar.sample(n_samples=100, key=key)
-        >>> print(samples.shape)
-        (100, 4)
-        """
-        if not JAX_AVAILABLE:
-            raise RuntimeError("JAX backend required for sampling")
-        
-        if key is None:
-            from QES.general_python.algebra.utils import backend_mgr
-            if backend_mgr.key is None:
-                key = jax.random.PRNGKey(self._seed)
-            else:
-                key = backend_mgr.next_key()
-
-        if not self.initialized:
-            self.init(key=key)
-
-        params = self.get_params()
-
-        @partial(jax.jit, static_argnums=(0,))
-        def _perform_sampling(n_s):
-            
-            def body_fun(i, carry):
-                samples, k = carry
-                k, subkey = jax.random.split(k)
-                
-                # self.apply is jitted, but looping over it in Python is slow.
-                # Here we call it inside a jitted function's fori_loop.
-                log_odds = self.apply_fun(params, samples, i=i)
-                probs = nn.sigmoid(log_odds.astype(jnp.float32)) # bernoulli requires float
-                
-                qubit_samples = jax.random.bernoulli(subkey, probs)
-                samples = samples.at[:, i].set(qubit_samples.astype(samples.dtype))
-                
-                return samples, k
-
-            initial_samples = jnp.zeros((n_s, self._n_qubits), dtype=jnp.int32)
-            final_samples, _ = jax.lax.fori_loop(0, self._n_qubits, body_fun, (initial_samples, key))
-            return final_samples
-
-        return _perform_sampling(n_samples)
-
-
-# =============================================================================
-#! Utility Functions
-# =============================================================================
-
-def create_autoregressive(n_qubits: int,
-                         hidden_layers: Tuple[int, ...] = (32, 32),
-                         activation: str = 'tanh',
-                         seed: int = 0) -> Autoregressive:
-    """
-    Create an Autoregressive network.
-    
-    Parameters:
-    -----------
-    n_qubits : int
-        Number of qubits
-    hidden_layers : tuple
-        Sizes of hidden layers
-    activation : str
-        Activation function
-    seed : int
-        Random seed
-        
-    Returns:
-    --------
-    Autoregressive
-        Configured autoregressive network
-    """
-    return Autoregressive(
-        input_shape=(n_qubits,),
-        hidden_layers=hidden_layers,
-        activation=activation,
-        seed=seed
-    )
-
-
 # =============================================================================
 #! EOF
 # =============================================================================

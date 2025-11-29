@@ -81,7 +81,7 @@ _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
     'simple' : ('.net_impl.net_simple',                     'SimpleNet'),
     'rbm'    : ('.net_impl.networks.net_rbm',               'RBM'),
     'cnn'    : ('.net_impl.networks.net_cnn',               'CNN'),
-    'ar'     : ('.net_impl.networks.net_autoregressive',    'Autoregressive'),
+    'ar'     : ('.net_impl.networks.net_autoregressive',    'ComplexAR'),
     # Add future networks here without importing them!
 }
 
@@ -222,11 +222,11 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     # 3. Handle Types/Classes
     if isinstance(network_type, type):
         
-        # A. It is a subclass of GeneralNet (e.g. user imported RBM manually)
+        # It is a subclass of GeneralNet (e.g. user imported RBM manually)
         if issubclass(network_type, GeneralNet):
             return network_type(input_shape=input_shape, backend=backend, dtype=dtype, **kwargs)
 
-        # B. It is a Flax Module (Auto-Wrap Logic)
+        # It is a Flax Module (Auto-Wrap Logic)
         # We check this loosely to avoid importing flax if not needed
         is_flax = False
         try:
@@ -254,7 +254,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                 net_kwargs  =   all_kwargs,
             )
 
-    # 4. Handle generic Callables (Factories)
+    # Handle generic Callables (Factories)
     if callable(network_type):
         return CallableNet(input_shape=input_shape, backend=backend, dtype=dtype, **kwargs)
 
