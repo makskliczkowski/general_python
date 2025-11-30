@@ -304,9 +304,10 @@ class ComplexAR(FlaxInterface):
                 phase_hidden    : Tuple[int, ...]   = (32, 32),
                 dtype           : Any               = jnp.complex128,
                 seed            : int               = 0,
+                backend         : str               = 'jax',
                 **kwargs):
         
-        if not JAX_AVAILABLE:
+        if not JAX_AVAILABLE or backend != 'jax':
             raise RuntimeError("JAX is required for Autoregressive networks")
         
         n_sites     = input_shape[0] if isinstance(input_shape, tuple) else input_shape

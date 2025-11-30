@@ -187,6 +187,12 @@ class Directories(object):
         formatted_path = self.path.as_posix().format(*args, **kwargs)
         return Directories(formatted_path)
     
+    def resolve(self) -> "Directories":
+        """
+        Return a new Directories with the absolute resolved path.
+        """
+        return Directories(self.path.resolve())
+    
     ################################################################################
     #! Creation
     ################################################################################

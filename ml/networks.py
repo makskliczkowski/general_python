@@ -243,6 +243,10 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
             # The network_type here IS the Flax Module class
             # We pass all kwargs to the FlaxInterface, which will pass them to the module
             all_kwargs = kwargs.copy()
+            all_kwargs.pop('input_shape',   None)  # Remove if present in kwargs
+            all_kwargs.pop('backend',       None)
+            all_kwargs.pop('dtype',         None)
+            all_kwargs.pop('param_dtype',   None)
             all_kwargs.update({
                 'input_shape'   : input_shape,
                 'backend'       : backend,

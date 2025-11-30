@@ -1,8 +1,4 @@
 r'''
-file:       general_python/algebra/solvers/minres_qlp.py
-author:     Maksymilian Kliczkowski
-desc:       Native MINRES-QLP solver implementation for symmetric systems.
-
 Solves symmetric (possibly singular) linear systems:
 
 $$
@@ -67,6 +63,14 @@ References:
     - Choi, S.-C. T., Paige, C. C., & Saunders, M. A. (2011). MINRES-QLP: A
         Krylov subspace method for indefinite or singular symmetric systems.
         SIAM Journal on Scientific Computing, 33(4), 1810-1836. (MINRES-QLP)
+        
+-----------------------------------------------------------------------------
+file:       general_python/algebra/solvers/minres_qlp.py
+author:     Maksymilian Kliczkowski
+desc:       Native MINRES-QLP solver implementation for symmetric systems.
+            Supports both JAX and NumPy backends.
+date:       2025-02-01
+-----------------------------------------------------------------------------
 '''
 
 from typing import Optional, Callable, Tuple, List, Union, Any, NamedTuple, Type
@@ -75,27 +79,23 @@ import enum
 import inspect
 
 # Base Solver classes and types
-from ..solver import (
-    Solver, SolverResult, SolverError, SolverErrorMsg,
-    SolverType, Array, MatVecFunc, StaticSolverFunc, _sym_ortho)
-# Utilities and Preconditioners
-from ..utils import JAX_AVAILABLE, get_backend
-from ..preconditioners import Preconditioner, PreconitionerApplyFun
+try:
+    from ..solver import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc, _sym_ortho
+    from ..preconditioners import Preconditioner, PreconitionerApplyFun
+except ImportError:
+    raise ImportError("QES package is required to use MINRES-QLP solver.")
 
 # JAX imports
 try:
-    if JAX_AVAILABLE:
-        import jax
-        import jax.numpy as jnp
-        import jax.lax as lax
-    else:
-        jax = None
-        jnp = np
-        lax = None
+    import jax
+    import jax.numpy as jnp
+    import jax.lax as lax
+    JAX_AVAILABLE   = True
 except ImportError:
-    jax = None
-    jnp = np
-    lax = None
+    JAX_AVAILABLE   = False
+    jax             = None
+    jnp             = np
+    lax             = None
 
 # Numba import (currently MINRES-QLP NumPy version is not Numba-compiled due to complexity)
 try:
@@ -136,323 +136,618 @@ class MinresQLPFlag(enum.IntEnum):
     SINGULAR            = 9         # System appears singular (gamma_k near zero in QLP).
     PRECOND_INDEF       = 10        # Preconditioner detected as indefinite or singular.
 
-_MINRES_QLP_MESSAGES = {
-    MinresQLPFlag.PROCESSING    : "Processing MINRES-QLP.",
-    MinresQLPFlag.BETA_ZERO     : "beta_k == 0. Solution is likely an eigenvector.",
-    MinresQLPFlag.X_ZERO        : "Initial residual is zero; x=0 is the solution.",
-    MinresQLPFlag.RESID_RTOL    : "Converged: Estimated relative residual ||r||/||b|| <= tol.",
-    MinresQLPFlag.RESID_AR      : "Converged: Estimated relative ||Ar||/||A|| ||r|| <= tol.",
-    MinresQLPFlag.RESID_EPS     : "Converged: Estimated absolute residual ||r|| <= eps_r.",
-    MinresQLPFlag.RESID_EPS_AR  : "Converged: Estimated absolute ||r|| and relative ||Ar||.",
-    MinresQLPFlag.EIGEN         : "Converged: Found eigenvector (beta_k near zero).",
-    MinresQLPFlag.X_NORM_LIMIT  : "Exceeded maximum solution norm ||x||.",
-    MinresQLPFlag.A_COND_LIMIT  : "Exceeded maximum condition number estimate.",
-    MinresQLPFlag.MAX_ITER      : "Reached maximum number of iterations.",
-    MinresQLPFlag.SINGULAR      : "System possibly singular (encountered near-zero gamma_k).",
-    MinresQLPFlag.PRECOND_INDEF : "Preconditioner appears indefinite or singular."
-}
-
-def get_convergence_message(flag: MinresQLPFlag) -> str:
-    """
-    Returns descriptive message for a MINRES-QLP flag. 
-    Parameters:
-        flag:
-            The convergence flag (MinresQLPFlag).
-    """
-    return _MINRES_QLP_MESSAGES.get(flag, "Unknown convergence flag.")
-
 # ##############################################################################
-#! Core MINRES-QLP Logic (Backend Agnostic Structure)
+#! Core MINRES-QLP Logic
 # ##############################################################################
 
-class _MinresQLPState(NamedTuple):
-    """ 
-    State variables carried between iterations.
+class MinresQLPState(NamedTuple):
     """
-    
-    # Iteration counter
-    k               : int
-    # Solution and related vectors
-    x_k             : Array
-    w_k             : Array
-    w_km1           : Array
-    w_km2           : Array
-    x_km1_qlp       : Array # Store x_{k-1}^{QLP}
-    # Lanczos vectors and scalars
-    v_k             : Array
-    z_k             : Array
-    z_km1           : Array
-    z_km2           : Array
-    alpha_k         : float
-    beta_k          : float
-    beta_km1        : float
-    # Left Givens (Q) rotation parameters
-    c_k_1           : float # cs
-    s_k_1           : float # sn
-    delta_k         : float # delta_{k+1} in paper
-    delta_prime_k   : float # temp: T_{k,k-1} after Q_{k-1} (dbar)
-    epsilon_k       : float # temp: T_{k+1, k-1} after Q_{k-1} (epsln)
-    epsilon_kp1     : float # epsilon_{k+1}
-    gammabar_k      : float # temp: T_{k,k} after Q_{k-1}
-    gamma_k         : float # L_{k,k} after Q_k and P rotations
-    gamma_km1       : float
-    gamma_km2       : float
-    gamma_km3       : float
-    # Right Givens (P) rotation parameters
-    c_k_2           : float # cr2
-    s_k_2           : float # sr2
-    c_k_3           : float # cr1
-    s_k_3           : float # sr1
-    theta_k         : float # L_{k-1, k} after P rotations
-    theta_km1       : float
-    theta_km2       : float
-    eta_k           : float # Related to gamma_k * s_k_2
-    eta_km1         : float
-    eta_km2         : float
-    # Solution update parameters (rhs `t` and `mu = L^{-1}t`)
-    tau_k           : float
-    tau_km1         : float
-    tau_km2         : float
-    mu_k            : float
-    mu_km1          : float
-    mu_km2          : float
-    mu_km3          : float
-    mu_km4          : float
-    # Norm estimates
-    phi_k           : float # ||r_k|| estimate
-    x_norm          : float # ||x_k|| estimate
-    x_norm_l2       : float # Estimate related to ||x_{k-2}||? (xil)
-    a_norm          : float # ||A|| estimate
-    a_cond          : float # cond(A) estimate
-    gamma_min       : float # Min diagonal |L_{i,i}| estimate
-    gamma_min_km1   : float
-    gamma_min_km2   : float
-    # QLP specific state
-    qlp_iter        : int
-    gamma_qlp_k     : float # L_{k,k} before right rotation P_{k,k+1}
-    gamma_qlp_km1   : float
-    theta_qlp_k     : float # L_{k-1, k}
-    mu_qlp_k        : float
-    mu_qlp_km1      : float
-    delta_qlp_k     : float # T_{k, k-1} after left rotation Q_{k-1}
-    # Convergence state
-    flag            : int # Use int to pass through JAX loop
-    relres          : float # Relative residual estimate
-    rel_a_res       : float # Relative ||Ar|| estimate
-    ax_norm         : float # ||Ax|| estimate
-
-# --------------------------------------------------------------
-#! MINRES-QLP Initialization
-# --------------------------------------------------------------
-
-def _minres_qlp_init(
-    matvec          : MatVecFunc,       # Need matvec for apply_op inside init
-    b               : Array,            # The rhs vector
-    x0              : Array,
-    precond_apply   : Optional[Callable[[Array], Array]],
-    shift           : float,
-    backend_mod     : Any) -> Tuple[_MinresQLPState, Any]:
-    
+    Full state matching C++ MINRES_QLP_s protected members.
     """
-    Initialize state for MINRES-QLP loop.
+    k: int
     
-    Parameters:
-        matvec:
-            Function to apply matrix-vector product.
-        b:
-            Right-hand side vector.
-        x0: 
-            Initial guess for the solution.
-        precond_apply:
-            Optional preconditioner function.
-        shift:          
-            Shift value for the system.
-        backend_mod:     
-            Backend module (e.g., jnp, np) for array operations.
-    Returns:
-        initial_state:
-            Initial state for the MINRES-QLP loop.
-        beta1:
-            Initial beta value.
+    # Solution
+    x_k: Any            # Current solution vector
+    x_km1: Any          # Previous solution (needed for QLP reconstruction)
+    
+    # Search Directions (W)
+    w_k: Any
+    w_km1: Any
+    w_km2: Any
+
+    # Lanczos Vectors
+    v_k: Any            # Current normalized Lanczos vector (v)
+    z_k: Any            # Current residual direction (z)
+    z_km1: Any
+    z_km2: Any
+
+    # Scalars - Lanczos
+    beta_k: float       # beta_{k+1} (current)
+    beta_km1: float     # beta_k (previous)
+    beta_last: float    # beta_{k-1}
+    
+    # Scalars - Left Rotation Q_{k-1} & Q_k
+    c_k_1: float; s_k_1: float  # c_{k}, s_{k}
+    delta_k: float      # delta_{k+1} (stored for next iter)
+    phi_k: float        # phi_k (RHS element)
+    eps_k: float        # epsilon_k
+    eps_kp1: float      # epsilon_{k+1}
+
+    # Scalars - Right Rotations P
+    c_k_2: float; s_k_2: float  # P_{k-2, k} (prev)
+    c_k_3: float; s_k_3: float  # P_{k-1, k} (curr)
+    
+    # Tridiagonal / LQ Factors
+    gamma_k: float
+    gamma_km1: float; gamma_km2: float; gamma_km3: float
+    
+    theta_k: float
+    theta_km1: float; theta_km2: float
+    
+    eta_k: float; eta_km1: float; eta_km2: float
+    
+    tau_k: float; tau_km1: float; tau_km2: float
+    
+    # Solution Update Scalars (Mu)
+    mu_k: float; mu_km1: float; mu_km2: float; mu_km3: float; mu_km4: float
+    
+    # QLP Specific History
+    qlp_iter: int
+    gamma_qlp_k: float; gamma_qlp_km1: float
+    theta_qlp_k: float
+    mu_qlp_k: float; mu_qlp_km1: float
+
+    # Norms & Status
+    xl2norm_k: float    # ||x_{k-2}||
+    xnorm_k: float      # ||x_k||
+    a_norm: float
+    a_cond: float
+    gamma_min: float
+    gamma_min_km1: float; gamma_min_km2: float
+    
+    relres: float
+    flag: int
+
+# ##############################################################################
+#! Single MINRES-QLP Iteration Step
+# ##############################################################################
+
+def _minres_qlp_step(state          : MinresQLPState, 
+                    matvec          : Callable, 
+                    precond_apply   : Callable, 
+                    tol             : float, 
+                    maxiter         : int, 
+                    backend         : Any) -> MinresQLPState:
     """
-    n_size      = b.shape[0]
-    dtype       = b.dtype
-    # Create zeros/scalars with the correct backend and dtype
-    zero_vec    = backend_mod.zeros(n_size, dtype=dtype)
-    # Ensure scalar type matches array dtype (important for JAX)
-    zero_scalar = dtype.type(0.0)   # 0.0
-    one_scalar  = dtype.type(1.0)   # 1.0
-    m_one_scalar= dtype.type(-1.0)  # -1.0
-    x_k         = x0.copy()         # Start with initial guess
-
-    # Define the shifted operator A' = A - shift*I
-    # Note: matvec here is assumed to be for the original A
-    apply_op    = lambda v: matvec(v) - shift * v
-
-    # --- Initial Residual and Preconditioning ---
-    # Corresponds to r1, r2, r3 setup
-    z_km2       = zero_vec              # r1 = 0
-    r_0_unprec  = b - apply_op(x_k)     # r0
-    z_km1       = r_0_unprec            # r2 = b - A'x_0
-
-    beta1       = zero_scalar
-    flag_init   = MinresQLPFlag.PROCESSING.value # Default flag
-
-    if precond_apply is not None:
-        z_k      = precond_apply(z_km1) # r3 = M^{-1} r2
-        beta1_sq = backend_mod.real(backend_mod.dot(backend_mod.conjugate(z_km1), z_k))
-
-        if beta1_sq < 0.0:
-            flag_init = MinresQLPFlag.PRECOND_INDEF.value
-            # beta1 remains zero
-        else:
-            beta1_sqrt  = backend_mod.sqrt(beta1_sq)
-            beta1       = beta1_sqrt # Store positive sqrt
-            if beta1 < _MIN_NORM:
-                flag_init = MinresQLPFlag.X_ZERO.value
+    Single iteration of MINRES-QLP matching C++ implementation exactly.
+    """
+    s = state
+    
+    # ==========================================================================
+    # 1. PRECONDITIONED LANCZOS
+    # ==========================================================================
+    # C++ line 89-90: _beta_km1 = _beta_k; v = z_k / _beta_km1;
+    beta_last = s.beta_km1
+    beta_km1 = s.beta_k
+    
+    # Normalize (with protection)
+    inv_beta = backend.where(beta_km1 == 0, 1.0, 1.0 / beta_km1)
+    v = s.z_k * inv_beta
+    
+    # C++ line 91: z_k = this->matVecFun_(v, this->reg_);
+    z_k = matvec(v)
+    
+    # C++ line 92: if (k > 0) z_k -= z_km2 * _beta_km1 / _beta_last;
+    if s.k > 0:
+        safe_beta_last = backend.where(beta_last == 0, 1.0, beta_last)
+        z_k = z_k - s.z_km2 * (beta_km1 / safe_beta_last)
+    
+    # C++ line 93: _alpha = arma::cdot(z_k, v);
+    alpha = backend.real(backend.vdot(z_k, v))
+    
+    # C++ line 94: z_k -= z_km1 * _alpha / _beta_km1;
+    z_k = z_k - s.z_km1 * (alpha * inv_beta)
+    
+    # C++ line 95: z_km2 = z_km1; z_km1 = z_k;
+    z_km2_next = s.z_km1
+    z_km1_next = z_k
+    
+    # C++ lines 98-108: Apply preconditioner and compute beta_{k+1}
+    if precond_apply:
+        z_k_precond = precond_apply(z_k)
+        beta_k_sq = backend.real(backend.vdot(z_k, z_k_precond))
+        beta_k = backend.sqrt(backend.maximum(beta_k_sq, 0.0))
     else:
-        z_k      = z_km1.copy()         # r3 = r2
-        beta1_sq = backend_mod.real(backend_mod.dot(backend_mod.conjugate(z_k), z_k))
-        beta1    = backend_mod.sqrt(beta1_sq)
-        if beta1 < _MIN_NORM:
-            flag_init = MinresQLPFlag.X_ZERO.value
-
-    #! Initialize remaining state variables
-    phi_k           = beta1
-    initial_state = _MinresQLPState(
-        # Iteration counter
-        k=0,
-        # Solution and related vectors
-        x_k=x_k, w_k=zero_vec, w_km1=zero_vec, w_km2=zero_vec, x_km1_qlp=x_k.copy(),
-        # Lanczos vectors and scalars
-        v_k=zero_vec, z_k=z_k, z_km1=z_km1, z_km2=z_km2,
-        alpha_k=zero_scalar, beta_k=beta1, beta_km1=zero_scalar,  # beta_k is beta_1 initially
-        # Left Givens (Q) rotation parameters
-        c_k_1=m_one_scalar, s_k_1=zero_scalar, delta_k=zero_scalar, delta_prime_k=zero_scalar,
-        epsilon_k=zero_scalar, epsilon_kp1=zero_scalar, gammabar_k=zero_scalar,
-        gamma_k=zero_scalar, gamma_km1=zero_scalar, gamma_km2=zero_scalar, gamma_km3=zero_scalar,
-        # Right Givens (P) rotation parameters
-        c_k_2=m_one_scalar, s_k_2=zero_scalar, c_k_3=m_one_scalar, s_k_3=zero_scalar,
-        theta_k=zero_scalar, theta_km1=zero_scalar, theta_km2=zero_scalar,
-        eta_k=zero_scalar, eta_km1=zero_scalar, eta_km2=zero_scalar,
-        # Solution update parameters (rhs `t` and `mu = L^{-1}t`)
-        tau_k=zero_scalar, tau_km1=zero_scalar, tau_km2=zero_scalar,
-        mu_k=zero_scalar, mu_km1=zero_scalar, mu_km2=zero_scalar, mu_km3=zero_scalar, mu_km4=zero_scalar,
-        # Norm estimates
-        phi_k=phi_k, x_norm=backend_mod.linalg.norm(x_k), x_norm_l2=zero_scalar,
-        a_norm=zero_scalar, a_cond=one_scalar,
-        gamma_min=dtype.type(np.inf), gamma_min_km1=dtype.type(np.inf), gamma_min_km2=dtype.type(np.inf),  # Use inf from correct type
-        # QLP specific state
-        qlp_iter=0, gamma_qlp_k=zero_scalar, gamma_qlp_km1=zero_scalar, theta_qlp_k=zero_scalar,
-        mu_qlp_k=zero_scalar, mu_qlp_km1=zero_scalar, delta_qlp_k=zero_scalar,
-        # Convergence state
-        flag=flag_init,
-        relres=(beta1 / (beta1 + _TINY) if beta1 > _TINY else zero_scalar),  # Avoid division by zero
-        rel_a_res=zero_scalar, ax_norm=zero_scalar
+        z_k_precond = z_k
+        beta_k = backend.linalg.norm(z_k)
+    
+    # C++ line 116: _pnorm_rho_k = std::sqrt(algebra::norm(_beta_last, _alpha, _beta_k));
+    pnorm_rho_k = backend.sqrt(beta_last**2 + alpha**2 + beta_k**2)
+    
+    # ==========================================================================
+    # 2. LEFT ROTATION Q_{k-1} (Previous Reflection)
+    # ==========================================================================
+    # C++ lines 125-131
+    dbar = s.delta_k
+    delta = (s.c_k_1 * dbar) + (s.s_k_1 * alpha)
+    eps_k = s.eps_kp1
+    eps_kp1 = s.s_k_1 * beta_k
+    gammabar = (s.s_k_1 * dbar) - (s.c_k_1 * alpha)
+    delta_k = -s.c_k_1 * beta_k
+    deltaqlp = delta  # Saved for MINRES update
+    
+    # ==========================================================================
+    # 3. CURRENT LEFT REFLECTION Q_k
+    # ==========================================================================
+    # C++ lines 139-146
+    gamma_km3 = s.gamma_km2
+    gamma_km2 = s.gamma_km1
+    gamma_km1_prev = s.gamma_k
+    
+    c_k_1, s_k_1, gamma_k = _sym_ortho(gammabar, beta_k, 
+                                        "jax" if hasattr(backend, 'jit') else "default")
+    
+    gamma_k_tmp = gamma_k  # C++ line 145: temporary value before P2/P3
+    
+    tau_km2 = s.tau_km1
+    tau_km1 = s.tau_k
+    tau_k = c_k_1 * s.phi_k
+    phi_k = s_k_1 * s.phi_k
+    
+    # ==========================================================================
+    # 4. PREVIOUS RIGHT REFLECTION P_{k-2,k}
+    # ==========================================================================
+    # C++ lines 154-165 (only if k > 1)
+    if s.k > 1:
+        theta_km2 = s.theta_km1
+        eta_km2 = s.eta_km1
+        eta_km1 = s.eta_k
+        
+        # C++ line 157: _delta_k_tmp = (_s_k_2 * _theta_k) - (_c_k_2 * _delta);
+        delta_tmp = (s.s_k_2 * s.theta_k) - (s.c_k_2 * delta)
+        # C++ line 159: _theta_km1 = (_c_k_2 * _theta_k) + (_s_k_2 * _delta);
+        theta_km1 = (s.c_k_2 * s.theta_k) + (s.s_k_2 * delta)
+        # C++ line 161: _delta = _delta_k_tmp;
+        delta = delta_tmp
+        # C++ line 163: _eta_k = _s_k_2 * _gamma_k;
+        eta_k = s.s_k_2 * gamma_k
+        # C++ line 165: _gamma_k = (-_c_k_2) * _gamma_k;
+        gamma_k = -s.c_k_2 * gamma_k
+    else:
+        theta_km2 = s.theta_km2
+        theta_km1 = s.theta_km1
+        eta_k = s.eta_k
+        eta_km1 = s.eta_km1
+        eta_km2 = s.eta_km2
+    
+    # ==========================================================================
+    # 5. CURRENT RIGHT REFLECTION P_{k-1,k}
+    # ==========================================================================
+    # C++ lines 172-178 (only if k > 0)
+    if s.k > 0:
+        # C++ line 174: sym_ortho(_gamma_km1, _delta, _c_k_3, _s_k_3, _gamma_km1);
+        c_k_3, s_k_3, gamma_km1 = _sym_ortho(gamma_km1_prev, delta,
+                                              "jax" if hasattr(backend, 'jit') else "default")
+        # C++ line 175: _theta_k = _s_k_3 * _gamma_k;
+        theta_k = s_k_3 * gamma_k
+        # C++ line 177: _gamma_k = (-_c_k_3) * _gamma_k;
+        gamma_k = -c_k_3 * gamma_k
+    else:
+        c_k_3 = s.c_k_3
+        s_k_3 = s.s_k_3
+        gamma_km1 = gamma_km1_prev
+        theta_k = 0.0  # Initialize for k=0
+    
+    # ==========================================================================
+    # 6. UPDATE MU & XNORM
+    # ==========================================================================
+    # C++ lines 185-207
+    mu_km4 = s.mu_km3
+    mu_km3 = s.mu_km2
+    
+    # C++ line 187: if (k > 1) _mu_km2 = ...
+    if s.k > 1:
+        safe_gamma_km2 = backend.where(backend.abs(gamma_km2) < _MIN_NORM, _TINY, gamma_km2)
+        mu_km2 = (tau_km2 - eta_km2 * mu_km4 - theta_km2 * mu_km3) / safe_gamma_km2
+    else:
+        mu_km2 = s.mu_km2
+    
+    # C++ line 188: if (k > 0) _mu_km1 = ...
+    if s.k > 0:
+        safe_gamma_km1 = backend.where(backend.abs(gamma_km1) < _MIN_NORM, _TINY, gamma_km1)
+        mu_km1 = (tau_km1 - eta_km1 * mu_km3 - theta_km1 * mu_km2) / safe_gamma_km1
+    else:
+        mu_km1 = s.mu_km1
+    
+    # C++ lines 190-203: Compute mu_k with singularity checks
+    xnorm_tmp = backend.sqrt(s.xl2norm_k**2 + mu_km2**2 + mu_km1**2)
+    
+    if backend.abs(gamma_k) > _MIN_NORM and xnorm_tmp < _MAX_X_NORM:
+        mu_k = (tau_k - eta_k * mu_km2 - theta_k * mu_km1) / gamma_k
+        xnorm_k_test = backend.sqrt(xnorm_tmp**2 + mu_k**2)
+        if xnorm_k_test > _MAX_X_NORM:
+            mu_k = 0.0
+            flag = 6  # MAXXNORM
+        else:
+            flag = s.flag
+    else:
+        mu_k = 0.0
+        flag = 5  # SINGULAR
+    
+    # C++ lines 205-206: Update norms
+    xl2norm_k = backend.sqrt(s.xl2norm_k**2 + mu_km2**2)
+    xnorm_k = backend.sqrt(xl2norm_k**2 + mu_km1**2 + mu_k**2)
+    
+    # ==========================================================================
+    # 7. UPDATE VECTORS (W & X) - QLP SWITCHING
+    # ==========================================================================
+    # C++ lines 213-274
+    
+    # Check condition: C++ line 215
+    cond_minres = (backend.real(s.a_cond) < _TRANS_A_COND and 
+                   flag == s.flag and 
+                   s.qlp_iter == 0)
+    
+    if cond_minres:
+        # MINRES PATH (C++ lines 215-221)
+        w_km2 = s.w_km1
+        w_km1 = s.w_k
+        safe_gamma_tmp = backend.where(gamma_k_tmp == 0, _TINY, gamma_k_tmp)
+        w_k = (v - eps_k * w_km2 - deltaqlp * w_km1) / safe_gamma_tmp
+        
+        if xnorm_k < _MAX_X_NORM:
+            x_k = s.x_k + tau_k * w_k
+        else:
+            x_k = s.x_k
+            flag = 6  # MAXXNORM
+        
+        x_km1 = s.x_km1
+        qlp_iter = 0
+        
+    else:
+        # MINRES-QLP PATH (C++ lines 223-274)
+        qlp_iter = s.qlp_iter + 1
+        
+        # C++ lines 226-235: Transition step reconstruction
+        if qlp_iter == 1:
+            if s.k > 0:
+                if s.k > 2:
+                    w_km2 = s.gamma_km3 * s.w_km2 + s.theta_km2 * s.w_km1 + s.eta_km1 * s.w_k
+                else:
+                    w_km2 = s.w_km2
+                    
+                if s.k > 1:
+                    w_km1 = s.gamma_qlp_km1 * s.w_km1 + s.theta_qlp_k * s.w_k
+                else:
+                    w_km1 = s.w_km1
+                    
+                w_k = s.gamma_qlp_k * s.w_k
+                x_km1 = s.x_k - w_km1 * s.mu_qlp_km1 - w_k * s.mu_qlp_k
+            else:
+                w_km2 = s.w_km2
+                w_km1 = s.w_km1
+                w_k = s.w_k
+                x_km1 = s.x_km1
+        else:
+            w_km2 = s.w_km1
+            x_km1 = s.x_km1
+            w_km1 = s.w_km1  # Will be updated below
+            w_k = s.w_k      # Will be updated below
+        
+        # C++ lines 237-268: Standard QLP recurrence
+        if s.k == 0:
+            w_km1 = v * s_k_3
+            w_k = -v * c_k_3
+        elif s.k == 1:
+            w_km1 = s.w_k * c_k_3 + v * s_k_3
+            w_k = s.w_k * s_k_3 - v * c_k_3
+        else:
+            # C++ lines 264-268
+            w_km1_temp = w_k  # Save old w_k
+            w_k = w_km2 * s.s_k_2 - v * s.c_k_2
+            w_km2 = w_km2 * s.c_k_2 + v * s.s_k_2
+            v_temp = w_km1_temp * c_k_3 + w_k * s_k_3
+            w_k = w_km1_temp * s_k_3 - w_k * c_k_3
+            w_km1 = v_temp
+        
+        # C++ lines 270-271: Update solution
+        x_km1 = x_km1 + w_km2 * mu_km2
+        x_k = x_km1 + w_km1 * mu_km1 + w_k * mu_k
+    
+    # ==========================================================================
+    # 8. PREPARE NEXT P2 ROTATION
+    # ==========================================================================
+    # C++ lines 278-281
+    gamma_k_tmp_for_p2 = gamma_km1  # Save before next sym_ortho
+    c_k_2, s_k_2, gamma_km1_updated = _sym_ortho(gamma_km1, eps_kp1,
+                                                   "jax" if hasattr(backend, 'jit') else "default")
+    
+    # ==========================================================================
+    # 9. STORE QUANTITIES FOR NEXT ITERATION (QLP TRANSFER)
+    # ==========================================================================
+    # C++ lines 287-292
+    gammaqlp_km1 = gamma_k_tmp  # From stage 3
+    thetaqlp_k = theta_k
+    gammaqlp_k = gamma_k        # After stage 5
+    muqlp_km1 = mu_km1
+    muqlp_k = mu_k
+    
+    # ==========================================================================
+    # 10. ESTIMATE NORMS & CONVERGENCE
+    # ==========================================================================
+    # C++ lines 298-336
+    abs_gamma = backend.abs(gamma_k)
+    a_norm = backend.maximum(s.a_norm, backend.abs(gamma_km1))
+    a_norm = backend.maximum(a_norm, abs_gamma)
+    a_norm = backend.maximum(a_norm, pnorm_rho_k)
+    
+    if s.k == 0:
+        gamma_min = abs_gamma
+        gamma_min_km1 = abs_gamma
+        gamma_min_km2 = abs_gamma
+    else:
+        gamma_min_km2 = s.gamma_min_km1
+        gamma_min_km1 = s.gamma_min
+        gamma_min = backend.minimum(gamma_min_km2, backend.abs(gamma_km1))
+        gamma_min = backend.minimum(gamma_min, abs_gamma)
+    
+    safe_gamma_min = backend.where(gamma_min < _MIN_NORM, _MIN_NORM, gamma_min)
+    a_cond = a_norm / safe_gamma_min
+    
+    # C++ lines 310-311: Update residual norm
+    if flag != 5:  # Not SINGULAR
+        rnorm = backend.abs(phi_k)
+    else:
+        rnorm = s.relres
+    
+    relres = rnorm / (a_norm * xnorm_k + s.beta_k + _TINY)
+    
+    # C++ lines 321-330: Convergence checks
+    if flag == s.flag or flag == 5:  # PROCESSING or SINGULAR
+        if s.k >= maxiter - 1:
+            flag = 4  # MAXITER
+        elif a_cond > _MAX_A_COND:
+            flag = 7  # ACOND
+        elif relres <= tol:
+            flag = 1  # SOLUTION_RTOL
+    
+    # ==========================================================================
+    # 11. PACK STATE FOR NEXT ITERATION
+    # ==========================================================================
+    return MinresQLPState(
+        k=s.k + 1,
+        
+        x_k=x_k,
+        x_km1=x_km1,
+        
+        w_k=w_k,
+        w_km1=w_km1,
+        w_km2=w_km2,
+        
+        v_k=v,
+        z_k=z_k_precond,
+        z_km1=z_km1_next,
+        z_km2=z_km2_next,
+        
+        beta_k=beta_k,
+        beta_km1=beta_km1,
+        beta_last=beta_last,
+        
+        c_k_1=c_k_1,
+        s_k_1=s_k_1,
+        delta_k=delta_k,
+        phi_k=phi_k,
+        eps_k=eps_k,
+        eps_kp1=eps_kp1,
+        
+        c_k_2=c_k_2,
+        s_k_2=s_k_2,
+        c_k_3=c_k_3,
+        s_k_3=s_k_3,
+        
+        gamma_k=gamma_k,        # After P2/P3 - will be gamma_km1 next iter
+        gamma_km1=gamma_km1_updated,  # After P2 preparation
+        gamma_km2=gamma_km1_prev,     # Previous gamma_k
+        gamma_km3=gamma_km2,
+        
+        theta_k=theta_k,
+        theta_km1=theta_km1,
+        theta_km2=theta_km2,
+        
+        eta_k=eta_k,
+        eta_km1=eta_km1,
+        eta_km2=eta_km2,
+        
+        tau_k=tau_k,
+        tau_km1=tau_km1,
+        tau_km2=tau_km2,
+        
+        mu_k=mu_k,
+        mu_km1=mu_km1,
+        mu_km2=mu_km2,
+        mu_km3=mu_km3,
+        mu_km4=mu_km4,
+        
+        qlp_iter=qlp_iter,
+        gamma_qlp_k=gammaqlp_k,
+        gamma_qlp_km1=gammaqlp_km1,
+        theta_qlp_k=thetaqlp_k,
+        mu_qlp_k=muqlp_k,
+        mu_qlp_km1=muqlp_km1,
+        
+        xl2norm_k=xl2norm_k,
+        xnorm_k=xnorm_k,
+        a_norm=a_norm,
+        a_cond=a_cond,
+        gamma_min=gamma_min,
+        gamma_min_km1=gamma_min_km1,
+        gamma_min_km2=gamma_min_km2,
+        
+        relres=relres,
+        flag=flag
     )
-    return initial_state, beta1
 
+# -----------------------------------------------------------------------------
+#! Core MINRES-QLP Logic Functions
+# -----------------------------------------------------------------------------
+
+def _minres_qlp_logic_numpy(
+    matvec          : Callable,
+    b               : np.ndarray,
+    x0              : np.ndarray,
+    tol             : float,
+    maxiter         : int,
+    precond_apply   : Optional[Callable] = None,
+    sigma           : float = 0.0) -> tuple:
+    """
+    Pure NumPy MINRES-QLP implementation.
+    
+    Returns:
+        tuple: (x, converged, iterations, residual)
+    """
+    xp = np
+    
+    # Apply shift to matvec: A' = A - sigma*I
+    def _shifted_matvec(v):
+        return matvec(v) - sigma * v
+    
+    # Initial Residual
+    r0 = b - _shifted_matvec(x0)
+    
+    # Apply Preconditioner to r0
+    if precond_apply:
+        z0 = precond_apply(r0)
+        beta0 = xp.sqrt(xp.real(xp.vdot(r0, z0)))
+    else:
+        z0 = r0
+        beta0 = xp.linalg.norm(r0)
+    
+    # Initial State
+    state = MinresQLPState(
+        k=0,
+        x_k=x0, x_km1=x0,
+        w_k=xp.zeros_like(x0), w_km1=xp.zeros_like(x0), w_km2=xp.zeros_like(x0),
+        v_k=xp.zeros_like(x0),
+        z_k=z0, z_km1=xp.zeros_like(x0), z_km2=xp.zeros_like(x0),
+        
+        beta_k=beta0, beta_km1=0.0, beta_last=0.0,
+        
+        c_k_1=1.0, s_k_1=0.0, delta_k=0.0, phi_k=beta0,
+        eps_k=0.0, eps_kp1=0.0,
+        
+        c_k_2=1.0, s_k_2=0.0, c_k_3=1.0, s_k_3=0.0,
+        
+        gamma_k=0.0, gamma_km1=0.0, gamma_km2=0.0, gamma_km3=0.0,
+        theta_k=0.0, theta_km1=0.0, theta_km2=0.0,
+        eta_k=0.0, eta_km1=0.0, eta_km2=0.0,
+        tau_k=0.0, tau_km1=0.0, tau_km2=0.0,
+        
+        mu_k=0.0, mu_km1=0.0, mu_km2=0.0, mu_km3=0.0, mu_km4=0.0,
+        
+        qlp_iter=0,
+        gamma_qlp_k=0.0, gamma_qlp_km1=0.0, theta_qlp_k=0.0,
+        mu_qlp_k=0.0, mu_qlp_km1=0.0,
+        
+        xl2norm_k=0.0, xnorm_k=0.0,
+        a_norm=0.0, a_cond=1.0,
+        gamma_min=1.0e30, gamma_min_km1=1.0e30, gamma_min_km2=1.0e30,
+        
+        relres=1.0,
+        flag=int(MinresQLPFlag.PROCESSING)
+    )
+    
+    # Iteration loop
+    while (state.flag == int(MinresQLPFlag.PROCESSING)) and (state.k < maxiter):
+        state = _minres_qlp_step(state, _shifted_matvec, precond_apply, tol, maxiter, xp)
+    
+    converged = (state.flag > 0 and state.flag < 8)
+    return state.x_k, converged, state.k, state.relres * beta0
+
+if JAX_AVAILABLE:
+
+    def _minres_qlp_logic_jax(
+        matvec          : Callable,
+        b               : Any,
+        x0              : Any,
+        tol             : float,
+        maxiter         : int,
+        precond_apply   : Optional[Callable] = None,
+        sigma           : float = 0.0) -> tuple:
+        """
+        JAX-compatible MINRES-QLP implementation with while_loop.
+        
+        Returns:
+            tuple: (x, converged, iterations, residual)
+        """
+        
+        # Apply shift to matvec: A' = A - sigma*I
+        def _shifted_matvec(v):
+            return matvec(v) - sigma * v
+        
+        # Initial Residual
+        r0              = b - _shifted_matvec(x0)
+        # Handle preconditioner
+        safe_precond    = precond_apply if precond_apply is not None else (lambda x: x)
+        
+        # Apply Preconditioner to r0
+        if precond_apply:
+            z0          = safe_precond(r0)
+            beta0       = jnp.sqrt(jnp.real(jnp.vdot(r0, z0)))
+        else:
+            z0          = r0
+            beta0       = jnp.linalg.norm(r0)
+        
+        # Initial State
+        init_state = MinresQLPState(
+                        k=0,
+                        x_k=x0, x_km1=x0,
+                        w_k=jnp.zeros_like(x0), w_km1=jnp.zeros_like(x0), w_km2=jnp.zeros_like(x0),
+                        v_k=jnp.zeros_like(x0),
+                        z_k=z0, z_km1=jnp.zeros_like(x0), z_km2=jnp.zeros_like(x0),
+                        
+                        beta_k=beta0, beta_km1=0.0, beta_last=0.0,
+                        
+                        c_k_1=1.0, s_k_1=0.0, delta_k=0.0, phi_k=beta0,
+                        eps_k=0.0, eps_kp1=0.0,
+                        
+                        c_k_2=1.0, s_k_2=0.0, c_k_3=1.0, s_k_3=0.0,
+                        
+                        gamma_k=0.0, gamma_km1=0.0, gamma_km2=0.0, gamma_km3=0.0,
+                        theta_k=0.0, theta_km1=0.0, theta_km2=0.0,
+                        eta_k=0.0, eta_km1=0.0, eta_km2=0.0,
+                        tau_k=0.0, tau_km1=0.0, tau_km2=0.0,
+                        
+                        mu_k=0.0, mu_km1=0.0, mu_km2=0.0, mu_km3=0.0, mu_km4=0.0,
+                        
+                        qlp_iter=0,
+                        gamma_qlp_k=0.0, gamma_qlp_km1=0.0, theta_qlp_k=0.0,
+                        mu_qlp_k=0.0, mu_qlp_km1=0.0,
+                        
+                        xl2norm_k=0.0, xnorm_k=0.0,
+                        a_norm=0.0, a_cond=1.0,
+                        gamma_min=1.0e30, gamma_min_km1=1.0e30, gamma_min_km2=1.0e30,
+                        
+                        relres=1.0,
+                        flag=int(MinresQLPFlag.PROCESSING)
+                    )
+        
+        def cond_fun(state: MinresQLPState) -> bool:
+            is_processing   = state.flag == int(MinresQLPFlag.PROCESSING)
+            is_within_limit = state.k < maxiter
+            return jnp.logical_and(is_processing, is_within_limit)
+        
+        def body_fun(state: MinresQLPState) -> MinresQLPState:
+            return _minres_qlp_step(state, _shifted_matvec, safe_precond, tol, maxiter, jnp)
+        
+        # Compile with while_loop
+        final_state = lax.while_loop(cond_fun, body_fun, init_state)
+        converged   = jnp.logical_and(final_state.flag > 0, final_state.flag < 8)
+        return final_state.x_k, converged, final_state.k, final_state.relres * beta0
+
+# Compile JAX version if available
 _minres_qlp_logic_jax_compiled = None
 if JAX_AVAILABLE:
-    def _minres_qlp_logic_jax(*args, **kwargs):
-        raise NotImplementedError("JAX MINRES-QLP is not implemented in this build.")
-    _minres_qlp_logic_jax_compiled = _minres_qlp_logic_jax
-
-
-# --- NumPy implementation (Plain Python loop) ---
-def _minres_qlp_logic_numpy(matvec, b, x0, tol, maxiter, precond_apply, shift, backend_mod):
-    """ NumPy MINRES-QLP solver main loop. """
-    # Initialize full MINRES-QLP state using provided matvec and backend
-    initial_state, beta1 = _minres_qlp_init(matvec, b, x0, precond_apply, shift, backend_mod)
-
-    if initial_state.flag != MinresQLPFlag.PROCESSING.value:
-        # Initial state already indicates termination
-        flag = MinresQLPFlag(initial_state.flag)
-        print(f"MINRES-QLP (NumPy) init state: {get_convergence_message(flag)}")
-        non_converged = [MinresQLPFlag.PRECOND_INDEF, MinresQLPFlag.PROCESSING]
-        converged = flag not in non_converged
-        return SolverResult(x=initial_state.x_k, converged=converged, iterations=0, residual_norm=initial_state.phi_k)
-
-    state = initial_state
-    flag0 = MinresQLPFlag.PROCESSING
-
-    # Store previous rnorm for Arnorm calculation
-    rnorm_prev = state.phi_k
-
-    for k_iter in range(maxiter):
-        # Call the body logic (treating it like a state update function)
-        # Need to pass beta1 explicitly if body func needs it
-        state = _minres_qlp_body_fun_numpy(state, matvec, precond_apply, shift, tol, beta1, backend_mod)
-
-        # --- Post-Iteration Checks (Convergence, Limits) ---
-        # Perform checks similar to C++ code based on updated state
-        current_flag = MinresQLPFlag(state.flag) # Get current flag (potentially updated in body)
-        flag_before_check = flag0 if current_flag == MinresQLPFlag.PROCESSING else current_flag # Use PROCESSING if no error set yet
-
-        # Termination flags to check first
-        terminate = False
-        final_flag = flag_before_check
-
-        if flag_before_check == MinresQLPFlag.PROCESSING or flag_before_check == MinresQLPFlag.SINGULAR:
-            # Estimate convergence criteria quantities
-            eps_x = state.a_norm * state.x_norm * tol # Approx ||Ax|| * tol
-            rel_res_tol_met = state.relres <= tol
-            rel_a_res_tol_met = state.rel_a_res <= tol
-
-            # Check criteria in order
-            if state.k >= maxiter: final_flag = MinresQLPFlag.MAX_ITER
-            elif state.a_cond >= _MAX_A_COND: final_flag = MinresQLPFlag.A_COND_LIMIT
-            elif state.x_norm >= _MAX_X_NORM: final_flag = MinresQLPFlag.X_NORM_LIMIT
-            elif eps_x >= beta1: final_flag = MinresQLPFlag.EIGEN # x = eigenvector approx
-            # Check combined criteria from C++ (t1, t2 <= 1 safety check)
-            elif (1.0 + state.rel_a_res) <= 1.0: final_flag = MinresQLPFlag.RESID_EPS_AR # Flag 4
-            elif (1.0 + state.relres) <= 1.0: final_flag = MinresQLPFlag.RESID_EPS # Flag 3
-            # Check individual tolerances
-            elif rel_a_res_tol_met: final_flag = MinresQLPFlag.RESID_AR # Flag 2
-            elif rel_res_tol_met: final_flag = MinresQLPFlag.RESID_RTOL # Flag 1
-            # Check if beta_k became zero (handled inside body?)
-            elif state.beta_k < _MIN_NORM: final_flag = MinresQLPFlag.BETA_ZERO
-
-            # Update state flag if changed
-            if final_flag != flag_before_check:
-                 state = state._replace(flag=final_flag.value)
-
-        # Check if a termination flag was set
-        terminate_flags = [
-            MinresQLPFlag.MAX_ITER, MinresQLPFlag.A_COND_LIMIT, MinresQLPFlag.X_NORM_LIMIT,
-            MinresQLPFlag.EIGEN, MinresQLPFlag.RESID_EPS_AR, MinresQLPFlag.RESID_EPS,
-            MinresQLPFlag.RESID_AR, MinresQLPFlag.RESID_RTOL, MinresQLPFlag.BETA_ZERO,
-            MinresQLPFlag.PRECOND_INDEF, MinresQLPFlag.X_ZERO
-            # Note: SINGULAR might allow continuation into QLP
-        ]
-        if MinresQLPFlag(state.flag) in terminate_flags:
-            terminate = True
-
-        # Store residuals if requested
-        # if store_residuals: ...
-
-        if terminate:
-            break # Exit outer Python loop
-
-    # --- Post-Loop ---
-    final_state = state
-    final_flag = MinresQLPFlag(final_state.flag)
-    print(f"MINRES-QLP (NumPy) finished after {final_state.k} iterations: {get_convergence_message(final_flag)}")
-
-    non_converged_flags = [
-        MinresQLPFlag.MAX_ITER, MinresQLPFlag.X_NORM_LIMIT,
-        MinresQLPFlag.SINGULAR, MinresQLPFlag.A_COND_LIMIT,
-        MinresQLPFlag.PRECOND_INDEF, MinresQLPFlag.PROCESSING
-    ]
-    converged = final_flag not in non_converged_flags
-
-    return SolverResult(x=final_state.x_k, converged=converged, iterations=final_state.k, residual_norm=final_state.phi_k)
-
-
-# Needs _minres_qlp_body_fun_numpy defined similarly to JAX one but using NumPy
-# Due to complexity, skipping full NumPy body implementation here.
-# Assume _minres_qlp_logic_numpy exists and works.
-
+    _minres_qlp_logic_jax_compiled = jax.jit(_minres_qlp_logic_jax, static_argnums=(3, 4, 6))
 
 # -----------------------------------------------------------------------------
 #! MinresQLP Solver Class
@@ -461,121 +756,103 @@ def _minres_qlp_logic_numpy(matvec, b, x0, tol, maxiter, precond_apply, shift, b
 class MinresQLPSolver(Solver):
     r'''
     Minimum Residual method with QLP stabilization for symmetric systems.
-
-    Solves $ (A - \sigma I)x = b $. Assumes operator A is symmetric.
-    Provides minimum-length least-squares solution for singular systems.
     '''
-    
     _solver_type = SolverType.MINRES_QLP
-
-    def __init__(self, *args, **kwargs):
-        '''
-        Initializes
-        '''
-        super().__init__(*args, **kwargs)
-        self._symmetric = True
-
-    # -------------------------------------------------------------------------
+    _symmetric   = True
 
     @staticmethod
-    def get_solver_func(backend_module: Any, **kwargs) -> StaticSolverFunc:
+    def get_solver_func(
+            backend_module      : Any,
+            use_matvec          : bool = True,
+            use_fisher          : bool = False,
+            use_matrix          : bool = False,
+            sigma               : Optional[float] = None) -> StaticSolverFunc:
         """
-        Returns the JAX or NumPy MINRES-QLP core logic function.
-        """
-        # Determine if the requested backend is JAX or NumPy robustly.
-        backend_name    = getattr(backend_module, "__name__", "")
-        jnp_name        = getattr(jnp, "__name__", "jax.numpy")
-        use_jax         = JAX_AVAILABLE and backend_name == jnp_name and jnp is not np
-
-        if use_jax:
-            if _minres_qlp_logic_jax_compiled is None:
-                raise ImportError("JAX MINRES-QLP function not available.")
-            return _minres_qlp_logic_jax_compiled
-        else:
-            # Provide a robust fallback for now by delegating to SciPy MINRES
-            # (stable for symmetric indefinite). For singular cases, this
-            # approximates MINRES-QLP behavior but may not return the strict
-            # minimum-norm solution. This avoids NotImplementedError and keeps
-            # the API functional until the native QLP path is finalized.
-            from .minres import MinresSolverScipy
-
-            def _fallback_minresqlp_numpy(matvec, b, x0, tol, maxiter, precond_apply, shift, backend_module):
-                # Wrap matvec for shifted operator A' = A - shift I
-                def shifted_mv(v):
-                    return matvec(v) - shift * v
-
-                # Reuse SciPy MINRES wrapper with the same API
-                return MinresSolverScipy.solve(
-                    matvec=shifted_mv,
-                    b=b,
-                    x0=x0,
-                    tol=tol,
-                    maxiter=maxiter,
-                    precond_apply=precond_apply,
-                    backend_module=np
-                )
-
-            return _fallback_minresqlp_numpy
-
-    # -------------------------------------------------------------------------
-
-    @staticmethod
-    def solve(
-            matvec          : MatVecFunc,
-            b               : Array,
-            x0              : Array,
-            *,
-            tol             : float,
-            maxiter         : int,
-            precond_apply   : Optional[Callable[[Array], Array]] = None,
-            backend_module  : Any,
-            # MINRES/QLP specific: shift (sigma)
-            shift           : float = 0.0,
-            **kwargs        : Any) -> SolverResult:
-        r"""
-        Static MINRES-QLP execution: Gets backend function and calls it.
+        Returns the backend-specific compiled/optimized MINRES-QLP function.
 
         Args:
-            matvec: 
-                Function $ v \\mapsto Av $ (without shift).
-            b:
-                RHS vector $ b $.
-            x0:
-                Initial guess $ x_0 $.
-            tol:
-                Relative tolerance $ \\epsilon_{rel} $.
-            maxiter:
-                Maximum iterations.
-            precond_apply:
-                Function $ r \\mapsto M^{-1}r $.
-            backend_module:
-                Backend (`numpy` or `jax.numpy`).
-            shift (float):
-                Shift parameter $ \sigma $ for $ (A - \sigma I)x = b $.
-            **kwargs: Ignored.
+            backend_module (Any):
+                The numerical backend (`numpy` or `jax.numpy`).
+            use_matvec (bool):
+                Whether to use matvec interface (always True for MINRES-QLP).
+            use_fisher (bool):
+                Whether to construct Fisher information matrix.
+            use_matrix (bool):
+                Whether to use dense matrix interface.
+            sigma (Optional[float]):
+                Shift parameter for (A - sigma*I).
 
         Returns:
-            SolverResult: Result tuple.
+            StaticSolverFunc:
+                The core MINRES-QLP function for the backend.
         """
-        solver_func = MinresQLPSolver.get_solver_func(backend_module)
+        # JAX Backend
+        if backend_module is jnp:
+            if _minres_qlp_logic_jax_compiled is None:
+                raise ImportError("JAX not installed but JAX backend requested.")
+            func = _minres_qlp_logic_jax_compiled
+            
+        # NumPy Backend
+        elif backend_module is np:
+            func = _minres_qlp_logic_numpy
+            
+        else:
+            raise ValueError(f"Unsupported backend: {backend_module}")
+
+        # Wrap the core logic (e.g., Fisher construction) using the base class helper
+        return Solver._solver_wrap_compiled(backend_module, func, use_matvec, use_fisher, use_matrix, sigma)
+        
+    @staticmethod
+    def solve(
+        matvec          : MatVecFunc,
+        b               : Array,
+        x0              : Array,
+        *,
+        tol             : float,
+        maxiter         : int,
+        precond_apply   : Optional[Callable[[Array], Array]] = None,
+        backend_module  : Any = np,
+        sigma           : Optional[float] = None,
+        **kwargs        : Any) -> SolverResult:
+        """
+        Static MINRES-QLP execution: Determines the appropriate backend function and executes it.
+
+        Args:
+            matvec (MatVecFunc): 
+                Function performing the matrix-vector product $ v \\mapsto Av $.
+            b (Array): 
+                Right-hand side vector $ b $.
+            x0 (Array): 
+                Initial guess $ x_0 $.
+            tol (float): 
+                Relative tolerance $ \\epsilon_{rel} $.
+            maxiter (int): 
+                Maximum number of iterations.
+            precond_apply (Optional[Callable[[Array], Array]]): 
+                Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+            backend_module (Any): 
+                Backend module (`numpy` or `jax.numpy`).
+            sigma (Optional[float]):
+                Shift parameter (default: 0.0).
+            **kwargs (Any): 
+                Additional arguments.
+
+        Returns:
+            SolverResult: 
+                A named tuple containing the solution, convergence status, 
+                iteration count, and residual norm.
+        """
         try:
-            # Pass shift explicitly to the logic function
-            return solver_func(matvec, b, x0, tol, maxiter, precond_apply, shift, backend_module)
-        except NotImplementedError:
-            raise # Propagate if NumPy version isn't done
+            # Get the compiled solver function
+            solver_func = MinresQLPSolver.get_solver_func(backend_module, use_matvec=True, sigma=sigma if sigma is not None else 0.0)
+            
+            # Run the solver
+            return Solver.run_solver_func(backend_module, solver_func, 
+                matvec=matvec, b=b, x0=x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+            
         except Exception as e:
-            raise SolverError(SolverErrorMsg.CONV_FAILED, f"MINRES-QLP execution failed: {e}") from e
-
-    # -------------------------------------------------------------------------
-
-    # solve_instance can be inherited if shift is handled via _conf_sigma
-    # Override if specific MINRES-QLP instance logic is needed beyond base class
-    def solve_instance(self, b: Array, x0 = None, *, tol=None, maxiter=None, precond='default', sigma=None, **kwargs) -> SolverResult:
-        # Use instance sigma as the default shift
-        current_shift = sigma if sigma is not None else self._conf_sigma if self._conf_sigma is not None else 0.0
-        # Add shift to kwargs to be passed to static solve
-        kwargs['shift'] = current_shift
-        # Call base class solve_instance which will call static solve with kwargs
-        return super().solve_instance(b, x0, tol=tol, maxiter=maxiter, precond=precond, sigma=sigma, **kwargs)
-    
-    # -------------------------------------------------------------------------
+            raise RuntimeError(f"MINRES-QLP execution failed: {e}") from e
+        
+# -------------------------------------------------------------------------
+#! EOF
+# -------------------------------------------------------------------------
