@@ -414,18 +414,33 @@ class HDF5Manager:
             return ['data_' + str(i) for i in range(len(data))]
 
     @staticmethod
-    def save_data_to_file(directory: str, filename: str, data: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]], shape: Tuple = (), keys: list = []):
+    def save_data_to_file(directory: str, filename: str, data: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]], shape: Tuple = (), keys: list = [], override: bool = True):
         '''
         Creates and saves data to an HDF5 file. (Refactored to use robust logic).
-        - filename  : name of the file to be saved
-        - data      : data to be saved (can be a list of data or a dictionary)
-        - shape     : shape of which the data shall be (if not the same as the data)
-        - keys      : keys/labels for the datasets (if data is a list/array)
+
+        Parameters:
+        -----------
+        directory : str
+            Directory where the file will be saved.
+        filename : str
+            Name of the HDF5 file.
+        data : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]]
+            Data to be saved. Can be a single array, a list of arrays, or a dictionary of arrays.
+        shape : Tuple, optional
+            Desired shape to reshape the data before saving (default is ()).
+        keys : list, optional
+            Keys/labels for the datasets if data is a list or array (default is []).
+        override : bool, optional
+            If True, overwrite existing datasets (default is True).
         '''
         if not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
+        
+        if override and os.path.exists(os.path.join(directory, filename)):
+            os.remove(os.path.join(directory, filename))
             
         # Ensure filename has .h5 extension
+        filename = str(filename)
         filename = filename if (filename.endswith(".h5") or filename.endswith(".hdf5")) else filename + ".h5"
         path     = os.path.join(directory, filename)
 
