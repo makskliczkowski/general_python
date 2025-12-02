@@ -193,6 +193,12 @@ class Directories(object):
         """
         return Directories(self.path.resolve())
     
+    def endswith(self, suffix: str) -> bool:
+        """
+        Check if the path ends with the given suffix.
+        """
+        return str(self.path).endswith(suffix)
+    
     ################################################################################
     #! Creation
     ################################################################################

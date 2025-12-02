@@ -41,9 +41,10 @@ class GeneralNet(ABC):
 
     def __init__(self,
                 input_shape     : tuple,
-                backend		    : str		         = 'default',
-                dtype           : Optional[np.dtype] = np.float64,
-                in_activation   : Optional[Callable] = None,
+                backend		    : str		            = 'default',
+                dtype           : Optional[np.dtype]    = np.float64,
+                in_activation   : Optional[Callable]    = None,
+                seed            : Optional[int]         = None,
                 **kwargs):
 
         self._name              = "GeneralNet"
@@ -94,7 +95,7 @@ class GeneralNet(ABC):
         self._in_activation     = in_activation
         self._net_module_class  = None
         self._net_args          = None
-        self._seed              = None
+        self._seed              = seed
         
     # ---------------------------------------------------
     #! INFO
@@ -618,8 +619,11 @@ class CallableNet(GeneralNet):
                 input_shape     : tuple,
                 backend		    : str		        = 'default',
                 dtype           : Optional[np.dtype]= np.float64,
-                callable_fun    : Callable          = None):
-        super().__init__(input_shape, backend, dtype)
+                seed            : Optional[int]     = None,
+                callable_fun    : Callable          = None,
+                **kwargs
+                ):
+        super().__init__(input_shape, backend, dtype, seed, **kwargs)
         
         # Set the callable function.
         if callable_fun is None:

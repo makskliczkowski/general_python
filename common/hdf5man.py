@@ -2,21 +2,21 @@
 A collection of functions to read, write, and process HDF5 files. 
 '''
 from __future__ import annotations
+
 from pathlib import Path
 import os
-import numpy as np
 import h5py
+import logging
+import numpy as np
 from typing import List, Dict, Any, Optional, Union, Generator, Tuple, Callable
 
 try:
-    from ..common.flog import Logger, get_global_logger
     from ..common.directories import Directories
+    
 except ImportError:
     raise ImportError("Required modules from 'common' package are missing.")
 
 # --------------------------------
-#! Logger
-_logger = get_global_logger()
 
 class LazyHDF5Entry:
     """A proxy that holds metadata but loads data only on demand."""
@@ -110,12 +110,12 @@ class HDF5Manager:
         """
         if not os.path.exists(file_path):
             if verbose:
-                _logger.error(f"File does not exist: {file_path}")
+                logging.error(f"File does not exist: {file_path}")
             return False
         
         if not str(file_path).lower().endswith(('.h5', '.hdf5', '.hdf')):
             if verbose:
-                _logger.error(f"File is not an HDF5 file (based on extension): {file_path}")
+                logging.error(f"File is not an HDF5 file (based on extension): {file_path}")
             return False
         return True
 
@@ -128,10 +128,10 @@ class HDF5Manager:
         try:
             return hf[key][()]
         except KeyError:
-            _logger.error(f"Dataset key '{key}' not found in HDF5 file.")
+            logging.error(f"Dataset key '{key}' not found in HDF5 file.")
             return None
         except Exception as e:
-            _logger.error(f"Error reading dataset '{key}': {e}")
+            logging.error(f"Error reading dataset '{key}': {e}")
             return None
 
     # ---------------------------------
@@ -191,14 +191,14 @@ class HDF5Manager:
             return data
 
         except Exception as e:
-            _logger.error(f"Error opening or reading HDF5 file {file_path}: {e}")
+            logging.error(f"Error opening or reading HDF5 file {file_path}: {e}")
             if remove_corrupted_file and ("truncated" in str(e).lower() or "doesn't exist" in str(e).lower()):
                 _logger.warning(f"Attempting to remove corrupted file: {file_path}")
                 try:
                     os.remove(file_path)
                     _logger.info(f"Successfully removed corrupted file: {file_path}")
                 except OSError as oe:
-                    _logger.error(f"Failed to remove corrupted file {file_path}: {oe}")
+                    logging.error(f"Failed to remove corrupted file {file_path}: {oe}")
             return {}
 
     @staticmethod
@@ -291,7 +291,7 @@ class HDF5Manager:
 
             if d.ndim <= target_shape_axis:
                 if verbose:
-                    _logger.error(f"Dataset for key '{key}' in {filename} has insufficient dimensions ({d.ndim}) for target_shape_axis {target_shape_axis}, skipping.")
+                    logging.error(f"Dataset for key '{key}' in {filename} has insufficient dimensions ({d.ndim}) for target_shape_axis {target_shape_axis}, skipping.")
                 continue
 
             current_dim_size = d.shape[target_shape_axis]
@@ -334,7 +334,7 @@ class HDF5Manager:
         try:
             concatenated_data = np.concatenate(datasets_to_concat, axis=concat_axis)
         except ValueError as e:
-            _logger.error(f"Error concatenating data for key '{key}': {e}. Check shapes: {[arr.shape for arr in datasets_to_concat]}")
+            logging.error(f"Error concatenating data for key '{key}': {e}. Check shapes: {[arr.shape for arr in datasets_to_concat]}")
             return np.array([])
 
         if clean_zeros_params:
@@ -475,7 +475,7 @@ class HDF5Manager:
                             arr = arr.reshape(shape)
                         hf.create_dataset(lbl, data=arr)
         except Exception as e:
-            _logger.error(f"Error saving HDF5 file {path}: {e}")
+            logging.error(f"Error saving HDF5 file {path}: {e}")
             raise
     
     @staticmethod
@@ -538,7 +538,7 @@ class HDF5Manager:
                         hf.create_dataset(k, data=arr, maxshape=maxshape_val)
                         
         except Exception as e:
-            _logger.error(f"Error appending HDF5 file {path}: {e}")
+            logging.error(f"Error appending HDF5 file {path}: {e}")
             raise
 
     save_hdf5   = save_data_to_file 
@@ -625,10 +625,10 @@ class HDF5Manager:
                                 for d in directory_paths]
             
         except NameError: # Directories class might not be defined if import failed
-            _logger.error("'Directories' class is not available. Cannot list files.")
+            logging.error("'Directories' class is not available. Cannot list files.")
             return # yield nothing
         except Exception as e:
-            _logger.error(f"Error listing directories: {e}")
+            logging.error(f"Error listing directories: {e}")
             return
 
         if not file_paths:
@@ -794,7 +794,7 @@ class HDF5Manager:
             try:
                 os.makedirs(directory, exist_ok=True)
             except OSError as e:
-                _logger.error(f"Could not create directory {directory}: {e}")
+                logging.error(f"Could not create directory {directory}: {e}")
                 return
 
         base, ext = os.path.splitext(filename)
@@ -840,10 +840,10 @@ class HDF5Manager:
                             array_to_write = array_to_write.reshape(target_shape)
                         hf.create_dataset(name, data=array_to_write)
                 else:
-                    _logger.error(f"Unsupported data type for saving: {type(data_to_save)}. Must be dict, list, or ndarray.")
+                    logging.error(f"Unsupported data type for saving: {type(data_to_save)}. Must be dict, list, or ndarray.")
 
         except Exception as e:
-            _logger.error(f"Error saving HDF5 file {file_path}: {e}")
+            logging.error(f"Error saving HDF5 file {file_path}: {e}")
 
     @staticmethod
     def append_data_to_file(
@@ -884,7 +884,7 @@ class HDF5Manager:
                 HDF5Manager.save_data_to_file(directory, filename, new_data, dataset_names_config=dataset_names_config, overwrite=True)
                 return
             else:
-                _logger.error(f"File {file_path} does not exist and dataset creation is not allowed.")
+                logging.error(f"File {file_path} does not exist and dataset creation is not allowed.")
                 return
 
         try:
@@ -900,7 +900,7 @@ class HDF5Manager:
                     names = HDF5Manager._generate_dataset_names(len(datasets), dataset_names_config)
                     data_items_to_process = {name: arr for name, arr in zip(names, datasets)}
                 else:
-                    _logger.error("Invalid data type for appending.")
+                    logging.error("Invalid data type for appending.")
                     return
 
                 for name, data_array in data_items_to_process.items():
@@ -917,14 +917,14 @@ class HDF5Manager:
                                 hf[name].resize((original_shape[0] + data_array_np.shape[0]), axis=0)
                                 hf[name][-data_array_np.shape[0]:] = data_array_np
                             else:
-                                _logger.error(f"Dataset '{name}' in {file_path} is not resizable for appending. Maxshape: {hf[name].maxshape}")
+                                logging.error(f"Dataset '{name}' in {file_path} is not resizable for appending. Maxshape: {hf[name].maxshape}")
                     elif allow_dataset_creation:
                         # Create with maxshape for future appends
                         hf.create_dataset(name, data=data_array_np, maxshape=(None,) + data_array_np.shape[1:] if data_array_np.ndim > 0 else (None,))
                     else:
                         _logger.warning(f"Dataset '{name}' not found in {file_path} and creation is not allowed.")
         except Exception as e:
-            _logger.error(f"Error appending to HDF5 file {file_path}: {e}")
+            logging.error(f"Error appending to HDF5 file {file_path}: {e}")
 
     # ---------------------------------
     #! Data Cleaning Methods
@@ -1093,7 +1093,7 @@ class HDF5Manager:
                 arrays.append(arr)
 
             except Exception as e:
-                _logger.error(f"Error processing {fname}: {e}")
+                logging.error(f"Error processing {fname}: {e}")
                 skipped.append(fname)
 
         if not arrays:
@@ -1156,7 +1156,7 @@ class HDF5Manager:
             return matrix # Or return as is if not all (checked) are zero
 
         if axis < 0 or axis >= matrix.ndim:
-            _logger.error(f"Invalid axis {axis} for matrix with {matrix.ndim} dimensions.")
+            logging.error(f"Invalid axis {axis} for matrix with {matrix.ndim} dimensions.")
             return matrix
 
         # Move the target axis to the first position for easier processing
@@ -1226,7 +1226,7 @@ class HDF5Manager:
         if matrix.ndim == 0: return matrix
         if matrix.size == 0: return matrix
         if axis < 0 or axis >= matrix.ndim:
-            _logger.error(f"Invalid axis {axis} for matrix with {matrix.ndim} dimensions.")
+            logging.error(f"Invalid axis {axis} for matrix with {matrix.ndim} dimensions.")
             return matrix
 
         matrix_moved = np.moveaxis(matrix, axis, 0)
@@ -1298,7 +1298,7 @@ class HDF5Manager:
         
         data = HDF5Manager.load_file_data(full_source_path, verbose=verbose)
         if not data or 'filename' not in data: # load_file_data returns empty dict on failure
-            _logger.error(f"Could not read or data is empty for {full_source_path}")
+            logging.error(f"Could not read or data is empty for {full_source_path}")
             return
 
         #! Remove 'filename' key before processing datasets
@@ -1390,7 +1390,7 @@ class HDF5Manager:
                     )
 
             except Exception as e:
-                _logger.error(f"Error processing directory {current_source_dir}: {e}")
+                logging.error(f"Error processing directory {current_source_dir}: {e}")
                 if exception_handler:
                     exception_handler(e, f"Error processing directory {current_source_dir}")
                 # else: print("Exception:", e) # Original behavior

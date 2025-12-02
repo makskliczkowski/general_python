@@ -115,7 +115,7 @@ class FlaxInterface(GeneralNet):
         self._dtype = self._dtype = self._resolve_dtype(dtype if dtype is not None else net_kwargs.get('dtype', DEFAULT_JP_FLOAT_TYPE))
         
         #! Initialize the GeneralNet class.
-        super().__init__(input_shape, backend, self._dtype, in_activation=in_activation, **kwargs)
+        super().__init__(input_shape, backend, self._dtype, in_activation=in_activation, seed=seed, **kwargs)
 
         #! Set the backend to JAX.
         if self._backend != jnp and self._backend != 'jax':

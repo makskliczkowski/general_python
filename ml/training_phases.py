@@ -9,9 +9,51 @@ This module implements a multi-phase training system for NQS, allowing:
 - Progress tracking and reporting
 
 Learning phases represent different stages of optimization:
-1. Pre-training: Initialize network with simple loss, high learning rate
-2. Main Optimization: Full Hamiltonian, adaptive learning rate
-3. Refinement: Fine-tune observables, low learning rate, high regularization
+
+1. **Pre-training**: Initialize network with simple loss, high learning rate
+2. **Main Optimization**: Full Hamiltonian, adaptive learning rate
+3. **Refinement**: Fine-tune observables, low learning rate, high regularization
+
+Quick Start
+-----------
+**Using Presets:**
+
+>>> from QES.general_python.ml.training_phases import create_phase_schedulers
+>>> lr_sched, reg_sched = create_phase_schedulers('default')
+>>> # Pass to NQSTrainer: phases=(lr_sched, reg_sched)
+
+**Creating Custom Phases:**
+
+>>> from QES.general_python.ml.training_phases import LearningPhase, PhaseType, PhaseScheduler
+>>> 
+>>> my_phases = [
+...     LearningPhase(
+...         name="warmup", epochs=50,
+...         lr=0.1, lr_schedule="exponential", lr_kwargs={'lr_decay': 0.05},
+...         reg=0.01
+...     ),
+...     LearningPhase(
+...         name="main", epochs=300,
+...         lr=0.02, lr_schedule="adaptive", lr_kwargs={'patience': 20, 'lr_decay': 0.5},
+...         reg=0.001
+...     ),
+... ]
+>>> lr_sched = PhaseScheduler(my_phases, param_type='lr')
+>>> reg_sched = PhaseScheduler(my_phases, param_type='reg')
+
+Available Scheduler Types
+-------------------------
+- ``'constant'``: Fixed value
+- ``'exponential'``: Exponential decay: lr * exp(-decay * epoch)
+- ``'step'``: Step decay: lr * gamma^floor(epoch/step_size)
+- ``'cosine'``: Cosine annealing to min_lr
+- ``'linear'``: Linear decay to min_lr
+- ``'adaptive'``: ReduceLROnPlateau (requires loss)
+
+Available Presets
+-----------------
+- ``'default'``: 3-phase (pre_training: 50, main: 200, refinement: 100)
+- ``'kitaev'``: Specialized for frustrated spin systems (pre: 100, main: 300, fine: 150)
 
 ----------------------------------------
 File        : NQS/src/learning_phases.py
@@ -31,18 +73,6 @@ try:
 except ImportError as e:
     raise ImportError("Failed to import schedulers module. Ensure QES package is correctly installed.") from e
 
-"""
-Multi-stage Training Phase Scheduler.
-
-This module manages dynamic hyperparameters (learning rate, regularization)
-across defined training phases (Pre-training, Main, Refinement).
-
-----------------------------------------------------------
-file        : general_python/ml/training_phases.py
-author      : Maksymilian Kliczkowski
-----------------------------------------------------------
-"""
-
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List, Dict, Any, Union, Tuple
 from enum import Enum, auto
@@ -60,7 +90,89 @@ class PhaseType(Enum):
 
 @dataclass
 class LearningPhase:
-    """Configuration for a specific duration of training."""
+    """
+    Configuration for a specific training phase.
+    
+    Each phase defines learning rate and regularization schedules that are
+    active for a specific number of epochs. Phases are processed sequentially
+    by the PhaseScheduler.
+    
+    Attributes
+    ----------
+    name : str
+        Human-readable phase identifier (e.g., 'warmup', 'main', 'fine').
+        
+    epochs : int
+        Number of epochs this phase lasts.
+        
+    phase_type : PhaseType
+        Semantic type (PRE_TRAINING, MAIN, REFINEMENT, CUSTOM).
+        
+    lr : float
+        Initial learning rate for this phase.
+        
+    lr_schedule : str
+        Scheduler type for LR. Options:
+        - 'constant': Fixed lr throughout phase
+        - 'exponential': lr * exp(-lr_decay * local_epoch)
+        - 'step': lr * lr_decay^floor(local_epoch/step_size)
+        - 'cosine': Cosine annealing from lr to min_lr
+        - 'linear': Linear decay from lr to min_lr
+        - 'adaptive': ReduceLROnPlateau (requires loss)
+        
+    lr_kwargs : Dict[str, Any]
+        Extra arguments for the LR scheduler. Common keys:
+        - 'lr_decay': Decay rate (exponential, step, adaptive)
+        - 'step_size': Steps between decays (step scheduler)
+        - 'min_lr': Minimum LR (cosine, linear, adaptive)
+        - 'patience': Epochs before reduction (adaptive)
+        - 'min_delta': Minimum improvement threshold (adaptive)
+        
+    reg : float
+        Initial regularization (diagonal shift) for this phase.
+        
+    reg_schedule : str
+        Scheduler type for regularization. Same options as lr_schedule.
+        
+    reg_kwargs : Dict[str, Any]
+        Extra arguments for the regularization scheduler.
+        
+    loss_type : str
+        Loss function type (default: 'energy').
+        
+    beta_penalty : float
+        Penalty coefficient for excited state targeting.
+        
+    on_phase_start : Callable, optional
+        Callback executed when phase begins.
+        
+    on_phase_end : Callable, optional
+        Callback executed when phase ends.
+        
+    Examples
+    --------
+    >>> # Exponential decay warmup
+    >>> warmup = LearningPhase(
+    ...     name='warmup', epochs=50,
+    ...     lr=0.1, lr_schedule='exponential', lr_kwargs={'lr_decay': 0.05},
+    ...     reg=0.01
+    ... )
+    >>> 
+    >>> # Adaptive main phase (ReduceLROnPlateau)
+    >>> main = LearningPhase(
+    ...     name='main', epochs=300,
+    ...     lr=0.02, lr_schedule='adaptive',
+    ...     lr_kwargs={'patience': 20, 'lr_decay': 0.5, 'min_lr': 1e-4},
+    ...     reg=0.001
+    ... )
+    >>> 
+    >>> # Cosine annealing refinement
+    >>> refine = LearningPhase(
+    ...     name='fine', epochs=100,
+    ...     lr=0.01, lr_schedule='cosine', lr_kwargs={'min_lr': 1e-5},
+    ...     reg=0.005
+    ... )
+    """
     name                : str                   = "phase"
     epochs              : int                   = 100
     phase_type          : PhaseType             = PhaseType.MAIN
@@ -164,8 +276,50 @@ def _get_presets() -> Dict[str, List[LearningPhase]]:
 
 class PhaseScheduler:
     """
-    Manages the transition between phases and instantiates the 
-    appropriate low-level Scheduler from schedulers.py for each phase.
+    Manages transitions between training phases.
+    
+    The PhaseScheduler orchestrates multi-phase training by:
+    1. Tracking the current phase based on global epoch count
+    2. Instantiating appropriate low-level schedulers for each phase
+    3. Firing callbacks on phase transitions
+    4. Returning scheduled values via __call__
+    
+    Parameters
+    ----------
+    phases : List[LearningPhase]
+        Ordered list of training phases to execute.
+        
+    param_type : str, default='lr'
+        Which parameter to schedule ('lr' or 'reg').
+        
+    logger : Logger, optional
+        Logger for phase transition messages.
+        
+    Attributes
+    ----------
+    current_phase : LearningPhase
+        Currently active phase.
+        
+    history : List[float]
+        All scheduled values returned.
+        
+    Examples
+    --------
+    >>> from QES.general_python.ml.training_phases import LearningPhase, PhaseScheduler
+    >>> 
+    >>> phases = [
+    ...     LearningPhase(name='warmup', epochs=50, lr=0.1, lr_schedule='exponential',
+    ...                   lr_kwargs={'lr_decay': 0.05}),
+    ...     LearningPhase(name='main', epochs=200, lr=0.02, lr_schedule='constant'),
+    ... ]
+    >>> 
+    >>> lr_scheduler = PhaseScheduler(phases, param_type='lr')
+    >>> reg_scheduler = PhaseScheduler(phases, param_type='reg')
+    >>> 
+    >>> # Use in training loop
+    >>> for epoch in range(250):
+    ...     lr = lr_scheduler(epoch, loss=current_loss)  # Auto phase transition
+    ...     reg = reg_scheduler(epoch, loss=current_loss)
     """
     def __init__(self, phases: List[LearningPhase], param_type: str = 'lr', logger=None):
         self.phases                                 = phases
@@ -255,7 +409,39 @@ class PhaseScheduler:
 # ----------------------------------------------------------------------
 
 def create_phase_schedulers(preset: str = 'default', logger=None):
-    """Returns (lr_scheduler, reg_scheduler) tuple."""
+    """
+    Factory function to create LR and Reg schedulers from a preset.
+    
+    Parameters
+    ----------
+    preset : str, default='default'
+        Preset name. Available:
+        - 'default': 3-phase training (350 total epochs)
+        - 'kitaev': Specialized for frustrated systems (550 total epochs)
+        
+    logger : Logger, optional
+        Logger for scheduler messages.
+        
+    Returns
+    -------
+    Tuple[PhaseScheduler, PhaseScheduler]
+        (lr_scheduler, reg_scheduler) tuple.
+        
+    Raises
+    ------
+    ValueError
+        If preset name is not recognized.
+        
+    Examples
+    --------
+    >>> lr_sched, reg_sched = create_phase_schedulers('default')
+    >>> 
+    >>> # Pass to NQSTrainer
+    >>> trainer = NQSTrainer(nqs, phases=(lr_sched, reg_sched))
+    >>> 
+    >>> # Or use preset string directly
+    >>> trainer = NQSTrainer(nqs, phases='default')  # Equivalent
+    """
     presets = _get_presets()
     if preset not in presets:
         raise ValueError(f"Unknown preset '{preset}'. Available: {list(presets.keys())}")

@@ -263,14 +263,12 @@ class Logger:
             f.write('--------------------------------------------------\n')
             
         # Create a file handler only once
-
         
         # Write initial log file header if the log file is created
         if not self.handler_added:
             self._f_handler = logging.FileHandler(self.logfile, encoding='utf-8')
             self._f_handler.setLevel(Logger.LEVELS_R.get(self.lvl, logging.INFO))
             self._f_handler.setFormatter(StripAnsiFormatter('%(asctime)s [%(levelname)s] %(message)s', datefmt="%d_%m_%Y_%H-%M-%S"))
-            self.logger.addHandler(self._f_handler)
             self.logger.addHandler(self._f_handler)
 
             # Add a stream handler for console output
@@ -593,9 +591,27 @@ def get_global_logger(**kwargs) -> Logger:
     """
     One Logger wrapper per process (PID), safe across threads/forks.
     Prints the banner only once per entire program via env sentinel.
+    
+    Args:
+        **kwargs: Arguments to pass to the Logger constructor.
+        - name (str): Name of the logger (default: "Global").
+        - lvl (int): Logging level (default: logging.INFO).
+        - append_ts (bool): Whether to append timestamps (default: True).
+        - use_ts_in_cmd (bool): Whether to use timestamps in commands (default: True).
+        - logfile (str or None): Path to a logfile (default: None).
+    
+    Returns:
+        Logger: The global logger instance.
+    
+    Example
+    -------
+        >>> logger = get_global_logger()
+        >>> logger.info("This is an informational message.")
+        >>> logger.debug("This is a debug message.", color='blue')
     """
-    global _G_LOGGER, _G_LOGGER_PID
-    pid = os.getpid()
+    global  _G_LOGGER, _G_LOGGER_PID
+    pid     = os.getpid()
+    
     if _G_LOGGER is not None and _G_LOGGER_PID == pid:
         return _G_LOGGER
 
@@ -605,10 +621,10 @@ def get_global_logger(**kwargs) -> Logger:
 
         logger = Logger(
             name            = kwargs.get("name", "Global"),
-            lvl             = kwargs.get("lvl", logging.INFO),
-            append_ts       = kwargs.get("append_ts", True),
-            use_ts_in_cmd   = kwargs.get("use_ts_in_cmd", True),
-            logfile         = kwargs.get("logfile", None),
+            lvl             = kwargs.get("lvl",             logging.INFO),
+            append_ts       = kwargs.get("append_ts",       True),
+            use_ts_in_cmd   = kwargs.get("use_ts_in_cmd",   True),
+            logfile         = kwargs.get("logfile",         None),
         )
 
         # Print the banner only once per program (env is inherited by forked workers)

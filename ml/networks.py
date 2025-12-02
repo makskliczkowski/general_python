@@ -102,10 +102,11 @@ def _lazy_load_class(key: str) -> Type[GeneralNet]:
 ######################################################################
 
 def choose_network(network_type : Union[str, Networks, Type[Any], Any], 
-                   input_shape  : Optional[tuple] = None,
-                   backend      : str             = 'jax',
-                   dtype        : Any             = None,
-                   param_dtype  : Any             = None,
+                   input_shape  : Optional[tuple]   = None,
+                   backend      : str               = 'jax',
+                   dtype        : Any               = None,
+                   param_dtype  : Any               = None,
+                   seed         : Optional[int]     = None,
                    **kwargs) -> GeneralNet:
     """
     Smart factory to instantiate a network.
@@ -129,6 +130,8 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         The data type for the network's computations (e.g., 'float32', 'complex64').
     param_dtype : Any
         The data type for the network's parameters. If `None`, defaults to `dtype`.
+    seed : Optional[int]
+        Random seed for network initialization, if applicable.
     **kwargs :
         Network-specific keyword arguments. See below for details on each network type.
 
@@ -213,7 +216,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                 kwargs['n_hidden']  = int(alpha * n_visible)
 
         net_cls = _lazy_load_class(key)
-        return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, **kwargs)
+        return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
     # 2. Handle Existing Instances (Return as-is)
     if isinstance(network_type, GeneralNet):
@@ -224,7 +227,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         
         # It is a subclass of GeneralNet (e.g. user imported RBM manually)
         if issubclass(network_type, GeneralNet):
-            return network_type(input_shape=input_shape, backend=backend, dtype=dtype, **kwargs)
+            return network_type(input_shape=input_shape, backend=backend, dtype=dtype, seed=seed, **kwargs)
 
         # It is a Flax Module (Auto-Wrap Logic)
         # We check this loosely to avoid importing flax if not needed
@@ -254,13 +257,19 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                 'param_dtype'   : param_dtype,
             })
             return FlaxInterface(
-                net_module  =   network_type,
-                net_kwargs  =   all_kwargs,
+                net_module      =   network_type,
+                net_kwargs      =   all_kwargs,
+                input_shape     =   input_shape,
+                backend         =   backend,
+                dtype           =   dtype,
+                param_dtype     =   param_dtype,
+                seed            =   seed,
+                in_activation   =   kwargs.get('in_activation', None)
             )
 
     # Handle generic Callables (Factories)
     if callable(network_type):
-        return CallableNet(input_shape=input_shape, backend=backend, dtype=dtype, **kwargs)
+        return CallableNet(callable_fun=network_type, input_shape=input_shape, backend=backend, dtype=dtype, **kwargs)
 
     raise ValueError(f"Unknown network type: {type(network_type)}")
 
