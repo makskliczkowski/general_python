@@ -44,6 +44,8 @@ _LAZY_MODULES = {
     'DirectScipy'               : '.direct',
     'DirectJaxScipy'            : '.direct',
     'DirectInvSolver'           : '.direct',
+    'BackendSolver'             : '.backend',
+    'BackendDirectSolver'       : '.backend',
     'PseudoInverseSolver'       : '.pseudoinverse',
     'MinresQLPSolver'           : '.minres_qlp',
     'MinresSolverScipy'         : '.minres',
@@ -123,10 +125,12 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
     # 2. Resolve SolverType Enum
     solver_type = None
     if isinstance(solver_id, str):
-        try:
+        if solver_id.upper() in SolverType.__members__:
             solver_type = SolverType[solver_id.upper()]
-        except KeyError:
-            pass
+        elif solver_id.lower() == "default":
+            solver_type = SolverType.BACKEND
+        else:
+            solver_type = None
     elif isinstance(solver_id, int):
         solver_type = SolverType(solver_id)
     elif isinstance(solver_id, SolverType):
@@ -143,18 +147,24 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
             from .cg import CgSolver as target_class
         elif solver_type == SolverType.SCIPY_CG:
             from .cg import CgSolverScipy as target_class
+        #
         elif solver_type == SolverType.MINRES:
             from .minres import MinresSolver as target_class
         elif solver_type == SolverType.SCIPY_MINRES:
             from .minres import MinresSolverScipy as target_class
+        # 
         elif solver_type == SolverType.MINRES_QLP:
             from .minres_qlp import MinresQLPSolver as target_class
         elif solver_type == SolverType.PSEUDO_INVERSE:
             from .pseudoinverse import PseudoInverseSolver as target_class
+        #
         elif solver_type == SolverType.DIRECT or solver_type == SolverType.BACKEND_SOLVER:
             from .direct import DirectSolver as target_class
         elif solver_type == SolverType.SCIPY_DIRECT:
             from .direct import DirectScipy as target_class
+        #
+        elif solver_type == SolverType.BACKEND:
+            from .backend import BackendSolver as target_class
         else:
             raise NotImplementedError(f"Solver type {solver_type} is defined but not mapped to a class.")
     else:

@@ -244,16 +244,16 @@ def _get_presets() -> Dict[str, List[LearningPhase]]:
                 name            =   "pre", 
                 lr              =   5e-2, 
                 lr_schedule     =   "step", 
-                lr_kwargs       =   {'step_size': 25, 'lr_decay': 0.5},
+                lr_kwargs       =   {'step_size': 35, 'lr_decay': 0.5},
                 reg             =   5e-2
             ),
             LearningPhase(
                 name            =   "main", 
                 epochs          =   300, 
                 phase_type      =   PhaseType.MAIN, 
-                lr              =   2e-2, 
+                lr              =   3e-2, 
                 lr_schedule     =   "adaptive", 
-                lr_kwargs       =   {'patience': 15, 'min_delta': 1e-4},
+                lr_kwargs       =   {'patience': 100, 'min_delta': 1e-4},
                 reg             =   1e-3
             ),
             # In refinement, we might want to increase regularization (annealing)

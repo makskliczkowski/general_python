@@ -205,6 +205,25 @@ class Lattice(ABC):
         ''' Representation of the lattice '''
         return f"{self._type.name},{self._bc.name},d={self._dim},Ns={self._ns},Lx={self._lx},Ly={self._ly},Lz={self._lz}"
     
+    def __len__(self):
+        ''' Length of the lattice (number of sites) '''
+        return self._ns
+    
+    def __getitem__(self, index: int):
+        ''' Get the site at the given index '''
+        if index < 0 or index >= self._ns:
+            raise IndexError("Lattice index out of range")
+        return index
+    
+    def __iter__(self):
+        ''' Iterate over the lattice sites '''
+        for i in range(self._ns):
+            yield i
+            
+    def __contains__(self, item: int):
+        ''' Check if the lattice contains the given site '''
+        return 0 <= item < self._ns
+
     # -----------------------------------------------------------------------------
     
     def init(self, verbose: bool = False, *, force_dft: bool = False):

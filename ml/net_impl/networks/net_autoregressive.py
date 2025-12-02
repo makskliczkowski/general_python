@@ -112,7 +112,7 @@ class MaskedDense(nn.Module):
 # Topology Helper (Mask Generation)
 # ---------------------------------------------------------
 
-def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32):
+def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32, seed=None):
     """
     Creates masks for MADE. The masks enforce the autoregressive property:
     - Each output unit k can only depend on input units with indices less than k.
@@ -125,6 +125,9 @@ def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32):
         Sizes of hidden layers.
     n_out_per_site : int
         Number of output units per input site (e.g., 2 for spin up/down logits).
+    seed : int, optional
+        Random seed for reproducible mask generation. If None, uses deterministic
+        uniform degree assignment instead of random degrees.
     Returns:
     --------
     List of masks (jnp.ndarray) for each layer. Each mask is a binary matrix where
@@ -142,14 +145,21 @@ def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32):
     # degrees[1..L] -> hidden layer degrees
     degrees     = [np.arange(n_in)]
     
-    # Generate random degrees for hidden layers
+    # Generate degrees for hidden layers
+    # Use deterministic assignment to ensure reproducibility across calls
     for i, h in enumerate(hidden_sizes):
-        # connectivity constraint: m^l_k >= m^{l-1}_k
         prev_m  = degrees[-1]
-        # Hidden layer degrees: random integers in [min(prev_m), n_in - 1]
-        # The random choice ensures variability in connectivity
-        # within the autoregressive constraints
-        m       = np.random.randint(low=np.min(prev_m), high=n_in - 1, size=h)
+        min_deg = int(np.min(prev_m))
+        max_deg = n_in - 1
+        
+        if seed is not None:
+            # Use seeded random for reproducibility
+            rng = np.random.RandomState(seed + i)
+            m   = rng.randint(low=min_deg, high=max_deg + 1, size=h)
+        else:
+            # Deterministic: uniformly spread degrees across valid range
+            # This ensures consistent masks without randomness
+            m   = np.linspace(min_deg, max_deg, h).astype(np.int32)
         degrees.append(m)
     
     # Construct masks
@@ -339,14 +349,36 @@ class FlaxComplexAutoregressive(nn.Module):
 
         return log_prob / self.mu + 1j * theta
 
-    def get_logits(self, x):
+    def get_logits(self, x, is_binary: bool = False):
+        """Get amplitude logits for given configuration.
+        
+        Parameters
+        ----------
+        x : jnp.ndarray
+            Input configuration. Can be in physical spin format (-0.5, +0.5)
+            or binary format (0, 1).
+        is_binary : bool, default=False
+            If True, x is already in binary (0,1) format and no conversion is done.
+            If False, x is assumed to be in physical spin format and converted.
+        """
         x_flat          = self._flatten_input(x)
-        x_binary        = self._to_binary(x_flat)
+        x_binary        = x_flat if is_binary else self._to_binary(x_flat)
         return jnp.real(self.amplitude_net(x_binary.astype(self.dtype)))
 
-    def get_phase(self, x):
+    def get_phase(self, x, is_binary: bool = False):
+        """Get phase for given configuration.
+        
+        Parameters
+        ----------
+        x : jnp.ndarray
+            Input configuration. Can be in physical spin format (-0.5, +0.5)
+            or binary format (0, 1).
+        is_binary : bool, default=False
+            If True, x is already in binary (0,1) format and no conversion is done.
+            If False, x is assumed to be in physical spin format and converted.
+        """
         x_flat          = self._flatten_input(x)
-        x_binary        = self._to_binary(x_flat)
+        x_binary        = x_flat if is_binary else self._to_binary(x_flat)
         
         # Apply the same Tanh logic here! Network receives binary input
         logits_phase    = jnp.real(self.phase_net(x_binary.astype(self.dtype)))

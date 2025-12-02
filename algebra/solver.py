@@ -271,11 +271,11 @@ class Solver(ABC):
             MatVecFunc:
                 The matrix-vector product function.        
         """
-
-        if sigma is not None and sigma != 0:
-            def matvec(x): return jnp.dot(a, x) + sigma * x
-        else:
-            def matvec(x): return jnp.dot(a, x)
+        # Convert None to 0.0 outside the matvec to avoid tracer issues
+        sigma_val = 0.0 if sigma is None else sigma
+        
+        def matvec(x): 
+            return jnp.dot(a, x) + sigma_val * x
         return matvec
 
     @staticmethod
@@ -292,10 +292,10 @@ class Solver(ABC):
             MatVecFunc:
                 The matrix-vector product function.
         """
-        if sigma is not None and sigma != 0:
-            def matvec(x): return np.dot(a, x) + sigma * x
-        else:
-            def matvec(x): return np.dot(a, x)
+        sigma_val = 0.0 if sigma is None else sigma
+        
+        def matvec(x): 
+            return np.dot(a, x) + sigma_val * x
         return matvec
     
     @staticmethod
@@ -345,7 +345,7 @@ class Solver(ABC):
         This function constructs a custom matrix-vector product operator using the input arrays `s` and `s_p`.
         It first computes the normalization constant `n` as the number of rows of `s`.
         Depending on the flag `create_full`, it either:
-            - Computes the full matrix as (s @ s_p) / n and passes it along with `sigma` to Solver.create_matvec_from_matrix_jax,
+            - Computes the full matrix as (s_p @ s) / n and passes it along with `sigma` to Solver.create_matvec_from_matrix_jax,
                 or
             - Constructs a matvec function that, for a given vector `x`, computes:
                     1. s_dot_x = dot(s, x)
@@ -369,13 +369,16 @@ class Solver(ABC):
             # Create full Gram matrix: S\dag S where s=S [n_samples, n_params], s_p=S\dag [n_params, n_samples]
             return Solver.create_matvec_from_matrix_jax(s_p @ s / n, sigma)
         
-        if sigma is not None and sigma != 0:
-            def matvec(x):
-                # O(N_samples * N_params) associative order
-                return (jnp.dot(s_p, jnp.dot(s, x)) / n) + (sigma * x)
-        else:
-            def matvec(x):
-                return jnp.dot(s_p, jnp.dot(s, x)) / n
+        # Always include sigma term - JAX will optimize away if sigma=0
+        # Use 0.0 as default to avoid None checks inside traced code
+        # The None check happens HERE (outside the matvec), at trace time
+        sigma_val = 0.0 if sigma is None else sigma
+        
+        def matvec(x):
+            # O(N_samples * N_params) associative order
+            # sigma_val is captured from closure - already concrete (float or traced float, never None)
+            return (jnp.dot(s_p, jnp.dot(s, x)) / n) + (sigma_val * x)
+        
         return matvec
 
     @staticmethod
@@ -409,13 +412,12 @@ class Solver(ABC):
             # Create full Gram matrix: S\dag S where s=S [n_samples, n_params], s_p=S\dag [n_params, n_samples]
             return Solver.create_matvec_from_matrix_np(s_p @ s / n, sigma)
 
-        if sigma is not None and sigma != 0:
-            def matvec(x):
-                # O(N_samples * N_params) associative order
-                return (np.dot(s_p, np.dot(s, x)) / n) + (sigma * x)
-        else:
-            def matvec(x):
-                return np.dot(s_p, np.dot(s, x)) / n
+        # Use 0.0 as default for consistency with JAX version
+        sigma_val = 0.0 if sigma is None else sigma
+        
+        def matvec(x):
+            # O(N_samples * N_params) associative order
+            return (np.dot(s_p, np.dot(s, x)) / n) + (sigma_val * x)
         return matvec
 
     @staticmethod
@@ -498,36 +500,45 @@ class Solver(ABC):
         If use_matvec=False, the returned wrapper will accept:
           - if use_fisher=True  : s, s_p, b, x0, *, tol, maxiter, precond_apply, **kwargs
           - if use_fisher=False : a, b, x0, *, tol, maxiter, precond_apply, **kwargs
+          
+        Note: sigma can be overridden at runtime by passing sigma=value to the returned
+        wrapper function. This avoids recompilation when diag_shift changes during training.
         '''
         
         if backend_module is jnp:
             # Static args: tolerances and preconditioner function (since functions must be static)
             static_argnames = ('tol', 'maxiter', 'precond_apply')
+            # Store default sigma from solver creation (convert None to 0.0)
+            default_sigma   = 0.0 if sigma is None else float(sigma)
         
-            # MODE 1: NQS / Fisher (Dynamic S, Sp)
-            # This allows S/Sp to change every step without re-compiling.
+            # MODE 1: NQS / Fisher (Dynamic S, Sp, and now dynamic sigma!)
+            # This allows S/Sp AND sigma to change every step without re-compiling.
             if use_fisher:
-                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None):
+                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None):
+                    # Use runtime sigma if provided, otherwise fall back to default
+                    # Convert to float to ensure it's concrete (not None)
+                    effective_sigma = default_sigma if sigma is None else sigma
                     # Construct matvec *inside* the JIT trace using dynamic arrays
-                    matvec = Solver.create_matvec_from_fisher_jax(s, s_p, sigma)
-                    x0_val = jnp.zeros_like(b) if x0 is None else x0
+                    matvec          = Solver.create_matvec_from_fisher_jax(s, s_p, effective_sigma)
+                    x0_val          = jnp.zeros_like(b) if x0 is None else x0
                     return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
                 
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
             
-            # MODE 2: Dense Matrix A (Dynamic A)
+            # MODE 2: Dense Matrix A (Dynamic A, dynamic sigma)
             elif use_matrix:
-                def wrapper_logic(a, b, x0, tol, maxiter, precond_apply=None):
+                def wrapper_logic(a, b, x0, tol, maxiter, precond_apply=None, sigma=None):
+                    effective_sigma = default_sigma if sigma is None else sigma
                     # Construct matvec *inside* the JIT trace using dynamic arrays
-                    matvec = Solver.create_matvec_from_matrix_jax(a, sigma)
-                    x0_val = jnp.zeros_like(b) if x0 is None else x0
+                    matvec          = Solver.create_matvec_from_matrix_jax(a, effective_sigma)
+                    x0_val          = jnp.zeros_like(b) if x0 is None else x0
                     return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
 
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
             
             else: 
                 def wrapper_logic(matvec, b, x0, tol, maxiter, precond_apply=None):
-                    x0_val = jnp.zeros_like(b) if x0 is None else x0
+                    x0_val          = jnp.zeros_like(b) if x0 is None else x0
                     return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
                 
                 # Add 'matvec' to static args
@@ -536,27 +547,26 @@ class Solver(ABC):
         else:
             # Note: For NumPy, we just create Python wrappers. 
             # Actual compilation (Numba) happens inside callable_comp if supported.
+            default_sigma = 0.0 if sigma is None else float(sigma)
             
             if use_fisher:
-                def wrapper_np(s, s_p, b, x0, tol, maxiter, precond_apply=None, **kwargs):
+                def wrapper_np(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                    effective_sigma = default_sigma if sigma is None else sigma
                     # In standard NumPy, efficient matvec creation is simple lambda
                     n = s.shape[0]
                     def mv(v): 
-                        res         = (s_p @ (s @ v)) / n
-                        if sigma:   res += sigma * v
-                        return res
+                        return (s_p @ (s @ v)) / n + effective_sigma * v
                     
                     x0_val = np.zeros_like(b) if x0 is None else x0
                     return callable_comp(mv, b, x0_val, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
                 return wrapper_np
             
             elif use_matrix:
-                def wrapper_np(a, b, x0, tol, maxiter, precond_apply=None, **kwargs):
-                    def mv(v): 
-                        res         = a @ v
-                        if sigma:   res += sigma * v
-                        return res
-                    x0_val = np.zeros_like(b) if x0 is None else x0
+                def wrapper_np(a, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                    effective_sigma = default_sigma if sigma is None else sigma
+                    x0_val          = np.zeros_like(b) if x0 is None else x0
+                    def mv(v):      return a @ v + effective_sigma * v
+                    
                     return callable_comp(mv, b, x0_val, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
                 return wrapper_np
 

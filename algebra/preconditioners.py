@@ -23,7 +23,7 @@ operation M^{-1}r should be computationally inexpensive.
 
 # Import the required modules
 from abc import ABC, abstractmethod
-from typing import Union, Callable, Optional, Any, Type, Tuple, Dict
+from typing import Union, Callable, Optional, Any, Type, Tuple, Dict, TYPE_CHECKING
 from enum import Enum, auto, unique
 import inspect
 import numpy as np
@@ -34,7 +34,9 @@ import scipy.sparse.linalg as spsla
 import scipy.linalg as sla
 
 from ..algebra.utils import JAX_AVAILABLE, get_backend, Array
-from ..common.flog import get_global_logger, Logger
+
+if TYPE_CHECKING:
+    from ..common.flog import Logger
 
 # ---------------------------------------------------------------------
 
@@ -146,7 +148,9 @@ class Preconditioner(ABC):
                 is_positive_semidefinite                        = False,
                 is_gram                                         = False,
                 backend                                         = 'default',
-                apply_func: Optional[PreconitionerApplyFun]     = None):
+                apply_func: Optional[PreconitionerApplyFun]     = None,
+                **kwargs
+                ):
         """
         Initialize the preconditioner.
         
@@ -160,25 +164,25 @@ class Preconditioner(ABC):
             apply_func (PreconitionerApplyFun, optional):
                 The apply function for the preconditioner.
         """
-        self._backend_str                : str
-        self._backend                    : Any  # The numpy-like module (np or jnp)
-        self._backends                   : Any  # The scipy-like module (sp or jax.scipy)
-        self._isjax                      : bool # True if using JAX backend
-        self._logger: Logger             = get_global_logger()
-        self._TOLERANCE_SMALL                  = _TOLERANCE_SMALL
-        self._TOLERANCE_BIG                    = _TOLERANCE_BIG
-        self._zero                       = _TOLERANCE_BIG
-        self._sigma                      = 0.0                          # Regularization parameter
+        self._backend_str                   : str
+        self._backend                       : Any  # The numpy-like module (np or jnp)
+        self._backends                      : Any  # The scipy-like module (sp or jax.scipy)
+        self._isjax                         : bool # True if using JAX backend
+        self._logger: 'Logger'              = kwargs.get('logger', None)
+        self._TOLERANCE_SMALL               = _TOLERANCE_SMALL
+        self._TOLERANCE_BIG                 = _TOLERANCE_BIG
+        self._zero                          = _TOLERANCE_BIG
+        self._sigma                         = 0.0                          # Regularization parameter
         self.reset_backend(backend) # Sets backend attributes
 
-        self._is_positive_semidefinite   = is_positive_semidefinite     # Positive semidefinite flag
-        self._is_gram                    = is_gram                      # Gram matrix flag
+        self._is_positive_semidefinite      = is_positive_semidefinite     # Positive semidefinite flag
+        self._is_gram                       = is_gram                      # Gram matrix flag
 
         if self._is_positive_semidefinite:
-            self._stype                  = PreconditionersType.SYMMETRIC
+            self._stype                     = PreconditionersType.SYMMETRIC
         else:
             #! May still be symmetric, but we don't assume based on this flag alone
-            self._stype                  = PreconditionersType.NONSYMMETRIC
+            self._stype                     = PreconditionersType.NONSYMMETRIC
 
         # Store reference to the static apply logic of the concrete class
         self._base_apply_logic : Callable[..., Array] = self.__class__._apply_kernel if not apply_func else apply_func
@@ -194,8 +198,7 @@ class Preconditioner(ABC):
     #! Logging
     # -----------------------------------------------------------------
     
-    def log(self, msg : str, log : Union[int, str] = Logger.LEVELS_R['info'],
-        lvl : int = 0, color : str = "white", append_msg = True):
+    def log(self, msg: str, log: Union[int, str] = 'info', lvl : int = 0, color: str = "white", append_msg = True):
         """
         Log the message.
         
@@ -211,8 +214,11 @@ class Preconditioner(ABC):
             append_msg (bool) :
                 Flag to append the message.
         """
+        if not self._logger:
+            return
+        
         if isinstance(log, str):
-            log = Logger.LEVELS_R[log]
+            log = self._logger.LEVELS_R.get(log.lower(), self._logger.LEVELS_R['info'])
         if append_msg:
             msg = f"[{self._name}] {msg}"
         msg = self._logger.colorize(msg, color)
@@ -231,8 +237,7 @@ class Preconditioner(ABC):
         '''
         new_backend_str = backend if backend != 'default' else 'numpy' # Resolve default
         if not hasattr(self, '_backend_str') or self._backend_str != new_backend_str:
-            self.log(f"Resetting backend to: {new_backend_str}",
-                    log=Logger.LEVELS_R['info'], lvl=1, color=self._dcol)
+            self.log(f"Resetting backend to: {new_backend_str}", lvl=1, color=self._dcol)
             self._backend_str               = new_backend_str
             self._backend, self._backends   = get_backend(self._backend_str, scipy=True)
             self._isjax                     = JAX_AVAILABLE and self._backend is not np
@@ -435,8 +440,7 @@ class Preconditioner(ABC):
     def is_gram(self, value: bool):
         """Set the is_gram flag. Requires re-running set()."""
         if self._is_gram != value:
-            self.log(f"({self._name}) Changed is_gram to {value}. Remember to call set() again.",
-                    log=Logger.LEVELS_R['warning'], lvl=1, color=self._dcol)
+            self.log(f"({self._name}) Changed is_gram to {value}. Remember to call set() again.", log='warning', lvl=1, color=self._dcol)
             self._is_gram = value
     
     # -----------------------------------------------------------------

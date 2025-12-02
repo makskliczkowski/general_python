@@ -19,20 +19,14 @@ except ImportError:
     def cpu_count(logical: bool = True): return 1
 
 import subprocess
-from typing import Callable
-from contextlib import contextmanager
-from dataclasses import dataclass
+from typing         import Callable
+from contextlib     import contextmanager
+from dataclasses    import dataclass
 
 try:
-    from ..common.flog import Logger, get_global_logger
     from ..algebra.ran_wrapper import set_global_seed
 except ImportError:
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    
-    def get_global_logger():
-        """Get the global logger instance"""
-        return logging.getLogger("SLURM")
+    raise ImportError("Failed to import set_global_seed from algebra.ran_wrapper")
 
 #########################################################
 
@@ -482,7 +476,12 @@ class SimulationParams:
 class SlurmMonitor:
     """SLURM job monitoring utilities"""
     
-    logger = get_global_logger()
+    try:
+        from ..common.flog  import Logger, get_global_logger
+        logger              = get_global_logger()
+    except ImportError:
+        import logging
+        logger              = logging.getLogger("SLURMMonitor")   
     
     @staticmethod
     def is_slurm():
@@ -495,11 +494,9 @@ class SlurmMonitor:
     def get_memory_used(logger: Optional[Logger] = None):
         try:
             mem_info = psutil.Process().memory_info()
-            if logger:
-                logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')
+            if logger: logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')
         except Exception as e:
-            if logger:
-                logger.warning(f"Failed to get memory info: {e}")
+            if logger: logger.warning(f"Failed to get memory info: {e}")
             pass
     
     #####################################################

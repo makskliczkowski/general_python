@@ -14,17 +14,21 @@ date    : 2025-03-10
 
 import numpy as np
 import numba
-from typing import Optional, Tuple, Callable, List, Union
+from typing import Optional, Tuple, Callable, List, Union, TYPE_CHECKING
 from abc import ABC, abstractmethod
-from ...algebra.utils import JAX_AVAILABLE, get_backend, Array
-from ...common.flog import get_global_logger, Logger
 
-if JAX_AVAILABLE:
+if TYPE_CHECKING:
+    from ...common.flog     import Logger
+    from ...algebra.utils   import Array
+
+try:
     import jax
     import jax.numpy as jnp
-else:
-    jax     = None
-    jnp     = None
+    JAX_AVAILABLE   = True
+except ImportError:
+    jax             = None
+    jnp             = None
+    JAX_AVAILABLE   = False
     
 #########################################################
 
@@ -46,9 +50,12 @@ class GeneralNet(ABC):
                 in_activation   : Optional[Callable]    = None,
                 seed            : Optional[int]         = None,
                 **kwargs):
+        
+        # lazy import
+        from ...algebra.utils   import get_backend
 
         self._name              = "GeneralNet"
-        self._logger            = get_global_logger()
+        self._logger: 'Logger'  = kwargs.get('logger', None)
         # Get the backend.
         if isinstance(backend, str):
             self._backend_str	= backend
@@ -110,8 +117,7 @@ class GeneralNet(ABC):
         """
         return self.__repr__()
 
-    def log(self, msg : str, log : Union[int, str] = Logger.LEVELS_R['info'],
-        lvl : int = 0, color : str = "white", append_msg = True):
+    def log(self, msg : str, log : Union[int, str] = 'info', lvl : int = 0, color : str = "white", append_msg = True):
         """
         Log the message.
         
@@ -127,8 +133,11 @@ class GeneralNet(ABC):
             append_msg (bool) :
                 Flag to append the message.
         """
+        if self._logger is None:
+            return
+        
         if isinstance(log, str):
-            log = Logger.LEVELS_R[log]
+            log = self._logger.LEVELS_R[log]
         if append_msg:
             msg = f"[{self._name}] {msg}"
         msg = self._logger.colorize(msg, color)
@@ -437,19 +446,19 @@ class GeneralNet(ABC):
     #! METHODS
     # ---------------------------------------------------
     
-    def apply_np(self, x: 'array-like'):
+    def apply_np(self, x: 'Array'):
         """
         Apply the network to the input data.
         
         Parameters:
-            x (array-like)          : Input data.
+            x (Array)          : Input data.
         
         Returns:
-            array-like: Output of the network.
+            Array: Output of the network.
         """
         return self._apply_np(self.get_params(), x)
     
-    def apply_jax(self, x: 'array-like'):
+    def apply_jax(self, x: 'Array'):
         """
         Apply the network to the input data using JAX.
         
@@ -461,7 +470,7 @@ class GeneralNet(ABC):
         """
         return self._apply_jax(self.get_params(), x)
     
-    def apply(self, params, x: 'array-like', use_jax: bool = False):
+    def apply(self, params, x: 'Array', use_jax: bool = False):
         """
         Apply the network to the input data.
         
@@ -506,7 +515,7 @@ class GeneralNet(ABC):
     
     # ---------------------------------------------------
     
-    def __call__(self, params = None, x: 'array-like' = None) -> 'array-like':
+    def __call__(self, params = None, x: 'Array' = None) -> 'Array':
         """
         Apply the network to an input batch.
         
@@ -575,7 +584,7 @@ class GeneralNet(ABC):
     # ---------------------------------------------------
     
     @staticmethod
-    def analytic_grad_np(params, x: 'array-like') -> 'array-like':
+    def analytic_grad_np(params, x: 'Array') -> 'Array':
         """
         Compute the analytic gradient of the network.
 
@@ -589,7 +598,7 @@ class GeneralNet(ABC):
         pass
     
     @staticmethod
-    def analytic_grad_jax(params, x: 'array-like') -> 'array-like':
+    def analytic_grad_jax(params, x: 'Array') -> 'Array':
         """
         Compute the analytic gradient of the network using JAX.
 

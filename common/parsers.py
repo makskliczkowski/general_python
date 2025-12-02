@@ -2,18 +2,17 @@ import os
 import sys
 import traceback
 import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union, TYPE_CHECKING
 
 import pandas as pd
 from warnings import simplefilter
-from ..common.flog import get_global_logger
+
+if TYPE_CHECKING:
+    from .flog import Logger
 
 # ─────────────────────────────────────────────────────────────────────────────
 # suppress pandas PerformanceWarning
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
-
-# configure module‐level logger
-logger = get_global_logger()
 
 # ─────────────────────────────────────────────────────────────────────────────
 def filter_dataframe(df     : pd.DataFrame,
@@ -55,7 +54,7 @@ class ExceptionHandler:
         ExceptionHandler.log(err, "context message", ValueError, KeyError)
     """
     @staticmethod
-    def log(err: Exception, msg: str, *skip_types: Type[BaseException]) -> None:
+    def log(err: Exception, msg: str, *skip_types: Type[BaseException], logger: 'Logger' = None ) -> None:
         """
         Log exception info unless its type is in `skip_types`.
 
@@ -76,11 +75,17 @@ class ExceptionHandler:
         filename        = os.path.basename(frame_info.f_code.co_filename) if frame_info else "<unknown>"
         lineno          = tb.tb_lineno if tb else "?"
 
-        logger.error("Error in %s at line %s", filename, lineno)
-        logger.error("Message: %s", msg)
-        logger.error("Exception: %s", err)
-        logger.error(traceback.format_exc())
-
+        if logger is None:
+            print(f"Error in {filename} at line {lineno}")
+            print(f"Message: {msg}")
+            print(f"Exception: {err}")
+            print(traceback.format_exc())
+        else:
+            logger.error("Error in %s at line %s", filename, lineno)
+            logger.error("Message: %s", msg)
+            logger.error("Exception: %s", err)
+            logger.error(traceback.format_exc())
+            
 # ─────────────────────────────────────────────────────────────────────────────
 # String‐parsing conventions
 _DIV        = "_"

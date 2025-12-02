@@ -403,17 +403,15 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
     """
     Factory to create a scheduler instance.
     """
-    
-    temp_log = logger if logger else Logger()
-    
+
     # 1. Handle Existing Instance
     if isinstance(scheduler_type, Parameters):
-        if logger:                  scheduler_type.logger = logger
-        if kwargs.get('lr_clamp'):  scheduler_type._lr_clamp = kwargs['lr_clamp']
+        if logger:                  scheduler_type.logger       = logger
+        if kwargs.get('lr_clamp'):  scheduler_type._lr_clamp    = kwargs['lr_clamp']
         
         # Reconfigure ES if args present
         if 'early_stopping_patience' in kwargs:
-             scheduler_type.set_early_stopping(kwargs['early_stopping_patience'], kwargs.get('early_stopping_min_delta', 1e-4))
+            scheduler_type.set_early_stopping(kwargs['early_stopping_patience'], kwargs.get('early_stopping_min_delta', 1e-4))
         return scheduler_type
 
     # 2. Resolve Type
@@ -428,7 +426,7 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
     # 3. Setup Early Stopping
     es = None
     if 'early_stopping_patience' in kwargs:
-        es = EarlyStopping(kwargs['early_stopping_patience'], kwargs.get('early_stopping_min_delta', 1e-4), logger)
+        es  = EarlyStopping(kwargs['early_stopping_patience'], kwargs.get('early_stopping_min_delta', 1e-4), logger)
 
     # 4. Build Args
     # Filter kwargs to only what the specific scheduler needs + base args
@@ -453,8 +451,9 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
     try:
         return cls(**build_kwargs)
     except TypeError as e:
-        temp_log.say(f"Failed to instantiate {cls.__name__}: {e}", log='error', color='red')
-        raise
+        if logger:
+            logger.say(f"Error creating scheduler '{scheduler_type}': {str(e)}", log='error', color='red')
+        raise e
     
 ###############################################################################
 #! End of file

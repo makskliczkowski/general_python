@@ -362,7 +362,6 @@ else:
 # Default ops uses the global backend manager's active backend
 default_ops = BackendOps.get_ops('default')
 
-
 # ============================================================================
 #! Helper Functions
 # ============================================================================
