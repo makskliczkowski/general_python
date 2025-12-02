@@ -24,8 +24,12 @@ Author          : Maksymilian Kliczkowski
 Email           : maxgrom97@gmail.com
 Date            : 01.11.2025
 Description     : Autoregressive Neural Network for quantum states. We implement
-                  MADE-like architecture using Flax. MADE (Masked Autoencoder for
-                  Distribution Estimation) is a well-known autoregressive model.
+                MADE-like architecture using Flax. MADE (Masked Autoencoder for
+                Distribution Estimation) is a well-known autoregressive model.
+                What it does is to apply binary masks to the weights of a feedforward
+                neural network to enforce the autoregressive property:
+                - Each output unit k can only depend on input units with indices less than k.
+                - Each hidden unit has a degree that enforces the autoregressive property.
 ----------------------------------------------------------
 """
 
@@ -83,20 +87,22 @@ class MaskedDense(nn.Module):
     @nn.compact
     def __call__(self, inputs):
         # inputs shape: (batch, in_features)
+        
         in_features     = inputs.shape[-1]
         dtype           = self.param_dtype if hasattr(self, 'param_dtype') else self.dtype
         
-        # Create Weights
+        # Create Weights with Mask
         kernel          = self.param('kernel', self.kernel_init, (in_features, self.features), dtype)
         
         # Apply Mask (Soft masking ensures gradients flow correctly)
         # We cast mask to the kernel's dtype to avoid type promotion errors
         masked_kernel   = kernel * self.mask.astype(kernel.dtype)
         
-        # Contraction
+        # Contraction - this means a standard dense layer with masked weights
+        # Output shape: (batch, features)
         y               = jax.lax.dot_general(inputs, masked_kernel, (((inputs.ndim - 1,), (0,)), ((), ())))
         
-        # Bias
+        # Bias term. The bias is not masked.
         if self.use_bias:
             bias    = self.param('bias', self.bias_init, (self.features,), dtype)
             y       = y + bias
@@ -129,8 +135,8 @@ def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32):
     Ensures output k depends only on inputs < k. This is done by assigning
     degrees to hidden units and constructing masks accordingly.
     """
-    L           = len(hidden_sizes)
-    masks       = []
+    L           = len(hidden_sizes) # Number of hidden layers
+    masks       = []                # List to hold masks
     
     # degrees[0]    -> input degrees (0 to N-1)
     # degrees[1..L] -> hidden layer degrees
@@ -140,16 +146,20 @@ def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32):
     for i, h in enumerate(hidden_sizes):
         # connectivity constraint: m^l_k >= m^{l-1}_k
         prev_m  = degrees[-1]
+        # Hidden layer degrees: random integers in [min(prev_m), n_in - 1]
+        # The random choice ensures variability in connectivity
+        # within the autoregressive constraints
         m       = np.random.randint(low=np.min(prev_m), high=n_in - 1, size=h)
         degrees.append(m)
     
     # Construct masks
-    # Input -> Hidden 1
-    masks.append(degrees[1][:, None] >= degrees[0][None, :])
+    # Input -> Hidden 1, all degrees in hidden layer 1 must be >= input degrees
+    masks.append(degrees[1][:, None] >= degrees[0][None, :])        # Input to first hidden
     
     # Hidden -> Hidden
     for i in range(1, L):
-        masks.append(degrees[i+1][:, None] >= degrees[i][None, :])
+        # all degress in hidden layer i+1 must be >= degrees in hidden layer i (depend only on previous)
+        masks.append(degrees[i+1][:, None] >= degrees[i][None, :])  # Hidden to next hidden
         
     # Hidden -> Output
     # For site k, we want outputs that predict state k.
@@ -175,6 +185,9 @@ class FlaxMADE(nn.Module):
     ensuring that each output only depends on the appropriate subset of inputs as defined
     by the autoregressive property. The masks are statically generated at initialization.
     
+    This is just a dense feedforward network with masks applied to the weights.
+    The bias terms are not masked, allowing each neuron to have an independent bias.
+    
     Attributes:
         n_sites (int): 
             Number of input/output sites (features).
@@ -197,7 +210,9 @@ class FlaxMADE(nn.Module):
     hidden_dims     : Sequence[int]
     dtype           : Any = jnp.complex128      # Data type for complex outputs
     activation      : Any = nn.gelu             # GELU is often preferred in SOTA Transformers/NQS
-
+    kernel_init     : Any = nn.initializers.lecun_normal() # Default
+    bias_init       : Any = nn.initializers.zeros
+    
     @nn.compact
     def __call__(self, x):
         # x shape: (Batch, N_sites)
@@ -214,12 +229,14 @@ class FlaxMADE(nn.Module):
         # Input -> Hidden layers
         for i, (h_dim, mask) in enumerate(zip(self.hidden_dims, masks[:-1])):
             # Create layer with a unique name based on index
-            layer   = MaskedDense(features=h_dim, mask=mask, dtype=self.dtype, name=f'masked_dense_{i}')
+            layer   = MaskedDense(features=h_dim, mask=mask, dtype=self.dtype, name=f'masked_dense_{i}', 
+                                  kernel_init=self.kernel_init, bias_init=self.bias_init)
             x       = layer(x)
             x       = self.activation(x)
             
         # Hidden -> Output (No activation, these are logits)
-        output_layer    = MaskedDense(features=self.n_sites, mask=masks[-1], dtype=self.dtype, name='masked_out')
+        output_layer    = MaskedDense(features=self.n_sites, mask=masks[-1], dtype=self.dtype, name='masked_out', 
+                                      kernel_init=self.kernel_init, bias_init=self.bias_init)
         x               = output_layer(x)
         
         return x
@@ -241,74 +258,102 @@ class FlaxComplexAutoregressive(nn.Module):
     mu              : float     = 2.0 
     
     def setup(self):
-        self.amplitude_net = FlaxMADE(
-            n_sites=self.n_sites, 
-            hidden_dims=self.ar_hidden, 
-            dtype=self.dtype, 
-            name='amplitude_made'
-        )
-        self.phase_net = FlaxMADE(
-            n_sites=self.n_sites, 
-            hidden_dims=self.phase_hidden, 
-            dtype=self.dtype, 
-            name='phase_made'
-        )    
+        ''' Initialize Amplitude and Phase Networks '''
+        
+        # 1. Amplitude: Standard Init (LeCun Normal) allows breaking symmetry early
+        self.amplitude_net      = FlaxMADE(
+                                    n_sites         =   self.n_sites, 
+                                    hidden_dims     =   self.ar_hidden, 
+                                    dtype           =   self.dtype, 
+                                    name            =   'amplitude_made'
+                                )
+            
+        # 2. Phase: ZERO Init
+        # We define a specialized MADE that starts with near-zero weights
+        self.phase_net          = FlaxMADE(
+                                    n_sites         =   self.n_sites, 
+                                    hidden_dims     =   self.phase_hidden, 
+                                    dtype           =   self.dtype, 
+                                    name            =   'phase_made',
+                                    # Overwrite init to be small/zero
+                                    kernel_init     =   nn.initializers.zeros, 
+                                    bias_init       =   nn.initializers.zeros
+                                )    
     
     def _flatten_input(self, x):
-        """ 
-        Robustly flatten input to (..., N_sites).
-        Handles: (100, 1) -> (100,), (B, 100, 1) -> (B, 100)
-        """
-        # If last dim matches n_sites, we assume it is [..., n_sites]
-        if x.shape[-1] == self.n_sites:
+        ''' Flatten input to shape (batch_size, n_sites) '''
+        if x.shape[-1] == self.n_sites: 
             return x
-            
-        # If total size matches n_sites, it is a single sample (vmapped)
-        if x.size == self.n_sites:
+        if x.size == self.n_sites: 
             return x.reshape((self.n_sites,))
-            
-        # Otherwise, assume batch and flatten
+        
         return x.reshape((-1, self.n_sites))
     
+    def _to_binary(self, x):
+        """Convert physical spins (-0.5, +0.5) to binary (0, 1) format.
+        
+        The sampler returns physical spins in (-0.5, +0.5) format for Hamiltonian
+        compatibility. This function converts them to (0, 1) binary format for
+        the network's internal probability calculations.
+        
+        Conversion: x + 0.5 maps -0.5 -> 0, +0.5 -> 1
+        
+        Note: 
+            During AR sampling (inside the scan loop), configs are already
+            in (0, 1) format. Adding 0.5 gives (0.5, 1.5), but the network
+            uses these values only for the > 0.5 threshold check, which
+            still works correctly: 0.5 > 0.5 is False, 1.5 > 0.5 is True.
+        """
+        return jnp.real(x) + 0.5 
+        
     def __call__(self, x):
-        """ Returns full complex log_psi(s). """
-        # 1. Robust Flatten
-        x_flat = self._flatten_input(x)
-        # Ensure input to dense layers is the correct dtype (Complex)
-        x_input = x_flat.astype(self.dtype)
+        ''' Forward pass to compute log(psi) = log_prob / mu + i * phase '''
+        
+        # Convert physical spins to binary for network processing
+        x_flat          = self._flatten_input(x)
+        x_binary        = self._to_binary(x_flat)
+        x_input         = x_binary.astype(self.dtype) # Network expects binary (0,1) input
 
-        # --- AMPLITUDE ---
-        # Get logits and FORCE REAL part. 
-        # This aligns the training objective with the Sampler (which samples using Real logits).
-        logits_amp = jnp.real(self.amplitude_net(x_input))
+        # AMPLITUDE
+        # Force Real Logits - network receives binary input
+        logits_amp      = jnp.real(self.amplitude_net(x_input))
+        log_p_1         = -nn.softplus(-logits_amp)
+        log_p_0         = -nn.softplus(logits_amp)
         
-        log_p_1 = -nn.softplus(-logits_amp)
-        log_p_0 = -nn.softplus(logits_amp)
+        # Select based on x (0 or 1) using BINARY representation
+        # x_binary is in (0, 1) format, so >0.5 correctly identifies spin up
+        log_p_per_site  = jnp.where(x_binary > 0.5, log_p_1, log_p_0)
+        log_prob        = jnp.sum(log_p_per_site, axis=-1)
         
-        # Select based on x (real mask)
-        # Note: x_flat might be integer/float, >0.5 works for binary
-        log_p_per_site = jnp.where(jnp.real(x_flat) > 0.5, log_p_1, log_p_0)
-        log_prob = jnp.sum(log_p_per_site, axis=-1)
+        # PHASE
+        # Force Real Theta
+        logits_phase    = jnp.real(self.phase_net(x_input))
         
-        # --- PHASE ---
-        # Force phase to be Real scalar (theta), so exp(i*theta) is pure phase.
-        logits_phase = jnp.real(self.phase_net(x_input))
-        theta = jnp.sum(logits_phase * jnp.real(x_flat), axis=-1)
+        # Bound phase with Tanh to prevent exploding gradients
+        # Outputs range [-pi, pi]
+        # We multiply by pi so the net predicts fractions of pi
+        theta_per_site  = jnp.pi * nn.tanh(logits_phase)
+        
+        # Sum conditional phases using BINARY representation
+        theta           = jnp.sum(theta_per_site * x_binary, axis=-1)
 
-        # Combine
         return log_prob / self.mu + 1j * theta
 
     def get_logits(self, x):
-        """ Used by ARSampler for Amplitude Sampling """
-        x_flat = self._flatten_input(x)
-        # Return REAL logits to prevent Sampler TypeErrors
-        return jnp.real(self.amplitude_net(x_flat.astype(self.dtype)))
+        x_flat          = self._flatten_input(x)
+        x_binary        = self._to_binary(x_flat)
+        return jnp.real(self.amplitude_net(x_binary.astype(self.dtype)))
 
     def get_phase(self, x):
-        """ Used by ARSampler to compute phase """
-        x_flat = self._flatten_input(x)
-        logits_phase = jnp.real(self.phase_net(x_flat.astype(self.dtype)))
-        return jnp.sum(logits_phase * jnp.real(x_flat), axis=-1)
+        x_flat          = self._flatten_input(x)
+        x_binary        = self._to_binary(x_flat)
+        
+        # Apply the same Tanh logic here! Network receives binary input
+        logits_phase    = jnp.real(self.phase_net(x_binary.astype(self.dtype)))
+        theta_per_site  = jnp.pi * nn.tanh(logits_phase)
+        
+        # Use binary representation for phase accumulation
+        return jnp.sum(theta_per_site * x_binary, axis=-1)
     
 # ---------------------------------------------------------
 

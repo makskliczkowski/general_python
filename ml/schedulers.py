@@ -243,14 +243,23 @@ class ConstantScheduler(Parameters):
 # ------------------------------------------------------------------------------
 
 class ExponentialDecayScheduler(Parameters):
-    """ lr = initial_lr * exp(-decay_rate * epoch) """
-    def __init__(self, initial_lr: float, max_epochs: int, lr_decay: float, lr_clamp=None, logger=None, es=None, **kwargs):
+    """ 
+    Multiplicative exponential decay: lr = initial_lr * (gamma ^ epoch)
+    
+    This follows PyTorch's ExponentialLR convention where:
+    - gamma = 0.99 means 1% decay per epoch
+    - gamma = 0.999 means 0.1% decay per epoch
+    
+    For the old exp(-rate * epoch) behavior, use gamma = exp(-rate).
+    """
+    def __init__(self, initial_lr: float, max_epochs: int, lr_decay: float = 0.99, lr_clamp=None, logger=None, es=None, **kwargs):
         super().__init__(initial_lr, max_epochs, lr_decay, lr_clamp, logger, es)
         self._typek = SchedulerType.EXPONENTIAL
 
     def __call__(self, _epoch: int, _metric=None) -> float:
         current_epoch   = max(0, _epoch)
-        new_lr          = self._initial_lr * np.exp(-self._lr_decay * current_epoch)
+        # Multiplicative decay: lr = lr_0 * gamma^epoch (like PyTorch ExponentialLR)
+        new_lr          = self._initial_lr * np.power(self._lr_decay, current_epoch)
         return self._update_and_log_lr(new_lr)
 
 # ------------------------------------------------------------------------------
