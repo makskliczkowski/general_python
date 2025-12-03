@@ -57,6 +57,37 @@ except ImportError:
     __HAS_COLORAMA = False
 
 ######################################################
+#! NOTEBOOK / IPYTHON DETECTION
+######################################################
+
+def _is_interactive_notebook() -> bool:
+    """
+    Check if running inside an IPython/Jupyter notebook environment.
+    This is used to prevent duplicate log handlers that notebooks often create.
+    
+    Returns:
+        bool: True if running in a notebook or IPython shell, False otherwise.
+    """
+    try:
+        from IPython import get_ipython
+        ipy = get_ipython()
+        if ipy is None:
+            return False
+        # Check for ZMQInteractiveShell (Jupyter) or TerminalInteractiveShell
+        return ipy.__class__.__name__ in ('ZMQInteractiveShell', 'TerminalInteractiveShell')
+    except (ImportError, NameError, AttributeError):
+        return False
+
+# Track already configured logger names to prevent duplicate handlers
+_CONFIGURED_LOGGERS = set()
+
+# In notebook mode, we use a SINGLE shared console handler for ALL loggers
+# This prevents duplicate output when multiple Logger instances are created
+_SHARED_CONSOLE_HANDLER = None
+_NOTEBOOK_MODE_CHECKED = False
+_IS_NOTEBOOK = False
+
+######################################################
 #! PRINT THE OUTPUT WITH A GIVEN COLOR
 ######################################################
 
@@ -188,16 +219,50 @@ class Logger:
         self.logger.setLevel(self.lvl)
         self.logger.propagate   = False
         
+        # Check if this logger was already configured (prevents duplicates in notebooks)
+        global _SHARED_CONSOLE_HANDLER, _NOTEBOOK_MODE_CHECKED, _IS_NOTEBOOK
+        
+        logger_name = name or __name__
+        console_fmt = '%(asctime)s [%(levelname)s] %(message)s' if use_ts_in_cmd else '[%(levelname)s] %(message)s'
+        
+        # Check notebook mode once
+        if not _NOTEBOOK_MODE_CHECKED:
+            _IS_NOTEBOOK = _is_interactive_notebook()
+            _NOTEBOOK_MODE_CHECKED = True
+            
+            # In notebook environments, clear root logger StreamHandlers
+            if _IS_NOTEBOOK:
+                root_logger = logging.getLogger()
+                for h in list(root_logger.handlers):
+                    if isinstance(h, logging.StreamHandler):
+                        root_logger.removeHandler(h)
+        
+        # Clear any existing handlers on this specific logger
         for h in list(self.logger.handlers):
             self.logger.removeHandler(h)
             h.close()
         
-        # Set up console handler
-        console_fmt             = '%(asctime)s [%(levelname)s] %(message)s' if use_ts_in_cmd else '[%(levelname)s] %(message)s'
-        ch                      = logging.StreamHandler(sys.stdout)
-        ch.setLevel(self.lvl)
-        ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
-        self.logger.addHandler(ch)
+        # In notebook mode, share ONE console handler across ALL loggers
+        if _IS_NOTEBOOK:
+            if _SHARED_CONSOLE_HANDLER is None:
+                _SHARED_CONSOLE_HANDLER = logging.StreamHandler(sys.stdout)
+                _SHARED_CONSOLE_HANDLER.setLevel(self.lvl)
+                _SHARED_CONSOLE_HANDLER.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+            self.logger.addHandler(_SHARED_CONSOLE_HANDLER)
+        else:
+            # Normal mode: each logger gets its own handler (standard behavior)
+            if logger_name not in _CONFIGURED_LOGGERS:
+                ch = logging.StreamHandler(sys.stdout)
+                ch.setLevel(self.lvl)
+                ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                self.logger.addHandler(ch)
+                _CONFIGURED_LOGGERS.add(logger_name)
+            else:
+                # Re-add handler if needed
+                ch = logging.StreamHandler(sys.stdout)
+                ch.setLevel(self.lvl)
+                ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                self.logger.addHandler(ch)
         
         # Set the log file name
         if logfile is not None and os.environ.get(ENV_LOGGER_FILE, '0') != '0':
