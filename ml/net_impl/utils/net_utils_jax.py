@@ -909,89 +909,83 @@ if JAX_AVAILABLE:
                                 logprobas_in,
                                 logproba_fun,
                                 parameters,
-                                batch_size  : int,
+                                batch_size : int,
                                 *op_args):
-        """
-        Applies a transformation function to each state (in batches) and computes a locally weighted estimate
-        as described in [2108.08631]. This version incorporates sample probabilities.
-        
-        Parameters:
-            - func          : Callable that accepts a state (vector) and optional *op_args, returning a tuple (S, V), 
-                            where S is an array of modified states (M x state_size) and V is an array of 
-                            corresponding values (M,).
-            - states        : Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
-            - sample_probas : Array of sampling probabilities (matching the leading dimensions of states).
-            - logprobas_in  : Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
-            - logproba_fun  : Callable that computes the log-probabilities for given states S; should accept (parameters, S).
-            - parameters    : Additional parameters for logproba_fun.
-            - batch_size    : Batch size to use for evaluation.
-            - *op_args      : Additional arguments to pass to func. These are broadcast (not vmapped) across states.
-                            Useful for passing operator indices (i, j) for correlation functions like <Sz_i Sz_j>
-                            without triggering recompilation for each (i, j) pair.
-        
-        Returns:
-            - estimates     : Per-state estimates (flattened) -> shape (n_samples * n_chains,).
-            - mean          : Mean of the estimates (over sample dimension).
-            - std           : Standard deviation of the estimates (over sample dimension).
-        
-        Example:
-            # For correlation function <Sz_i Sz_j>:
-            def measure_corr_kernel(state, i, j):
-                # ... compute Sz_i Sz_j on state
-                return new_states, values
-            
-            # Only 3 compilations needed (0-arg, 1-arg, 2-arg versions), 
-            # then reuse for all N² pairs:
-            for i in range(N):
-                for j in range(N):
-                    result = apply_callable_batched_jax(
-                        measure_corr_kernel, states, sample_probas, logprobas_in,
-                        logproba_fun, parameters, batch_size,
-                        jnp.array(i), jnp.array(j)  # op_args - broadcast, not vmapped
-                    )
-        """
-        
-        # flatten
-        flat_states     = states.reshape(-1, states.shape[-1])  # (N, D)
-        flat_logp_in    = logprobas_in.reshape(-1)              # (N,)
-        flat_samp_p     = sample_probas.reshape(-1)             # (N,)
-        
-        N               = flat_states.shape[0]                  # N
-        pad             = (-N) % batch_size                     # 0‥batch_size-1
-        p_states        = jnp.pad(flat_states,  ((0, pad), (0, 0)))
-        p_logp_in       = jnp.pad(flat_logp_in, ((0, pad),))
-        p_samp_p        = jnp.pad(flat_samp_p,  ((0, pad),))
-        N_pad           = N + pad
-        n_batches       = N_pad // batch_size
+        r"""
+        Batched application of a local estimator.
 
-        # per-state estimator - accepts op_args after the main arguments
+        For each input state :math:`s` this computes
+
+        .. math::
+
+            \hat O(s) = p_{\mathrm{samp}}(s)
+            \sum_{k} v_k(s) \exp\left[\log\psi(s_k) - \log\psi(s)\right],
+
+        where :math:`s_k` and :math:`v_k` come from ``func`` and
+        :math:`\log\psi` comes from ``logproba_fun``.
+        """
+
+        # ----------------------------------------------------------------------
+        # Flatten over (samples, chains, ...) -> (N, D)
+        # ----------------------------------------------------------------------
+        flat_states   = states.reshape(-1, states.shape[-1])   # (N, D)
+        flat_logp_in  = logprobas_in.reshape(-1)               # (N,)
+        flat_samp_p   = sample_probas.reshape(-1)              # (N,)
+
+        # N, pad, N_pad are ordinary Python ints -> OK for jnp.pad
+        N             = flat_states.shape[0]
+        pad           = (-N) % batch_size          # 0 … batch_size-1
+        N_pad         = N + pad
+        n_batches     = N_pad // batch_size
+
+        if pad:
+            pad_spec_states  = ((0, pad), (0, 0))
+            pad_spec_1d      = ((0, pad),)
+            p_states         = jnp.pad(flat_states,  pad_spec_states)
+            p_logp_in        = jnp.pad(flat_logp_in, pad_spec_1d)
+            p_samp_p         = jnp.pad(flat_samp_p,  pad_spec_1d)
+        else:
+            p_states         = flat_states
+            p_logp_in        = flat_logp_in
+            p_samp_p         = flat_samp_p
+
+        # ----------------------------------------------------------------------
+        # Per–state estimator
+        # ----------------------------------------------------------------------
         def _estimate_one(state, logp0, p_sample, *args):
-            new_states, new_vals    = func(state, *args) if args else func(state)
-            logp_new                = logproba_fun(parameters, new_states)
-            w                       = jnp.exp(logp_new - logp0)
+            new_states, new_vals = func(state, *args) if args else func(state)
+            new_states           = jnp.asarray(new_states)
+            new_vals             = jnp.asarray(new_vals)
+
+            logp_new             = logproba_fun(parameters, new_states)
+            w                    = jnp.exp(logp_new - logp0)      # same shape as new_vals
+
+            # scalar for this original state
             return p_sample * jnp.sum(new_vals * w)
 
-        # Build in_axes: (0, 0, 0) for state, logp0, p_sample, then None for each op_arg
-        # None means "broadcast this argument across all batch elements" (no vmap)
-        in_axes_config  = (0, 0, 0) + (None,) * len(op_args)
-        batch_kernel    = jax.vmap(_estimate_one, in_axes=in_axes_config, out_axes=0)
+        in_axes      = (0, 0, 0) + (None,) * len(op_args)
+        batch_kernel = jax.vmap(_estimate_one, in_axes=in_axes, out_axes=0)
 
-        # scan body with dynamic_update_slice (OK inside jit)
+        # ----------------------------------------------------------------------
+        # Scan over batches, writing directly into a length-N_pad buffer
+        # ----------------------------------------------------------------------
+        # infer dtype once from a tiny dummy call
+        dummy_out    = batch_kernel(p_states[:1], p_logp_in[:1], p_samp_p[:1], *op_args)
+        init_out     = jnp.empty((N_pad,), dtype=dummy_out.dtype)
+
         def body(carry, idx):
-            start   = idx * batch_size                       # tracer OK
-            bs_s    = lax.dynamic_slice_in_dim(p_states,  start, batch_size, 0)
-            bs_lp   = lax.dynamic_slice_in_dim(p_logp_in, start, batch_size, 0)
-            bs_sp   = lax.dynamic_slice_in_dim(p_samp_p,  start, batch_size, 0)
+            start   = idx * batch_size
 
-            chunk   = batch_kernel(bs_s, bs_lp, bs_sp, *op_args)  # (batch_size,)
+            bs_s    = lax.dynamic_slice_in_dim(p_states,  start, batch_size, axis=0)
+            bs_lp   = lax.dynamic_slice_in_dim(p_logp_in, start, batch_size, axis=0)
+            bs_sp   = lax.dynamic_slice_in_dim(p_samp_p,  start, batch_size, axis=0)
 
-            # write chunk -> carry using dynamic_update_slice
+            chunk   = batch_kernel(bs_s, bs_lp, bs_sp, *op_args)   # (batch_size,)
             carry   = lax.dynamic_update_slice(carry, chunk, (start,))
             return carry, None
 
-        init_out            = jnp.empty(N_pad, dtype=batch_kernel(p_states[:1], p_logp_in[:1], p_samp_p[:1], *op_args).dtype)
-        estimates_pad, _    = lax.scan(body, init_out, xs=jnp.arange(n_batches))
-        estimates           = estimates_pad[:N] # drop padding
+        estimates_pad, _ = lax.scan(body, init_out, xs=jnp.arange(n_batches))
+        estimates        = estimates_pad[:N]  # drop padded tail
 
         return estimates, jnp.mean(estimates), jnp.std(estimates)
         
