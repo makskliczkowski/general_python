@@ -800,20 +800,21 @@ if JAX_AVAILABLE:
 
 if JAX_AVAILABLE:
     
-    # @partial(jax.jit, static_argnums=(0,4))
+    @partial(jax.jit, static_argnums=(0,4))
     def apply_callable_jax(func,
                         states,
                         sample_probas,
                         logprobas_in,
                         logproba_fun,
                         parameters,
-                        batch_size: int = 1):
+                        batch_size: int = 1,
+                        *op_args):
         """
         Applies a transformation function to each state and computes a locally
         weighted estimate as described in [2108.08631].
         
         Parameters:
-            - func: Callable that accepts a state (vector) and returns a tuple (S, V)
+            - func: Callable that accepts a state (vector) and optional *op_args, returning a tuple (S, V)
                     where S is an array of modified states (M x state_size) and V is an
                     array of corresponding values (M,).
             - states: Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
@@ -821,6 +822,7 @@ if JAX_AVAILABLE:
             - logprobas_in: Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
             - logproba_fun: Callable that computes the log-probabilities for given states S.
             - batch_size: Size of batches to process states in - dummy for now.
+            - *op_args: Additional arguments to pass to func. These are broadcast across states.
             
         Returns:
             - estimates: The per-state estimates.
@@ -836,13 +838,13 @@ if JAX_AVAILABLE:
         # sample_probas   = jnp.reshape(sample_probas, (-1, 1))
     
         # function to compute the estimate for a single state
-        def compute_estimate(state, logp, sample_p):
+        def compute_estimate(state, logp, sample_p, *args):
             # Squeeze the scalar values.
             logp                    = logp[0]
             sample_p                = sample_p[0]
             
             # Obtain modified states and corresponding values.
-            new_states, new_vals    = func(state)
+            new_states, new_vals    = func(state, *args) if args else func(state)
             new_logprobas           = logproba_fun(parameters, new_states)
             # weights                 = jnp.exp(mu * (new_logprobas - logp))
             weights                 = jnp.exp(new_logprobas - logp)
@@ -851,7 +853,9 @@ if JAX_AVAILABLE:
             # Return the weighted sum.
             return weighted_sum * sample_p
         
-        applied = jax.vmap(compute_estimate, in_axes=(0, 0, 0))(states, logprobas_in, sample_probas)
+        # Build in_axes: (0, 0, 0) for state, logp, sample_p, then None for each op_arg
+        in_axes_config  = (0, 0, 0) + (None,) * len(op_args)
+        applied         = jax.vmap(compute_estimate, in_axes=in_axes_config)(states, logprobas_in, sample_probas, *op_args)
         return applied, jnp.mean(applied, axis = 0), jnp.std(jnp.real(applied), axis = 0)
     
     # @partial(jax.jit, static_argnums=(0,3))
@@ -899,32 +903,52 @@ if JAX_AVAILABLE:
         applied = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
         return applied, jnp.mean(applied, axis = 0), jnp.std(applied, axis = 0)
 
-    # @partial(jax.jit, static_argnums=(0,4,6))
     def apply_callable_batched_jax(func,
-                                    states,
-                                    sample_probas,
-                                    logprobas_in,
-                                    logproba_fun,
-                                    parameters,
-                                    batch_size  : int):
+                                states,
+                                sample_probas,
+                                logprobas_in,
+                                logproba_fun,
+                                parameters,
+                                batch_size  : int,
+                                *op_args):
         """
         Applies a transformation function to each state (in batches) and computes a locally weighted estimate
         as described in [2108.08631]. This version incorporates sample probabilities.
         
         Parameters:
-            - func          : Callable that accepts a state (vector) and returns a tuple (S, V), where S is an array of modified 
-                            states (M x state_size) and V is an array of corresponding values (M,).
+            - func          : Callable that accepts a state (vector) and optional *op_args, returning a tuple (S, V), 
+                            where S is an array of modified states (M x state_size) and V is an array of 
+                            corresponding values (M,).
             - states        : Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
             - sample_probas : Array of sampling probabilities (matching the leading dimensions of states).
             - logprobas_in  : Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
             - logproba_fun  : Callable that computes the log-probabilities for given states S; should accept (parameters, S).
             - parameters    : Additional parameters for logproba_fun.
             - batch_size    : Batch size to use for evaluation.
+            - *op_args      : Additional arguments to pass to func. These are broadcast (not vmapped) across states.
+                            Useful for passing operator indices (i, j) for correlation functions like <Sz_i Sz_j>
+                            without triggering recompilation for each (i, j) pair.
         
         Returns:
             - estimates     : Per-state estimates (flattened) -> shape (n_samples * n_chains,).
             - mean          : Mean of the estimates (over sample dimension).
             - std           : Standard deviation of the estimates (over sample dimension).
+        
+        Example:
+            # For correlation function <Sz_i Sz_j>:
+            def measure_corr_kernel(state, i, j):
+                # ... compute Sz_i Sz_j on state
+                return new_states, values
+            
+            # Only 3 compilations needed (0-arg, 1-arg, 2-arg versions), 
+            # then reuse for all N² pairs:
+            for i in range(N):
+                for j in range(N):
+                    result = apply_callable_batched_jax(
+                        measure_corr_kernel, states, sample_probas, logprobas_in,
+                        logproba_fun, parameters, batch_size,
+                        jnp.array(i), jnp.array(j)  # op_args - broadcast, not vmapped
+                    )
         """
         
         # flatten
@@ -940,16 +964,17 @@ if JAX_AVAILABLE:
         N_pad           = N + pad
         n_batches       = N_pad // batch_size
 
-        # per-state estimator
-        def _estimate_one(state, logp0, p_sample):
-            new_states, new_vals = func(state)
-            logp_new = logproba_fun(parameters, new_states)
-            w        = jnp.exp(logp_new - logp0)
+        # per-state estimator - accepts op_args after the main arguments
+        def _estimate_one(state, logp0, p_sample, *args):
+            new_states, new_vals    = func(state, *args) if args else func(state)
+            logp_new                = logproba_fun(parameters, new_states)
+            w                       = jnp.exp(logp_new - logp0)
             return p_sample * jnp.sum(new_vals * w)
 
-        batch_kernel = jax.jit(
-            jax.vmap(_estimate_one, in_axes=(0, 0, 0), out_axes=0)
-        )
+        # Build in_axes: (0, 0, 0) for state, logp0, p_sample, then None for each op_arg
+        # None means "broadcast this argument across all batch elements" (no vmap)
+        in_axes_config  = (0, 0, 0) + (None,) * len(op_args)
+        batch_kernel    = jax.vmap(_estimate_one, in_axes=in_axes_config, out_axes=0)
 
         # scan body with dynamic_update_slice (OK inside jit)
         def body(carry, idx):
@@ -958,16 +983,15 @@ if JAX_AVAILABLE:
             bs_lp   = lax.dynamic_slice_in_dim(p_logp_in, start, batch_size, 0)
             bs_sp   = lax.dynamic_slice_in_dim(p_samp_p,  start, batch_size, 0)
 
-            chunk   = batch_kernel(bs_s, bs_lp, bs_sp)       # (batch_size,)
+            chunk   = batch_kernel(bs_s, bs_lp, bs_sp, *op_args)  # (batch_size,)
 
             # write chunk -> carry using dynamic_update_slice
             carry   = lax.dynamic_update_slice(carry, chunk, (start,))
             return carry, None
 
-        init_out     = jnp.empty(N_pad, dtype=batch_kernel(
-                                p_states[:1], p_logp_in[:1], p_samp_p[:1]).dtype)
-        estimates_pad, _ = lax.scan(body, init_out, xs=jnp.arange(n_batches))
-        estimates    = estimates_pad[:N]                    # drop padding
+        init_out            = jnp.empty(N_pad, dtype=batch_kernel(p_states[:1], p_logp_in[:1], p_samp_p[:1], *op_args).dtype)
+        estimates_pad, _    = lax.scan(body, init_out, xs=jnp.arange(n_batches))
+        estimates           = estimates_pad[:N] # drop padding
 
         return estimates, jnp.mean(estimates), jnp.std(estimates)
         
