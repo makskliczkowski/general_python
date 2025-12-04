@@ -48,7 +48,7 @@ import math
 
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling
     from ....ml.net_impl.activation_functions import get_activation_jnp
     from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
@@ -134,17 +134,7 @@ class _FlaxCNN(nn.Module):
     use_sum_pool   : bool               = True
 
     def setup(self):
-        is_cplx                 = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-        if is_cplx:
-            # Fallback if cplx_variance_scaling isn't available in scope
-            try:
-                k_init          = cplx_variance_scaling(1., 'fan_in', 'normal', self.param_dtype)
-            except NameError:
-                k_init          = nn.initializers.variance_scaling(1.0, 'fan_in', 'normal', dtype=self.param_dtype)
-        else:
-            k_init = nn.initializers.lecun_normal(self.param_dtype)
 
-        # 3. Create Layers
         iter_specs = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
         self.conv_layers : list = [
             nn.Conv(

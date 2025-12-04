@@ -68,6 +68,7 @@ class Networks(str, Enum):
     RBM    = 'rbm'
     CNN    = 'cnn'
     AR     = 'ar'
+    RESNET = 'resnet'
     
     def __str__(self):
         return self.value
@@ -82,6 +83,8 @@ _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
     'rbm'    : ('.net_impl.networks.net_rbm',               'RBM'),
     'cnn'    : ('.net_impl.networks.net_cnn',               'CNN'),
     'ar'     : ('.net_impl.networks.net_autoregressive',    'ComplexAR'),
+    'res'    : ('.net_impl.networks.net_res',               'ResNet'),
+    'resnet' : ('.net_impl.networks.net_res',               'ResNet'),
     # Add future networks here without importing them!
 }
 
@@ -250,6 +253,10 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     Keyword Arguments
     -----------------
     
+    - in_activation (Optional[Union[str, Callable]]) :
+        Activation function applied to the input layer.
+        Useful for preprocessing inputs (e.g., scaling or encoding).
+    
     **For 'rbm'**:
     - `alpha` (float)                               : Hidden unit density. `n_hidden` will be `int(alpha * n_visible)`.
     - `n_hidden` (int)                              : Number of hidden units. If `alpha` is also given, `alpha` takes precedence.
@@ -275,6 +282,12 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     - `depth` (int)                                 : Number of layers in the model.
     - `num_hidden` (int)                            : Number of hidden units in each layer.
     - `rnn_type` (str)                              : Type of recurrent cell, if applicable (e.g., 'lstm', 'gru').
+
+    **For 'res' or 'resnet' (Residual Network)**:
+    - `reshape_dims` (Tuple[int, ...])              : Lattice dimensions for reshaping the input, e.g., `(Lx, Ly)`.
+    - `features` (int)                              : Number of feature channels (network width). Default: 32.
+    - `depth` (int)                                 : Number of residual blocks. Default: 4.
+    - `kernel_size` (Union[int, Tuple[int,...]])    : Spatial kernel size. Default: 3 (becomes (3,3) for 2D).
 
     Returns
     -------

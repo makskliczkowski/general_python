@@ -242,7 +242,7 @@ if JAX_AVAILABLE:
     @jax.jit
     def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """S = (1/N) * O^dag @ O (Standard SR)"""
-        return jnp.matmul(derivatives_c_h, derivatives_c) / n_samples
+        return jnp.matmul(derivatives_c_h, derivatives_c)
 
     @jax.jit
     def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
@@ -251,7 +251,7 @@ if JAX_AVAILABLE:
         # We want                   (N_s, N_s).
         # Correct math:             T = O . O^dag
         # Input derivatives_c_h is usually O^dag (N_p, N_s)
-        return jnp.matmul(derivatives_c, derivatives_c_h) / n_samples 
+        return jnp.matmul(derivatives_c, derivatives_c_h)
     
     # -------------------------------------------------------
     
@@ -267,7 +267,7 @@ if JAX_AVAILABLE:
         var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
         var_deriv_c_h   = jnp.conj(var_deriv_c.T)
         
-        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
+        return loss_c, var_deriv_c, var_deriv_c_h, var_deriv_m, n_samples, full_size
 
     @jax.jit
     def solve_jax_prepare_modified_ratios(loss: jnp.ndarray, var_deriv: jnp.ndarray, betas: jnp.ndarray, r_el: jnp.ndarray, r_le: jnp.ndarray):
@@ -283,7 +283,7 @@ if JAX_AVAILABLE:
         var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
         var_deriv_c_h   = jnp.conj(var_deriv_c.T)
         
-        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, full_size
+        return loss_c, var_deriv_c, var_deriv_c_h, var_deriv_m, n_samples, full_size
 
     # Unified Solver Logic
 

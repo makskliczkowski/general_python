@@ -653,6 +653,14 @@ class CgSolver(Solver):
 #! Conjugate Gradient Solver Class Wrapper for SciPy
 # -----------------------------------------------------------------------------
 
+if JAX_AVAILABLE:
+    import jax.scipy.sparse.linalg as jax_sla
+    
+    def _static_jax_cg(matvec, b, x0, tol, maxiter, M):
+        # JAX CG signature: (A, b, x0, tol, atol, maxiter, M)
+        x, info = jax_sla.cg(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=M)
+        return x, info
+
 class CgSolverScipy(Solver):
     '''
     Wrapper for SciPy's Conjugate Gradient solver (`scipy.sparse.linalg.cg` or jax.scipy.cg).
@@ -669,25 +677,20 @@ class CgSolverScipy(Solver):
                         use_matvec          : bool = True,
                         use_fisher          : bool = False,
                         use_matrix          : bool = False,
-                        sigma               : Optional[float] = None) -> StaticSolverFunc:
+                        sigma               : Optional[float] = None, **kwargs) -> StaticSolverFunc:
         """ Returns the backend-specific SciPy CG wrapper function. """
         
         if backend_module is jnp:
-            import jax.scipy.sparse.linalg as jax_sla
-            
-            # Define a closure to adapt the signature and return type
-            def _jax_scipy_wrapper(matvec, b, x0, tol, maxiter, precond_apply):
-                
-                x, info = jax_sla.cg(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
-                # Info is not always returned consistent with SciPy in JAX, so we simplify
-                return SolverResult(x, True, maxiter, None) # JAX CG doesn't return residual/iter count easily
-            
-            # We let _solver_wrap_compiled handle the wrapping logic.
-            func = _jax_scipy_wrapper
+
+            def _wrapper(matvec, b, x0, tol, maxiter, precond_apply, **ignored_kwargs):
+                x, info = _static_jax_cg(matvec, b, x0, tol, maxiter, precond_apply)
+                # Helper to package result into your custom dataclass
+                return SolverResult(x, True, maxiter, None) 
+            func = _wrapper
             
         elif backend_module is np:
             
-            def _scipy_wrapper(matvec, b, x0, tol, maxiter, precond_apply):
+            def _scipy_wrapper(matvec, b, x0, tol, maxiter, precond_apply, **ignored_kwargs):
                 # Wrap matvec in LinearOperator for SciPy
                 n       = b.shape[0]
                 A_op    = spsla.LinearOperator((n, n), matvec=matvec, dtype=b.dtype)

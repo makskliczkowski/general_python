@@ -715,7 +715,9 @@ class JacobiPreconditioner(Preconditioner):
                 backend                 : str   = 'default',
                 # Tolerances specific to Jacobi
                 tol_small               : float = _TOLERANCE_SMALL,
-                zero_replacement        : float = _TOLERANCE_BIG):
+                zero_replacement        : float = _TOLERANCE_BIG,
+                **kwargs
+                ):
         """
         Initialize the Jacobi preconditioner.
 
@@ -738,10 +740,10 @@ class JacobiPreconditioner(Preconditioner):
                         is_gram                     =   is_gram,
                         backend                     =   backend)
         # Tolerances / constants for safe division
-        self._TOLERANCE_SMALL         = tol_small
-        self._zero              = zero_replacement
+        self._TOLERANCE_SMALL               = tol_small
+        self._zero                          = zero_replacement
         # Precomputed data storage
-        self._inv_diag : Optional[Array] = None # Stores 1 / (diag(A) + sigma)
+        self._inv_diag : Optional[Array]    = None # Stores 1 / (diag(A) + sigma)
 
     # -----------------------------------------------------------------
 
@@ -1744,6 +1746,15 @@ def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
     if precond_id is None:
         return None
     
+    if isinstance(precond_id, str):
+        precond_id = precond_id.strip().replace('-', '_').replace(' ', '_').upper()
+        if precond_id == 'NONE':
+            return None
+        elif precond_id == 'DEFAULT':
+            precond_id = PreconditionersTypeSym.JACOBI
+        elif precond_id == 'SYMMETRIC_DEFAULT':
+            precond_id = PreconditionersTypeSym.JACOBI
+    
     # 1. Handle Instance Passthrough
     if isinstance(precond_id, Preconditioner):
         if kwargs:
@@ -1769,13 +1780,25 @@ def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
 
     # 5. Filter Kwargs for Constructor and Instantiate
     try:
-        valid_args                      = inspect.signature(target_class.__init__).parameters
-        filtered_kwargs                 = {k: v for k, v in final_kwargs.items() if k in valid_args}
-        ignored_kwargs                  = {k: v for k, v in final_kwargs.items() if k not in valid_args and k != 'self'}
-        if ignored_kwargs:
-            print(f"Warning: Ignoring invalid kwargs for {target_class.__name__}: {ignored_kwargs}")
-
+        import inspect
+        sig             = inspect.signature(target_class.__init__)
+        valid_params    = sig.parameters
+        
+        # Check if the class accepts **kwargs (VAR_KEYWORD)
+        has_varkw       = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in valid_params.values())
+        
+        # Always allow 'logger' to be passed if the base class expects it, 
+        # even if the subclass __init__ signature doesn't list it explicitly.
+        # Ideally, subclasses should accept **kwargs and pass to super().
+        
+        filtered_kwargs = {}
+        for k, v in final_kwargs.items():
+            if k in valid_params or has_varkw:
+                filtered_kwargs[k] = v
+            # SPECIAL CASE: If subclass doesn't take **kwargs, we can't pass logger
+            # unless we modify the subclass. 
         return target_class(**filtered_kwargs)
+    
     except Exception as e:
         print(f"Error instantiating {target_class.__name__} with kwargs {filtered_kwargs}: {e}")
         raise e

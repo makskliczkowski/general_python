@@ -12,33 +12,137 @@ Key functionalities provided include:
     - Integration with preconditioners for iterative solvers.
     - Testing facilities for algebraic operations and linear solvers.
 
-@Author: Maksymilian Kliczkowski
-@Email: maksymilian.kliczkowski@pwr.edu.pl
-@Date: 2025-02-01
-@Version: 1.0
-"""
-
-import time
+This module uses lazy imports to minimize startup overhead. Heavy dependencies
+like backend_linalg, test classes, and submodules are only loaded when accessed.
 
 # -----------------------------------------------------------------------------------------------
+Author          : Maksymilian Kliczkowski
+Email           : maksymilian.kliczkowski@pwr.edu.pl
+Date            : 2025-02-01
+Version         : 1.1
+Description     : General Algebra Module with Lazy Imports
+# -----------------------------------------------------------------------------------------------
+"""
 
-# from general_python.algebra import linalg
-# from general_python.algebra import solver
-# from general_python.algebra import preconditioners
-# from general_python.algebra import ode
-try:
+from typing import TYPE_CHECKING
+import importlib
+
+# -----------------------------------------------------------------------------------------------
+# Lazy Import Configuration
+# -----------------------------------------------------------------------------------------------
+
+# Mapping of attribute names to their module paths and actual attribute names
+_LAZY_IMPORTS = {
+    # Solver-related imports
+    'SolverType'            : ('.solvers', 'SolverType'),
+    'choose_solver'         : ('.solvers', 'choose_solver'),
+    'get_backend_ops'       : ('.solvers.backend_ops', 'get_backend_ops'),
+    'BackendOps'            : ('.solvers.backend_ops', 'BackendOps'),
+    'default_ops'           : ('.solvers.backend_ops', 'default_ops'),
+    'choose_precond'        : ('.preconditioners', 'choose_precond'),
+    # Linalg module (heavy)
+    'LinalgModule'          : ('.backend_linalg', None),  # None means import the whole module
+    'backend_linalg'        : ('.backend_linalg', None),
+    # Utility imports from common
+    'MatrixPrinter'         : ('..common.plot', 'MatrixPrinter'),
+    'get_logger'            : ('..common.flog', 'get_global_logger'),
+    # Utils module exports (lazy - these are heavy)
+    'backend_mgr'           : ('.utils', 'backend_mgr'),
+    'get_backend'           : ('.utils', 'get_backend'),
+    'get_global_backend'    : ('.utils', 'get_global_backend'),
+    'ACTIVE_BACKEND_NAME'   : ('.utils', 'ACTIVE_BACKEND_NAME'),
+    'ACTIVE_NP_MODULE'      : ('.utils', 'ACTIVE_NP_MODULE'),
+    'ACTIVE_RANDOM'         : ('.utils', 'ACTIVE_RANDOM'),
+    'ACTIVE_SCIPY_MODULE'   : ('.utils', 'ACTIVE_SCIPY_MODULE'),
+    'ACTIVE_JIT'            : ('.utils', 'ACTIVE_JIT'),
+    'ACTIVE_JAX_KEY'        : ('.utils', 'ACTIVE_JAX_KEY'),
+    'ACTIVE_INT_TYPE'       : ('.utils', 'ACTIVE_INT_TYPE'),
+    'ACTIVE_FLOAT_TYPE'     : ('.utils', 'ACTIVE_FLOAT_TYPE'),
+    'ACTIVE_COMPLEX_TYPE'   : ('.utils', 'ACTIVE_COMPLEX_TYPE'),
+    # Submodules (lazy)
+    'solvers'               : ('.solvers', None),
+    'preconditioners'       : ('.preconditioners', None),
+    'ode'                   : ('.ode', None),
+    'ran_wrapper'           : ('.ran_wrapper', None),
+    'ran_matrices'          : ('.ran_matrices', None),
+    'eigen'                 : ('.eigen', None),
+    'utilities'             : ('.utilities', None),
+    'utils'                 : ('.utils', None),
+}
+
+# Cache for lazily loaded modules/attributes
+_LAZY_CACHE = {}
+
+# For type checking, import types without runtime overhead
+if TYPE_CHECKING:
     from .solvers import SolverType, choose_solver
     from .solvers.backend_ops import get_backend_ops, BackendOps, default_ops
-    from .preconditioners import choose_precond, Preconditioner
+    from .preconditioners import choose_precond
     from . import backend_linalg as LinalgModule
-except ImportError as e:
-    raise ImportError("Required modules from .solvers or .preconditioners could not be imported.") from e
-
-try:
     from ..common.plot import MatrixPrinter
     from ..common.flog import get_global_logger as get_logger
-except ImportError as e:
-    raise ImportError("Required modules from ..common.plot or ..common.flog could not be imported.") from e
+
+# -----------------------------------------------------------------------------------------------
+# Lazy Import Implementation
+# -----------------------------------------------------------------------------------------------
+
+def _lazy_import(name: str):
+    """
+    Lazily import a module or attribute based on _LAZY_IMPORTS configuration.
+    
+    Parameters
+    ----------
+    name : str
+        The name of the attribute to import lazily.
+        
+    Returns
+    -------
+    The imported module or attribute.
+    """
+    if name in _LAZY_CACHE:
+        return _LAZY_CACHE[name]
+    
+    if name not in _LAZY_IMPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    
+    module_path, attr_name = _LAZY_IMPORTS[name]
+    
+    # Handle module-local classes (defined later in this file)
+    if module_path is None:
+        raise AttributeError(f"Local class {name!r} must be accessed after class definition")
+    
+    # Import the module
+    module = importlib.import_module(module_path, package=__name__)
+    
+    # If attr_name is None, we want the module itself
+    if attr_name is None:
+        result = module
+    else:
+        result = getattr(module, attr_name)
+    
+    _LAZY_CACHE[name] = result
+    return result
+
+
+def __getattr__(name: str):
+    """
+    Module-level __getattr__ for lazy imports.
+    
+    This function is called when an attribute is not found in the module's namespace.
+    It provides lazy loading for heavy dependencies.
+    """
+    try:
+        return _lazy_import(name)
+    except AttributeError:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# Helper function to get commonly used items with explicit imports
+def _get_backend_and_logger():
+    """Helper to get backend and logger lazily."""
+    from .utils import get_backend
+    get_logger = _lazy_import('get_logger')
+    return get_backend, get_logger
 
 ####################################################################################################
 # Test the algebra module
@@ -48,19 +152,21 @@ class AlgebraTests:
     '''
     This is a class that implements the test for algebra module in Python.
     '''
-    from ..algebra.utils import get_backend, maybe_jit
     
     def __init__(self, backend="default"):
         ''' Load the algebra module and set the backend. '''
+        from .utils import get_backend, maybe_jit
+        self._get_backend   = get_backend
+        self._maybe_jit     = maybe_jit
         
         if not isinstance(backend, str):
             raise ValueError("Backend must be a string.")
         if backend.lower() not in ["default", "np", "jnp", "jax", "numpy"]:
             raise ValueError(f"Invalid backend specifier: {backend} - must be 'default', 'np', or 'jnp'.")
         
-        self.backend    = backend
-        self.test_count = 0
-        self.logger     = get_logger()
+        self.backend        = backend
+        self.test_count     = 0
+        self.logger         = _lazy_import('get_logger')()
 
     def _log(self, message, test_number, color="white"):
         # Add test_number to log record
@@ -75,9 +181,9 @@ class AlgebraTests:
     # -----------------------------------------------------------------------------
 
     def change_basis(self,
-                    U    : 'array-like' = None, 
-                    vec  : 'array-like' = None, 
-                    tvec : 'array-like' = None, test_number = 1, verbose = False):
+                    U    = None, 
+                    vec  = None, 
+                    tvec = None, test_number = 1, verbose = False):
         """
         Perform a change of basis on a vector using a transformation matrix and verify the result with tests.
         If U, vec, and tvec are not provided, the function uses default values (a swap matrix and corresponding vectors) to
@@ -94,7 +200,8 @@ class AlgebraTests:
         Returns:
             None
         """
-        backend = get_backend(self.backend)
+        backend = self._get_backend(self.backend)
+        LinalgModule = _lazy_import('LinalgModule')
         
         self._log("Starting change_basis", test_number, color = "blue")
 
@@ -112,6 +219,7 @@ class AlgebraTests:
         assert backend.allclose(transformed_twice, vec), "change_basis twice test failed"
 
         if verbose:
+            MatrixPrinter = _lazy_import('MatrixPrinter')
             print("U=")
             MatrixPrinter.print_matrix(U)
             print("vec=")
@@ -130,14 +238,15 @@ class AlgebraTests:
     # -----------------------------------------------------------------------------
     
     def change_basis_matrix(self,
-                            U : 'array-like' = None,
-                            A : 'array-like' = None,
-                            At: 'array-like' = None, test_number = 2, verbose = False):
+                            U = None,
+                            A = None,
+                            At = None, test_number = 2, verbose = False):
         '''
         Tests the change of basis for matrices.
         '''
         self._log("Starting change_basis_matrix", test_number, color="blue")
-        backend = get_backend(self.backend)
+        backend = self._get_backend(self.backend)
+        LinalgModule = _lazy_import('LinalgModule')
 
         # Test change_basis_matrix function: reverse a symmetric matrix.
         if U is None and A is None and At is None:
@@ -153,6 +262,7 @@ class AlgebraTests:
         assert backend.allclose(transformed_matrix_identity, A), "change_basis_matrix identity test failed"
 
         if verbose:
+            MatrixPrinter = _lazy_import('MatrixPrinter')
             print("U=")
             MatrixPrinter.print_matrix(U)
             print("A=")
@@ -172,7 +282,8 @@ class AlgebraTests:
         Tests the outer product of vectors.
         '''
         self._log("Starting outer", test_number, color="blue")
-        backend = get_backend(self.backend)
+        backend         = self._get_backend(self.backend)
+        LinalgModule    = _lazy_import('LinalgModule')
 
         # Test outer function for simple 2D vectors
         if A is None and B is None and expAB is None:
@@ -198,6 +309,7 @@ class AlgebraTests:
         assert backend.allclose(outer_product_mat, expected_mat), "outer matrix test failed"
         
         if verbose:
+            MatrixPrinter = _lazy_import('MatrixPrinter')
             print("A=")
             MatrixPrinter.print_vector(A)
             print("B=")
@@ -223,18 +335,20 @@ class AlgebraTests:
         Tests the Kronecker product of matrices.
         '''
         self._log("Starting kron", test_number, color="blue")
-        backend = get_backend(self.backend)
+        backend         = self._get_backend(self.backend)
+        LinalgModule    = _lazy_import('LinalgModule')
 
         # Test kron function for simple 2D matrices
         if A is None and B is None and expAB is None:
-            A       = backend.array([[1, 2], [3, 4]])
-            B       = backend.array([[5, 6], [7, 8]])
-            expAB   = backend.array([[5, 6, 10, 12], [7, 8, 14, 16], [15, 18, 20, 24], [21, 24, 28, 32]])
+            A           = backend.array([[1, 2], [3, 4]])
+            B           = backend.array([[5, 6], [7, 8]])
+            expAB       = backend.array([[5, 6, 10, 12], [7, 8, 14, 16], [15, 18, 20, 24], [21, 24, 28, 32]])
         
-        kron_product = LinalgModule.kron(A, B)
+        kron_product    = LinalgModule.kron(A, B)
         assert backend.allclose(kron_product, expAB), "kron basic test failed"
 
         if verbose:
+            MatrixPrinter = _lazy_import('MatrixPrinter')
             print("A=")
             MatrixPrinter.print_matrix(A)
             print("B=")
@@ -251,22 +365,25 @@ class AlgebraTests:
         Tests the ket-bra product.
         '''
         self._log("Starting ket_bra", test_number, color="blue")
+        backend             = self._get_backend(self.backend)
+        LinalgModule        = _lazy_import('LinalgModule')
 
         # Test ket_bra function with a sample vector
         if vec is None:
-            vec = self.backend.array([1, 2])
+            vec = backend.array([1, 2])
         
         ket_bra_product     = LinalgModule.ket_bra(vec)
-        expected_ket_bra    = self.backend.array([[1, 2], [2, 4]])
-        assert self.backend.allclose(ket_bra_product, expected_ket_bra), "ket_bra basic test failed"
+        expected_ket_bra    = backend.array([[1, 2], [2, 4]])
+        assert backend.allclose(ket_bra_product, expected_ket_bra), "ket_bra basic test failed"
 
         # Additional test: ket_bra of a zero vector should yield a zero matrix
-        vec_zero            = self.backend.array([0, 0])
+        vec_zero            = backend.array([0, 0])
         ket_bra_zero        = LinalgModule.ket_bra(vec_zero)
-        expected_zero       = self.backend.zeros((2, 2))
-        assert self.backend.allclose(ket_bra_zero, expected_zero), "ket_bra zero vector test failed"
+        expected_zero       = backend.zeros((2, 2))
+        assert backend.allclose(ket_bra_zero, expected_zero), "ket_bra zero vector test failed"
 
         if verbose:
+            MatrixPrinter = _lazy_import('MatrixPrinter')
             MatrixPrinter.print_vector(vec)
             MatrixPrinter.print_matrix(ket_bra_product)
 
@@ -285,14 +402,13 @@ class AlgebraTests:
         Returns:
             None
         """
+        import time
         self.logger.say("Starting all algebra tests...", log = 0, lvl = 0)
         
         overall_start   = time.time()
 
         self.change_basis(verbose=verbose)
         self.change_basis_matrix(verbose=verbose)
-        # self.outer(verbose=verbose)
-        # self.ket_bra(verbose=verbose)
 
         overall_end     = time.time()
         self.logger.say(f"All algebra tests completed in {overall_end - overall_start:.4f} seconds!", log=0, lvl=0)
@@ -334,63 +450,31 @@ class SolversTests:
         else:
             print(f"[TEST {test_number}] {message}")
 
-    #! =============================================================================================
-
-    def solver_test(self, make_random = True,
-                    symmetric   = True,
-                    solver_type = "cg",
-                    eps         = 1e-10,
-                    max_iter    = 1000,
-                    reg         = None,
-                    precond_type= None,
-                    dtype       = None
-                    ):
-            """
-            Example test for a solver.
-            
-            Parameters:
-                make_random: Whether to generate a random matrix (default: True).
-                symmetric: Whether to make the matrix symmetric (default: True).
-                solver_type: The type of solver to use (default: "cg").
-                eps: The convergence tolerance (default: 1e-10).
-                max_iter: The maximum iterations allowed (default: 1000).
-                reg: Regularization parameter (default: None).
-                precond_type: Type of preconditioner to use (default: None).
-            """
-            self._log(f"Starting solver test using {solver_type}", self.test_count)
-            
-            # Generate test matrix A and vector b.
-            a, b    = generate_test_mat_vec(make_random, symmetric, dtype=dtype, backend=self.backend)
-            
-            # Instantiate the chosen solver.
-            solver  = choose_solver(solver_type, backend=self.backend, size=a.shape[1], eps=eps, maxiter=max_iter, reg=reg)
-
-            solver.init_from_matrix(a, b, None, reg)
-            
-            # Create a preconditioner if requested.
-            precond = None
-            if precond_type is not None:
-                precond = choose_precond(precond_type, backend=self.backend)
-                precond.set(a=a, sigma=reg, backend=self.backend)
-            
-            try:
-                x, converged = solver.solve(b, x0=None, precond=precond)
-            except Exception as e:
-                self._log(f"Solver exception: {e}", self.test_count, color="red")
-                return
-
-    #! =============================================================================================
-
 # --------------------------------------------------------------------------------------------------
 
 __all__ = [
+    # Lazy-loaded from utils
     "backend_mgr", "get_backend", "get_global_backend",
-    # Global singletons
+    # Global singletons (from utils)
     "ACTIVE_BACKEND_NAME", "ACTIVE_NP_MODULE", "ACTIVE_RANDOM",
     "ACTIVE_SCIPY_MODULE", "ACTIVE_JIT", "ACTIVE_JAX_KEY",
     "ACTIVE_INT_TYPE", "ACTIVE_FLOAT_TYPE", "ACTIVE_COMPLEX_TYPE",
-    # Backend ops helpers
+    # Solver-related (lazy)
+    "SolverType", "choose_solver",
+    # Backend ops helpers (lazy)
     "get_backend_ops", "BackendOps", "default_ops",
+    # Preconditioners (lazy)
+    "choose_precond",
+    # Submodules (lazy)
+    "LinalgModule", "backend_linalg",
+    "solvers", "preconditioners", "ode",
+    "ran_wrapper", "ran_matrices",
+    "eigen", "utilities", "utils",
+    # Test classes
+    "AlgebraTests", "SolversTests",
+    "run_algebra_tests",
 ]
 
+# --------------------------------------------------------------------------------------------------
+#! EOF
 # --------------------------------------------------------------------------------------------------

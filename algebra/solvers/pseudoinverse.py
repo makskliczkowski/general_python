@@ -72,18 +72,11 @@ if JAX_AVAILABLE:
     
     def _pinv_jax_core(matrix_a     : jnp.ndarray, 
                        b            : jnp.ndarray, 
-                       tol          : float, 
-                       sigma        : float) -> Tuple[jnp.ndarray, float]:
+                       tol          : float) -> Tuple[jnp.ndarray, float]:
         """
         JAX implementation of (A + sigma*I)^+ b.
         """
         
-        # Apply Regularization (Diagonal Shift)
-        # We use jnp.where to avoid adding 0.0 explicitly if sigma is 0 (cleaner graph)
-        # but simple addition is usually fine and optimized by XLA.
-        if sigma is not None:
-            matrix_a = matrix_a + sigma * jnp.eye(matrix_a.shape[0], dtype=matrix_a.dtype)
-
         # Compute Pseudo-Inverse
         # rcond     =   tol ensures we filter small singular values
         # hermitian =   False is safer generally, but could be True for Fisher matrices.
@@ -129,10 +122,13 @@ class PseudoInverseSolver(Solver):
 
     @staticmethod
     def get_solver_func(backend_module  : Any,
-                        use_matvec      : bool = True,
-                        use_fisher      : bool = False,
-                        use_matrix      : bool = False,
-                        sigma           : Optional[float] = None) -> StaticSolverFunc:
+                        use_matvec      : bool              = True,
+                        use_fisher      : bool              = False,
+                        use_matrix      : bool              = False,
+                        sigma           : Optional[float]   = None, 
+                        a               : Optional[Any]     = None, 
+                        s               : Optional[Any]     = None, 
+                        s_p             : Optional[Any]     = None, **kwargs) -> StaticSolverFunc:
         """
         Returns a backend-adapted function compatible with the common solver wrapper.
 
@@ -149,25 +145,21 @@ class PseudoInverseSolver(Solver):
 
             # Fisher Mode: (S, Sp) -> Form Matrix -> Pinv
             if use_fisher:
-                def wrapper_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma_dyn=None):
-                    # Determine Dynamic Sigma
-                    # If sigma_dyn passed (e.g. from step loop), use it. Else config sigma.
-                    reg         = sigma_dyn if sigma_dyn is not None else (sigma if sigma else 0.0)
+                def wrapper_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, **ignored_kwargs):
                     
                     # Form Gram Matrix: A = S^H @ S / N
                     # Optimize contraction: (params, samples) @ (samples, params)
                     n_samples   = s.shape[0]
                     matrix_a    = jnp.dot(s_p, s) / n_samples
-                    x, res      = _pinv_jax_core(matrix_a, b, tol, reg)
+                    x, res      = _pinv_jax_core(matrix_a, b, tol)
                     return SolverResult(x, True, 1, res)
                 
                 return jax.jit(wrapper_fisher, static_argnames=static_argnames)
 
             # Matrix Mode: A -> Pinv
             elif use_matrix:
-                def wrapper_matrix(a, b, x0, tol, maxiter, precond_apply=None, sigma_dyn=None):
-                    reg     = sigma_dyn if sigma_dyn is not None else (sigma if sigma else 0.0)
-                    x, res  = _pinv_jax_core(a, b, tol, reg)
+                def wrapper_matrix(a, b, x0, tol, maxiter, precond_apply=None, **ignored_kwargs):
+                    x, res  = _pinv_jax_core(a, b, tol)
                     return SolverResult(x, True, 1, res)
 
                 return jax.jit(wrapper_matrix, static_argnames=static_argnames)

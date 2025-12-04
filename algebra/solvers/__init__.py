@@ -22,14 +22,14 @@ Description : This module provides a factory function to choose and instantiate
 '''
 
 import inspect
-from typing import Union, Optional, Any, Type
-from enum import Enum, auto
+from typing                     import Union, Optional, Type, TYPE_CHECKING
+from enum                       import Enum, auto
 
 # Import base classes and types (Lightweight)
 # Adjust relative path if needed based on your file structure
 try:
-    from ..solver           import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, Array, MatVecFunc, StaticSolverFunc
-    from ..preconditioners  import Preconditioner, choose_precond
+    from ..solver               import Solver, SolverResult, SolverError, SolverErrorMsg, SolverType, MatVecFunc, StaticSolverFunc
+    from ..preconditioners      import Preconditioner, choose_precond    
 except ImportError:
     raise ImportError("Could not import base solver classes. Check the module structure.")
 
@@ -82,7 +82,7 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
                 *,
                 sigma           : Optional[float]           = None,
                 is_gram         : bool                      = False,
-                default_precond : Optional[Preconditioner]  = None,
+                default_precond : Optional['Preconditioner']= None,
                 **kwargs) -> Solver:
     """
     Factory function to select and instantiate a solver based on identifier.
@@ -162,6 +162,9 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
             from .direct import DirectSolver as target_class
         elif solver_type == SolverType.SCIPY_DIRECT:
             from .direct import DirectScipy as target_class
+        # 
+        elif solver_type == SolverType.MINSR:
+            from .minsr import SpectralExactSolver as target_class
         #
         elif solver_type == SolverType.BACKEND:
             from .backend import BackendSolver as target_class

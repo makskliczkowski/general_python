@@ -61,6 +61,7 @@ class SolverType(Enum):
     SCIPY_DIRECT    = auto()
     # my solvers
     CG              = auto() # Conjugate gradient
+    MINSR           = auto() # Minimum Stochastic Reconfiguration with Noise to Signal Ratio
     MINRES          = auto() # Minimum residual
     MINRES_QLP      = auto() # Minimum residual - using QLP
     GMRES           = auto() # Generalized Minimal Residual
@@ -272,11 +273,12 @@ class Solver(ABC):
             MatVecFunc:
                 The matrix-vector product function.        
         """
+        
         # Convert None to 0.0 outside the matvec to avoid tracer issues
         sigma_val = 0.0 if sigma is None else sigma
         
         def matvec(x): 
-            return jnp.dot(a, x) + sigma_val * x
+            return jnp.matmul(a, x) + sigma_val * x
         return matvec
 
     @staticmethod
@@ -293,8 +295,6 @@ class Solver(ABC):
             MatVecFunc:
                 The matrix-vector product function.
         """
-        sigma_val = 0.0 if sigma is None else sigma
-        
         def matvec(x): 
             return np.dot(a, x) + sigma_val * x
         return matvec
@@ -367,7 +367,6 @@ class Solver(ABC):
 
         n = s.shape[0]
         if create_full:
-            # Create full Gram matrix: S\dag S where s=S [n_samples, n_params], s_p=S\dag [n_params, n_samples]
             return Solver.create_matvec_from_matrix_jax(s_p @ s / n, sigma)
         
         # Always include sigma term - JAX will optimize away if sigma=0
@@ -378,7 +377,7 @@ class Solver(ABC):
         def matvec(x):
             # O(N_samples * N_params) associative order
             # sigma_val is captured from closure - already concrete (float or traced float, never None)
-            return (jnp.dot(s_p, jnp.dot(s, x)) / n) + (sigma_val * x)
+            return (jnp.matmul(s_p, jnp.matmul(s, x)) / n) + (sigma_val * x)
         
         return matvec
 
@@ -508,42 +507,58 @@ class Solver(ABC):
         
         if backend_module is jnp:
             # Static args: tolerances and preconditioner function (since functions must be static)
-            static_argnames = ('tol', 'maxiter', 'precond_apply')
-            # Store default sigma from solver creation (convert None to 0.0)
+            static_argnames = ('maxiter', 'precond_apply')
             default_sigma   = 0.0 if sigma is None else float(sigma)
         
-            # MODE 2: Dense Matrix A (Dynamic A, dynamic sigma)
+            # Dense Matrix A (Dynamic A, dynamic sigma)
             if use_matrix:
                 def wrapper_logic(a, b, x0, tol, maxiter, precond_apply=None, sigma=None):
                     effective_sigma = default_sigma if sigma is None else sigma
-                    # Construct matvec *inside* the JIT trace using dynamic arrays
-                    matvec          = Solver.create_matvec_from_matrix_jax(a, effective_sigma)
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
-                    return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
+                    M               = None
+                    
+                    def matvec(v):
+                        return jnp.matmul(a, v) + effective_sigma * v
+                    
+                    if precond_apply is not None:
+                        def M(r):
+                            # Pass dynamic 'a' to the preconditioner so it can 
+                            # re-compute diagonal/factors inside the JIT trace.
+                            return precond_apply(r, a)
+
+                    return callable_comp(matvec, b, x0_val, tol, maxiter, M, a=a, sigma=effective_sigma) # IF THE SOLVER NEEDS a, sigma
 
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
         
-            # MODE 1: NQS / Fisher (Dynamic S, Sp, and now dynamic sigma!)
+            # NQS / Fisher (Dynamic S, Sp, and now dynamic sigma!)
             # This allows S/Sp AND sigma to change every step without re-compiling.
             elif use_fisher:
                 # For Fisher/Gram mode, preconditioners from get_apply_gram() expect (r, s, sp).
                 # We always wrap to curry s, s_p since we're in Gram mode.
                 # The wrapping happens inside the traced function to capture dynamic s, s_p.
+                
                 def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None):
                     # Use runtime sigma if provided, otherwise fall back to default
                     effective_sigma = default_sigma if sigma is None else sigma
-                    # Construct matvec *inside* the JIT trace using dynamic arrays
-                    matvec          = Solver.create_matvec_from_fisher_jax(s, s_p, effective_sigma)
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
+                    n_samples       = s.shape[0] if s.shape[0] > s.shape[1] else s.shape[1]
+                    
+                    def matvec(v):
+                        inter       = jnp.matmul(s, v)
+                        final       = jnp.matmul(s_p, inter)
+                        return (final / n_samples) + (effective_sigma * v)
                     
                     # Wrap preconditioner to curry s, s_p for Gram-mode preconditioners
                     # In Fisher mode, precond_apply from get_apply_gram() expects (r, s, sp)
-                    wrapped_precond = None
+                    M = None
                     if precond_apply is not None:
-                        def wrapped_precond(r):
+                        def M(r):
+                            # Pass dynamic 's' and 's_p' to the preconditioner.
+                            # _setup_gram_kernel will run HERE,
+                            # extracting the diagonal (s_p @ s) inside the JIT trace efficiently.
                             return precond_apply(r, s, s_p)
-                    
-                    return callable_comp(matvec, b, x0_val, tol, maxiter, wrapped_precond)
+                        
+                    return callable_comp(matvec, b, x0_val, tol, maxiter, M, s=s, s_p=s_p, sigma=effective_sigma) # IF THE SOLVER NEEDS s, s_p, sigma
                 
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
             
@@ -662,7 +677,7 @@ class Solver(ABC):
                         use_matvec      : bool = True,
                         use_fisher      : bool = False,
                         use_matrix      : bool = False,
-                        sigma           : Optional[float] = None) -> StaticSolverFunc:
+                        sigma           : Optional[float] = None, **kwargs) -> StaticSolverFunc:
         """
         Abstract Static:
             Retrieves the solver function, which may be JIT-compiled (with JAX),

@@ -515,7 +515,12 @@ class MinresSolver(Solver):
                         use_matvec      : bool = True,
                         use_fisher      : bool = False,
                         use_matrix      : bool = False,
-                        sigma           : Optional[float] = None) -> StaticSolverFunc:
+                        sigma           : Optional[float] = None,
+                        a               : Optional[Array] = None,
+                        s               : Optional[Array] = None,
+                        s_p             : Optional[Array] = None,
+                        **kwargs        : Any                        
+                        ) -> StaticSolverFunc:
         """
         Return a backend-specific MINRES solver function.
         Uses native implementation with backend_ops.
@@ -526,11 +531,11 @@ class MinresSolver(Solver):
         is_jax = (backend_module is not np) and JAX_AVAILABLE
         
         if is_jax and _minres_logic_jax is not None:
-            def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply, a=None, s=None, s_p=None, **kwargs):
                 return _minres_logic_jax(matvec, b, x0, tol, maxiter, precond_apply)
             return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
         else:
-            def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply, a=None, s=None, s_p=None, **kwargs):
                 return _minres_logic_numpy(matvec, b, x0, tol, maxiter, precond_apply)
             return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
 

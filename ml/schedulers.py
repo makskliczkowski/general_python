@@ -27,13 +27,13 @@ email   : maksymilian.kliczkowski@pwr.edu.pl
 ---------------------------------------------------------------
 '''
 
-import math
 import enum
-import inspect
-from abc import ABC, abstractmethod
-from typing import List, Optional, Union, Type, Dict, Any
-from ..common.flog import Logger
 import numpy as np
+from abc import ABC, abstractmethod
+from typing import List, Optional, Union, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..common.flog import Logger
 
 # ##############################################################################
 #! Constants
@@ -50,7 +50,7 @@ class BaseSchedulerLogger(ABC):
     Abstract Base Class providing logging capabilities to schedulers.
     """
     
-    def __init__(self, logger: Optional[Logger]):
+    def __init__(self, logger: Optional["Logger"]):
         super().__init__()
         self._logger = logger
     
@@ -77,11 +77,11 @@ class BaseSchedulerLogger(ABC):
                 print(f"{str(log).upper()}: {full_msg}")
 
     @property
-    def logger(self) -> Optional[Logger]:
+    def logger(self) -> Optional['Logger']:
         return self._logger
     
     @logger.setter
-    def logger(self, logger: Logger):
+    def logger(self, logger: 'Logger'):
         self._logger = logger
 
 # ##############################################################################
@@ -91,17 +91,17 @@ class EarlyStopping(BaseSchedulerLogger):
     Monitors a metric and determines if training should stop.
     """
     
-    def __init__(self, patience: int = 0, min_delta: float = 1e-3, logger: Optional[Logger] = None):
+    def __init__(self, patience: int = 0, min_delta: float = 1e-3, logger: Optional['Logger'] = None):
         super().__init__(logger=logger)
         
-        if patience is not None and patience < 0: raise ValueError("Patience must be non-negative.")
-        if min_delta < 0.0: raise ValueError("min_delta must be non-negative.")
+        if patience is not None and patience < 0:   raise ValueError("Patience must be non-negative.")
+        if min_delta < 0.0:                         raise ValueError("min_delta must be non-negative.")
 
-        self._patience          = patience
-        self._min_delta         = min_delta
-        self._best_metric       = _INF
-        self._epoch_since_best  = 0
-        self._stop_training     = False
+        self._patience                              = patience
+        self._min_delta                             = min_delta
+        self._best_metric                           = _INF
+        self._epoch_since_best                      = 0
+        self._stop_training                         = False
 
     def __call__(self, _metric: Union[float, complex, np.number]) -> bool:
         """
@@ -178,13 +178,29 @@ class Parameters(BaseSchedulerLogger, ABC):
                 max_epochs     : int,
                 lr_decay       : float,
                 lr_clamp       : Optional[float]           = None,
-                logger         : Optional[Logger]          = None,
+                logger         : Optional['Logger']        = None,
                 es             : Optional[EarlyStopping]   = None):
+        ''' 
+        Base class for learning rate schedulers.
+        Args:
+            initial_lr: 
+                Initial learning rate.
+            max_epochs: 
+                Maximum number of epochs.
+            lr_decay: 
+                Decay rate (meaning depends on scheduler type).
+            lr_clamp: 
+                Minimum learning rate clamp.
+            logger: 
+                Optional logger for logging.
+            es: 
+                Optional EarlyStopping instance.
+        '''
         
         super().__init__(logger=logger)
 
-        if initial_lr <= 0: raise ValueError("Initial LR must be positive.")
-        if max_epochs <= 0: raise ValueError("Max epochs must be positive.")
+        if initial_lr <= 0:     raise ValueError("Initial LR must be positive.")
+        if max_epochs <= 0:     raise ValueError("Max epochs must be positive.")
 
         self._initial_lr        = initial_lr
         self._max_epochs        = max_epochs
@@ -257,8 +273,8 @@ class ExponentialDecayScheduler(Parameters):
         self._typek = SchedulerType.EXPONENTIAL
 
     def __call__(self, _epoch: int, _metric=None) -> float:
-        current_epoch   = max(0, _epoch)
         # Multiplicative decay: lr = lr_0 * gamma^epoch (like PyTorch ExponentialLR)
+        current_epoch   = max(0, _epoch)
         new_lr          = self._initial_lr * np.power(self._lr_decay, current_epoch)
         return self._update_and_log_lr(new_lr)
 
@@ -398,7 +414,7 @@ SCHEDULER_CLASS_MAP["linear"]       = SCHEDULER_CLASS_MAP[SchedulerType.LINEAR]
 def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
                     initial_lr      : float,
                     max_epochs      : int,
-                    logger          : Optional[Logger] = None,
+                    logger          : Optional['Logger'] = None,
                     **kwargs) -> Parameters:
     """
     Factory to create a scheduler instance.
@@ -428,8 +444,16 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
 
     if kwargs.get('lr_step_size', None) is not None:
         kwargs['step_size'] = kwargs.pop('lr_step_size')
+    
+    # FINAL
     if kwargs.get('lr_min', None) is not None:
         kwargs['min_lr'] = kwargs.pop('lr_min')
+    if kwargs.get('lr_final', None) is not None:
+        kwargs['min_lr'] = kwargs.pop('lr_final')
+    if kwargs.get('lr_initial', None) is not None:
+        initial_lr = kwargs.pop('lr_initial')
+    
+    # DECAY
     if kwargs.get('lr_patience', None) is not None:
         kwargs['patience'] = kwargs.pop('lr_patience')
     if kwargs.get('lr_min_delta', None) is not None:
@@ -438,12 +462,16 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
         kwargs['cooldown'] = kwargs.pop('lr_cooldown')
     if kwargs.get('lr_decay_rate', None) is not None:
         kwargs['lr_decay'] = kwargs.pop('lr_decay_rate')
-    if kwargs.get('lr_initial', None) is not None:
-        initial_lr = kwargs.pop('lr_initial')
+    
+    # EPOCHS
     if kwargs.get('lr_max_epochs', None) is not None:
         max_epochs = kwargs.pop('lr_max_epochs')
+        
+    # EARLY STOPPING
     if kwargs.get('lr_es', None) is not None:
         kwargs['early_stopping_patience'] = kwargs.pop('lr_es')
+    if kwargs.get('lr_es_min'):
+        kwargs['early_stopping_min_delta'] = kwargs.pop('lr_es_min')
     
     # 1. Handle Existing Instance
     if isinstance(scheduler_type, Parameters):
@@ -477,7 +505,7 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
     build_kwargs = {
         'initial_lr'    : initial_lr, 
         'max_epochs'    : max_epochs,
-        'logger'        : logger,
+        'logger'        : 'Logger',
         'es'            : es,
         'lr_clamp'      : kwargs.get('lr_clamp')
     }
