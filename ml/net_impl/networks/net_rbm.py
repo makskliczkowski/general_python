@@ -229,6 +229,7 @@ class RBM(FlaxInterface):
         #! For the analytic gradient, we need to compile the function
         self._compiled_grad_fn  = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
         self._has_analytic_grad = False
+        self._name              = 'rbm'
 
     # ------------------------------------------------------------
     #! Analytic Gradient
@@ -333,9 +334,9 @@ class RBM(FlaxInterface):
         n_params    = self.nparams if self.initialized else '?'
         return (f"{rbm_type}RBM(shape={self.input_shape}, hidden={n_hidden}, "
             f"bias={bias}, visible_bias={vis_bias}, dtype={self.dtype}, params={n_params}, analytic_grad={self._has_analytic_grad}, {init_status})")
-        
-    # ------------------------------------------------------------
     
+    # ------------------------------------------------------------
+
 # ----------------------------------------------------------------
 #! End of RBM Class
 # ----------------------------------------------------------------

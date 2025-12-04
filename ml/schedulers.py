@@ -174,12 +174,12 @@ class SchedulerType(enum.Enum):
 class Parameters(BaseSchedulerLogger, ABC):
     
     def __init__(self, 
-                 initial_lr     : float,
-                 max_epochs     : int,
-                 lr_decay       : float,
-                 lr_clamp       : Optional[float]           = None,
-                 logger         : Optional[Logger]          = None,
-                 es             : Optional[EarlyStopping]   = None):
+                initial_lr     : float,
+                max_epochs     : int,
+                lr_decay       : float,
+                lr_clamp       : Optional[float]           = None,
+                logger         : Optional[Logger]          = None,
+                es             : Optional[EarlyStopping]   = None):
         
         super().__init__(logger=logger)
 
@@ -317,8 +317,8 @@ class CosineAnnealingScheduler(Parameters):
 
 class AdaptiveScheduler(Parameters):
     """ ReduceLROnPlateau logic """
-    def __init__(self, initial_lr: float, max_epochs: int, lr_decay: float, patience: int, 
-                 min_lr: float = 1e-5, cooldown: int = 0, min_delta: float = 1e-4, 
+    def __init__(self, initial_lr: float, max_epochs: int, lr_decay: float=0.1, patience: int=100,
+                min_lr: float = 1e-5, cooldown: int = 0, min_delta: float = 1e-4, 
                  lr_clamp=None, logger=None, es=None, **kwargs):
         super().__init__(initial_lr, max_epochs, lr_decay, lr_clamp, logger, es)
         
@@ -396,14 +396,55 @@ SCHEDULER_CLASS_MAP["adaptive"]     = SCHEDULER_CLASS_MAP[SchedulerType.ADAPTIVE
 SCHEDULER_CLASS_MAP["linear"]       = SCHEDULER_CLASS_MAP[SchedulerType.LINEAR]
 
 def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
-                     initial_lr     : float,
-                     max_epochs     : int,
-                     logger         : Optional[Logger] = None,
-                     **kwargs) -> Parameters:
+                    initial_lr      : float,
+                    max_epochs      : int,
+                    logger          : Optional[Logger] = None,
+                    **kwargs) -> Parameters:
     """
     Factory to create a scheduler instance.
+    
+    This function can either accept:
+    - A string or SchedulerType enum to specify the type of scheduler to create.
+    - An existing Parameters instance to reconfigure.
+    Args:
+        scheduler_type: Type of scheduler or existing instance.
+        initial_lr: Initial learning rate.
+        max_epochs: Maximum number of epochs.
+        logger: Optional logger for the scheduler.
+        **kwargs: Additional arguments specific to the scheduler type.
+            - lr_decay: Decay rate for exponential/step/adaptive schedulers.
+            - step_size: Step size for step scheduler.
+            - min_lr: Minimum learning rate for cosine/linear/adaptive schedulers.
+            - patience: Patience for adaptive scheduler.
+            - cooldown: Cooldown period for adaptive scheduler.
+            - min_delta: Minimum improvement for adaptive scheduler.
+            - early_stopping_patience: Patience for early stopping.
+            - early_stopping_min_delta: Minimum improvement for early stopping.
+    Returns:
+        An instance of Parameters (scheduler).
+    Raises:
+        ValueError: If the scheduler type is unknown. 
     """
 
+    if kwargs.get('lr_step_size', None) is not None:
+        kwargs['step_size'] = kwargs.pop('lr_step_size')
+    if kwargs.get('lr_min', None) is not None:
+        kwargs['min_lr'] = kwargs.pop('lr_min')
+    if kwargs.get('lr_patience', None) is not None:
+        kwargs['patience'] = kwargs.pop('lr_patience')
+    if kwargs.get('lr_min_delta', None) is not None:
+        kwargs['min_delta'] = kwargs.pop('lr_min_delta')
+    if kwargs.get('lr_cooldown', None) is not None:
+        kwargs['cooldown'] = kwargs.pop('lr_cooldown')
+    if kwargs.get('lr_decay_rate', None) is not None:
+        kwargs['lr_decay'] = kwargs.pop('lr_decay_rate')
+    if kwargs.get('lr_initial', None) is not None:
+        initial_lr = kwargs.pop('lr_initial')
+    if kwargs.get('lr_max_epochs', None) is not None:
+        max_epochs = kwargs.pop('lr_max_epochs')
+    if kwargs.get('lr_es', None) is not None:
+        kwargs['early_stopping_patience'] = kwargs.pop('lr_es')
+    
     # 1. Handle Existing Instance
     if isinstance(scheduler_type, Parameters):
         if logger:                  scheduler_type.logger       = logger
@@ -426,11 +467,11 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
     # 3. Setup Early Stopping
     es = None
     if 'early_stopping_patience' in kwargs:
-        es  = EarlyStopping(kwargs['early_stopping_patience'], kwargs.get('early_stopping_min_delta', 1e-4), logger)
+        es = EarlyStopping(kwargs['early_stopping_patience'], kwargs.get('early_stopping_min_delta', 1e-4), logger)
 
     # 4. Build Args
     # Filter kwargs to only what the specific scheduler needs + base args
-    valid_args = {'initial_lr', 'max_epochs', 'lr_clamp', 'logger', 'es'}
+    valid_args = {'initial_lr', 'max_epochs', 'lr_clamp', 'logger', 'es', }
     valid_args.update(config['args'])
     
     build_kwargs = {
@@ -449,12 +490,14 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
             build_kwargs['lr_decay'] = 0.99 # Default
             
     try:
+        if logger:
+            logger.info(f"Creating scheduler '{scheduler_type}' with args: {build_kwargs}", lvl=2, color='cyan')
         return cls(**build_kwargs)
     except TypeError as e:
         if logger:
             logger.say(f"Error creating scheduler '{scheduler_type}': {str(e)}", log='error', color='red')
         raise e
-    
+
 ###############################################################################
 #! End of file
 ###############################################################################

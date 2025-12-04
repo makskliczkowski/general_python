@@ -170,6 +170,16 @@ class GeneralNet(ABC):
     # ---------------------------------------------------
     
     @property
+    def name(self) -> str:
+        """
+        Get the name of the network.
+        
+        Returns:
+            str: Name of the network.
+        """
+        return self._name
+    
+    @property
     def is_complex(self) -> bool:
         """
         Check if the network parameters are complex.

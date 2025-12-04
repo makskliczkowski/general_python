@@ -22,6 +22,7 @@ from ...algebra.utils import JAX_AVAILABLE, get_backend
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     from jax import random
+    import jax.nn as jnn
     import flax.linen as nn
     
 ###################################################################
@@ -226,6 +227,36 @@ if JAX_AVAILABLE:
         xsq = x ** 2
         return ((0.133333333 * xsq - 0.333333333) * xsq + 1.) * x
     
+    def swish_jnp(x):
+        ''' 
+        Swish activation function (JAX implementation).
+        
+        Parameters:
+            x: Input tensor/array
+            
+        Returns:
+            Swish activation
+        '''
+        return x * jnn.sigmoid(x)
+        
+    def mish_jnp(x):
+        """Mish activation: x * tanh(softplus(x))"""
+        return x * jnp.tanh(jnn.softplus(x))
+
+    def gelu_jnp(x, approximate=False):
+        """Gaussian Error Linear Unit. Excellent for Transformers/Deep CNNs."""
+        return jnn.gelu(x, approximate=approximate)
+
+    def celu_jnp(x, alpha=1.0):
+        """Continuously Differentiable Exponential Linear Unit."""
+        return jnn.celu(x, alpha=alpha)
+    def sin_jnp(x): 
+        """Sine. Holomorphic and periodic. Good for NQS."""
+        return jnp.sin(x)
+
+    def cos_jnp(x): 
+        """Cosine. Holomorphic and periodic."""
+        return jnp.cos(x)
     
     activations_jnp = {
         'identity'      : identity_jnp,
@@ -238,7 +269,15 @@ if JAX_AVAILABLE:
         'elu'           : elu_jnp,
         'softplus'      : softplus_jnp,
         'poly6'         : poly6_jnp,
-        'poly5'         : poly5_jnp
+        'poly5'         : poly5_jnp,
+        # Additional activations
+        'gelu'          : gelu_jnp,
+        'swish'         : swish_jnp,
+        'mish'          : mish_jnp,
+        'celu'          : celu_jnp,
+        'sin'           : sin_jnp,
+        'cos'           : cos_jnp,
+        
     }
     
     activations_jnp_parameters = {
@@ -252,7 +291,14 @@ if JAX_AVAILABLE:
         'elu'           : {'alpha': 1.0},
         'softplus'      : None,
         'poly6'         : None,
-        'poly5'         : None
+        'poly5'         : None,
+        # Additional activations
+        'gelu'          : {'approximate': False},
+        'swish'         : None,
+        'mish'          : None,
+        'celu'          : {'alpha': 1.0},
+        'sin'           : None,
+        'cos'           : None,
     }
     
     def get_activation_jnp(name: str, params: Optional[dict] = None) -> Callable:

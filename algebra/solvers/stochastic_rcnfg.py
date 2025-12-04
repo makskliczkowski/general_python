@@ -251,7 +251,7 @@ if JAX_AVAILABLE:
         # We want                   (N_s, N_s).
         # Correct math:             T = O . O^dag
         # Input derivatives_c_h is usually O^dag (N_p, N_s)
-        return jnp.matmul(derivatives_c, derivatives_c_h) / derivatives_c.shape[-1]    
+        return jnp.matmul(derivatives_c, derivatives_c_h) / n_samples 
     
     # -------------------------------------------------------
     

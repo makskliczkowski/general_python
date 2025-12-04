@@ -342,26 +342,33 @@ class Preconditioner(ABC):
 
         Returns:
             Callable: The compiled function.
+        
+        Note:
+            For JAX compatibility, kwargs are frozen at function creation time.
+            The returned function does NOT accept runtime kwargs to avoid 
+            dictionary operations inside JIT-traced code.
         '''
         static_setup        = self.__class__._setup_gram_kernel
         static_apply        = self.__class__._apply_kernel
         backend_mod         = self._backend
-        instance_defaults   = default_setup_kwargs
+        # Freeze kwargs at creation time for JAX compatibility
+        frozen_kwargs       = dict(default_setup_kwargs)
         sigma               = self._sigma # Capture current sigma for the closure
 
-        def wrapped_apply_gram(r: Array, s: Array, sp: Array, **call_time_kwargs) -> Array:
-            setup_kwargs        = {**instance_defaults, **call_time_kwargs}
-            # Perform setup on the fly
-            precomputed_data    = static_setup(s, sp, sigma, backend_mod, **setup_kwargs)
+        def wrapped_apply_gram(r: Array, s: Array, sp: Array) -> Array:
+            # Use frozen kwargs - no runtime kwargs to avoid dict ops in traced code
+            precomputed_data    = static_setup(s, sp, sigma, backend_mod, **frozen_kwargs)
             # Apply using the computed data
             return static_apply(r, backend_mod, sigma, **precomputed_data)
 
+        # Don't JIT here - the preconditioner is called from inside the solver's
+        # JIT-compiled function, so it will be traced and compiled as part of that.
+        # Nested JIT causes issues with traced arrays.
         if self._isjax and jax is not None:
-            self.log("JIT compiling apply_gram(r, S, Sp, ...) function...", log='info', lvl=2, color=self._dcol)
-            return jax.jit(wrapped_apply_gram)
+            self.log("Returning apply_gram(r, S, Sp) for JAX (will be traced by solver's JIT)", log='info', lvl=2, color=self._dcol)
         else:
-            self.log("Using numpy backend for apply_gram(r, S, Sp, sigma, ...), no JIT.", log='info', lvl=2, color=self._dcol)
-            return wrapped_apply_gram
+            self.log("Using numpy backend for apply_gram(r, S, Sp, sigma, ...)", log='info', lvl=2, color=self._dcol)
+        return wrapped_apply_gram
     
     # -----------------------------------------------------------------
     #! Properties
@@ -804,7 +811,8 @@ class JacobiPreconditioner(Preconditioner):
         tol_small           = kwargs.get('tol_small', _TOLERANCE_SMALL)
         zero_replacement    = kwargs.get('zero_replacement', _TOLERANCE_BIG)
         be                  = backend_mod
-        n                   = float(s.shape[0]) if s.shape[0] > 0 else 1.0
+        # Use shape directly - avoid float() which breaks JAX tracing
+        n                   = s.shape[0] if s.shape[0] > 0 else 1
         diag_s_dag_s        = be.einsum('ij,ji->i', sp, s)
         diag_a_approx       = diag_s_dag_s / n
         inv_diag            = JacobiPreconditioner._static_compute_inv_diag(
@@ -995,7 +1003,8 @@ class CholeskyPreconditioner(Preconditioner):
                 A dictionary containing the Cholesky factor 'l'. If decomposition fails, 'l' is set to None.
         """
         be = backend_mod
-        n = float(s.shape[0]) if s.shape[0] > 0 else 1.0
+        # Use shape directly - avoid float() which breaks JAX tracing
+        n = s.shape[0] if s.shape[0] > 0 else 1
         print(f"({CholeskyPreconditioner._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for Cholesky setup (N={n}).")
         a_gram = (sp @ s) / n
         # Call the standard setup kernel on the computed Gram matrix
@@ -1222,7 +1231,8 @@ class SSORPreconditioner(Preconditioner):
         Static Setup for SSOR from Gram factors by forming A = Sp @ S / n.
         """
         be          = backend_mod
-        n           = float(s.shape[0]) if s.shape[0] > 0 else 1.0
+        # Use shape directly - avoid float() which breaks JAX tracing
+        n           = s.shape[0] if s.shape[0] > 0 else 1
         a_gram      = (sp @ s) / n
         return SSORPreconditioner._setup_standard_kernel(a_gram, sigma, be, **kwargs)
     
@@ -1280,7 +1290,8 @@ class SSORPreconditioner(Preconditioner):
         
         # Similar warning as Cholesky
         be      = self._backend
-        n       = float(s.shape[0])
+        # Use shape directly - avoid float() which breaks JAX tracing
+        n       = s.shape[0] if s.shape[0] > 0 else 1
         if n <= 0.0:
             n = 1.0
 
@@ -1519,7 +1530,8 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
             raise RuntimeError(f"{self._name} internal error: Backend is not NumPy despite check.")
 
         be      = self._backend
-        n       = float(s.shape[0])
+        # Use shape directly - avoid float() which breaks JAX tracing
+        n       = s.shape[0] if s.shape[0] > 0 else 1
         if n <= 0.0: 
             n = 1.0
 

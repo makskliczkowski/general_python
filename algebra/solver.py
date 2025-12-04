@@ -173,7 +173,8 @@ class Solver(ABC):
                 s               : Optional[Array]                 = None,
                 s_p             : Optional[Array]                 = None,
                 sigma           : Optional[float]                 = None,
-                is_gram         : bool                            = False
+                is_gram         : bool                            = False,
+                **kwargs
                 ):
         '''
         Initializes solver metadata and optionally pre-configures for instance usage.
@@ -511,22 +512,8 @@ class Solver(ABC):
             # Store default sigma from solver creation (convert None to 0.0)
             default_sigma   = 0.0 if sigma is None else float(sigma)
         
-            # MODE 1: NQS / Fisher (Dynamic S, Sp, and now dynamic sigma!)
-            # This allows S/Sp AND sigma to change every step without re-compiling.
-            if use_fisher:
-                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None):
-                    # Use runtime sigma if provided, otherwise fall back to default
-                    # Convert to float to ensure it's concrete (not None)
-                    effective_sigma = default_sigma if sigma is None else sigma
-                    # Construct matvec *inside* the JIT trace using dynamic arrays
-                    matvec          = Solver.create_matvec_from_fisher_jax(s, s_p, effective_sigma)
-                    x0_val          = jnp.zeros_like(b) if x0 is None else x0
-                    return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
-                
-                return jax.jit(wrapper_logic, static_argnames=static_argnames)
-            
             # MODE 2: Dense Matrix A (Dynamic A, dynamic sigma)
-            elif use_matrix:
+            if use_matrix:
                 def wrapper_logic(a, b, x0, tol, maxiter, precond_apply=None, sigma=None):
                     effective_sigma = default_sigma if sigma is None else sigma
                     # Construct matvec *inside* the JIT trace using dynamic arrays
@@ -534,6 +521,30 @@ class Solver(ABC):
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
                     return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
 
+                return jax.jit(wrapper_logic, static_argnames=static_argnames)
+        
+            # MODE 1: NQS / Fisher (Dynamic S, Sp, and now dynamic sigma!)
+            # This allows S/Sp AND sigma to change every step without re-compiling.
+            elif use_fisher:
+                # For Fisher/Gram mode, preconditioners from get_apply_gram() expect (r, s, sp).
+                # We always wrap to curry s, s_p since we're in Gram mode.
+                # The wrapping happens inside the traced function to capture dynamic s, s_p.
+                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None):
+                    # Use runtime sigma if provided, otherwise fall back to default
+                    effective_sigma = default_sigma if sigma is None else sigma
+                    # Construct matvec *inside* the JIT trace using dynamic arrays
+                    matvec          = Solver.create_matvec_from_fisher_jax(s, s_p, effective_sigma)
+                    x0_val          = jnp.zeros_like(b) if x0 is None else x0
+                    
+                    # Wrap preconditioner to curry s, s_p for Gram-mode preconditioners
+                    # In Fisher mode, precond_apply from get_apply_gram() expects (r, s, sp)
+                    wrapped_precond = None
+                    if precond_apply is not None:
+                        def wrapped_precond(r):
+                            return precond_apply(r, s, s_p)
+                    
+                    return callable_comp(matvec, b, x0_val, tol, maxiter, wrapped_precond)
+                
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
             
             else: 
@@ -549,7 +560,16 @@ class Solver(ABC):
             # Actual compilation (Numba) happens inside callable_comp if supported.
             default_sigma = 0.0 if sigma is None else float(sigma)
             
-            if use_fisher:
+            if use_matrix:
+                def wrapper_np(a, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                    effective_sigma = default_sigma if sigma is None else sigma
+                    x0_val          = np.zeros_like(b) if x0 is None else x0
+                    def mv(v):      return a @ v + effective_sigma * v
+                    
+                    return callable_comp(mv, b, x0_val, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+                return wrapper_np
+            
+            elif use_fisher:
                 def wrapper_np(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
                     effective_sigma = default_sigma if sigma is None else sigma
                     # In standard NumPy, efficient matvec creation is simple lambda
@@ -558,16 +578,15 @@ class Solver(ABC):
                         return (s_p @ (s @ v)) / n + effective_sigma * v
                     
                     x0_val = np.zeros_like(b) if x0 is None else x0
-                    return callable_comp(mv, b, x0_val, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
-                return wrapper_np
-            
-            elif use_matrix:
-                def wrapper_np(a, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
-                    effective_sigma = default_sigma if sigma is None else sigma
-                    x0_val          = np.zeros_like(b) if x0 is None else x0
-                    def mv(v):      return a @ v + effective_sigma * v
                     
-                    return callable_comp(mv, b, x0_val, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+                    # Wrap preconditioner to curry s, s_p for Gram-mode preconditioners
+                    # In Fisher mode, precond_apply from get_apply_gram() expects (r, s, sp)
+                    wrapped_precond = None
+                    if precond_apply is not None:
+                        def wrapped_precond(r):
+                            return precond_apply(r, s, s_p)
+                    
+                    return callable_comp(mv, b, x0_val, tol=tol, maxiter=maxiter, precond_apply=wrapped_precond)
                 return wrapper_np
 
             else:

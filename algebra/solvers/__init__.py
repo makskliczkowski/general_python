@@ -158,7 +158,7 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
         elif solver_type == SolverType.PSEUDO_INVERSE:
             from .pseudoinverse import PseudoInverseSolver as target_class
         #
-        elif solver_type == SolverType.DIRECT or solver_type == SolverType.BACKEND_SOLVER:
+        elif solver_type == SolverType.DIRECT:
             from .direct import DirectSolver as target_class
         elif solver_type == SolverType.SCIPY_DIRECT:
             from .direct import DirectScipy as target_class

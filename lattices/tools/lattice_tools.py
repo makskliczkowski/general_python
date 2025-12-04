@@ -37,6 +37,9 @@ class LatticeBC(Enum):
     OBC         = auto()    # Open Boundary Conditions      
     MBC         = auto()    # Mixed Boundary Conditions     - periodic in X direction, open in Y direction
     SBC         = auto()    # Special Boundary Conditions   - periodic in Y direction, open in X direction
+    
+    def __str__(self):      return str(self.name).lower()
+    def __repr__(self):     return self.__str__()
 
 # -----------------------------------------------------------------------------------------------------------
 
@@ -48,6 +51,9 @@ class LatticeType(Enum):
     HEXAGONAL   = auto()    # Hexagonal lattice
     HONEYCOMB   = auto()    # Honeycomb lattice
     GRAPH       = auto()    # Generic graph lattice (adjacency-defined)
+    
+    def __str__(self):      return str(self.name).lower()
+    def __repr__(self):     return self.__str__()
 
 # -----------------------------------------------------------------------------------------------------------
 #! Boundary Conditions, Lattice Types, Directions

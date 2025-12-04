@@ -203,23 +203,23 @@ class BackendSolver(Solver):
     >>> result = BackendSolver.solve(None, b, None, A=A, backend_module=np)
     '''
     
-    _solver_type = SolverType.BACKEND
-    _symmetric = False  # Can work for non-symmetric matrices
+    _solver_type    = SolverType.BACKEND
+    _symmetric      = False  # Can work for non-symmetric matrices
     
     def __init__(self,
-                 backend         : str                              = 'default',
-                 dtype           : Optional[Type]                   = None,
-                 eps             : float                            = 0,        # Not used
-                 maxiter         : int                              = 1,        # Not used
-                 default_precond : Optional[Preconditioner]         = None,     # Not used
-                 a               : Optional[Array]                  = None,
-                 s               : Optional[Array]                  = None,     # Not used directly
-                 sp              : Optional[Array]                  = None,     # Not used directly
-                 matvec_func     : Optional[MatVecFunc]             = None,     # Not used
-                 sigma           : Optional[float]                  = None,
-                 is_gram         : bool                             = False,
-                 assume_a        : str                              = 'gen',    # SciPy option
-                 **kwargs):
+                backend         : str                              = 'default',
+                dtype           : Optional[Type]                   = None,
+                eps             : float                            = 0,        # Not used
+                maxiter         : int                              = 1,        # Not used
+                default_precond : Optional[Preconditioner]         = None,     # Not used
+                a               : Optional[Array]                  = None,
+                s               : Optional[Array]                  = None,     # Not used directly
+                sp              : Optional[Array]                  = None,     # Not used directly
+                matvec_func     : Optional[MatVecFunc]             = None,     # Not used
+                sigma           : Optional[float]                  = None,
+                is_gram         : bool                             = False,
+                assume_a        : str                              = 'gen',    # SciPy option
+                **kwargs):
         
         super().__init__(
             backend         = backend, 
@@ -454,15 +454,15 @@ class BackendSolver(Solver):
     # --------------------------------------------------------------------------
 
     def solve_instance(self,
-                       b               : Array,
-                       x0              : Optional[Array]   = None,  # Ignored
-                       *,
-                       tol             : Optional[float]   = None,  # Ignored
-                       maxiter         : Optional[int]     = None,  # Ignored
-                       precond         : Optional[Preconditioner] = None,  # Ignored
-                       sigma           : Optional[float]   = None,
-                       assume_a        : Optional[str]     = None,
-                       **kwargs) -> SolverResult:
+                    b               : Array,
+                    x0              : Optional[Array]   = None,  # Ignored
+                    *,
+                    tol             : Optional[float]   = None,  # Ignored
+                    maxiter         : Optional[int]     = None,  # Ignored
+                    precond         : Optional[Preconditioner] = None,  # Ignored
+                    sigma           : Optional[float]   = None,
+                    assume_a        : Optional[str]     = None,
+                    **kwargs) -> SolverResult:
         r"""
         Instance method: Solves $ (A + \sigma I)x = b $ using backend's `linalg.solve`.
         

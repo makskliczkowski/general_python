@@ -85,10 +85,32 @@ class MinresSolverScipy(Solver):
                         sigma           : Optional[float] = None) -> StaticSolverFunc:
         """
         Return a backend-specific callable that runs MINRES.
-        The returned function must match the signature used by Solver.run_solver_func.
+        The returned function is wrapped via Solver._solver_wrap_compiled to handle
+        matvec/matrix/Fisher mode dispatching.
+        
+        Parameters:
+        -----------
+            backend_module:
+                The numerical backend (np or jnp).
+            use_matvec:
+                If True, expects a matvec function directly.
+            use_fisher:
+                If True, expects (s, s_p) Fisher decomposition.
+            use_matrix:
+                If True, expects a dense matrix A.
+            sigma:
+                Optional regularization (diagonal shift).
+                
+        Returns:
+        --------
+            StaticSolverFunc: A wrapped solver function.
         """
-        if backend_module is jnp and jspsla is not None and hasattr(jspsla, 'minres'):  # JAX path (if available)
-            @jax.jit
+        # Check for JAX backend - must verify JAX is actually available
+        # (when JAX is unavailable, jnp is aliased to np)
+        is_jax_backend = JAX_AVAILABLE and (backend_module is not np)
+        
+        if is_jax_backend and jspsla is not None and hasattr(jspsla, 'minres'):
+            # JAX path - jax.scipy.sparse.linalg.minres
             def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
                 x, info = jspsla.minres(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
                 # info==0 success; >0 no convergence; <0 illegal input
@@ -96,19 +118,21 @@ class MinresSolverScipy(Solver):
                 return SolverResult(x=x, converged=bool(conv), iterations=maxiter, residual_norm=None)
             return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
 
-        elif backend_module is np and spsla is not None:
+        elif spsla is not None:
+            # NumPy/SciPy path - scipy.sparse.linalg.minres
             def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
                 # Wrap callable into LinearOperator expected by SciPy
-                n = b.shape[0]
+                n   = b.shape[0]
                 Aop = spsla.LinearOperator((n, n), matvec=matvec, dtype=b.dtype)
                 Mop = None
                 if precond_apply is not None:
                     Mop = spsla.LinearOperator((n, n), matvec=precond_apply, dtype=b.dtype)
-                # capture iteration count via callback
-                it              = {'k': 0}
-                def _cb(_xk):   it['k'] += 1
-                x, info         = spsla.minres(Aop, b, x0=x0, rtol=tol, maxiter=maxiter, M=Mop, callback=_cb)
-                conv            = (info == 0)
+                # Capture iteration count via callback
+                it = {'k': 0}
+                def _cb(_xk):
+                    it['k'] += 1
+                x, info = spsla.minres(Aop, b, x0=x0, rtol=tol, maxiter=maxiter, M=Mop, callback=_cb)
+                conv    = (info == 0)
                 return SolverResult(x=x, converged=bool(conv), iterations=it['k'], residual_norm=None)
             return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
         else:
@@ -128,27 +152,63 @@ class MinresSolverScipy(Solver):
             s               : Optional[Array]                       = None,
             s_p             : Optional[Array]                       = None,
             **kwargs        : Any) -> 'SolverResult':
+        """
+        Static solve method for MINRES matching the Solver interface.
+        
+        Dispatches to the appropriate mode based on provided inputs:
+        - If `matvec` is provided: uses matvec mode
+        - If `s` and `s_p` are provided: uses Fisher mode (NQS)
+        - If `a` is provided: uses matrix mode
+        
+        Parameters:
+        -----------
+            matvec: Matrix-vector product function A @ v
+            b: Right-hand side vector
+            x0: Initial guess
+            tol: Convergence tolerance
+            maxiter: Maximum iterations
+            precond_apply: Optional preconditioner M^{-1}
+            backend_module: NumPy or JAX module
+            a: Optional dense matrix (alternative to matvec)
+            s, s_p: Optional Gram matrix factors (alternative to matvec)
+            **kwargs: Additional arguments (e.g., sigma for regularization)
+            
+        Returns:
+        --------
+            SolverResult with solution, convergence status, iterations, residual_norm
+        """
         try:
+            # Determine mode
+            use_matvec = (matvec is not None)
+            use_fisher = (s is not None and s_p is not None)
+            use_matrix = (a is not None and not use_fisher)
+            sigma = kwargs.get('sigma', None)
+            
+            # Get the wrapped solver function
             solver_func = MinresSolverScipy.get_solver_func(
                 backend_module = backend_module,
-                use_matvec     = (matvec is not None),
-                use_fisher     = (s is not None),
-                use_matrix     = (a is not None),
-                sigma          = kwargs.get('sigma', None)
+                use_matvec     = use_matvec and not use_fisher and not use_matrix,
+                use_fisher     = use_fisher,
+                use_matrix     = use_matrix,
+                sigma          = sigma
             )
-            return Solver.run_solver_func(
-                bck     = backend_module,
-                func    = solver_func,
-                matvec  = matvec,
-                a       = a,
-                s       = s,
-                s_p     = s_p,
-                b       = b,
-                x0      = x0,
-                tol     = tol,
-                maxiter = maxiter,
-                precond_apply = precond_apply
-            )
+            
+            # Dispatch based on mode
+            if use_fisher:
+                # Fisher mode: pass (s, s_p, b, x0, tol, maxiter, precond_apply)
+                return solver_func(s, s_p, b, x0, tol, maxiter, precond_apply, sigma=sigma)
+            elif use_matrix:
+                # Matrix mode: pass (a, b, x0, tol, maxiter, precond_apply)
+                return solver_func(a, b, x0, tol, maxiter, precond_apply, sigma=sigma)
+            elif use_matvec:
+                # Matvec mode: pass (matvec, b, x0, tol, maxiter, precond_apply)
+                return solver_func(matvec, b, x0, tol, maxiter, precond_apply)
+            else:
+                raise SolverError(SolverErrorMsg.MATVEC_FUNC_NOT_SET, 
+                                  "Must provide matvec, matrix A, or Fisher (s, s_p)")
+                
+        except SolverError:
+            raise
         except Exception as e:
             raise SolverError(SolverErrorMsg.CONV_FAILED, f"MINRES execution failed: {e}") from e
 
@@ -313,115 +373,124 @@ if JAX_AVAILABLE:
         """
         Core MINRES algorithm using JAX with jax.lax.fori_loop for JIT compilation.
         This implementation uses a functional loop compatible with JAX JIT.
+        
+        Note: All operations must be JAX-compatible - no Python bool/int/float 
+        conversions on traced values.
         """
-        ops = get_backend_ops('jax')
-        n   = b.shape[0]
+        n       = b.shape[0]
+        dtype   = b.dtype  # Preserve input dtype (may be complex)
         
         # Apply preconditioner helper
         def apply_precond(vec):
             return precond_apply(vec) if precond_apply is not None else vec
         
         # Initialize
-        x       = x0
-        r       = b - matvec(x)
-        y       = apply_precond(r)
-        beta1   = jnp.sqrt(jnp.dot(y, r))
+        r           = b - matvec(x0)
+        y           = apply_precond(r)
         
-        # Early exit if already converged
-        def early_check():
-            return SolverResult(x=x, converged=True, iterations=0, residual_norm=0.0)
+        # Use real part for beta since it should be real for symmetric A
+        beta1       = jnp.sqrt(jnp.real(jnp.vdot(y, r)))
         
-        def run_iterations():
-            v = y / beta1
+        # Safe division for initial v
+        beta1_safe  = jnp.where(beta1 == 0, 1.0, beta1)
+        v           = y / beta1_safe
+        
+        # Compute b norm for relative residual
+        bnorm       = jnp.linalg.norm(b)
+        bnorm       = jnp.where(bnorm == 0, 1.0, bnorm)
+        
+        # Initial state - use correct dtype for all vectors
+        # Use real dtype for scalars that should be real
+        real_dtype = jnp.float64 if dtype == jnp.complex128 else jnp.float32
+        
+        state = {
+            'x'             : x0.astype(dtype),
+            'v'             : v.astype(dtype),
+            'v_old'         : jnp.zeros(n, dtype=dtype),
+            'w_old1'        : jnp.zeros(n, dtype=dtype),
+            'w_old2'        : jnp.zeros(n, dtype=dtype),
+            'alpha_old'     : jnp.array(0.0, dtype=real_dtype),
+            'beta'          : jnp.array(beta1, dtype=real_dtype),
+            'c'             : jnp.array(1.0, dtype=real_dtype),
+            's'             : jnp.array(0.0, dtype=real_dtype),
+            'phi_bar'       : jnp.array(beta1, dtype=real_dtype),
+            'residual_norm' : jnp.array(jnp.abs(beta1), dtype=real_dtype),
+            'iterations'    : jnp.array(0, dtype=jnp.int32)
+        }
+        
+        def body_fun(k, state):
+            # Lanczos step
+            Av          = matvec(state['v'])
+            Av          = apply_precond(Av)
+            # alpha should be real for symmetric A
+            alpha       = jnp.real(jnp.vdot(state['v'], Av))
+
+            # Next Lanczos direction
+            v_new       = Av - alpha * state['v'] - state['beta'] * state['v_old']
+            y_new       = apply_precond(v_new)
+            beta_new    = jnp.sqrt(jnp.real(jnp.vdot(v_new, y_new)))
+            beta_new_safe = jnp.where(beta_new == 0, 1.0, beta_new)
+            v_next      = y_new / beta_new_safe
+
+            # Apply previous Givens rotation to get delta
+            delta       = state['c'] * state['alpha_old'] + state['s'] * alpha
             
-            # Initial state
-            state = {
-                'x'             : x,
-                'v'             : v,
-                'v_old'         : jnp.zeros(n),
-                'w_old1'        : jnp.zeros(n),
-                'w_old2'        : jnp.zeros(n),
-                'alpha_old'     : 0.0,
-                'beta'          : beta1,
-                'c'             : 1.0,
-                's'             : 0.0,
-                'phi_bar'       : beta1,
-                'residual_norm' : jnp.abs(beta1),
-                'converged'     : False,
-                'iterations'    : 0
+            # Compute new Givens rotation parameters
+            gamma       = state['s'] * state['alpha_old'] - state['c'] * alpha
+            epsilon     = state['s'] * beta_new
+            
+            # rho_bar for the current rotation
+            rho_bar     = -state['c'] * beta_new
+            
+            # Compute rho (for normalization)
+            rho         = jnp.sqrt(gamma**2 + beta_new**2)
+            rho_safe    = jnp.where(rho == 0, 1.0, rho)
+            
+            # New Givens rotation
+            c_new       = gamma / rho_safe
+            s_new       = beta_new / rho_safe
+            
+            # Update solution direction
+            w_new       = (state['v'] - delta * state['w_old1'] - epsilon * state['w_old2']) / rho_safe
+            
+            # Update solution
+            x_new       = state['x'] + (state['c'] * state['phi_bar']) * w_new
+            
+            # Update residual estimate
+            phi_bar_new     = state['s'] * state['phi_bar']
+            residual_norm_new = jnp.abs(phi_bar_new)
+            
+            return {
+                'x'             : x_new,
+                'v'             : v_next,
+                'v_old'         : state['v'],
+                'w_old1'        : w_new,
+                'w_old2'        : state['w_old1'],
+                'alpha_old'     : jnp.array(alpha, dtype=state['alpha_old'].dtype),
+                'beta'          : jnp.array(beta_new, dtype=state['beta'].dtype),
+                'c'             : jnp.array(c_new, dtype=state['c'].dtype),
+                's'             : jnp.array(s_new, dtype=state['s'].dtype),
+                'phi_bar'       : jnp.array(phi_bar_new, dtype=state['phi_bar'].dtype),
+                'residual_norm' : jnp.array(residual_norm_new, dtype=state['residual_norm'].dtype),
+                'iterations'    : jnp.array(k + 1, dtype=jnp.int32)
             }
-            
-            bnorm = jnp.linalg.norm(b)
-            bnorm = jnp.where(bnorm == 0, 1.0, bnorm)
-            
-            def body_fun(k, state):
-                # Lanczos step
-                Av          = matvec(state['v'])
-                Av          = apply_precond(Av)
-                alpha       = jnp.dot(state['v'], Av)
-
-                # Next Lanczos direction
-                v_new       = Av - alpha * state['v'] - state['beta'] * state['v_old']
-                y_new       = apply_precond(v_new)
-                beta_new    = jnp.sqrt(jnp.dot(v_new, y_new))
-                v_next      = jnp.where(beta_new > 0, y_new / beta_new, y_new)
-
-                # Apply Givens rotation
-                delta       = state['s'] * alpha - state['c'] * state['beta']
-                gamma       = state['c'] * alpha + state['s'] * state['beta']
-
-                # Compute new Givens rotation (using NumPy version in ops)
-                # For JAX, we need a pure implementation
-                c_new       = jnp.where(beta_new == 0, 1.0, jnp.where(jnp.abs(beta_new) > jnp.abs(gamma),
-                                   gamma / jnp.sqrt(gamma**2 + beta_new**2),
-                                   jnp.sign(gamma) / jnp.sqrt(1 + (beta_new/gamma)**2)))
-                s_new       = jnp.where(beta_new == 0, 0.0, jnp.where(jnp.abs(beta_new) > jnp.abs(gamma),
-                                   beta_new / jnp.sqrt(gamma**2 + beta_new**2),
-                                   c_new * beta_new / gamma))
-                rho         = jnp.sqrt(gamma**2 + beta_new**2)
-                
-                # Update solution
-                w_new       = (state['v'] - delta * state['w_old1'] - state['alpha_old'] * state['w_old2']) / rho
-                x_new       = state['x'] + (c_new * state['phi_bar']) * w_new
-                
-                # Update residual estimate
-                phi_bar_new         = -s_new * state['phi_bar']
-                residual_norm_new   = jnp.abs(phi_bar_new)
-                
-                # Check convergence
-                rel_res             = residual_norm_new / bnorm
-                converged_new       = rel_res <= tol
-                
-                return {
-                    'x'             : x_new,
-                    'v'             : v_next,
-                    'v_old'         : state['v'],
-                    'w_old1'        : w_new,
-                    'w_old2'        : state['w_old1'],
-                    'alpha_old'     : alpha,
-                    'beta'          : beta_new,
-                    'c'             : c_new,
-                    's'             : s_new,
-                    'phi_bar'       : phi_bar_new,
-                    'residual_norm' : residual_norm_new,
-                    'converged'     : converged_new,
-                    'iterations'    : k + 1
-                }
-            
-            final_state = lax.fori_loop(0, maxiter, body_fun, state)
-            
-            return SolverResult(
-                x               = final_state['x'],
-                converged       = bool(final_state['converged']),
-                iterations      = int(final_state['iterations']),
-                residual_norm   = float(final_state['residual_norm'])
-            )
         
-        return lax.cond(beta1 == 0, early_check, run_iterations)
+        final_state = lax.fori_loop(0, maxiter, body_fun, state)
+        
+        # Check convergence based on relative residual
+        rel_res     = final_state['residual_norm'] / bnorm
+        converged   = rel_res <= tol
+        
+        # Return SolverResult - values will be concrete after JIT execution
+        return SolverResult(
+            x               = final_state['x'],
+            converged       = converged,
+            iterations      = final_state['iterations'],
+            residual_norm   = final_state['residual_norm']
+        )
 
 else:
     _minres_logic_jax = None
-
 
 class MinresSolver(Solver):
     '''
@@ -450,11 +519,13 @@ class MinresSolver(Solver):
         """
         Return a backend-specific MINRES solver function.
         Uses native implementation with backend_ops.
+        
+        Note: Do NOT JIT the inner solver_func here - let _solver_wrap_compiled
+        handle the JIT compilation with proper static_argnames for matvec.
         """
         is_jax = (backend_module is not np) and JAX_AVAILABLE
         
         if is_jax and _minres_logic_jax is not None:
-            @jax.jit
             def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
                 return _minres_logic_jax(matvec, b, x0, tol, maxiter, precond_apply)
             return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
@@ -480,7 +551,13 @@ class MinresSolver(Solver):
         """
         Static solve method for MINRES matching the Solver interface.
         
-        Args:
+        Dispatches to the appropriate mode based on provided inputs:
+        - If `matvec` is provided: uses matvec mode
+        - If `s` and `s_p` are provided: uses Fisher mode (NQS)
+        - If `a` is provided: uses matrix mode
+        
+        Parameters:
+        -----------
             matvec: Matrix-vector product function A @ v
             b: Right-hand side vector
             x0: Initial guess
@@ -493,30 +570,43 @@ class MinresSolver(Solver):
             **kwargs: Additional arguments (e.g., sigma for regularization)
             
         Returns:
+        --------
             SolverResult with solution, convergence status, iterations, residual_norm
         """
         try:
+            # Determine mode
+            use_matvec  = (matvec is not None)
+            use_fisher  = (s is not None and s_p is not None)
+            use_matrix  = (a is not None and not use_fisher)
+            sigma       = kwargs.get('sigma', None)
+            
+            # Get the wrapped solver function
             solver_func = MinresSolver.get_solver_func(
                 backend_module = backend_module,
-                use_matvec     = (matvec is not None),
-                use_fisher     = (s is not None),
-                use_matrix     = (a is not None),
-                sigma          = kwargs.get('sigma', None)
+                use_matvec     = use_matvec and not use_fisher and not use_matrix,
+                use_fisher     = use_fisher,
+                use_matrix     = use_matrix,
+                sigma          = sigma
             )
-            return Solver.run_solver_func(
-                bck     = backend_module,
-                func    = solver_func,
-                matvec  = matvec,
-                a       = a,
-                s       = s,
-                s_p     = s_p,
-                b       = b,
-                x0      = x0,
-                tol     = tol,
-                maxiter = maxiter,
-                precond_apply = precond_apply
-            )
+            
+            # Dispatch based on mode
+            if use_fisher:
+                # Fisher mode: pass (s, s_p, b, x0, tol, maxiter, precond_apply)
+                return solver_func(s, s_p, b, x0, tol, maxiter, precond_apply, sigma=sigma)
+            elif use_matrix:
+                # Matrix mode: pass (a, b, x0, tol, maxiter, precond_apply)
+                return solver_func(a, b, x0, tol, maxiter, precond_apply, sigma=sigma)
+            elif use_matvec:
+                # Matvec mode: pass (matvec, b, x0, tol, maxiter, precond_apply)
+                return solver_func(matvec, b, x0, tol, maxiter, precond_apply)
+            else:
+                raise SolverError(SolverErrorMsg.MATVEC_FUNC_NOT_SET, "Must provide matvec, matrix A, or Fisher (s, s_p)")
+                
+        except SolverError:
+            raise
         except Exception as e:
             raise SolverError(SolverErrorMsg.CONV_FAILED, f"MINRES execution failed: {e}") from e
 
-    
+# -----------------------------------------------------------------------------
+#! EOF
+# -----------------------------------------------------------------------------

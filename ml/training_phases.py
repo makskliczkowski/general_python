@@ -242,9 +242,9 @@ def _get_presets() -> Dict[str, List[LearningPhase]]:
         "kitaev": [
             LearningPhase(
                 name            =   "pre", 
-                lr              =   5e-2, 
+                lr              =   6e-2, 
                 lr_schedule     =   "step", 
-                lr_kwargs       =   {'step_size': 35, 'lr_decay': 0.5},
+                lr_kwargs       =   {'step_size': 150, 'lr_decay': 0.5},
                 reg             =   5e-2
             ),
             LearningPhase(
@@ -263,6 +263,7 @@ def _get_presets() -> Dict[str, List[LearningPhase]]:
                 phase_type      =   PhaseType.REFINEMENT, 
                 lr              =   5e-3, 
                 lr_schedule     =   "cosine",
+                lr_kwargs       =   {'min_lr': 1e-4, 'lr_decay': 1e-2},
                 reg             =   1e-3, 
                 reg_schedule    =   "linear", 
                 reg_kwargs      =   {}
