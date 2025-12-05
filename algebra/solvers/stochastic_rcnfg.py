@@ -242,7 +242,7 @@ if JAX_AVAILABLE:
     @jax.jit
     def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """S = (1/N) * O^dag @ O (Standard SR)"""
-        return jnp.matmul(derivatives_c_h, derivatives_c)
+        return jnp.matmul(derivatives_c_h, derivatives_c) / n_samples
 
     @jax.jit
     def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
@@ -251,7 +251,7 @@ if JAX_AVAILABLE:
         # We want                   (N_s, N_s).
         # Correct math:             T = O . O^dag
         # Input derivatives_c_h is usually O^dag (N_p, N_s)
-        return jnp.matmul(derivatives_c, derivatives_c_h)
+        return jnp.matmul(derivatives_c, derivatives_c_h) / n_samples
     
     # -------------------------------------------------------
     

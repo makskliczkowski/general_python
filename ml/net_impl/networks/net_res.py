@@ -216,6 +216,7 @@ class ResNet(FlaxInterface):
                 dtype           : Any                                   = DEFAULT_JP_CPX_TYPE,
                 param_dtype     : Optional[Any]                         = None,
                 seed            : int                                   = 0,
+                backend         : str                                   = "jax",
                 **kwargs):
 
         if not JAX_AVAILABLE:
@@ -254,7 +255,7 @@ class ResNet(FlaxInterface):
             net_args    = (),
             net_kwargs  = net_kwargs,
             input_shape = input_shape,
-            backend     = "jax",
+            backend     = backend,
             dtype       = dtype,
             seed        = seed,
             **kwargs
