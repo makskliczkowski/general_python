@@ -1288,6 +1288,291 @@ def kramers_kronig_transform(
     
     return be.asarray(Re_chi, dtype=be.float64)
 
+
+# =============================================================================
+#! SpectralModule - Hamiltonian wrapper for spectral functions
+# =============================================================================
+
+class SpectralModule:
+    """
+    Spectral function module for Hamiltonians.
+    
+    Provides convenient access to Green's functions, spectral functions,
+    and dynamical correlation functions. Supports both full ED and Lanczos.
+    
+    Usage
+    -----
+    >>> hamil.diagonalize()
+    >>> spec = hamil.spectral
+    >>> 
+    >>> # Green's function at frequencies omega
+    >>> omega = np.linspace(-5, 5, 100)
+    >>> G = spec.greens_function(omega, operator_left, operator_right)
+    >>> 
+    >>> # Spectral function A(ω) = -Im[G(ω)]/π
+    >>> A = spec.spectral_function(omega, operator)
+    >>> 
+    >>> # Dynamic structure factor (via Lanczos, no full diag needed)
+    >>> S_q_omega = spec.dynamic_structure_factor(omega, S_q_operator)
+    """
+    
+    def __init__(self, hamiltonian):
+        """
+        Initialize the spectral module.
+        
+        Parameters
+        ----------
+        hamiltonian : Hamiltonian
+            The Hamiltonian instance.
+        """
+        self._hamil = hamiltonian
+        
+    def _check_diagonalized(self):
+        """Check that Hamiltonian is diagonalized."""
+        if self._hamil._eig_val is None or len(self._hamil._eig_val) == 0:
+            raise RuntimeError("Hamiltonian must be diagonalized. Call hamil.diagonalize()")
+    
+    @property
+    def energies(self) -> Array:
+        """Get eigenvalues."""
+        self._check_diagonalized()
+        return self._hamil._eig_val
+    
+    @property
+    def eigenstates(self) -> Array:
+        """Get eigenstates."""
+        self._check_diagonalized()
+        return self._hamil._eig_vec
+    
+    @property
+    def ground_state_energy(self) -> float:
+        """Ground state energy E_0."""
+        return self.energies[0]
+    
+    def greens_function(self,
+                        omega: Array,
+                        operator_left: Array = None,
+                        operator_right: Array = None,
+                        state_idx: int = 0,
+                        eta: float = 0.05,
+                        use_lanczos: bool = False,
+                        max_krylov: int = 200) -> Array:
+        """
+        Compute Green's function G(ω) = <ψ|A† (ω - H + E_0 + iη)⁻¹ B|ψ>.
+        
+        Parameters
+        ----------
+        omega : Array
+            Frequency points.
+        operator_left : Array, optional
+            Left operator A (in eigenbasis or Hilbert space).
+            If None, uses identity.
+        operator_right : Array, optional
+            Right operator B. If None, uses operator_left.
+        state_idx : int
+            Reference state index (default: ground state).
+        eta : float
+            Broadening parameter.
+        use_lanczos : bool
+            Use Lanczos continued fraction (no full diagonalization needed).
+        max_krylov : int
+            Max Krylov dimension for Lanczos.
+            
+        Returns
+        -------
+        Array
+            Green's function G(ω), shape (len(omega),).
+        """
+        omega = np.asarray(omega)
+        
+        if use_lanczos:
+            from .krylov.spectral_backend_krylov import greens_function_lanczos_vectors
+            
+            psi = self.eigenstates[:, state_idx] if self._hamil._eig_vec is not None else None
+            if psi is None:
+                raise ValueError("Need at least one eigenstate for reference.")
+            
+            v_right = operator_right @ psi if operator_right is not None else psi
+            v_left = operator_left @ psi if operator_left is not None else v_right
+            
+            H = self._hamil.hamil if self._hamil.hamil is not None else self._hamil.matvec_fun
+            
+            return greens_function_lanczos_vectors(
+                omega, H, v_right, v_left,
+                E0=self.ground_state_energy,
+                eta=eta, max_krylov=max_krylov
+            )
+        else:
+            self._check_diagonalized()
+            
+            # Transform operators to eigenbasis
+            if operator_left is not None:
+                trans_L = self.eigenstates.conj().T @ operator_left @ self.eigenstates[:, state_idx]
+            else:
+                trans_L = self.eigenstates[:, state_idx]
+                
+            if operator_right is not None:
+                trans_R = self.eigenstates.conj().T @ operator_right @ self.eigenstates[:, state_idx]
+            else:
+                trans_R = trans_L
+            
+            return greens_function_manybody(
+                omega, self.energies, trans_L, trans_R, eta=eta
+            )
+    
+    def spectral_function(self,
+                         omega: Array,
+                         operator: Array = None,
+                         state_idx: int = 0,
+                         eta: float = 0.05,
+                         use_lanczos: bool = False,
+                         max_krylov: int = 200) -> Array:
+        """
+        Compute spectral function A(ω) = -Im[G(ω)]/π.
+        
+        Parameters
+        ----------
+        omega : Array
+            Frequency points.
+        operator : Array, optional
+            Operator for spectral function. If None, uses diagonal.
+        state_idx : int
+            Reference state.
+        eta : float
+            Broadening.
+        use_lanczos : bool
+            Use Lanczos method.
+        max_krylov : int
+            Max Krylov dimension.
+            
+        Returns
+        -------
+        Array
+            Spectral function A(ω).
+        """
+        G = self.greens_function(
+            omega, operator, operator, state_idx,
+            eta, use_lanczos, max_krylov
+        )
+        return -np.imag(G) / np.pi
+    
+    def dynamic_structure_factor(self,
+                                omega: Array,
+                                operator: Array,
+                                state_idx: int = 0,
+                                eta: float = 0.05,
+                                use_lanczos: bool = True,
+                                max_krylov: int = 200) -> Array:
+        """
+        Compute dynamic structure factor S(ω) for an operator.
+        
+        S(ω) = -Im[G(ω)]/π where G = <gs|O†(ω-H+E_0+iη)⁻¹O|gs>
+        
+        Parameters
+        ----------
+        omega : Array
+            Frequency points.
+        operator : Array
+            Operator O (e.g., S_q for spin structure factor).
+        state_idx : int
+            Reference state (default: ground state).
+        eta : float
+            Broadening.
+        use_lanczos : bool
+            Use Lanczos (default: True, more memory efficient).
+        max_krylov : int
+            Max Krylov dimension.
+            
+        Returns
+        -------
+        Array
+            Dynamic structure factor S(ω).
+        """
+        return self.spectral_function(
+            omega, operator, state_idx, eta, use_lanczos, max_krylov
+        )
+    
+    def susceptibility(self,
+                      omega: Array,
+                      operator_A: Array,
+                      operator_B: Array = None,
+                      eta: float = 0.05,
+                      temperature: float = 0.0) -> Array:
+        """
+        Compute dynamical susceptibility χ_AB(ω).
+        
+        χ(ω) = i ∫ dt e^{iωt} <[A(t), B]> θ(t)
+        
+        Parameters
+        ----------
+        omega : Array
+            Frequency points.
+        operator_A : Array
+            First operator.
+        operator_B : Array, optional
+            Second operator. If None, uses operator_A.
+        eta : float
+            Broadening.
+        temperature : float
+            Temperature (0 = ground state only).
+            
+        Returns
+        -------
+        Array
+            Susceptibility χ(ω).
+        """
+        self._check_diagonalized()
+        
+        if operator_B is None:
+            operator_B = operator_A
+            
+        if temperature == 0.0:
+            # Zero temperature: ground state only
+            return self.greens_function(
+                omega, operator_A, operator_B, 
+                state_idx=0, eta=eta, use_lanczos=False
+            )
+        else:
+            # Finite temperature
+            return greens_function_manybody_finite_T(
+                omega, self.energies, operator_A, operator_B,
+                temperature=temperature, eta=eta
+            )
+    
+    def help(self):
+        """Print help for spectral module."""
+        print("""
+        SpectralModule - Spectral functions for Hamiltonians
+        =====================================================
+        
+        Requires: hamil.diagonalize() (or use_lanczos=True for some methods)
+        
+        Methods:
+        --------
+        greens_function(omega, A, B)        - G(ω) = <ψ|A†(ω-H+E₀+iη)⁻¹B|ψ>
+        spectral_function(omega, O)         - A(ω) = -Im[G]/π
+        dynamic_structure_factor(omega, O)  - S(ω) for dynamical correlations
+        susceptibility(omega, A, B)         - χ_AB(ω) response function
+        
+        Example:
+        --------
+        >>> omega = np.linspace(-5, 5, 200)
+        >>> 
+        >>> # Spectral function from full ED
+        >>> A_omega = hamil.spectral.spectral_function(omega, Sz_op, eta=0.1)
+        >>> 
+        >>> # Dynamic structure factor via Lanczos (no full diag)
+        >>> S_q = hamil.spectral.dynamic_structure_factor(
+        ...     omega, S_q_operator, use_lanczos=True, max_krylov=100
+        ... )
+        """)
+
+
+def get_spectral_module(hamiltonian) -> SpectralModule:
+    """Factory function to create spectral module."""
+    return SpectralModule(hamiltonian)
+
+
 # =============================================================================
 # Exports
 # =============================================================================
@@ -1318,6 +1603,9 @@ __all__ = [
     'conductivity_kubo_bubble',
     # Kramers-Kronig
     'kramers_kronig_transform',
+    # Module wrapper
+    'SpectralModule',
+    'get_spectral_module',
 ]
 
 # =============================================================================

@@ -13,10 +13,12 @@ License     : MIT
 '''
 
 import numpy as np
+from typing import Optional
 
 try:
     from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
     from ..maths.math_utils import mod_euc
+    from .tools.lattice_kspace import HighSymmetryPoints
 except ImportError:
     raise ImportError("Could not import Lattice base classes. Ensure the module is in the PYTHONPATH.")
 
@@ -34,8 +36,16 @@ class HoneycombLattice(Lattice):
     Implementation of the Honeycomb Lattice.
     
     The honeycomb lattice is a 2D lattice with a hexagonal structure. The lattice consists of
-    two flattices (A and B) arranged in a hexagonal pattern. Nearest and next-nearest neighbors
+    two sublattices (A and B) arranged in a hexagonal pattern. Nearest and next-nearest neighbors
     are computed based on a hexagonal unit cell.
+    
+    High-symmetry points in the Brillouin zone:
+    - Γ (Gamma): Zone center at (0, 0)
+    - K: Dirac point at (2/3, 1/3) - hosts linear band crossings in graphene
+    - K': Other Dirac point at (1/3, 2/3)
+    - M: Edge midpoint at (1/2, 0)
+    
+    Default path: Γ → K → M → Γ
     
     References:
         - Phys. Rev. Research 3, 013160 (2021)
@@ -89,6 +99,27 @@ class HoneycombLattice(Lattice):
 
     def __repr__(self):
         return self.__str__()
+
+    # ---------------------------------------------------------------------------------
+    #! High-symmetry points
+    # ---------------------------------------------------------------------------------
+
+    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
+        """
+        Return high-symmetry points for the honeycomb lattice.
+        
+        Returns
+        -------
+        HighSymmetryPoints
+            High-symmetry points for the hexagonal Brillouin zone:
+            - Γ (Gamma): Zone center (0, 0)
+            - K: Dirac point at (2/3, 1/3) - hosts linear band crossings
+            - K': Other Dirac point at (1/3, 2/3)
+            - M: Edge midpoint at (1/2, 0)
+            
+            Default path: Γ → K → M → Γ
+        """
+        return HighSymmetryPoints.honeycomb_2d()
 
     ################################### 
     

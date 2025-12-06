@@ -1,9 +1,19 @@
 import numpy as np
+from typing import Optional
 from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+from .tools.lattice_kspace import HighSymmetryPoints
 
 class HexagonalLattice(Lattice):
     """ 
     General Hexagonal Lattice type up to three dimensions.
+    
+    High-symmetry points in the Brillouin zone (2D):
+    - Γ (Gamma): Zone center (0, 0)
+    - K: Corner of hexagonal BZ (2/3, 1/3)
+    - K': Inequivalent corner (1/3, 2/3)
+    - M: Edge midpoint (1/2, 0)
+    
+    Default path: Γ → K → M → Γ
     """
 
     def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):
@@ -60,6 +70,22 @@ class HexagonalLattice(Lattice):
 
     def __repr__(self):
         return self.__str__()
+
+    # -------------------------------------------------------------------------------------------
+    #! High-symmetry points
+    # -------------------------------------------------------------------------------------------
+    
+    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
+        """
+        Return high-symmetry points for the hexagonal lattice.
+        
+        Returns
+        -------
+        HighSymmetryPoints
+            High-symmetry points for the hexagonal Brillouin zone.
+            Uses same points as honeycomb (hexagonal BZ structure).
+        """
+        return HighSymmetryPoints.hexagonal_2d()
 
     ######################################### GETTERS ###########################################
 

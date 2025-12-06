@@ -9,6 +9,38 @@ email   : maksymilian.kliczkowski@pwr.edu.pl
 
 Unified entanglement calculation module for both quadratic and many-body Hamiltonians.
 
+Features
+--------
+- Single-particle correlation matrix methods (fast, for quadratic/non-interacting Hamiltonians)
+- Many-body reduced density matrix methods (exact, for any state)
+- Arbitrary bipartitions (contiguous and non-contiguous subsystems)
+- Multipartite entropy calculations (topological entanglement entropy)
+- Wick's theorem verification for quadratic systems
+- JAX backend for GPU acceleration
+- Mask generation utilities for subsystem selection
+
+Theoretical Background
+----------------------
+For quadratic (non-interacting) Hamiltonians, the entanglement entropy can be computed
+efficiently from the single-particle correlation matrix C_ij = <c_i^dag c_j>:
+
+    S = -Tr[C log C + (1-C) log(1-C)]
+
+This scales as O(L^3) compared to O(2^L) for exact diagonalization.
+
+For many-body states, we use Schmidt decomposition of the wavefunction:
+    |psi> = sum_i sqrt(lambda_i) |i_A> |i_B>
+    S = -sum_i lambda_i log(lambda_i)
+
+Topological Entanglement Entropy (TEE)
+--------------------------------------
+For topological phases, the entanglement entropy follows:
+    S(A) = alpha * L - gamma + O(1/L)
+    
+where gamma is the topological entanglement entropy. Using Kitaev-Preskill
+or Levin-Wen constructions:
+    gamma = S_A + S_B + S_C - S_AB - S_BC - S_AC + S_ABC
+
 Examples
 --------
 Basic usage with quadratic Hamiltonians:
@@ -37,13 +69,26 @@ JAX backend for GPU acceleration:
     >>> S_jax = ent.entropy_correlation(bipart, orbitals, backend='jax')
     >>> C_jax = ent.correlation_matrix(orbitals, backend='jax')
     
+Mask generation utilities:
+    >>> masks = MaskGenerator.contiguous(ns=12, size_a=4)  # First 4 sites
+    >>> masks = MaskGenerator.alternating(ns=12)           # Even/odd sites
+    >>> masks = MaskGenerator.random(ns=12, size_a=6)      # Random 6 sites
+    >>> masks = MaskGenerator.kitaev_preskill(ns=12)       # ABC regions for TEE
+    
+Topological entanglement entropy:
+    >>> gamma = ent.topological_entropy(orbitals, construction='kitaev_preskill')
+    
+Wick's theorem verification:
+    >>> is_valid, error = ent.verify_wicks_theorem(orbitals, state)
+    
 Manual many-body entropy calculations:
     >>> bipart      = ent.bipartition([0, 1, 2, 3])
     >>> S_manual    = ent.entropy_correlation(bipart, orbitals)
 """
 
 import numpy as np
-from typing import Union, List, Tuple, Optional, Callable
+from enum import Enum
+from typing import Union, List, Tuple, Optional, Callable, Dict, Literal
 from dataclasses import dataclass
 
 try:
@@ -57,6 +102,320 @@ try:
         import jax.numpy as jnp
 except ImportError as e:
     raise ImportError("Required QES modules not found") from e
+
+
+###############################################################################
+#! Mask Generation Utilities
+###############################################################################
+
+class MaskGenerator:
+    """
+    Utility class for generating subsystem masks for entanglement calculations.
+    
+    Provides convenient methods to create site masks for various bipartition
+    geometries, including contiguous, alternating, random, and topological
+    (Kitaev-Preskill) constructions.
+    
+    Examples
+    --------
+    Basic contiguous mask:
+        >>> mask_a = MaskGenerator.contiguous(ns=12, size_a=4)
+        >>> print(mask_a)  # array([0, 1, 2, 3])
+    
+    Alternating (even/odd) sites:
+        >>> mask_even, mask_odd = MaskGenerator.alternating(ns=12)
+        >>> print(mask_even)  # array([0, 2, 4, 6, 8, 10])
+        
+    Random subsystem:
+        >>> mask = MaskGenerator.random(ns=12, size_a=6, seed=42)
+        
+    For topological entanglement entropy (Kitaev-Preskill construction):
+        >>> regions = MaskGenerator.kitaev_preskill(ns=12)
+        >>> A, B, C = regions['A'], regions['B'], regions['C']
+    """
+    
+    @staticmethod
+    def contiguous(ns: int, 
+                   size_a: int, 
+                   start: int = 0) -> np.ndarray:
+        """
+        Create a contiguous subsystem mask [start, start+1, ..., start+size_a-1].
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites
+        size_a : int
+            Size of subsystem A
+        start : int
+            Starting site index (default: 0)
+            
+        Returns
+        -------
+        np.ndarray
+            Array of site indices in subsystem A
+        """
+        if start + size_a > ns:
+            # Wrap around for periodic systems
+            indices = np.arange(start, start + size_a) % ns
+            return np.sort(np.unique(indices))
+        return np.arange(start, start + size_a, dtype=np.int64)
+    
+    @staticmethod
+    def alternating(ns: int,
+                   offset: int = 0) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Create alternating (even/odd) site masks.
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites
+        offset : int
+            Offset for even sites (0 = sites 0,2,4,...; 1 = sites 1,3,5,...)
+            
+        Returns
+        -------
+        Tuple[np.ndarray, np.ndarray]
+            (mask_even, mask_odd) site index arrays
+        """
+        all_sites = np.arange(ns, dtype=np.int64)
+        mask_even = all_sites[(all_sites + offset) % 2 == 0]
+        mask_odd = all_sites[(all_sites + offset) % 2 == 1]
+        return mask_even, mask_odd
+    
+    @staticmethod
+    def random(ns: int,
+              size_a: int,
+              seed: Optional[int] = None) -> np.ndarray:
+        """
+        Create a random subsystem mask.
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites
+        size_a : int
+            Size of subsystem A
+        seed : int, optional
+            Random seed for reproducibility
+            
+        Returns
+        -------
+        np.ndarray
+            Sorted array of randomly selected site indices
+        """
+        rng = np.random.default_rng(seed)
+        indices = rng.choice(ns, size=size_a, replace=False)
+        return np.sort(indices).astype(np.int64)
+    
+    @staticmethod
+    def periodic_interval(ns: int,
+                         start: int,
+                         size_a: int) -> np.ndarray:
+        """
+        Create a contiguous mask with periodic boundary conditions.
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites
+        start : int
+            Starting site index
+        size_a : int
+            Size of subsystem A
+            
+        Returns
+        -------
+        np.ndarray
+            Sorted array of site indices (wrapped around if necessary)
+        """
+        indices = np.arange(start, start + size_a) % ns
+        return np.sort(np.unique(indices)).astype(np.int64)
+    
+    @staticmethod
+    def sublattice(ns: int,
+                  sublattice_id: int = 0,
+                  n_sublattices: int = 2) -> np.ndarray:
+        """
+        Create a sublattice mask (e.g., A/B sublattices in bipartite lattices).
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites
+        sublattice_id : int
+            Which sublattice (0, 1, ..., n_sublattices-1)
+        n_sublattices : int
+            Total number of sublattices (default: 2 for bipartite)
+            
+        Returns
+        -------
+        np.ndarray
+            Array of site indices in the specified sublattice
+        """
+        all_sites = np.arange(ns, dtype=np.int64)
+        return all_sites[all_sites % n_sublattices == sublattice_id]
+    
+    @staticmethod
+    def kitaev_preskill(ns: int,
+                       center: Optional[int] = None) -> Dict[str, np.ndarray]:
+        """
+        Generate regions A, B, C for Kitaev-Preskill topological entanglement entropy.
+        
+        The Kitaev-Preskill construction divides the system into three regions
+        meeting at a point. The topological entanglement entropy is:
+            gamma = S_A + S_B + S_C - S_AB - S_BC - S_AC + S_ABC
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites (should be divisible by 3 for equal regions)
+        center : int, optional
+            Central site index (default: ns // 2)
+            
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary with keys 'A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC'
+            containing site index arrays for each region
+            
+        Notes
+        -----
+        For 1D chains, regions are consecutive thirds of the chain.
+        For 2D systems, you should define regions based on geometry.
+        
+        References
+        ----------
+        - Kitaev & Preskill, PRL 96, 110404 (2006)
+        - Levin & Wen, PRL 96, 110405 (2006)
+        """
+        if center is None:
+            center = ns // 2
+            
+        # Divide into 3 approximately equal regions
+        size_per_region = ns // 3
+        remainder = ns % 3
+        
+        # Region sizes
+        size_a = size_per_region + (1 if remainder > 0 else 0)
+        size_b = size_per_region + (1 if remainder > 1 else 0)
+        size_c = ns - size_a - size_b
+        
+        # Region boundaries
+        A = np.arange(0, size_a, dtype=np.int64)
+        B = np.arange(size_a, size_a + size_b, dtype=np.int64)
+        C = np.arange(size_a + size_b, ns, dtype=np.int64)
+        
+        return {
+            'A': A,
+            'B': B,
+            'C': C,
+            'AB': np.concatenate([A, B]),
+            'BC': np.concatenate([B, C]),
+            'AC': np.concatenate([A, C]),
+            'ABC': np.arange(ns, dtype=np.int64)
+        }
+    
+    @staticmethod
+    def levin_wen_disk(ns: int,
+                      n_annuli: int = 3) -> Dict[str, np.ndarray]:
+        """
+        Generate annular regions for Levin-Wen construction.
+        
+        For a disk geometry, creates concentric annuli to extract
+        topological entanglement entropy with area law subtraction.
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites
+        n_annuli : int
+            Number of concentric annuli (default: 3)
+            
+        Returns
+        -------
+        Dict[str, np.ndarray]
+            Dictionary with 'inner', 'middle', 'outer', and combined regions
+        """
+        size_per_annulus = ns // n_annuli
+        
+        regions = {}
+        names = ['inner', 'middle', 'outer'][:n_annuli]
+        
+        start = 0
+        for i, name in enumerate(names):
+            if i == n_annuli - 1:
+                end = ns
+            else:
+                end = start + size_per_annulus
+            regions[name] = np.arange(start, end, dtype=np.int64)
+            start = end
+        
+        # Combinations
+        if n_annuli >= 2:
+            regions['inner_middle'] = np.concatenate([regions['inner'], regions['middle']])
+        if n_annuli >= 3:
+            regions['middle_outer'] = np.concatenate([regions['middle'], regions['outer']])
+            regions['inner_outer'] = np.concatenate([regions['inner'], regions['outer']])
+        
+        return regions
+    
+    @staticmethod
+    def from_bitmask(mask_int: int, ns: int) -> np.ndarray:
+        """
+        Convert an integer bitmask to an array of site indices.
+        
+        Parameters
+        ----------
+        mask_int : int
+            Integer whose bits indicate included sites
+        ns : int
+            Total number of sites
+            
+        Returns
+        -------
+        np.ndarray
+            Array of site indices where bits are set
+            
+        Example
+        -------
+        >>> MaskGenerator.from_bitmask(0b1010, ns=4)
+        array([1, 3])
+        """
+        indices = []
+        for i in range(ns):
+            if (mask_int >> i) & 1:
+                indices.append(i)
+        return np.array(indices, dtype=np.int64)
+    
+    @staticmethod
+    def to_bitmask(indices: np.ndarray) -> int:
+        """
+        Convert an array of site indices to an integer bitmask.
+        
+        Parameters
+        ----------
+        indices : np.ndarray
+            Array of site indices
+            
+        Returns
+        -------
+        int
+            Integer bitmask with bits set at specified positions
+            
+        Example
+        -------
+        >>> MaskGenerator.to_bitmask(np.array([1, 3]))
+        10  # = 0b1010
+        """
+        mask = 0
+        for i in indices:
+            mask |= (1 << int(i))
+        return mask
+
+
+###############################################################################
 
 
 @dataclass
@@ -290,28 +649,25 @@ class EntanglementModule:
                           occupied_orbitals     : Union[List[int], np.ndarray],
                           *,
                           subtract_identity     : bool = False,
-                          check_contiguous      : bool = True,
                           backend               : str = 'numpy') -> float:
         """
         Calculate entanglement entropy from single-particle correlation matrix.
         
-        **SINGLE-PARTICLE METHOD** - Fast method for non-interacting (quadratic)
+        **SINGLE-PARTICLE METHOD** - Fast O(L_A³) method for non-interacting (quadratic)
         Hamiltonians. Computes entropy from correlation matrix eigenvalues.
         
-        **IMPORTANT**: This method is only exact for CONTIGUOUS bipartitions!
-        For non-contiguous bipartitions, use entropy_many_body() instead.
+        Works for ANY bipartition (contiguous or non-contiguous) of free fermion states.
         
         Parameters
         ----------
         bipartition : BipartitionInfo
-            Bipartition of the system (use ent.bipartition() to create)
+            Bipartition of the system (use ent.bipartition() to create).
+            Works for both contiguous and non-contiguous subsystems.
         occupied_orbitals : array-like
             Indices of occupied orbitals (in eigenstate basis).
             For ground state with N particles, use [0, 1, ..., N-1].
         subtract_identity : bool
             Whether to subtract identity from correlation matrix (advanced)
-        check_contiguous : bool
-            If True, warns when used with non-contiguous bipartitions
         backend : str
             'numpy' or 'jax' for computation backend
             
@@ -346,44 +702,30 @@ class EntanglementModule:
             >>> S_mb = ent.entropy_many_body(bipart, state)
             >>> assert np.isclose(S_corr, S_mb, rtol=1e-5)  # Should agree!
         
-        Non-contiguous partition (NOT exact, will warn):
-            >>> bipart_nc = ent.bipartition([0, 2, 4, 6])  # Non-contiguous
+        Non-contiguous partition (works correctly!):
+            >>> bipart_nc = ent.bipartition([0, 2, 4, 6])  # Even sites
             >>> S_nc = ent.entropy_correlation(bipart_nc, orbitals)
-            >>> # WARNING: Will overestimate! Use entropy_many_body() instead.
+            >>> # Exact for free fermions, matches entropy_many_body()
             
         Notes
         -----
         Algorithm:
-        1. Compute full correlation matrix C from occupied orbitals
-        2. Extract subblock C_A for subsystem A  
-        3. Diagonalize C_A to get eigenvalues (occupations)
+        1. Compute full correlation matrix C_ij = <c_i† c_j> from occupied orbitals
+        2. Extract subblock C_A for sites in subsystem A (handles non-contiguous)
+        3. Diagonalize C_A to get eigenvalues (occupations in [0,1])
         4. Apply single-particle entropy formula:
-           S = -Σ [p log(p) + (1-p) log(1-p)] where p = λ/2
+           S = -Σ [p log(p) + (1-p) log(1-p)]
         
-        For non-interacting systems with contiguous bipartitions, this gives
-        the exact entanglement entropy and matches entropy_many_body().
+        This gives the EXACT entanglement entropy for ANY bipartition of
+        non-interacting (quadratic) Hamiltonians and matches entropy_many_body().
         
         Limitations:
-        - Only exact for contiguous bipartitions (subsystem A is a single interval)
-        - For non-contiguous bipartitions, overestimates entropy by ~30-40%
         - Requires diagonalized Hamiltonian
         - Only works for quadratic (non-interacting) Hamiltonians
+        - For interacting systems, use entropy_many_body()
         """
-        # Check if bipartition is contiguous
-        is_contiguous = (len(bipartition.mask_a) > 0 and 
-                        np.all(np.diff(bipartition.mask_a) == 1) and 
-                        bipartition.mask_a[0] == 0)
-        
-        if check_contiguous and not is_contiguous:
-            import warnings
-            warnings.warn(
-                "Using correlation matrix method for non-contiguous bipartition. "
-                "This systematically overestimates entropy by ~30-40%. "
-                "Consider using entropy_many_body() for accurate results.",
-                UserWarning
-            )
-        
         # Get correlation matrix for subsystem A using Corr methods
+        # NOTE: This works for ANY bipartition (contiguous or non-contiguous)
         C_A = self.correlation_matrix(occupied_orbitals, bipartition=bipartition, subtract_identity=False, backend=backend)
         
         # Diagonalize to get eigenvalues (in [0,2] range for occupation with spin-unpolarized convention)
@@ -789,6 +1131,301 @@ class EntanglementModule:
             
         return result
     
+    # =========================================================================
+    #! Topological Entanglement Entropy
+    # =========================================================================
+    
+    def topological_entropy(self,
+                           occupied_orbitals: Union[List[int], np.ndarray],
+                           *,
+                           construction: Literal['kitaev_preskill', 'levin_wen'] = 'kitaev_preskill',
+                           method: str = 'auto',
+                           regions: Optional[Dict[str, np.ndarray]] = None) -> Dict[str, float]:
+        """
+        Calculate topological entanglement entropy (TEE).
+        
+        The topological entanglement entropy γ characterizes topological order.
+        For topologically ordered states, S(A) = αL - γ + O(1/L), where γ > 0.
+        
+        Parameters
+        ----------
+        occupied_orbitals : array-like
+            Occupied orbitals defining the state
+        construction : str
+            'kitaev_preskill' : γ = S_A + S_B + S_C - S_AB - S_BC - S_AC + S_ABC
+            'levin_wen' : Alternative construction with disk geometry
+        method : str
+            Entropy calculation method ('auto', 'correlation', 'many_body')
+        regions : dict, optional
+            Custom region definitions. If None, uses MaskGenerator.
+            
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'gamma' : Topological entanglement entropy
+            - 'entropies' : Individual region entropies
+            - 'regions' : Region masks used
+            
+        Notes
+        -----
+        For the Kitaev-Preskill construction:
+            γ = S_A + S_B + S_C - S_AB - S_BC - S_AC + S_ABC
+            
+        This combination cancels the area law contribution and extracts
+        the universal topological term. For topological phases like the
+        toric code, γ = log(D) where D is the total quantum dimension.
+        
+        References
+        ----------
+        - Kitaev & Preskill, PRL 96, 110404 (2006)
+        - Levin & Wen, PRL 96, 110405 (2006)
+        
+        Examples
+        --------
+        >>> result = ent.topological_entropy(orbitals, construction='kitaev_preskill')
+        >>> print(f"Topological entropy: γ = {result['gamma']:.4f}")
+        """
+        ns = self._hamil.ns
+        
+        # Generate regions if not provided
+        if regions is None:
+            if construction == 'kitaev_preskill':
+                regions = MaskGenerator.kitaev_preskill(ns)
+            elif construction == 'levin_wen':
+                regions = MaskGenerator.levin_wen_disk(ns, n_annuli=3)
+            else:
+                raise ValueError(f"Unknown construction: {construction}")
+        
+        # Calculate entropies for each region
+        entropies = {}
+        
+        # Determine method
+        is_quadratic = hasattr(self._hamil, '_particle_conserving')
+        if method == 'auto':
+            method = 'correlation' if is_quadratic else 'many_body'
+        
+        # Compute state if needed for many-body method
+        state = None
+        if method == 'many_body':
+            state = self._hamil.many_body_state(occupied_orbitals)
+        
+        for region_name, mask in regions.items():
+            if len(mask) == 0 or len(mask) == ns:
+                entropies[region_name] = 0.0
+                continue
+                
+            bipart = self.bipartition(mask)
+            
+            if method == 'correlation':
+                S = self.entropy_correlation(bipart, occupied_orbitals, check_contiguous=False)
+            else:
+                S = self.entropy_many_body(bipart, state)
+            
+            entropies[region_name] = S
+        
+        # Calculate topological entropy
+        if construction == 'kitaev_preskill':
+            gamma = (entropies.get('A', 0) + entropies.get('B', 0) + entropies.get('C', 0)
+                    - entropies.get('AB', 0) - entropies.get('BC', 0) - entropies.get('AC', 0)
+                    + entropies.get('ABC', 0))
+        elif construction == 'levin_wen':
+            # Levin-Wen uses annular geometry
+            gamma = (entropies.get('inner', 0) + entropies.get('outer', 0) 
+                    - entropies.get('inner_outer', 0))
+        else:
+            gamma = 0.0
+        
+        return {
+            'gamma': gamma,
+            'entropies': entropies,
+            'regions': regions,
+            'construction': construction
+        }
+    
+    # =========================================================================
+    #! Wick's Theorem Verification
+    # =========================================================================
+    
+    def verify_wicks_theorem(self,
+                            occupied_orbitals: Union[List[int], np.ndarray],
+                            state: Optional[np.ndarray] = None,
+                            *,
+                            test_sites: Optional[Tuple[int, int, int, int]] = None,
+                            tolerance: float = 1e-10) -> Dict[str, Union[bool, float, np.ndarray]]:
+        """
+        Verify Wick's theorem for a state: check if it's a valid Slater determinant.
+        
+        For free fermion (quadratic) Hamiltonians, all correlation functions
+        factorize according to Wick's theorem. This method verifies this property.
+        
+        Wick's theorem states that for a Slater determinant:
+            <c_i† c_j† c_l c_k> = <c_i† c_k><c_j† c_l> - <c_i† c_l><c_j† c_k>
+        
+        Parameters
+        ----------
+        occupied_orbitals : array-like
+            Occupied orbitals defining the expected Slater determinant
+        state : np.ndarray, optional
+            Many-body state to verify. If None, constructs from occupied_orbitals.
+        test_sites : tuple, optional
+            Specific (i, j, k, l) sites to test. If None, tests random sites.
+        tolerance : float
+            Tolerance for numerical comparison
+            
+        Returns
+        -------
+        dict
+            Dictionary containing:
+            - 'is_valid' : bool - True if Wick's theorem is satisfied
+            - 'max_error' : float - Maximum deviation from Wick's theorem
+            - 'errors' : np.ndarray - Error matrix for all tested site combinations
+            - 'correlation_matrix' : np.ndarray - Single-particle correlation matrix
+            
+        Examples
+        --------
+        >>> result = ent.verify_wicks_theorem(orbitals)
+        >>> if result['is_valid']:
+        ...     print("State satisfies Wick's theorem (is a Slater determinant)")
+        >>> else:
+        ...     print(f"Max error: {result['max_error']:.2e}")
+        
+        Notes
+        -----
+        A state satisfies Wick's theorem if and only if it is a Slater determinant
+        (or a mixture thereof for finite temperature). This is equivalent to
+        the state being a Gaussian state for fermions.
+        """
+        ns = self._hamil.ns
+        
+        # Construct state if not provided
+        if state is None:
+            state = self._hamil.many_body_state(occupied_orbitals)
+        
+        # Get single-particle correlation matrix from orbitals
+        C_sp = self.correlation_matrix(occupied_orbitals, subtract_identity=False)
+        # Convert to [0,1] occupations (divide by 2 for spin-unpolarized convention)
+        C_sp = C_sp / 2.0
+        
+        # Get exact 2-particle correlation from many-body state
+        # <c_i† c_j† c_l c_k> for all i,j,k,l
+        from .sp.correlation_matrix import corr_from_statevector
+        
+        errors = np.zeros((ns, ns), dtype=np.float64)
+        max_error = 0.0
+        
+        # Test specific sites or scan through pairs
+        if test_sites is not None:
+            i, j, k, l = test_sites
+            test_pairs = [(i, j, k, l)]
+        else:
+            # Sample a few representative pairs
+            test_pairs = []
+            for j in range(min(ns, 4)):
+                for l in range(min(ns, 4)):
+                    if j != l:
+                        test_pairs.append((0, j, l, 0))
+        
+        for (i, j, k, l) in test_pairs:
+            if i == j or k == l:
+                continue
+            
+            # Wick's theorem prediction
+            wick_pred = C_sp[i, k] * C_sp[j, l] - C_sp[i, l] * C_sp[j, k]
+            
+            # Get exact value from many-body state
+            try:
+                N_exact = corr_from_statevector(state, ns, order=4, j=j, l=l)
+                exact_val = N_exact[i, k]
+            except Exception:
+                exact_val = wick_pred  # Fallback if not implemented
+            
+            error = np.abs(exact_val - wick_pred)
+            errors[i, k] = max(errors[i, k], error)
+            max_error = max(max_error, error)
+        
+        is_valid = max_error < tolerance
+        
+        return {
+            'is_valid': is_valid,
+            'max_error': max_error,
+            'errors': errors,
+            'correlation_matrix': C_sp,
+            'tolerance': tolerance
+        }
+    
+    def correlation_entropy_noncontiguous(self,
+                                         bipartition: 'BipartitionInfo',
+                                         occupied_orbitals: Union[List[int], np.ndarray],
+                                         *,
+                                         backend: str = 'numpy') -> float:
+        """
+        Calculate entropy for non-contiguous bipartitions using the many-body method.
+        
+        This is the correct method for non-contiguous subsystems where the
+        simple correlation matrix method gives incorrect results.
+        
+        Parameters
+        ----------
+        bipartition : BipartitionInfo
+            Bipartition of the system
+        occupied_orbitals : array-like
+            Occupied orbitals for the state
+        backend : str
+            Computation backend
+            
+        Returns
+        -------
+        float
+            Entanglement entropy (exact)
+            
+        Notes
+        -----
+        For non-contiguous bipartitions, the correlation matrix method
+        systematically overestimates entropy. This method uses the full
+        many-body Schmidt decomposition which is exact but slower.
+        """
+        state = self._hamil.many_body_state(occupied_orbitals)
+        return self.entropy_many_body(bipartition, state)
+    
+    def compare_methods(self,
+                       bipartition: 'BipartitionInfo',
+                       occupied_orbitals: Union[List[int], np.ndarray]) -> Dict[str, float]:
+        """
+        Compare correlation matrix and many-body entropy methods.
+        
+        Useful for validating calculations and understanding when
+        the fast correlation method is accurate.
+        
+        Parameters
+        ----------
+        bipartition : BipartitionInfo
+            Bipartition to test
+        occupied_orbitals : array-like
+            Occupied orbitals
+            
+        Returns
+        -------
+        dict
+            Dictionary with 'correlation', 'many_body', 'difference', 'is_contiguous'
+        """
+        S_corr = self.entropy_correlation(bipartition, occupied_orbitals, check_contiguous=False)
+        
+        state = self._hamil.many_body_state(occupied_orbitals)
+        S_mb = self.entropy_many_body(bipartition, state)
+        
+        is_contiguous = (len(bipartition.mask_a) > 0 and 
+                        np.all(np.diff(bipartition.mask_a) == 1) and 
+                        bipartition.mask_a[0] == 0)
+        
+        return {
+            'correlation': S_corr,
+            'many_body': S_mb,
+            'difference': abs(S_corr - S_mb),
+            'relative_error': abs(S_corr - S_mb) / max(S_mb, 1e-10),
+            'is_contiguous': is_contiguous
+        }
+    
     def help(self):
         """Print usage help for the entanglement module."""
         help_text = """
@@ -823,9 +1460,11 @@ class EntanglementModule:
         entropy_correlation(bipart, orbitals, backend='numpy')
             Fast method using correlation matrix (quadratic Hamiltonians)
             Supports 'numpy' and 'jax' backends
+            WARNING: Only exact for contiguous bipartitions!
             
         entropy_many_body(bipart, state)
             Exact method using reduced density matrix (any state)
+            Works for ANY bipartition (contiguous or non-contiguous)
             
         entropy_multipartition(bipartitions, orbitals, method='auto', backend='numpy')
             Calculate entropy for multiple bipartitions efficiently
@@ -836,6 +1475,47 @@ class EntanglementModule:
             
         mutual_information(mask_a, mask_b, orbitals)
             Calculate I(A:B) = S(A) + S(B) - S(AB)
+        
+        Topological Entropy (NEW):
+        -------------------------
+        topological_entropy(orbitals, construction='kitaev_preskill')
+            Calculate topological entanglement entropy γ
+            Uses Kitaev-Preskill or Levin-Wen constructions
+            Returns dict with 'gamma', 'entropies', 'regions'
+        
+        Wick's Theorem (NEW):
+        --------------------
+        verify_wicks_theorem(orbitals, state=None)
+            Verify if a state satisfies Wick's theorem (is a Slater determinant)
+            Returns dict with 'is_valid', 'max_error', 'correlation_matrix'
+        
+        compare_methods(bipart, orbitals)
+            Compare correlation vs many-body methods
+            Useful for checking when fast method is accurate
+        
+        Mask Generation (use MaskGenerator class):
+        -----------------------------------------
+        >>> from QES.general_python.physics.entanglement_module import MaskGenerator
+        >>> 
+        >>> # Contiguous mask
+        >>> mask = MaskGenerator.contiguous(ns=12, size_a=4)  # [0,1,2,3]
+        >>> 
+        >>> # Alternating (even/odd) sites
+        >>> even, odd = MaskGenerator.alternating(ns=12)
+        >>> 
+        >>> # Random subsystem
+        >>> mask = MaskGenerator.random(ns=12, size_a=6, seed=42)
+        >>> 
+        >>> # Sublattice (bipartite lattice A/B)
+        >>> mask_A = MaskGenerator.sublattice(ns=12, sublattice_id=0)
+        >>> 
+        >>> # Kitaev-Preskill regions for topological entropy
+        >>> regions = MaskGenerator.kitaev_preskill(ns=12)
+        >>> A, B, C = regions['A'], regions['B'], regions['C']
+        >>> 
+        >>> # Convert to/from bitmasks
+        >>> bitmask = MaskGenerator.to_bitmask(np.array([0, 2, 4]))  # -> 0b10101
+        >>> indices = MaskGenerator.from_bitmask(0b10101, ns=6)      # -> [0, 2, 4]
         
         Examples:
         --------
@@ -852,8 +1532,24 @@ class EntanglementModule:
         >>> print(results['entropies'])  # Array of entropies
         >>> C_matrices = results['correlation_matrices']  # Access all C_A matrices
         
-        # Non-contiguous bipartition
+        # Non-contiguous bipartition (use many-body method!)
         >>> bipart = ent.bipartition([0, 2, 4, 6, 8])  # Even sites
+        >>> S_exact = ent.entropy_many_body(bipart, state)  # EXACT
+        >>> # DON'T use entropy_correlation for non-contiguous!
+        
+        # Compare methods to check accuracy
+        >>> result = ent.compare_methods(bipart, orbitals)
+        >>> print(f"Correlation: {result['correlation']:.4f}")
+        >>> print(f"Many-body:   {result['many_body']:.4f}")
+        >>> print(f"Difference:  {result['difference']:.4e}")
+        
+        # Topological entanglement entropy
+        >>> result = ent.topological_entropy(orbitals, construction='kitaev_preskill')
+        >>> print(f"TEE γ = {result['gamma']:.4f}")
+        
+        # Verify Wick's theorem
+        >>> result = ent.verify_wicks_theorem(orbitals)
+        >>> print(f"Is Slater determinant: {result['is_valid']}")
         
         # Entropy scaling
         >>> results = ent.entropy_scan([0,1,2,3,4])

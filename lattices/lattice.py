@@ -24,7 +24,8 @@ try:
     from .tools.lattice_flux import BoundaryFlux, _normalize_flux_dict
     from .tools.lattice_kspace import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path, 
                                     reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
-                                    build_translation_operators
+                                    build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
+                                    KPathResult, find_nearest_kpoints
                                     )
     from ..common import hdf5man as HDF5Mod
     from ..common import directories as DirectoriesMod
@@ -577,42 +578,194 @@ class Lattice(ABC):
         """
         return extract_momentum(eigvecs, self, eigvals=eigvals, tol=tol)
 
+    # ------------------------------------------------------------------
+    #! High-symmetry points and BZ paths
+    # ------------------------------------------------------------------
+    
+    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
+        """
+        Return high-symmetry points for this lattice type.
+        
+        Override in subclasses to provide lattice-specific high-symmetry points.
+        Returns None if not defined for this lattice type.
+        
+        Returns
+        -------
+        HighSymmetryPoints or None
+            High-symmetry points with default path, or None if not defined.
+        
+        Example
+        -------
+        >>> lattice = SquareLattice(dim=2, lx=4, ly=4)
+        >>> pts = lattice.high_symmetry_points()
+        >>> print(pts.Gamma.frac_coords)  # (0.0, 0.0, 0.0)
+        >>> print(pts.default_path())     # ['Gamma', 'X', 'M', 'Gamma']
+        """
+        # Base implementation tries to guess from lattice type
+        if hasattr(self, '_type'):
+            if self._type == LatticeType.SQUARE:
+                if self.dim == 1:
+                    return HighSymmetryPoints.chain_1d()
+                elif self.dim == 2:
+                    return HighSymmetryPoints.square_2d()
+                elif self.dim == 3:
+                    return HighSymmetryPoints.cubic_3d()
+            elif self._type == LatticeType.HONEYCOMB:
+                return HighSymmetryPoints.honeycomb_2d()
+            elif self._type == LatticeType.HEXAGONAL:
+                return HighSymmetryPoints.hexagonal_2d()
+        return None
+    
+    def default_bz_path(self) -> Optional[List[Tuple[str, List[float]]]]:
+        """
+        Return the default Brillouin zone path for this lattice.
+        
+        Returns
+        -------
+        List[Tuple[str, List[float]]] or None
+            Default path as list of (label, [f1, f2, f3]) tuples, or None if not defined.
+        """
+        hs_pts = self.high_symmetry_points()
+        if hs_pts is not None:
+            return hs_pts.get_default_path_points()
+        return None
+    
+    def generate_bz_path(
+        self,
+        path            : Optional[Union[List[str], str, StandardBZPath]] = None,
+        *,
+        points_per_seg  : int = 40,
+    ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
+        """
+        Generate k-points along a Brillouin zone path.
+        
+        Parameters
+        ----------
+        path : list of str, str, StandardBZPath, or None
+            Path specification. Can be:
+            - List of high-symmetry point names: ['Gamma', 'X', 'M', 'Gamma']
+            - StandardBZPath enum or string: 'SQUARE_2D'
+            - None: use default path for this lattice
+        points_per_seg : int
+            Number of interpolated points per path segment.
+        
+        Returns
+        -------
+        k_path : np.ndarray, shape (Npath, 3)
+            Cartesian k-points along the path.
+        k_dist : np.ndarray, shape (Npath,)
+            Cumulative distance for plotting x-axis.
+        labels : List[Tuple[int, str]]
+            Indices and labels for high-symmetry points.
+        k_path_frac : np.ndarray, shape (Npath, 3)
+            Fractional k-coordinates along the path.
+        
+        Example
+        -------
+        >>> lattice = SquareLattice(dim=2, lx=4, ly=4)
+        >>> k_path, k_dist, labels, k_frac = lattice.generate_bz_path()
+        >>> # Or with custom path:
+        >>> k_path, k_dist, labels, k_frac = lattice.generate_bz_path(['Gamma', 'M', 'Gamma'])
+        """
+        # Resolve path
+        if path is None:
+            resolved_path = self.default_bz_path()
+            if resolved_path is None:
+                raise ValueError(f"No default BZ path for {type(self).__name__}. "
+                               "Specify path explicitly.")
+        elif isinstance(path, list) and all(isinstance(p, str) for p in path):
+            # List of point names - look up in high_symmetry_points
+            hs_pts = self.high_symmetry_points()
+            if hs_pts is None:
+                raise ValueError(f"Cannot resolve point names for {type(self).__name__}. "
+                               "Use explicit fractional coordinates instead.")
+            resolved_path = hs_pts.get_path_points(path)
+        elif isinstance(path, (str, StandardBZPath)):
+            resolved_path = path  # Will be resolved by brillouin_zone_path
+        else:
+            resolved_path = path
+        
+        return brillouin_zone_path(self, resolved_path, points_per_seg=points_per_seg)
+
     def extract_bz_path_data(self, 
                             k_vectors           : np.ndarray,
                             k_vectors_frac      : np.ndarray,
                             values              : np.ndarray,
-                            path                : Union[PathTypes, str, StandardBZPath]  = StandardBZPath.HONEYCOMB_2D,
-                            ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
+                            path                : Optional[Union[List[str], PathTypes, str, StandardBZPath]] = None,
+                            *,
+                            points_per_seg      : int = 40,
+                            return_result       : bool = True,
+                            ) -> Union[KPathResult, Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]]:
         """
         Extract k-point path data in the Brillouin zone for band structure calculations.
-        Parameters:
-        -----------
+        
+        This method finds the nearest k-points on the actual grid to an ideal path
+        through high-symmetry points. It returns both the matched data and indices
+        for mapping back to the original grid.
+        
+        Parameters
+        ----------
         k_vectors : np.ndarray
-            Array of k-vectors in Cartesian coordinates.
+            Array of k-vectors in Cartesian coordinates, shape (..., 3).
+        k_vectors_frac : np.ndarray
+            Fractional coordinates of k-vectors, shape (..., 3).
         values : np.ndarray
-            Corresponding values (e.g., energies) at each k-vector.
-        path : Union[PathTypes, str, StandardBZPath], optional
-            Predefined path type or custom path specification. Default is StandardBZPath.HONEYCOMB_2D.
-        mode : str, optional
-            Mode of extraction: 'discrete' for discrete points, 'interpolated' for interpolated path. Default is 'discrete'.
-        points_p_segment : int, optional
-            Number of points per segment for interpolation. Default is 10.
-        tol : float, optional
-            Tolerance for numerical comparisons. Default is 1e-8.
-        Returns:
-        --------
-        Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]
-            Tuple containing:
-            - k_path : np.ndarray
-                Array of k-vectors along the specified path.
-            - values_path : np.ndarray
-                Corresponding values along the k-path.
-            - labels : List[Tuple[int, str]]
-                List of tuples with indices and labels of high-symmetry points.
-            - distances : np.ndarray
-                Cumulative distances along the k-path.
+            Corresponding values (e.g., energies) at each k-vector, shape (..., n_bands).
+        path : list of str, PathTypes, str, StandardBZPath, or None
+            Path specification. Can be:
+            - List of high-symmetry point names: ['Gamma', 'X', 'M', 'Gamma']
+            - StandardBZPath enum or string: 'SQUARE_2D'
+            - None: use default path for this lattice
+        points_per_seg : int
+            Number of points per segment for path interpolation.
+        return_result : bool
+            If True (default), return KPathResult dataclass.
+            If False, return tuple for backwards compatibility.
+        
+        Returns
+        -------
+        KPathResult or tuple
+            If return_result=True: KPathResult with k_cart, k_frac, k_dist, labels, 
+                values, indices, and matched_distances.
+            If return_result=False: (k_cart, k_frac, k_dist, labels, values) tuple.
+        
+        Example
+        -------
+        >>> lattice = SquareLattice(dim=2, lx=8, ly=8, bc='pbc')
+        >>> # Get k-grid from Hamiltonian
+        >>> k_grid, k_frac, energies = ham.to_kspace()
+        >>> 
+        >>> # Extract band structure along path
+        >>> result = lattice.extract_bz_path_data(k_grid, k_frac, energies)
+        >>> 
+        >>> # Plot
+        >>> import matplotlib.pyplot as plt
+        >>> plt.plot(result.k_dist, result.values)
+        >>> for pos, label in zip(result.label_positions, result.label_texts):
+        ...     plt.axvline(pos, color='k', linestyle='--')
+        >>> plt.xticks(result.label_positions, result.label_texts)
         """
-        return extract_bz_path_data(self, k_vectors, k_vectors_frac, values, path)
+        # Resolve path if given as list of names
+        if isinstance(path, list) and all(isinstance(p, str) for p in path):
+            hs_pts = self.high_symmetry_points()
+            if hs_pts is None:
+                raise ValueError(f"Cannot resolve point names for {type(self).__name__}. "
+                               "Use explicit fractional coordinates instead.")
+            resolved_path = hs_pts.get_path_points(path)
+        elif path is None:
+            # Use default path or high_symmetry_points
+            hs_pts = self.high_symmetry_points()
+            if hs_pts is not None:
+                resolved_path = hs_pts
+            else:
+                raise ValueError(f"No default path for {type(self).__name__}. Specify path explicitly.")
+        else:
+            resolved_path = path
+        
+        return extract_bz_path_data(
+            self, k_vectors, k_vectors_frac, values, resolved_path,
+            points_per_seg=points_per_seg, return_result=return_result
+        )
     
     # ------------------------------------------------------------------
     #! Boundary fluxes

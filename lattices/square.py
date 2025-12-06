@@ -6,11 +6,13 @@ Square Lattice Class...
 """
 
 from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+from .tools.lattice_kspace import HighSymmetryPoints
 
 import sys, os 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from maths import MathMod
 import numpy as np
+from typing import Optional
 
 #######################################################################################
 
@@ -24,6 +26,11 @@ class SquareLattice(Lattice):
     - a* = [2*pi, 0, 0], 
     - b* = [0, 2*pi, 0], 
     - c* = [0, 0, 2*pi]
+    
+    High-symmetry points in the Brillouin zone:
+    - 1D: Γ (0) → X (π) → Γ (2π)
+    - 2D: Γ (0,0) → X (π,0) → M (π,π) → Γ (0,0)  
+    - 3D: Γ → X → M → Γ → R → X
     '''
 
     def __init__(self, lx=1, ly=1, lz=1, dim=None, bc=LatticeBC.PBC, **kwargs):
@@ -80,6 +87,30 @@ class SquareLattice(Lattice):
 
     def __repr__(self):
         return self.__str__()
+
+    # ---------------------------------------------------------------------------------
+    #! High-symmetry points
+    # ---------------------------------------------------------------------------------
+
+    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
+        """
+        Return high-symmetry points for the square/cubic lattice.
+        
+        Returns
+        -------
+        HighSymmetryPoints
+            High-symmetry points with default path based on dimension:
+            - 1D: Γ → X → Γ (zone boundary at π)
+            - 2D: Γ → X → M → Γ (standard square BZ path)
+            - 3D: Γ → X → M → Γ → R → X (standard cubic BZ path)
+        """
+        if self.dim == 1:
+            return HighSymmetryPoints.chain_1d()
+        elif self.dim == 2:
+            return HighSymmetryPoints.square_2d()
+        elif self.dim == 3:
+            return HighSymmetryPoints.cubic_3d()
+        return None
 
     ################################### GETTERS #######################################
 

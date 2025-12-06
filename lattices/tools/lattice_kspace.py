@@ -8,8 +8,8 @@ Author          : Maksymilian Kliczkowski
 '''
 
 from __future__ import annotations
-from typing import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict
-from dataclasses import dataclass
+from typing import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict, NamedTuple
+from dataclasses import dataclass, field
 
 from enum import Enum
 import numpy as np
@@ -18,6 +18,190 @@ import scipy.sparse as sp
 if TYPE_CHECKING:
     from ..lattice import Lattice
     from QES.Algebra.hamil_quadratic import QuadraticBlockDiagonalInfo
+
+# -----------------------------------------------------------------------------------------------------------
+# HIGH-SYMMETRY POINTS DEFINITIONS
+# -----------------------------------------------------------------------------------------------------------
+
+@dataclass
+class HighSymmetryPoint:
+    """
+    A high-symmetry point in the Brillouin zone.
+    
+    Attributes
+    ----------
+    label : str
+        Label for the point (e.g., 'Gamma', 'K', 'M', 'X')
+    frac_coords : Tuple[float, float, float]
+        Fractional coordinates in reciprocal lattice units (f1, f2, f3).
+        The actual k-vector is: k = f1*b1 + f2*b2 + f3*b3
+    latex_label : str, optional
+        LaTeX-formatted label for plotting (e.g., r'$\\Gamma$')
+    description : str, optional
+        Description of the point
+    """
+    label       : str
+    frac_coords : Tuple[float, float, float]
+    latex_label : str = ""
+    description : str = ""
+    
+    def __post_init__(self):
+        if not self.latex_label:
+            # Auto-generate LaTeX label
+            special_labels = {
+                'Gamma': r'$\Gamma$', 'G': r'$\Gamma$',
+                'K': r'$K$', 'M': r'$M$', 'X': r'$X$', 'Y': r'$Y$', 'Z': r'$Z$',
+                'R': r'$R$', 'A': r'$A$', 'L': r'$L$', 'H': r'$H$',
+            }
+            self.latex_label = special_labels.get(self.label, f'${self.label}$')
+    
+    def to_cartesian(self, b1: np.ndarray, b2: np.ndarray, b3: np.ndarray) -> np.ndarray:
+        """Convert fractional coordinates to Cartesian k-vector."""
+        f1, f2, f3 = self.frac_coords
+        return f1 * np.asarray(b1) + f2 * np.asarray(b2) + f3 * np.asarray(b3)
+    
+    def as_tuple(self) -> Tuple[str, List[float]]:
+        """Return as (label, [f1, f2, f3]) tuple for path generation."""
+        return (self.latex_label, list(self.frac_coords))
+
+
+@dataclass
+class HighSymmetryPoints:
+    """
+    Collection of high-symmetry points for a lattice type.
+    
+    Provides named access to standard high-symmetry points and defines
+    default paths through the Brillouin zone.
+    
+    Example
+    -------
+    >>> pts = HighSymmetryPoints.square_2d()
+    >>> print(pts.Gamma)  # HighSymmetryPoint for Gamma
+    >>> print(pts.default_path())  # ['Gamma', 'X', 'M', 'Gamma']
+    >>> print(pts.get_path_points(['Gamma', 'M']))  # Custom path
+    """
+    points          : Dict[str, HighSymmetryPoint] = field(default_factory=dict)
+    _default_path   : List[str] = field(default_factory=list)
+    
+    def __getattr__(self, name: str) -> HighSymmetryPoint:
+        if name.startswith('_') or name == 'points':
+            raise AttributeError(name)
+        if name in self.points:
+            return self.points[name]
+        raise AttributeError(f"No high-symmetry point named '{name}'")
+    
+    def __contains__(self, name: str) -> bool:
+        return name in self.points
+    
+    def __iter__(self):
+        return iter(self.points.values())
+    
+    def add(self, point: HighSymmetryPoint) -> 'HighSymmetryPoints':
+        """Add a high-symmetry point."""
+        self.points[point.label] = point
+        return self
+    
+    def get(self, name: str) -> Optional[HighSymmetryPoint]:
+        """Get a point by name, returns None if not found."""
+        return self.points.get(name)
+    
+    def default_path(self) -> List[str]:
+        """Return the default path through high-symmetry points."""
+        return self._default_path.copy()
+    
+    def get_path_points(self, path_labels: List[str]) -> List[Tuple[str, List[float]]]:
+        """
+        Get path as list of (label, frac_coords) tuples.
+        
+        Parameters
+        ----------
+        path_labels : List[str]
+            List of point labels defining the path (e.g., ['Gamma', 'X', 'M', 'Gamma'])
+        
+        Returns
+        -------
+        List[Tuple[str, List[float]]]
+            Path suitable for brillouin_zone_path() function
+        """
+        path = []
+        for label in path_labels:
+            if label not in self.points:
+                raise ValueError(f"Unknown high-symmetry point: '{label}'. "
+                               f"Available: {list(self.points.keys())}")
+            path.append(self.points[label].as_tuple())
+        return path
+    
+    def get_default_path_points(self) -> List[Tuple[str, List[float]]]:
+        """Get the default path as list of (label, frac_coords) tuples."""
+        return self.get_path_points(self._default_path)
+    
+    # -----------------------------------------------------------------
+    # Factory methods for common lattice types
+    # -----------------------------------------------------------------
+    
+    @classmethod
+    def chain_1d(cls) -> 'HighSymmetryPoints':
+        """High-symmetry points for 1D chain."""
+        pts = cls(
+            _default_path=['Gamma', 'X', 'Gamma2']
+        )
+        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$0$', '1D BZ center'))
+        pts.add(HighSymmetryPoint('X', (0.5, 0.0, 0.0), r'$\pi$', 'Zone boundary'))
+        pts.add(HighSymmetryPoint('Gamma2', (1.0, 0.0, 0.0), r'$2\pi$', 'Wrapped Gamma'))
+        return pts
+    
+    @classmethod
+    def square_2d(cls) -> 'HighSymmetryPoints':
+        """High-symmetry points for 2D square lattice."""
+        pts = cls(
+            _default_path=['Gamma', 'X', 'M', 'Gamma']
+        )
+        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
+        pts.add(HighSymmetryPoint('X', (0.5, 0.0, 0.0), r'$X$', 'Zone face center'))
+        pts.add(HighSymmetryPoint('M', (0.5, 0.5, 0.0), r'$M$', 'Zone corner'))
+        pts.add(HighSymmetryPoint('Y', (0.0, 0.5, 0.0), r'$Y$', 'Zone face center (y)'))
+        return pts
+    
+    @classmethod
+    def cubic_3d(cls) -> 'HighSymmetryPoints':
+        """High-symmetry points for 3D cubic lattice."""
+        pts = cls(
+            _default_path=['Gamma', 'X', 'M', 'Gamma', 'R', 'X']
+        )
+        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
+        pts.add(HighSymmetryPoint('X', (0.5, 0.0, 0.0), r'$X$', 'Face center'))
+        pts.add(HighSymmetryPoint('M', (0.5, 0.5, 0.0), r'$M$', 'Edge center'))
+        pts.add(HighSymmetryPoint('R', (0.5, 0.5, 0.5), r'$R$', 'Corner'))
+        return pts
+    
+    @classmethod
+    def triangular_2d(cls) -> 'HighSymmetryPoints':
+        """High-symmetry points for 2D triangular lattice."""
+        pts = cls(
+            _default_path=['Gamma', 'M', 'K', 'Gamma']
+        )
+        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
+        pts.add(HighSymmetryPoint('M', (0.5, 0.0, 0.0), r'$M$', 'Edge midpoint'))
+        pts.add(HighSymmetryPoint('K', (1/3, 1/3, 0.0), r'$K$', 'Corner (Dirac point)'))
+        pts.add(HighSymmetryPoint('Kp', (2/3, 1/3, 0.0), r"$K'$", 'Other Dirac point'))
+        return pts
+    
+    @classmethod
+    def honeycomb_2d(cls) -> 'HighSymmetryPoints':
+        """High-symmetry points for 2D honeycomb lattice."""
+        pts = cls(
+            _default_path=['Gamma', 'K', 'M', 'Gamma']
+        )
+        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
+        pts.add(HighSymmetryPoint('K', (2/3, 1/3, 0.0), r'$K$', 'Dirac point'))
+        pts.add(HighSymmetryPoint('Kp', (1/3, 2/3, 0.0), r"$K'$", 'Other Dirac point'))
+        pts.add(HighSymmetryPoint('M', (0.5, 0.0, 0.0), r'$M$', 'Edge midpoint'))
+        return pts
+    
+    @classmethod
+    def hexagonal_2d(cls) -> 'HighSymmetryPoints':
+        """High-symmetry points for 2D hexagonal lattice (same as honeycomb)."""
+        return cls.honeycomb_2d()
 
 # -----------------------------------------------------------------------------------------------------------
 # CACHED BLOCH TRANSFORMATION
@@ -414,64 +598,244 @@ def brillouin_zone_path(
 # K-SPACE PATH EXTRACTION
 # -----------------------------------------------------------------------------------------------------------
 
+@dataclass
+class KPathResult:
+    """
+    Result of extracting data along a k-path in the Brillouin zone.
+    
+    This dataclass holds all information needed for band structure plots and 
+    analysis along a high-symmetry path.
+    
+    Attributes
+    ----------
+    k_cart : np.ndarray, shape (Npath, 3)
+        Cartesian k-vectors along the path
+    k_frac : np.ndarray, shape (Npath, 3)
+        Fractional k-vectors along the path (in reciprocal lattice units)
+    k_dist : np.ndarray, shape (Npath,)
+        Cumulative distance along the path for x-axis plotting
+    labels : List[Tuple[int, str]]
+        List of (index, label) pairs for high-symmetry points
+    values : np.ndarray, shape (Npath, n_bands)
+        Data values (e.g., energies) along the path
+    indices : np.ndarray, shape (Npath,), dtype=int
+        Indices into the original k-grid for each path point.
+        Use to map path data back to the full k-grid.
+    matched_distances : np.ndarray, shape (Npath,)
+        Distance from ideal path point to matched grid point (for quality check)
+    
+    Example
+    -------
+    >>> result = lattice.extract_kpath_data(energies, path='SQUARE_2D')
+    >>> plt.plot(result.k_dist, result.values)
+    >>> for idx, label in result.labels:
+    ...     plt.axvline(result.k_dist[min(idx, len(result.k_dist)-1)], label=label)
+    """
+    k_cart              : np.ndarray
+    k_frac              : np.ndarray
+    k_dist              : np.ndarray
+    labels              : List[Tuple[int, str]]
+    values              : np.ndarray
+    indices             : np.ndarray
+    matched_distances   : np.ndarray = field(default_factory=lambda: np.array([]))
+    
+    @property
+    def n_points(self) -> int:
+        """Number of points along the path."""
+        return len(self.k_dist)
+    
+    @property
+    def n_bands(self) -> int:
+        """Number of bands/values per k-point."""
+        return self.values.shape[-1] if self.values.ndim > 1 else 1
+    
+    @property
+    def label_positions(self) -> np.ndarray:
+        """X-axis positions (k_dist values) of the high-symmetry point labels."""
+        positions = []
+        for idx, _ in self.labels:
+            pos_idx = min(idx, len(self.k_dist) - 1) if len(self.k_dist) > 0 else 0
+            positions.append(self.k_dist[pos_idx] if len(self.k_dist) > 0 else 0.0)
+        return np.array(positions)
+    
+    @property 
+    def label_texts(self) -> List[str]:
+        """Just the label strings for plotting."""
+        return [label for _, label in self.labels]
+    
+    def unique_indices(self) -> np.ndarray:
+        """Return unique k-point indices (no duplicates from path segments)."""
+        return np.unique(self.indices)
+    
+    def max_match_distance(self) -> float:
+        """Maximum distance from path to matched grid point."""
+        if len(self.matched_distances) == 0:
+            return 0.0
+        return float(np.max(self.matched_distances))
+
+
+def find_nearest_kpoints(
+    k_grid_frac     : np.ndarray,
+    target_frac     : np.ndarray,
+    tol             : float = 0.5,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Find nearest k-point indices for target fractional coordinates.
+    
+    Parameters
+    ----------
+    k_grid_frac : np.ndarray, shape (Nk, 3)
+        Fractional coordinates of available k-points
+    target_frac : np.ndarray, shape (Ntarget, 3)
+        Target fractional coordinates to match
+    tol : float
+        Warning threshold for match distance
+    
+    Returns
+    -------
+    indices : np.ndarray, shape (Ntarget,), dtype=int
+        Index of nearest k-point for each target
+    distances : np.ndarray, shape (Ntarget,)
+        Distance to nearest point (in fractional units, accounting for periodicity)
+    """
+    k_grid_frac = np.asarray(k_grid_frac).reshape(-1, 3)
+    target_frac = np.asarray(target_frac).reshape(-1, 3)
+    
+    n_targets = len(target_frac)
+    indices = np.zeros(n_targets, dtype=int)
+    distances = np.zeros(n_targets)
+    
+    for i, kf_target in enumerate(target_frac):
+        # Periodic distance in fractional coordinates
+        diff = k_grid_frac - kf_target
+        diff -= np.round(diff)  # Handle periodicity
+        dist = np.linalg.norm(diff, axis=1)
+        idx = np.argmin(dist)
+        indices[i] = idx
+        distances[i] = dist[idx]
+        
+        if dist[idx] > tol:
+            import warnings
+            warnings.warn(f"k-point match distance ({dist[idx]:.3e}) > tolerance at target {kf_target}")
+    
+    return indices, distances
+
+
 def extract_bz_path_data(
     lattice,
     k_vectors           : np.ndarray,
     k_vectors_frac      : np.ndarray, 
     values              : np.ndarray,
-    path                : Iterable[tuple[str, Iterable[float]]] | StandardBZPath,
-    ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
+    path                : Iterable[tuple[str, Iterable[float]]] | StandardBZPath | HighSymmetryPoints | None = None,
+    *,
+    points_per_seg      : int = 40,
+    return_result       : bool = True,
+    ) -> KPathResult | Tuple[np.ndarray, np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
     """
-    Extract k-path data using FRACTIONAL coordinate matching with periodicity.
+    Extract k-path data from a k-grid using fractional coordinate matching.
     
-    This correctly handles the periodic Brillouin zone by comparing
-    fractional coordinates modulo 1.
+    This function finds the closest k-points on the actual grid to an ideal path
+    through high-symmetry points. It handles periodic boundary conditions in k-space.
     
     Parameters
     ----------
-    k_vectors : np.ndarray, shape (Nk, 3)
-        Cartesian k-points
-    k_vectors_frac : np.ndarray, shape (Nk, 3)
-        Fractional coordinates of k-points (NEW!)
-    tolerance : float
-        Tolerance for fractional coordinate matching (accounts for numerical error)
-    """
+    lattice : Lattice
+        Lattice object with reciprocal lattice vectors
+    k_vectors : np.ndarray, shape (..., 3) 
+        Cartesian k-points (will be flattened)
+    k_vectors_frac : np.ndarray, shape (..., 3)
+        Fractional coordinates of k-points (will be flattened)
+    values : np.ndarray, shape (..., n_bands)
+        Data values at each k-point (e.g., band energies)
+    path : various, optional
+        Path specification. Can be:
+        - StandardBZPath enum value (e.g., StandardBZPath.SQUARE_2D)
+        - String name (e.g., 'SQUARE_2D')
+        - List of (label, [f1,f2,f3]) tuples
+        - HighSymmetryPoints object (uses default path)
+        - None: uses lattice's default path if available
+    points_per_seg : int
+        Number of interpolated points per path segment
+    return_result : bool
+        If True (default), return KPathResult dataclass.
+        If False, return tuple for backwards compatibility.
     
-    # flatten everything for easy search
-    kf_flat     = k_vectors_frac.reshape(-1, 3)
-    kc_flat     = k_vectors.reshape(-1, 3)
-    val_flat    = values.reshape(-1, values.shape[-1])
+    Returns
+    -------
+    KPathResult or tuple
+        If return_result=True: KPathResult dataclass with all path data
+        If return_result=False: (k_cart, k_frac, k_dist, labels, values) tuple
+    
+    Examples
+    --------
+    >>> # Using default path from HighSymmetryPoints
+    >>> result = extract_bz_path_data(lattice, k_grid, k_frac, energies, 
+    ...                               HighSymmetryPoints.square_2d())
+    >>> plt.plot(result.k_dist, result.values)
+    
+    >>> # Using standard path enum
+    >>> result = extract_bz_path_data(lattice, k_grid, k_frac, energies, 'SQUARE_2D')
+    
+    >>> # Custom path
+    >>> custom_path = [('G', [0,0,0]), ('X', [0.5,0,0]), ('G', [0,0,0])]
+    >>> result = extract_bz_path_data(lattice, k_grid, k_frac, energies, custom_path)
+    """
+    # Handle path input
+    if path is None:
+        # Try to get default path from lattice
+        if hasattr(lattice, 'high_symmetry_points'):
+            hs_pts = lattice.high_symmetry_points()
+            if hs_pts is not None:
+                path = hs_pts.get_default_path_points()
+        if path is None:
+            raise ValueError("No path specified and lattice has no default path. "
+                            "Specify path explicitly or use a lattice with high_symmetry_points().")
+    elif isinstance(path, HighSymmetryPoints):
+        path = path.get_default_path_points()
+    
+    # Flatten inputs
+    kf_flat     = np.asarray(k_vectors_frac).reshape(-1, 3)
+    kc_flat     = np.asarray(k_vectors).reshape(-1, 3)
+    
+    # Handle values shape
+    if values.ndim == 1:
+        val_flat = values.reshape(-1, 1)
+    else:
+        val_flat = values.reshape(-1, values.shape[-1])
+    
+    # Generate ideal continuous path
+    n_bands                                     = val_flat.shape[-1]
+    k_ideal_cart, k_dist, labels, k_ideal_frac  = brillouin_zone_path(
+                                                    lattice=lattice, path=path, points_per_seg=points_per_seg
+                                                )
 
-    # Generate continuous ideal path
-    k_ideal_cart, k_dist, labels, k_ideal_frac = brillouin_zone_path(
-        lattice=lattice, path=path, points_per_seg=80
-    )
+    # Compute tolerance based on grid resolution
+    Lx                          = max(lattice._lx, 1)
+    Ly                          = max(lattice._ly, 1) 
+    Lz                          = max(lattice._lz, 1)
+    tol                         = 0.5 * np.sqrt((1/Lx)**2 + (1/Ly)**2 + (1/Lz)**2)
 
-    # grid resolution for tolerance
-    Lx, Ly, Lz  = lattice._lx, lattice._ly, lattice._lz
-    tol         = 0.5 * np.sqrt((1/Lx)**2 + (1/Ly)**2 + (1/Lz)**2)
+    # Find nearest k-points for each path point
+    indices, match_distances    = find_nearest_kpoints(kf_flat, k_ideal_frac, tol=tol)
+    
+    # Extract matched data
+    k_sel_cart                  = kc_flat[indices]
+    k_sel_frac                  = kf_flat[indices]
+    vals_sel                    = val_flat[indices]
 
-    # prepare outputs
-    Np          = len(k_ideal_frac)
-    nb          = values.shape[-1]
-    k_sel_cart  = np.zeros((Np, 3))
-    k_sel_frac  = np.zeros((Np, 3))
-    vals_sel    = np.zeros((Np, nb))
-
-    # loop through path points
-    for i, kf_target in enumerate(k_ideal_frac):
-        diff    = kf_flat - kf_target
-        diff   -= np.round(diff)
-        dist    = np.linalg.norm(diff, axis=1)
-        idx     = np.argmin(dist)
-        
-        if dist[idx] > tol:
-            print(f"Warning: far match ({dist[idx]:.3e}) at k={kf_target}")
-        k_sel_cart[i]   = kc_flat[idx]
-        k_sel_frac[i]   = kf_flat[idx]
-        vals_sel[i]     = val_flat[idx]
-
-    return k_sel_cart, k_sel_frac, k_dist, labels, vals_sel
+    if return_result:
+        return KPathResult(
+            k_cart=k_sel_cart,
+            k_frac=k_sel_frac,
+            k_dist=k_dist,
+            labels=labels,
+            values=vals_sel,
+            indices=indices,
+            matched_distances=match_distances,
+        )
+    else:
+        # Backwards compatible return
+        return k_sel_cart, k_sel_frac, k_dist, labels, vals_sel
 
 # -----------------------------------------------------------------------------------------------------------
 #? Reciprocal Lattice Vectors

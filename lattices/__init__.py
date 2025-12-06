@@ -18,6 +18,10 @@ from .lattice   import (
     LatticeType,
     handle_boundary_conditions,
     handle_dim,
+    HighSymmetryPoints,
+    HighSymmetryPoint,
+    KPathResult,
+    StandardBZPath,
 )
 from .square        import SquareLattice
 from .hexagonal     import HexagonalLattice
@@ -47,6 +51,10 @@ __all__ = [
     "HexagonalLattice",
     "HoneycombLattice",
     "GraphLattice",
+    "HighSymmetryPoints",
+    "HighSymmetryPoint",
+    "KPathResult",
+    "StandardBZPath",
     "register_lattice",
     "available_lattices",
     "choose_lattice",
