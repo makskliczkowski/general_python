@@ -227,6 +227,19 @@ if JAX_AVAILABLE:
         xsq = x ** 2
         return ((0.133333333 * xsq - 0.333333333) * xsq + 1.) * x
     
+    def elu_p1_jnp(x, alpha=1.0):
+        ''' 
+        Exponential linear unit activation function shifted by +1 (JAX implementation).
+        
+        Parameters:
+            x: Input tensor/array
+            alpha: Scale for negative values
+            
+        Returns:
+            x if x > 0 else alpha*(exp(x)-1) + 1
+        '''
+        return nn.elu(x, alpha=alpha) + 1
+    
     def swish_jnp(x):
         ''' 
         Swish activation function (JAX implementation).
@@ -267,6 +280,7 @@ if JAX_AVAILABLE:
         'relu'          : relu_jnp,
         'leaky_relu'    : leaky_relu_jnp,
         'elu'           : elu_jnp,
+        'elu1'          : elu_p1_jnp,
         'softplus'      : softplus_jnp,
         'poly6'         : poly6_jnp,
         'poly5'         : poly5_jnp,
@@ -289,6 +303,7 @@ if JAX_AVAILABLE:
         'relu'          : None,
         'leaky_relu'    : {'alpha': 0.01},
         'elu'           : {'alpha': 1.0},
+        'elu1'          : {'alpha': 1.0},
         'softplus'      : None,
         'poly6'         : None,
         'poly5'         : None,
@@ -513,5 +528,21 @@ def get_activation(name: str,
     if backend in ['np', 'numpy'] or backend == np:
         return get_activation_np(name, params)
     return get_activation_jnp(name, params)
+
+#############################################################################
+
+def list_activations(backend: str = 'default') -> list:
+    """
+    List available activation functions for the specified backend.
+    
+    Parameters:
+        backend : str
+            Backend to use ('default', 'numpy', or 'jax').
+    Returns:
+        list: List of available activation function names.
+    """
+    if backend in ['np', 'numpy'] or backend == np:
+        return list(activations_np.keys())
+    return list(activations_jnp.keys())
 
 #############################################################################

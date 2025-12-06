@@ -42,30 +42,22 @@ Description     : Flax implementation of a Convolutional Neural Network (CNN).
 """
 
 
-import numpy as np
-from typing import Tuple, Callable, Optional, Any, Sequence, Union
-import math
+import  numpy as np
+from    typing import List, Tuple, Callable, Optional, Any, Sequence, Union, TYPE_CHECKING
+import  math
 
 try:
-    from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling
-    from ....ml.net_impl.activation_functions import get_activation_jnp
-    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
+    import                                      jax
+    import                                      jax.numpy as jnp
+    import                                      flax.linen as nn
+    from ....ml.net_impl.interface_net_flax     import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
+    from ....ml.net_impl.activation_functions   import get_activation_jnp
+    if TYPE_CHECKING:
+        from ....algebra.utils                  import Array
+    JAX_AVAILABLE                               = True
 except ImportError as e:
-    print(f"Error importing QES base modules: {e}")
-    class FlaxInterface:
-        pass
-    JAX_AVAILABLE = False
-
-#! JAX / Flax Imports
-
-if JAX_AVAILABLE:
-    import jax
-    import jax.numpy as jnp
-    import flax.linen as nn
-else:
-    # This module requires JAX
-    raise ImportError("JAX is not available. Please install JAX to use this module.")
+    raise ImportError("Could not import QES modules. Ensure QES is properly installed.") from e
 
 ##########################################################
 #! INNER FLAX CNN MODULE DEFINITION
@@ -134,72 +126,93 @@ class _FlaxCNN(nn.Module):
     use_sum_pool   : bool               = True
 
     def setup(self):
+        iter_specs              = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
 
-        iter_specs = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
         self.conv_layers : list = [
-            nn.Conv(
+                        nn.Conv(
                             features    = feat,
                             kernel_size = k_size,
                             strides     = stride,
                             padding     = 'VALID' if self.periodic else 'SAME',
                             use_bias    = bias,
                             param_dtype = self.param_dtype,
-                            kernel_init = cplx_variance_scaling(1.0, 'fan_avg', 'truncated_normal', self.param_dtype),
+                            kernel_init = cplx_variance_scaling(
+                                            1.0, 'fan_avg', 'truncated_normal', self.param_dtype
+                                        ),
                             dtype       = self.dtype,
-                            name        = f"conv_{i}"
-            ) for i, (feat, k_size, stride, bias) in enumerate(iter_specs)
-        ]
-
-        # 4. Output Dense Layer
-        self.dense_out  = nn.Dense(
-                            features    = self.output_feats,
-                            use_bias    = True,
-                            param_dtype = self.param_dtype,
-                            dtype       = self.dtype,
-                            kernel_init = cplx_variance_scaling(1.0, 'fan_avg', 'truncated_normal', self.param_dtype),
-                            name        = "dense_out"
+                            name        = f"conv_{i}",
                         )
+                        for i, (feat, k_size, stride, bias) in enumerate(iter_specs)
+                    ]
+
+        self.dense_out  = nn.Dense(
+                        features    = self.output_feats,
+                        use_bias    = True,
+                        param_dtype = self.param_dtype,
+                        dtype       = self.dtype,
+                        kernel_init = cplx_variance_scaling(
+                                        1.0, 'fan_avg', 'truncated_normal', self.param_dtype
+                                    ),
+                        name        = "dense_out",
+                    )
 
     def __call__(self, s: jax.Array) -> jax.Array:
+        """ Forward pass of the CNN. """
         
-
-        # Ensure batch dimension
+        # Ensure batch dimension: (B, N)
         if s.ndim == 1:
             s = s[jnp.newaxis, ...]
 
-        batch_size = s.shape[0]
-        target_shape = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
+        batch_size      = s.shape[0]
+        target_shape    = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
+        x               = (s.reshape(target_shape) * 2.0).astype(self.dtype)
 
-        # Map spins: -1/2, +1/2 -> -1, +1
-        x = (s.reshape(target_shape) * 2).astype(self.dtype)
-
-        # Optional input activation
+        # Optional input activation (rarely used)
         if self.in_act is not None:
-            x = self.in_act(x)
+            x = self.in_act[0](x) if isinstance(self.in_act, (list, tuple)) else self.in_act(x)
 
-        # Output Pooling & Dense
+        # Convolution stack (jVMC style)
+        def _forward_convs(h):
+            for i, conv in enumerate(self.conv_layers):
+                if self.periodic:
+                    h = circular_pad(h, self.kernel_sizes[i])
+                h   = conv(h)
+                act = self.activations[i][0]
+                h   = act(h)
+            return h
+
+        if not self.is_initializing():
+            _forward_convs = jax.checkpoint(_forward_convs)
+
+        x = _forward_convs(x)   # (B, L1, L2, ..., C_last)
+
+        # Pooling + Dense + normalization
+        # We'll compute the normalization based on how many units we sum over.
         if self.use_sum_pool:
-            # Dense per site
-            x = self.dense_out(x)    # (B, L1, L2, ..., C_out)
-
-            # Sum over spatial dims
+            # sum over all spatial dims (keep batch and channels)
             spatial_axes = tuple(range(1, x.ndim - 1))
-            x            = jnp.sum(x, axis=spatial_axes)  # (B, C_out)
+            n_sum        = jnp.prod(jnp.array([x.shape[a] for a in spatial_axes]))
+            x            = jnp.sum(x, axis=spatial_axes)            # (B, C_last)
         else:
-            x = x.reshape((batch_size, -1))
-            x = self.dense_out(x)                         # (B, C_out)
+            # flatten everything except batch
+            n_sum       = jnp.prod(jnp.array(x.shape[1:]))
+            x           = x.reshape((batch_size, -1))               # (B, L_flat)
 
-        # Final Activation
+        # Dense to desired output dimension 
+        x = self.dense_out(x)                                       # (B, output_feats)
+
+        # Optional final activation
         if self.out_act is not None:
             act = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
             x   = act(x)
-
-        # Normalize by sqrt of number of sites (like jVMC)
-        n_sites = float(math.prod(self.reshape_dims))
-        x       = x / jnp.sqrt(n_sites)
-
-        return x.reshape(-1)
-
+        
+        # Normalization
+        n_spatial   = math.prod(self.reshape_dims)
+        n_channels  = x.shape[-1]  # after dense maybe 1, but before dense check conv output
+        scale       = jnp.sqrt(n_spatial * n_channels)
+        # divide by sqrt(#summed units)
+        x           = x / scale
+        return x.reshape(-1) # (B, output_feats)
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -285,7 +298,7 @@ class CNN(FlaxInterface):
                 in_activation       : Optional[Callable]                                    = None,
                 final_activation    : Union[str, Callable, None]                            = None,
                 *,
-                dtype               : Any                                                   = DEFAULT_JP_FLOAT_TYPE,
+                dtype               : Any                                                   = jnp.float32,
                 param_dtype         : Optional[Any]                                         = None,
                 seed                : int                                                   = 0,
                 **kwargs):
@@ -329,8 +342,8 @@ class CNN(FlaxInterface):
         # ---------------- activation spec ▸ callable tuple -------------------
         if isinstance(activations, (str, Callable)):
             acts = (get_activation_jnp(activations),) * len(features)
-        elif isinstance(activations, Sequence) and len(activations) == len(features):
-            acts = tuple(get_activation_jnp(a) for a in activations)
+        elif isinstance(activations, (Sequence, List)) and len(activations) >= len(features):
+            acts = tuple(get_activation_jnp(a) for a in activations[:len(features)])
         else:
             raise ValueError("activations spec must be single item or sequence = features")
 
@@ -383,7 +396,7 @@ class CNN(FlaxInterface):
         return self._output_shape
 
     #! Callable interface
-    def __call__(self, s: Array):
+    def __call__(self, s: 'Array'):
         """
         Call the network on input x.
         Output shape will be (batch_size, *output_shape).
