@@ -177,30 +177,29 @@ class _FlaxCNN(nn.Module):
         if self.in_act is not None:
             x = self.in_act(x)
 
-        # Convolution stack with periodic padding
-        for i, conv in enumerate(self.conv_layers):
-            if self.periodic:
-                x = circular_pad(x, self.kernel_sizes[i])
-            x = conv(x)
-            act = self.activations[i][0]
-            x = act(x)
+        # Output Pooling & Dense
+        if self.use_sum_pool:
+            # Dense per site
+            x = self.dense_out(x)    # (B, L1, L2, ..., C_out)
 
-        # Dense per-site (optional but kept)
-        x = self.dense_out(x)
+            # Sum over spatial dims
+            spatial_axes = tuple(range(1, x.ndim - 1))
+            x            = jnp.sum(x, axis=spatial_axes)  # (B, C_out)
+        else:
+            x = x.reshape((batch_size, -1))
+            x = self.dense_out(x)                         # (B, C_out)
 
-        # Sum over all non-batch dims
-        spatial_axes = tuple(range(1, x.ndim))
-        summed = jnp.sum(x, axis=spatial_axes)
-
-        # Correct jVMC-style normalization
-        norm = jnp.sqrt(x[0].size)  # number of summed features per sample
-        out = summed / norm
-
-        # Final activation if any
+        # Final Activation
         if self.out_act is not None:
-            out = self.out_act(out)
+            act = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
+            x   = act(x)
 
-        return out.reshape(-1)
+        # Normalize by sqrt of number of sites (like jVMC)
+        n_sites = float(math.prod(self.reshape_dims))
+        x       = x / jnp.sqrt(n_sites)
+
+        return x.reshape(-1)
+
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
