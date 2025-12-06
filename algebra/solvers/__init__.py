@@ -118,8 +118,6 @@ def choose_solver(solver_id     : Union[str, int, SolverType, Type[Solver]],
     
     # 1. Handle Instance Passthrough
     if isinstance(solver_id, Solver):
-        if kwargs.get('logger'):
-            kwargs['logger'].warning(f"Solver instance provided; ignoring kwargs: {kwargs}")
         return solver_id
 
     # 2. Resolve SolverType Enum

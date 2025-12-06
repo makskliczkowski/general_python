@@ -1757,8 +1757,6 @@ def choose_precond(precond_id: Any, **kwargs) -> Preconditioner:
     
     # 1. Handle Instance Passthrough
     if isinstance(precond_id, Preconditioner):
-        if kwargs:
-            print(f"Warning: Instance provided; ignoring kwargs: {kwargs}")
         return precond_id
 
     # 2. Resolve ID to Enum Type
