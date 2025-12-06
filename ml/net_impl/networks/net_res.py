@@ -275,6 +275,11 @@ class ResNet(FlaxInterface):
             f"kernel={mod.kernel_size}, dtype={self.dtype}, "
             f"params={self.nparams})"
         )
+        
+    def __str__(self) -> str:
+        kind    = "Complex" if self._iscpx else "Real"
+        mod     = self._flax_module
+        return (f"{kind}ResNet(reshape={mod.reshape_dims},features={mod.features},depth={mod.depth},dtype={self.dtype})")
 
 # Example usage check
 if __name__ == "__main__":

@@ -326,14 +326,18 @@ class RBM(FlaxInterface):
     # ------------------------------------------------------------
 
     def __repr__(self) -> str:
-        init_status = "initialized" if self.initialized else "uninitialized"
-        rbm_type    = "Complex" if self._is_cpx else "Real"
-        n_hidden    = self._flax_module.n_hidden if self.initialized else self._net_kwargs.get('n_hidden', '?')
-        bias        = "on" if (self._flax_module.bias if self.initialized else self._net_kwargs.get('bias', '?')) else "off"
-        vis_bias    = "on" if (self._flax_module.visible_bias if self.initialized else self._net_kwargs.get('visible_bias', '?')) else "off"
-        n_params    = self.nparams if self.initialized else '?'
+        init_status = "initialized"                             if self.initialized else "uninitialized"
+        rbm_type    = "Complex"                                 if self._is_cpx else "Real"
+        n_hidden    = self._flax_module.n_hidden                if self.initialized else self._net_kwargs.get('n_hidden', '?')
+        bias        = "on" if (self._flax_module.bias           if self.initialized else self._net_kwargs.get('bias', '?')) else "off"
+        vis_bias    = "on" if (self._flax_module.visible_bias   if self.initialized else self._net_kwargs.get('visible_bias', '?')) else "off"
+        n_params    = self.nparams                              if self.initialized else '?'
         return (f"{rbm_type}RBM(shape={self.input_shape}, hidden={n_hidden}, "
             f"bias={bias}, visible_bias={vis_bias}, dtype={self.dtype}, params={n_params}, analytic_grad={self._has_analytic_grad}, {init_status})")
+    
+    def __str__(self) -> str:
+        type_str    = "Complex" if self._is_cpx else "Real"
+        return f"{type_str}RBM(shape={self.input_shape},hidden={self._flax_module.n_hidden if self.initialized else self._net_kwargs.get('n_hidden','?')},dtype={self.dtype})"
     
     # ------------------------------------------------------------
 

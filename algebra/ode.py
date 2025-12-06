@@ -2,17 +2,19 @@
 This is a module for solving ordinary differential equations (ODEs)
 It provides a set of classes and methods to define and solve initial value problems (IVPs)
 
+-----------------------------------------------
 File    : general_python/common/ode.py
 Author  : Maksymilian Kliczkowski
 email   : maxgrom97@gmail.com
+-----------------------------------------------
 '''
 
-import numpy as np
-import numba as nb
-import warnings
-import inspect
-from typing import Union, Any, Tuple, Callable
-from abc import ABC, abstractmethod
+import  time
+import  numpy as np
+import  warnings
+import  inspect
+from    typing import Union, Any, Tuple, Callable
+from    abc import ABC, abstractmethod
 
 try:
     from scipy.integrate import solve_ivp
@@ -20,18 +22,15 @@ except ImportError as e:
     raise ImportError("Failed to import scipy.integrate module. Ensure QES package is correctly installed.") from e
 
 try:
-    from ..algebra.utils import get_backend, JAX_AVAILABLE
-except ImportError as e:
-    raise ImportError("Failed to import algebra.utils module. Ensure QES package is correctly installed.") from e
-
-if JAX_AVAILABLE:
-    import jax
-    import jax.numpy as jnp
-    from jax import jit
-else:
+    import          jax
+    import          jax.numpy as jnp
+    from            jax import jit
+    JAX_AVAILABLE   = True
+except ImportError:
     jnp             = None
     jit             = None
     jax             = None
+    JAX_AVAILABLE   = False
     
 ########################################################################
 #! General class for ODE integration
@@ -67,11 +66,19 @@ class IVP(ABC):
         rhs_prefactor : float
             Prefactor for the right-hand side of the ODE.
         """
+        
+        try:
+            from ..algebra.utils import get_backend
+        except ImportError:
+            def get_backend(backend_str: str): return np if isinstance(backend_str, str) and backend_str.lower() == 'numpy' else jnp if JAX_AVAILABLE and backend_str.lower() == 'jax' else np
+        
         self.backend        = backend
         self.xp             = get_backend(backend)
         self.backendstr     = 'numpy' if self.xp is np else 'jax'
+        
         if self.xp is None:
             raise ValueError(f"Backend '{backend}' is not supported. Choose 'numpy' or 'jax'.")
+        
         self._isjax         = not (self.xp is np)
         self._isnpy         = not self._isjax
         self._dt            = dt
@@ -89,8 +96,8 @@ class IVP(ABC):
             - dy only (scalar or array)
         """
         if self._isjax:
-            #! assume f is a jax function with signature f(t, ...)
-            out = f(y, t, **rhs_args, int_step=int_step)
+            #! assume f is a jax function with signature f(y, t, **rhs_args, int_step=int_step)
+            out     = f(y, t, **rhs_args, int_step=int_step)
         else:
             sig     = inspect.signature(f)
             kwargs  = {}

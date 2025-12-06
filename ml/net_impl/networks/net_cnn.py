@@ -127,8 +127,8 @@ class _FlaxCNN(nn.Module):
     output_feats   : int                        # prod(output_shape)
     in_act         : Optional[Callable] = None
     out_act        : Optional[Callable] = None
-    param_dtype    : jnp.dtype          = DEFAULT_JP_CPX_TYPE
-    dtype          : jnp.dtype          = DEFAULT_JP_CPX_TYPE
+    param_dtype    : jnp.dtype          = jnp.complex64
+    dtype          : jnp.dtype          = jnp.complex64
     input_channels : int                = 1
     periodic       : bool               = True
     use_sum_pool   : bool               = True
@@ -144,7 +144,7 @@ class _FlaxCNN(nn.Module):
                             padding     = 'VALID' if self.periodic else 'SAME',
                             use_bias    = bias,
                             param_dtype = self.param_dtype,
-                            # kernel_init = k_init,
+                            kernel_init = cplx_variance_scaling(1.0, 'fan_avg', 'truncated_normal', self.param_dtype),
                             dtype       = self.dtype,
                             name        = f"conv_{i}"
             ) for i, (feat, k_size, stride, bias) in enumerate(iter_specs)
@@ -156,106 +156,52 @@ class _FlaxCNN(nn.Module):
                             use_bias    = True,
                             param_dtype = self.param_dtype,
                             dtype       = self.dtype,
-                            # kernel_init = k_init,
+                            kernel_init = cplx_variance_scaling(1.0, 'fan_avg', 'truncated_normal', self.param_dtype),
                             name        = "dense_out"
                         )
 
     def __call__(self, s: jax.Array) -> jax.Array:
-        r"""
-        Calculates a Convolutional neural network (CNN) output.
-        The input `s` is reshaped to match the specified reshape dimension and
-        passed through a series of convolutional layers.
-
-        Steps:
-            0.  Apply an optional activation function to the input.
-            1.  Reshape input `s` from (batch, n_visible) to (batch, Lx, Ly, ..., input_channels).
-            2.  Apply a sequence of convolutional layers with activations.
-            3.  Flatten the output of the last convolutional layer.
-            4.  Apply a final Dense layer to produce the desired number of output features.
-            5.  Apply an optional final activation function.
-
-        Math (Conceptual for one layer):
-            Let :math:`x^{(0)}` be the reshaped input tensor.
-            For layer :math:`l`:
-            
-            .. math::
-                z^{(l)} = \text{Conv}^{(l)}(x^{(l-1)}) + b^{(l)}
-            
-            .. math::
-                x^{(l)} = \sigma^{(l)}(z^{(l)})
-
-            where :math:`\text{Conv}^{(l)}` is the convolution operation with kernel :math:`W^{(l)}`,
-            :math:`b^{(l)}` is the optional bias, and :math:`\sigma^{(l)}` is the activation function.
-
-            The final output is obtained by summing the elements of the last layer's output :math:`x^{(L)}`:
-
-            .. math::
-                \log(\psi(s)) = \sum_{spatial\_dims, channels} x^{(L)}_{spatial\_dims, channels}
-
-
-        Args:
-            s (jax.Array):
-                Input configuration(s) with shape (batch, n_visible).
-
-        Returns:
-            jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,).
-        """
         
-        if s.ndim == 1:                     # shape (n_visible,)
-            s = s[jnp.newaxis, ...]         # -> (1, n_visible)
-        
-        # Use strictly integers for reshaping to satisfy JAX JIT
-        batch_size      = s.shape[0]
-        target_shape    = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
-        x               = s.reshape(target_shape)
-        x               = x.astype(self.dtype)
-        
+
+        # Ensure batch dimension
+        if s.ndim == 1:
+            s = s[jnp.newaxis, ...]
+
+        batch_size = s.shape[0]
+        target_shape = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
+
+        # Map spins: -1/2, +1/2 -> -1, +1
+        x = (s.reshape(target_shape) * 2).astype(self.dtype)
+
+        # Optional input activation
         if self.in_act is not None:
-            act = self.in_act[0] if isinstance(self.in_act, (list, tuple)) else self.in_act
-            x   = act(x)
-        
-        def _forward_convs(h):
-            for i, conv in enumerate(self.conv_layers):
-                k_size  = self.kernel_sizes[i]
-                
-                # Manual Periodic Padding
-                if self.periodic:
-                    h   = circular_pad(h, k_size)
-                
-                # Convolution
-                h   = conv(h)
-                act = self.activations[i]
-                if isinstance(act, (list, tuple)): 
-                    act = act[0]
-                h = act(h)
-            return h
+            x = self.in_act(x)
 
-        if not self.is_initializing():
-            _forward_convs = jax.checkpoint(_forward_convs)
-            
-        x = _forward_convs(x)
+        # Convolution stack with periodic padding
+        for i, conv in enumerate(self.conv_layers):
+            if self.periodic:
+                x = circular_pad(x, self.kernel_sizes[i])
+            x = conv(x)
+            act = self.activations[i][0]
+            x = act(x)
 
-        # Output Pooling & Dense
-        if self.use_sum_pool:
-            # Apply Dense per site (preserving spatial dims temporarily)
-            x = self.dense_out(x)
-            
-            # Sum over spatial dims (1 to N-1)
-            # x shape: (Batch, L1, L2, ..., Features)
-            spatial_axes    = tuple(range(1, x.ndim - 1))
-            x               = jnp.sum(x, axis=spatial_axes)
-        else:
-            # Flatten and Dense
-            x               = x.reshape((batch_size, -1))
-            x               = self.dense_out(x)
+        # Dense per-site (optional but kept)
+        x = self.dense_out(x)
 
-        # Final Activation
+        # Sum over all non-batch dims
+        spatial_axes = tuple(range(1, x.ndim))
+        summed = jnp.sum(x, axis=spatial_axes)
+
+        # Correct jVMC-style normalization
+        norm = jnp.sqrt(x[0].size)  # number of summed features per sample
+        out = summed / norm
+
+        # Final activation if any
         if self.out_act is not None:
-            act = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
-            x   = act(x)
+            out = self.out_act(out)
 
-        return x.reshape(-1)
-    
+        return out.reshape(-1)
+
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
 ##########################################################
@@ -448,9 +394,8 @@ class CNN(FlaxInterface):
         # which executes _FlaxCNN.__call__
         flat_output = super().__call__(s) # Shape (batch, output_features)
 
-        # Reshape the flat output to the desired multi-dimensional output shape
-        # The batch dimension is handled automatically by Flax/JAX
-        # prepend -1 to the output shape to allow for any batch size
+        if self._out_shape == (1,):
+            return flat_output.reshape(-1) # (batch,)
         target_output_shape = (-1,) + self._out_shape
         return flat_output.reshape(target_output_shape)
 
@@ -472,7 +417,21 @@ class CNN(FlaxInterface):
             f"params={self.nparams}, "
             f'{"initialized" if self.initialized else "uninitialized"})'
         )
-        
+
+    def __str__(self) -> str:
+        """
+        Provides a brief string summary of the CNN.
+        Displays the CNN type (Complex/Real), input shape, reshape dimensions,
+        number of features, and data type.
+        """
+        kind        = "Complex" if self._iscpx else "Real"
+        n_features  = sum(self._flax_module.features)
+        return (
+            f"{kind}CNN(input_shape={self.input_shape},"
+            f"reshape={self._flax_module.reshape_dims},"
+            f"total_features={n_features},dtype={self.dtype})"
+        )
+
 ##########################################################
 #! End of CNN File
 ##########################################################

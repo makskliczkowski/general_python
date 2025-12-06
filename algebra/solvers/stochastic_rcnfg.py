@@ -192,12 +192,12 @@ if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
     
-    @jax.jit
+    # @jax.jit
     def loss_centered_jax(loss: jnp.ndarray, loss_m: jnp.ndarray) -> jnp.ndarray:
         """L_c = L - <L>"""
         return loss - loss_m
 
-    @jax.jit
+    # @jax.jit
     def loss_centered_jax_modified_ratios(loss, loss_m, betas, r_el, r_le):
         """
         Adjusts local energy vector to include excited state penalties.
@@ -229,20 +229,19 @@ if JAX_AVAILABLE:
         
         return loss_c + corr
 
-    @jax.jit
     def derivatives_centered_jax(derivatives: jnp.ndarray, derivatives_m: jnp.ndarray) -> jnp.ndarray:
         """O_c = O - <O>"""
         return derivatives - derivatives_m
 
-    @jax.jit
+    # @jax.jit
     def gradient_jax(derivatives_c_h: jnp.ndarray, loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """F = (1/N) * O^dag @ E_c"""
         return jnp.matmul(derivatives_c_h, loss_c) / n_samples
 
-    @jax.jit
+    # @jax.jit
     def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """S = (1/N) * O^dag @ O (Standard SR)"""
-        return jnp.matmul(derivatives_c_h, derivatives_c) / n_samples
+        return (derivatives_c_h @ derivatives_c) / n_samples
 
     @jax.jit
     def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
@@ -251,7 +250,7 @@ if JAX_AVAILABLE:
         # We want                   (N_s, N_s).
         # Correct math:             T = O . O^dag
         # Input derivatives_c_h is usually O^dag (N_p, N_s)
-        return jnp.matmul(derivatives_c, derivatives_c_h) / n_samples
+        return (derivatives_c @ derivatives_c_h) / n_samples
     
     # -------------------------------------------------------
     

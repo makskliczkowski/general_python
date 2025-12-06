@@ -366,15 +366,23 @@ for name, backends in _DTYPE_REGISTRY.items():
         if dtype is not None:
             _TYPE_TO_NAME[dtype] = name
             
-_TYPE_TO_NAME[np.complex64]     = 'complex64'
-_TYPE_TO_NAME[np.complex128]    = 'complex128'
-_TYPE_TO_NAME[np.float32]       = 'float32'
-_TYPE_TO_NAME[np.float64]       = 'float64'
-_TYPE_TO_NAME[np.int32]         = 'int32'
-_TYPE_TO_NAME[np.int64]         = 'int64'
-_TYPE_TO_NAME[int]              = 'int64'
-_TYPE_TO_NAME[float]            = 'float64'
-_TYPE_TO_NAME[complex]          = 'complex128'
+_TYPE_TO_NAME[np.complex64]             = 'complex64'
+_TYPE_TO_NAME[np.complex128]            = 'complex128'
+_TYPE_TO_NAME[np.float32]               = 'float32'
+_TYPE_TO_NAME[np.float64]               = 'float64'
+_TYPE_TO_NAME[np.int32]                 = 'int32'
+_TYPE_TO_NAME[np.int64]                 = 'int64'
+_TYPE_TO_NAME[int]                      = 'int64'
+_TYPE_TO_NAME[float]                    = 'float64'
+_TYPE_TO_NAME[complex]                  = 'complex128'
+
+# Also add dtype instances (e.g., np.dtype('float64'))
+_TYPE_TO_NAME[np.dtype('complex64')]    = 'complex64'
+_TYPE_TO_NAME[np.dtype('complex128')]   = 'complex128'
+_TYPE_TO_NAME[np.dtype('float32')]      = 'float32'
+_TYPE_TO_NAME[np.dtype('float64')]      = 'float64'
+_TYPE_TO_NAME[np.dtype('int32')]        = 'int32'
+_TYPE_TO_NAME[np.dtype('int64')]        = 'int64'
 
 def distinguish_type(typek: Any, backend: Literal['numpy', 'jax'] = 'numpy') -> DType:
     """

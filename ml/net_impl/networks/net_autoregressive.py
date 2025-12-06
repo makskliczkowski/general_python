@@ -452,6 +452,10 @@ class ComplexAR(FlaxInterface):
             'dtype'         : str(self._dtype)
         }
     
+    def __str__(self) -> str:
+        typek = "Complex" if self._dtype in [jnp.complex64, jnp.complex128] else "Real"
+        return f"{typek}AR(n_sites={self._n_sites},ar_layers={self._ar_hidden},phase_layers={self._phase_hidden},dtype={self._dtype})"
+    
 # =============================================================================
 #! EOF
 # =============================================================================
