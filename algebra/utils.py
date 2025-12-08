@@ -544,7 +544,7 @@ class BackendManager:
             self._update_device()
 
             if prefer_jax:
-                log.info("Setting JAX as the active backend.")
+                log.debug("Setting JAX as the active backend.")
                 self.set_active_backend("jax")
     
         self.detected_jax_backend: Optional[str]                = getattr(self, "detected_jax_backend", None)
@@ -655,7 +655,7 @@ class BackendManager:
             self.scipy      = self._sp_module
             self.key        = None
             self.jit        = lambda x: x
-            log.info("Switched active backend to NumPy.")
+            log.info("Switched active backend to NumPy.", color="green")
         elif name == "jax":
             if not self.is_jax_available or not self._jnp_module or not self._jrn_module or not self._jsp_module or not self._jax_jit:
                 raise ValueError("Cannot set 'jax' backend: JAX components not fully available.")
@@ -665,7 +665,7 @@ class BackendManager:
             self.scipy      = self._jsp_module
             self.key        = self.default_jax_key # Use the default stored key
             self.jit        = self._jax_jit
-            log.info("Switched active backend to JAX.")
+            log.info("Switched active backend to JAX.", color="green")
         else:
             raise ValueError(f"Invalid backend name: {name}. Choose 'numpy' or 'jax'.")
         self._update_dtypes() # Update dtypes after switching

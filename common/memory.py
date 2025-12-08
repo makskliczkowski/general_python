@@ -7,15 +7,12 @@ Author      : Maks Kliczkowski
 ----------------------------------------------------------------------------
 '''
 
-from typing import Dict, Optional, TYPE_CHECKING
-import gc
-import numpy as np
+from    typing import Dict, Optional, TYPE_CHECKING
+import  gc
+import  numpy as np
 
-try:
-    if TYPE_CHECKING:
-        from flog import Logger
-except ImportError:
-    Logger = None # type: ignore
+if TYPE_CHECKING:
+    from QES.general_python.common.flog import Logger
 
 # --------------------------------------------------------------------------------
 

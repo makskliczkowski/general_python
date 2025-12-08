@@ -91,13 +91,13 @@ except ImportError:
 #! Scalable Lanczos Parameters
 # ----------------------------------------------------------------------------------------
 
-def get_lanczos_parameters(hilbert_dim              : int, 
-                           ns                       : int,
-                           requested_k              : Optional[int] = None,
-                           requested_max_iter       : Optional[int] = None,
-                           convergence_factor       : float = 2.5,
-                           logger                   : Optional['Logger'] = None
-                           ) -> Dict[str, int]:
+def get_lanczos_parameters(hilbert_dim          : int, 
+                        ns                      : int,
+                        requested_k             : Optional[int]         = None,
+                        requested_max_iter      : Optional[int]         = None,
+                        convergence_factor      : float                 = 2.5,
+                        logger                  : Optional['Logger']    = None
+                        ) -> Dict[str, int]:
     """
     Compute optimal Lanczos parameters that scale with system size.
     
@@ -136,7 +136,7 @@ def get_lanczos_parameters(hilbert_dim              : int,
     
     # Base k scaling: starts at ~20 for small systems, grows logarithmically
     # For physics: want enough states to see the spectrum structure
-    base_k          = max(20, int(10 * np.log2(max(ns, 4))))  # ~20 for 4 sites, ~60 for 32 sites
+    base_k          = max(20, int(8 * np.log2(max(ns, 4))))  # ~20 for 4 sites, ~60 for 32 sites
     max_k_fraction  = 0.1  # Never compute more than 10% of states
     max_k_absolute  = 2000  # Hard cap for memory
     max_k           = min(max_k_absolute, int(hilbert_dim * max_k_fraction))

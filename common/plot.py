@@ -1,53 +1,329 @@
-import itertools
-from math import fsum
-from typing import Tuple, Union, Optional, List
+'''
+Plotting Utilities for Scientific Publications
+===============================================
+
+This module provides a comprehensive set of tools for creating publication-quality
+plots using Matplotlib. It is designed for scientific computing workflows with
+support for Nature/Science journal formatting.
+
+Features
+--------
+- **Publication Styles**: Pre-configured styles for Nature, Science, and PRL journals
+- **Color Management**: Colorblind-safe palettes (Tableau, Plastic, Pastel)
+- **Scientific Formatters**: LaTeX-style axis labels with scientific notation
+- **Flexible Colorbars**: Full control over position, scale (log/linear), and discretization
+- **Grid Layouts**: GridSpec-based subplot management with insets
+- **Data Filtering**: Parameter-based filtering for multi-experiment datasets
+
+Quick Start
+-----------
+>>> from QES.general_python.common.plot import Plotter
+>>> fig, axes = Plotter.get_subplots(nrows=2, ncols=2, sizex=8, sizey=6)
+>>> Plotter.plot(axes[0], x, y, color='C0', label='Data')
+>>> Plotter.semilogy(axes[1], x, y_log, color='C1')
+>>> Plotter.set_ax_params(axes[0], xlabel='Time (s)', ylabel='Signal', title='Panel A')
+>>> Plotter.set_legend(axes[0], style='publication')
+>>> Plotter.save_fig('.', 'figure', format='pdf', dpi=300)
+
+Examples
+--------
+Creating a figure with error bars::
+
+    fig, ax = Plotter.get_subplots(1, 1, sizex=4, sizey=3)
+    Plotter.errorbar(ax[0], x, y, yerr=sigma, color='C0', label='Measurement')
+    Plotter.set_ax_params(ax[0], xlabel=r'$x$', ylabel=r'$f(x)$', yscale='log')
+
+Adding a colorbar::
+
+    cbar, cax = Plotter.add_colorbar(
+        fig, [0.92, 0.15, 0.02, 0.7], data,
+        cmap='viridis', scale='log', label=r'$|\psi|^2$'
+    )
+
+For more examples, call: Plotter.help()
+
+----------------------------------
+Author              : Maksymilian Kliczkowski
+Date                : December 2025
+Email               : maxgrom97@gmail.com
+----------------------------------
+'''
+
+
+import  json
+import  itertools
+import  numpy as np
+from    math import fsum
+from    typing import Tuple, Union, Optional, List, TYPE_CHECKING
 
 try:
     import scienceplots
 except ImportError:
     print("scienceplots not found, some styles may not be available.")
 
-########################## matplotlib ##########################
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
+# Matplotlib
+import matplotlib               as mpl
+import matplotlib.pyplot        as plt
+import matplotlib.colors        as mcolors
+import matplotlib.ticker        as mticker
 
-########################## grids
-from matplotlib.colors import Normalize, ListedColormap
-from matplotlib.gridspec import GridSpec, GridSpecFromSubplotSpec
-import matplotlib.ticker as mticker
-from matplotlib import ticker
-from matplotlib.patches import Polygon, Rectangle
-from matplotlib.transforms import Bbox
-from matplotlib.ticker import FixedLocator, ScalarFormatter, NullFormatter, LogLocator, LogFormatterMathtext
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from mpl_toolkits.axes_grid1.inset_locator import (inset_axes, mark_inset)
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from matplotlib.legend import Legend
-from matplotlib.legend_handler import HandlerBase, HandlerPatch
-########################## other
-import numpy as np
+# Grids
+from matplotlib.colors          import Normalize, ListedColormap
+from matplotlib.gridspec        import GridSpec, GridSpecFromSubplotSpec
+from matplotlib.patches         import Rectangle
+from matplotlib.ticker          import FixedLocator, NullFormatter, LogLocator, LogFormatterMathtext
+from matplotlib.legend          import Legend
+from matplotlib.legend_handler  import HandlerBase, HandlerPatch
+
+# -------------------------------------------
+# MATPLOTLIB CONFIGURATION
+# -------------------------------------------
 mpl.rcParams.update(mpl.rcParamsDefault)
 
-# Safely set rcParams (for compatibility with documentation build systems)
+def configure_style(style       : str = 'publication', 
+                    font_size   : int = 10,
+                    use_latex   : bool = False,
+                    dpi         : int = 150,
+                    **overrides):
+    """
+    Configure matplotlib rcParams for publication-quality figures.
+    
+    This function sets up consistent styling across all plots. Call it once
+    at the start of your script or notebook.
+    
+    Parameters
+    ----------
+    style : str, default='publication'
+        Preset style to use:
+        - 'publication': Nature/Science journal style (compact, clean)
+        - 'presentation': Larger fonts for slides
+        - 'poster': Very large fonts for posters
+        - 'minimal': Bare minimum styling
+        - 'default': Reset to matplotlib defaults
+    font_size : int, default=10
+        Base font size. Other sizes are scaled relative to this.
+    use_latex : bool, default=False
+        If True, use LaTeX for text rendering (slower but prettier).
+    dpi : int, default=150
+        Figure resolution for display.
+    **overrides
+        Additional rcParams to override. E.g., `axes.linewidth=2`.
+    
+    Examples
+    --------
+    >>> # Standard publication setup
+    >>> configure_style('publication', font_size=10)
+    
+    >>> # Presentation with larger fonts
+    >>> configure_style('presentation', font_size=14, dpi=100)
+    
+    >>> # Custom overrides
+    >>> configure_style('publication', **{'axes.linewidth': 1.5, 'lines.linewidth': 2})
+    
+    Notes
+    -----
+    This function modifies global matplotlib rcParams. To reset to defaults,
+    use `configure_style('default')` or `mpl.rcParams.update(mpl.rcParamsDefault)`.
+    
+    Recommended figure sizes for journals:
+    - Nature: single column = 3.5 in, double column = 7 in
+    - Science: single column = 3.5 in, double column = 7.25 in
+    - PRL: single column = 3.4 in, double column = 7 in
+    """
+    # Reset to defaults first
+    mpl.rcParams.update(mpl.rcParamsDefault)
+    
+    # Try to load scienceplots styles if available
+    if style != 'default':
+        try:
+            if use_latex:
+                plt.style.use(['science', 'nature'])
+            else:
+                plt.style.use(['science', 'no-latex', 'colors5-light'])
+        except Exception:
+            pass  # Fall back to manual configuration
+    
+    # Base configuration (applies to all styles)
+    base_config = {
+        # Figure
+        'figure.dpi'            : dpi,
+        'figure.facecolor'      : 'white',
+        'figure.edgecolor'      : 'white',
+        'figure.autolayout'     : False,
+        'figure.constrained_layout.use': True,
+        
+        # Saving
+        'savefig.dpi'           : 300,
+        'savefig.facecolor'     : 'white',
+        'savefig.edgecolor'     : 'white',
+        'savefig.bbox'          : 'tight',
+        'savefig.pad_inches'    : 0.05,
+        
+        # Axes
+        'axes.facecolor'        : 'white',
+        'axes.edgecolor'        : 'black',
+        'axes.labelcolor'       : 'black',
+        'axes.axisbelow'        : True,
+        'axes.grid'             : False,
+        'axes.spines.top'       : True,
+        'axes.spines.right'     : True,
+        
+        # Ticks
+        'xtick.direction'       : 'in',
+        'ytick.direction'       : 'in',
+        'xtick.top'             : True,
+        'ytick.right'           : True,
+        'xtick.color'           : 'black',
+        'ytick.color'           : 'black',
+        
+        # Grid
+        'grid.color'            : '#E0E0E0',
+        'grid.linestyle'        : '-',
+        'grid.linewidth'        : 0.5,
+        'grid.alpha'            : 0.8,
+        
+        # Lines
+        'lines.linewidth'       : 1.5,
+        'lines.markersize'      : 5,
+        
+        # Fonts
+        'font.family'           : 'sans-serif' if not use_latex else 'serif',
+        'mathtext.fontset'      : 'stix',
+        
+        # Legend
+        'legend.frameon'        : False,
+        'legend.framealpha'     : 1.0,
+        'legend.edgecolor'      : 'none',
+        'legend.fancybox'       : False,
+    }
+    
+    # Style-specific configurations
+    style_configs = {
+        'publication': {
+            'font.size'             : font_size,
+            'axes.titlesize'        : font_size,
+            'axes.labelsize'        : font_size,
+            'xtick.labelsize'       : font_size - 1,
+            'ytick.labelsize'       : font_size - 1,
+            'legend.fontsize'       : font_size - 1,
+            'axes.linewidth'        : 0.8,
+            'xtick.major.width'     : 0.8,
+            'ytick.major.width'     : 0.8,
+            'xtick.minor.width'     : 0.5,
+            'ytick.minor.width'     : 0.5,
+            'xtick.major.size'      : 4,
+            'ytick.major.size'      : 4,
+            'xtick.minor.size'      : 2,
+            'ytick.minor.size'      : 2,
+            'lines.linewidth'       : 1.2,
+            'lines.markersize'      : 4,
+        },
+        'presentation': {
+            'font.size'             : font_size,
+            'axes.titlesize'        : font_size + 2,
+            'axes.labelsize'        : font_size,
+            'xtick.labelsize'       : font_size - 2,
+            'ytick.labelsize'       : font_size - 2,
+            'legend.fontsize'       : font_size - 2,
+            'axes.linewidth'        : 1.2,
+            'xtick.major.width'     : 1.2,
+            'ytick.major.width'     : 1.2,
+            'xtick.major.size'      : 6,
+            'ytick.major.size'      : 6,
+            'xtick.minor.size'      : 3,
+            'ytick.minor.size'      : 3,
+            'lines.linewidth'       : 2.0,
+            'lines.markersize'      : 8,
+        },
+        'poster': {
+            'font.size'             : font_size,
+            'axes.titlesize'        : font_size + 4,
+            'axes.labelsize'        : font_size + 2,
+            'xtick.labelsize'       : font_size,
+            'ytick.labelsize'       : font_size,
+            'legend.fontsize'       : font_size,
+            'axes.linewidth'        : 1.5,
+            'xtick.major.width'     : 1.5,
+            'ytick.major.width'     : 1.5,
+            'xtick.major.size'      : 8,
+            'ytick.major.size'      : 8,
+            'lines.linewidth'       : 2.5,
+            'lines.markersize'      : 10,
+        },
+        'minimal': {
+            'font.size'             : font_size,
+            'axes.spines.top'       : False,
+            'axes.spines.right'     : False,
+            'xtick.top'             : False,
+            'ytick.right'           : False,
+        },
+        'default': {},
+    }
+    
+    # Apply configurations
+    if style != 'default':
+        for key, value in base_config.items():
+            try:
+                mpl.rcParams[key] = value
+            except (KeyError, ValueError):
+                pass
+        
+        if style in style_configs:
+            for key, value in style_configs[style].items():
+                try:
+                    mpl.rcParams[key] = value
+                except (KeyError, ValueError):
+                    pass
+    
+    # Apply user overrides
+    for key, value in overrides.items():
+        key = key.replace('_', '.')  # Allow underscores: axes_linewidth -> axes.linewidth
+        try:
+            mpl.rcParams[key] = value
+        except (KeyError, ValueError):
+            print(f"Warning: Invalid rcParam '{key}'")
+
+def get_rcparams_summary() -> dict:
+    """
+    Get a summary of current rcParams relevant to plotting.
+    
+    Returns
+    -------
+    dict
+        Dictionary with current settings for fonts, lines, axes, etc.
+    
+    Examples
+    --------
+    >>> params = get_rcparams_summary()
+    >>> print(params['font.size'])
+    """
+    keys = [
+        'font.size', 'axes.labelsize', 'axes.titlesize', 
+        'xtick.labelsize', 'ytick.labelsize', 'legend.fontsize',
+        'lines.linewidth', 'lines.markersize',
+        'axes.linewidth', 'xtick.major.size', 'ytick.major.size',
+        'figure.dpi', 'savefig.dpi',
+        'axes.spines.top', 'axes.spines.right',
+    ]
+    return {k: mpl.rcParams.get(k, 'N/A') for k in keys}
+
+# Apply default publication style on import
 try:
-    plt.rcParams['axes.facecolor']      =   'white'
-    plt.rcParams['savefig.facecolor']   =   'w'
-except (TypeError, AttributeError, KeyError):
-    # Handle cases where rcParams doesn't support item assignment (e.g., during doc builds)
+    configure_style('publication', font_size=10)
+except Exception:
     pass
 
-########################## labellines
+# labellines
 try:
-    from labellines import labelLine, labelLines
+    from labellines import labelLines
 except ImportError:
-    print("labellines not found, labelLine and labelLines functions will not be available.")
-    
-########################## style
-SMALL_SIZE                          =   12
-MEDIUM_SIZE                         =   14
-BIGGER_SIZE                         =   16
-ADDITIONAL_LINESTYLES               =   {
+    print("labellines not found, labelLines function will not be available.")
+
+# style
+SMALL_SIZE                  =   12
+MEDIUM_SIZE                 =   14
+BIGGER_SIZE                 =   16
+ADDITIONAL_LINESTYLES       =   {
     'loosely dotted'        : (0, (1, 5)),
     'dotted'                : (0, (1, 1)),
     'densely dotted'        : (0, (1, 1)),
@@ -85,13 +361,6 @@ try:
 except (TypeError, AttributeError, KeyError):
     # Handle cases where rcParams doesn't support item assignment (e.g., during doc builds)
     pass
-
-# plt.rcParams['text.usetex']         = True
-# latex_engine                        = 'pdflatex'
-# latex_elements                      = {
-#                                         'extrapackages': r'\usepackage{physics}',
-#                                         'extrapackages': r'\usepackage{amsmath}'
-#                                     }
 
 #####################################
 colorsList                          =   (list(mcolors.TABLEAU_COLORS))
@@ -311,24 +580,527 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
 ########################### plotter ###########################
 
 class Plotter:
-    """ 
-    A Plotter class that handles the methods of plotting.
+    """
+    Publication-quality plotting utilities for scientific computing.
+    
+    This class provides static methods for creating, customizing, and saving
+    Matplotlib figures suitable for scientific journals (Nature, Science, PRL, etc.).
+    
+    All methods are @staticmethod, so you can use them without instantiation::
+    
+    >>> Plotter.plot(ax, x, y, color='C0', label='Data')
+    >>> Plotter.set_legend(ax, style='publication')
+    
+    Main Categories
+    ---------------
+    **Plotting Methods**    : plot, scatter, semilogy, semilogx, loglog, errorbar, fill_between, histogram
+    **Axis Setup**          : set_ax_params, set_tickparams, setup_log_x, setup_log_y
+    **Annotations**         : set_annotate, set_annotate_letter, set_arrow
+    **Colorbars**           : add_colorbar, get_colormap, discrete_colormap  
+    **Layouts**             : get_subplots, get_grid, get_inset
+    **Legends**             : set_legend, set_legend_custom
+    **Saving**              : save_fig, savefig
+    
+    For full documentation, call: Plotter.help()
     """
     
+    # Publication-ready default settings
+    _PUBLICATION_DEFAULTS = {
+        'linewidth'     : 1.5,
+        'markersize'    : 5,
+        'capsize'       : 2,
+        'fontsize'      : 10,
+        'tick_length'   : 4,
+        'tick_width'    : 0.8,
+    }
+    
     def __init__(self, default_cmap='viridis', font_size=12, dpi=200):
-        '''
-        Initialize the Plotter class with default parameters.
-        Parameters:
-            default_cmap [str]:
-                Default colormap to use for plots.
-            font_size [int]:
-                Default font size for text in plots.
-            dpi [int]:
-                Dots per inch for the figure resolution.
-        '''
+        """
+        Initialize the Plotter with default parameters.
+        
+        Parameters
+        ----------
+        default_cmap : str, default='viridis'
+            Default colormap for heatmaps and colorbars.
+        font_size : int, default=12
+            Default font size for labels and text.
+        dpi : int, default=200
+            Resolution for rasterized output (PNG, TIFF).
+        
+        Note
+        ----
+        Most methods are @staticmethod and don't require instantiation.
+        Use the class directly: `Plotter.plot(ax, x, y)`
+        """
         self.default_cmap   = default_cmap
         self.font_size      = font_size
         self.dpi            = dpi
+    
+    @staticmethod
+    def help(topic: str = None):
+        """
+        Print help information about available plotting methods.
+        
+        Parameters
+        ----------
+        topic : str, optional
+            Specific topic to get help on. Options:
+            - 'plot': Basic plotting methods
+            - 'axis': Axis configuration
+            - 'color': Colors and colorbars
+            - 'layout': Subplots and grids
+            - 'save': Saving figures
+            - None: Print overview of all topics
+        
+        Examples
+        --------
+        >>> Plotter.help()           # Overview
+        >>> Plotter.help('plot')     # Plotting methods
+        >>> Plotter.help('axis')     # Axis configuration
+        """
+        help_text = {
+            'overview': '''
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                     PLOTTER - Scientific Plotting Utilities                  ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+Topics (use Plotter.help('topic_name') for details):
+
+'plot'    - Basic plotting: plot, scatter, semilogy, semilogx, loglog,
+            errorbar, fill_between, histogram, contourf
+
+'axis'    - Axis setup: set_ax_params, set_tickparams, setup_log_x,
+            setup_log_y, set_smart_lim, unset_spines, unset_ticks, unset_all
+
+'color'   - Colors: add_colorbar, get_colormap, discrete_colormap,
+            Color cycles: colorsCycle, colorsCyclePlastic, etc.
+
+'layout'  - Subplots: get_subplots, make_grid, GridBuilder, get_inset
+
+'grid'    - Advanced grids: make_grid (full control), GridBuilder (nested)
+            width_ratios, height_ratios, wspace, hspace, margins
+
+'legend'  - Legends: set_legend (with style='publication'), set_legend_custom
+
+'annotate'- Annotations: set_annotate, set_annotate_letter, set_arrow
+
+'style'   - configure_style('nature'), configure_style('science'), 'prl', 'aps'
+
+'save'    - Saving: save_fig(directory, filename, format='pdf', dpi=300)
+
+──────────────────────────────────────────────────────────────────────────────
+Quick Example:
+
+    fig, axes = Plotter.get_subplots(1, 2, sizex=8, sizey=3)
+    Plotter.plot(axes[0], x, y, label='Data', color='C0')
+    Plotter.semilogy(axes[1], x, y_log, color='C1')
+    Plotter.set_ax_params(axes[0], xlabel='x', ylabel='y', title='Linear')
+    Plotter.set_legend(axes[0], style='publication')
+    Plotter.save_fig('.', 'my_figure', format='pdf')
+──────────────────────────────────────────────────────────────────────────────
+''',
+            
+            'plot': '''
+================
+PLOTTING METHODS
+================
+
+Basic Plots:
+    Plotter.plot(ax, x, y, ls='-', lw=2, color='black', label=None, marker=None)
+    Plotter.scatter(ax, x, y, s=10, c='blue', marker='o', alpha=1.0, label=None)
+
+Logarithmic Scales:
+    Plotter.semilogy(ax, x, y, **kwargs)    # log y-axis
+    Plotter.semilogx(ax, x, y, **kwargs)    # log x-axis  
+    Plotter.loglog(ax, x, y, **kwargs)      # log both axes
+
+Error Bars:
+    Plotter.errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', capsize=2, **kwargs)
+
+Histogram:
+    Plotter.histogram(ax, data, bins=50, density=True, alpha=0.7, **kwargs)
+
+Filled Regions:
+    Plotter.fill_between(ax, x, y1, y2, color='blue', alpha=0.5)
+
+Reference Lines:
+    Plotter.hline(ax, val, ls='--', lw=2, color='black', label=None)
+    Plotter.vline(ax, val, ls='--', lw=2, color='black', label=None)
+
+Contour:
+    cs = Plotter.contourf(ax, x, y, z, levels=20, cmap='viridis')
+''',
+            
+            'axis': '''
+==================
+AXIS CONFIGURATION
+==================
+
+Comprehensive Setup:
+    Plotter.set_ax_params(
+        ax,
+        xlabel='x', ylabel='y',          # Axis labels
+        xlim=(0, 10), ylim=(0, 1),        # Axis limits
+        xscale='linear', yscale='log',   # Scale ('linear', 'log')
+        fontsize=12,                      # Label font size
+        title='My Plot',                  # Plot title
+    )
+
+Log-Scale Setup (with proper tick formatting):
+    Plotter.setup_log_y(ax, ylims=(1e-6, 1e0), decade_step=2)
+    Plotter.setup_log_x(ax, xlims=(1e-3, 1e3), decade_step=2)
+
+Tick Parameters:
+    Plotter.set_tickparams(ax, labelsize=10, maj_tick_l=6, min_tick_l=3)
+
+Smart Limits (auto-compute from data):
+    Plotter.set_smart_lim(ax, which='y', data=my_data, margin_p=0.1)
+
+──────────────────────────────────────────────────────────────────────────────
+REMOVING SPINES & TICKS (Publication Style)
+──────────────────────────────────────────────────────────────────────────────
+
+Remove Spines:
+    # Remove specific spines (True = REMOVE, False = KEEP)
+    Plotter.unset_spines(ax, top=True, right=True, bottom=False, left=False)
+    
+    # Nature-style (only left and bottom spines)
+    Plotter.unset_spines(ax, top=True, right=True)
+    
+    # Remove all spines (frameless plot)
+    Plotter.unset_spines(ax, top=True, right=True, bottom=True, left=True)
+
+Remove Tick Labels (keep spines):
+    # Hide x-tick labels (useful for stacked plots)
+    Plotter.unset_ticks(ax, xticks=True, yticks=False)
+    
+    # Hide all tick labels
+    Plotter.unset_ticks(ax, xticks=True, yticks=True)
+    
+    # Also remove axis labels
+    Plotter.unset_ticks(ax, xticks=True, xlabel=True)
+
+Scientific Notation:
+    set_formatter(ax, formatter_type='sci', fmt='%1.1e', axis='y')
+
+──────────────────────────────────────────────────────────────────────────────
+QUICK REFERENCE - Common Axis Operations
+──────────────────────────────────────────────────────────────────────────────
+
+# Shared x-axis in stacked plots (hide middle ticks)
+for ax in axes[:-1]:
+    Plotter.unset_ticks(ax, xticks=True, xlabel=True)
+
+# Clean Nature-style axes
+for ax in axes:
+    Plotter.unset_spines(ax, top=True, right=True)
+
+# Log scale with nice decade ticks
+Plotter.setup_log_y(ax, ylims=(1e-6, 1e0), decade_step=1)
+''',
+            
+            'color': '''
+==================
+COLORS & COLORBARS
+==================
+
+Add Colorbar:
+    cbar, cax = Plotter.add_colorbar(
+        fig, pos=[0.92, 0.15, 0.02, 0.7],  # [left, bottom, width, height]
+        mappable=data,                      # or ScalarMappable
+        cmap='viridis',
+        scale='log',                        # 'linear', 'log', 'symlog'
+        label=r'$|\psi|^2$',
+        orientation='vertical',
+    )
+
+Get Colormap Function:
+    getcolor, cmap, norm = Plotter.get_colormap(values, cmap='coolwarm')
+    color = getcolor(value)  # Returns RGBA for value
+
+Discrete Colormap:
+    cmap = Plotter.discrete_colormap(N=5, base_cmap='viridis')
+
+Available Color Cycles (use next(cycle) to get colors):
+    colorsCycle         - Tableau colors (default)
+    colorsCyclePlastic  - Colorblind-safe palette
+    colorsCycleBright   - CSS4 colors
+    colorsCyclePastel   - XKCD colors
+
+Reset Cycles:
+    reset_color_cycles()  # Reset all
+    reset_color_cycles('Plastic')  # Reset specific
+''',
+            
+            'layout': '''
+=================
+LAYOUT & SUBPLOTS
+=================
+
+Simple Subplots (recommended for quick plots):
+    fig, axes = Plotter.get_subplots(
+        nrows=2, ncols=3,
+        sizex=10, sizey=6,                # Total figure size in inches
+        panel_labels=True,                # Add (a), (b), (c) labels
+        despine=True,                     # Remove top/right spines
+        constrained_layout=True,          # Auto-adjust spacing
+    )
+    # axes is always a flat list: [ax0, ax1, ax2, ...]
+
+──────────────────────────────────────────────────────────────────────────────
+ADVANCED GRIDS - Full Control Over Layout
+──────────────────────────────────────────────────────────────────────────────
+
+Plotter.make_grid() - Static Method for Complex Layouts:
+    fig, axes = Plotter.make_grid(
+        nrows=2, ncols=3,
+        figsize=(10, 6),
+        
+        # Column/Row Sizing
+        width_ratios=[1, 2, 1],           # Column width proportions
+        height_ratios=[1, 3],              # Row height proportions
+        
+        # Spacing Control
+        wspace=0.3,                        # Horizontal gap (0-1)
+        hspace=0.2,                        # Vertical gap (0-1)
+        left=0.1, right=0.95,              # Figure margins
+        top=0.95, bottom=0.1,
+        
+        # Per-Axis Options
+        sharex='col',                      # 'row', 'col', 'all', False
+        sharey='row',
+        
+        # Publication Options
+        panel_labels=True,                 # Add (a), (b), (c)
+        panel_label_style='parenthesis',   # 'parenthesis', 'plain', 'bold'
+        despine=True,
+    )
+
+──────────────────────────────────────────────────────────────────────────────
+GridBuilder - Class for Maximum Flexibility
+──────────────────────────────────────────────────────────────────────────────
+
+For nested/complex layouts, use the GridBuilder class:
+
+    builder = Plotter.GridBuilder(figsize=(12, 8))
+    
+    # Add a full-width row at top
+    builder.add_row(ncols=1, height_ratio=1)
+    
+    # Add 3-column row with custom width ratios
+    builder.add_row(ncols=3, height_ratio=2, width_ratios=[2, 1, 1])
+    
+    # Add 2-column row
+    builder.add_row(ncols=2, height_ratio=1.5)
+    
+    # Build the figure
+    fig, axes = builder.build()
+    # axes is a list of lists: [[ax00], [ax10, ax11, ax12], [ax20, ax21]]
+
+GridBuilder supports:
+    .add_row(ncols, height_ratio=1, width_ratios=None)  # Add horizontal row
+    .add_column(nrows, width_ratio=1, height_ratios=None)  # Add vertical column
+    .add_subplot(rows=1, cols=1)  # Add to current position (call multiple times)
+    .build(wspace=0.2, hspace=0.2, **margins)  # Finalize
+
+──────────────────────────────────────────────────────────────────────────────
+COMMON LAYOUT RECIPES
+──────────────────────────────────────────────────────────────────────────────
+
+# Recipe 1: Two-column figure with shared x-axis
+fig, axes = Plotter.make_grid(2, 1, figsize=(4, 6), height_ratios=[2, 1], 
+                               sharex='col', hspace=0.05)
+
+# Recipe 2: Main plot with colorbar column
+fig, axes = Plotter.make_grid(1, 2, figsize=(6, 4), width_ratios=[20, 1])
+ax_main, ax_cbar = axes
+
+# Recipe 3: 2x2 grid with panel labels for publication
+fig, axes = Plotter.make_grid(2, 2, figsize=(8, 8), panel_labels=True, despine=True)
+
+# Recipe 4: Asymmetric layout using GridBuilder
+builder = Plotter.GridBuilder(figsize=(12, 6))
+builder.add_row(ncols=1, height_ratio=1)     # Wide plot at top
+builder.add_row(ncols=3, height_ratio=2)     # 3 panels below
+fig, axes = builder.build(hspace=0.3)
+
+──────────────────────────────────────────────────────────────────────────────
+INSETS & OVERLAYS
+──────────────────────────────────────────────────────────────────────────────
+
+Inset Axes:
+    inset = Plotter.get_inset(
+        ax,
+        position=[0.6, 0.6, 0.35, 0.35],  # [x, y, width, height] relative to ax
+        add_box=True,                      # Semi-transparent background
+    )
+
+Twin Axes (secondary y-axis):
+    ax2 = Plotter.twin_axis(ax, which='y', label='Secondary Y', color='C1')
+    ax2.plot(x, secondary_data, color='C1')
+
+Unify Axis Limits Across Panels:
+    Plotter.unify_limits(axes, which='y')  # Same y-limits for all
+''',
+            
+            'legend': '''
+=======
+LEGENDS
+=======
+
+Publication-Style Legend:
+    Plotter.set_legend(
+        ax,
+        style='publication',    # 'minimal', 'boxed', 'publication'
+        loc='best',
+        ncol=1,
+        frameon=True,
+        fontsize=10,
+    )
+
+Custom Legend (filter by condition):
+    Plotter.set_legend_custom(
+        ax,
+        conditions=[lambda lbl: 'exp' in lbl],  # Only labels containing 'exp'
+    )
+
+Available Styles:
+    'minimal'     - No frame, small font
+    'boxed'       - Semi-transparent frame
+    'publication' - Solid frame, Nature-style formatting
+''',
+            
+            'save': '''
+==============
+SAVING FIGURES
+==============
+
+Save Figure:
+    Plotter.save_fig(
+        directory='./figures',
+        filename='my_plot',
+        format='pdf',           # 'pdf', 'png', 'svg', 'eps', 'tiff'
+        dpi=300,                # For rasterized formats
+        adjust=True,            # Tight bounding box
+    )
+
+Recommended Formats:
+    - PDF/EPS: Vector format for journals (scalable, small file)
+    - PNG: Rasterized for presentations (transparent background)
+    - TIFF: High-resolution for print (300+ dpi)
+    - SVG: Web/interactive (editable in Inkscape/Illustrator)
+
+Tip: Use constrained_layout=True in get_subplots() to avoid clipping.
+''',
+            
+            'grid': '''
+=====================
+ADVANCED GRID CONTROL
+=====================
+
+For complex layouts with precise control over spacing, sizing, and alignment.
+
+──────────────────────────────────────────────────────────────────────────────
+Plotter.make_grid() - Recommended for Most Cases
+──────────────────────────────────────────────────────────────────────────────
+
+    fig, axes = Plotter.make_grid(
+        nrows=2, ncols=3,
+        figsize=(10, 6),
+        
+        # Size Ratios (list matching number of rows/cols)
+        width_ratios=[1, 2, 1],     # Columns: narrow, wide, narrow
+        height_ratios=[1, 3],        # Rows: short header, tall main
+        
+        # Spacing (0-1, fraction of average subplot size)
+        wspace=0.3,                  # Horizontal gap between columns
+        hspace=0.2,                  # Vertical gap between rows
+        
+        # Figure Margins (0-1, fraction of figure size)
+        left=0.1, right=0.95,
+        top=0.95, bottom=0.1,
+        
+        # Axis Sharing
+        sharex='col',                # 'row', 'col', 'all', or False
+        sharey='row',
+    )
+
+──────────────────────────────────────────────────────────────────────────────
+Plotter.GridBuilder - For Nested/Complex Layouts
+──────────────────────────────────────────────────────────────────────────────
+
+    builder = Plotter.GridBuilder(figsize=(12, 8))
+    
+    # Add rows with different column configurations
+    builder.add_row(ncols=1, height_ratio=1)           # Single wide panel
+    builder.add_row(ncols=3, height_ratio=2,           # 3 columns
+                    width_ratios=[2, 1, 1])            # with custom widths
+    builder.add_row(ncols=2, height_ratio=1.5)         # 2 columns
+    
+    fig, axes = builder.build(wspace=0.2, hspace=0.3)
+    # axes = [[ax00], [ax10, ax11, ax12], [ax20, ax21]]
+
+──────────────────────────────────────────────────────────────────────────────
+Example Recipes
+──────────────────────────────────────────────────────────────────────────────
+
+# Stacked panels with shared x-axis (no gap)
+fig, axes = Plotter.make_grid(3, 1, figsize=(6, 8), hspace=0.05, sharex='col')
+for ax in axes[:-1]:
+    Plotter.unset_ticks(ax, xticks=True, xlabel=True)
+
+# Main plot + colorbar
+fig, axes = Plotter.make_grid(1, 2, figsize=(7, 5), width_ratios=[20, 1])
+
+# 2x2 for publication with panels (a)-(d)
+fig, axes = Plotter.make_grid(2, 2, figsize=(8, 8), panel_labels=True)
+''',
+            
+            'style': '''
+==================
+PUBLICATION STYLES
+==================
+
+Configure global Matplotlib style for different journals.
+
+    configure_style('nature')    # Nature, Science, Cell
+    configure_style('science')   # Science-family journals
+    configure_style('prl')       # Physical Review Letters
+    configure_style('aps')       # APS journals (PRB, PRX, etc.)
+    configure_style('default')   # Matplotlib defaults
+
+What it Sets:
+    - Font family (STIX/serif for publication)
+    - Font sizes (labels, ticks, legend)
+    - Line widths
+    - Figure DPI
+    - Axes styling
+    - Color cycle
+
+Example:
+    from QES.general_python.common.plot import configure_style, Plotter
+    
+    configure_style('nature')  # Apply once at start
+    
+    fig, ax = Plotter.get_subplots(1, 1)
+    Plotter.plot(ax, x, y)
+    Plotter.save_fig('.', 'figure1', format='pdf')
+
+Custom Adjustments:
+    After configure_style(), you can fine-tune with:
+    
+    import matplotlib.pyplot as plt
+    plt.rcParams['font.size'] = 11
+    plt.rcParams['axes.linewidth'] = 0.8
+''',
+        }
+        
+        if topic is None:
+            print(help_text['overview'])
+        elif topic.lower() in help_text:
+            print(help_text[topic.lower()])
+        else:
+            print(f"Unknown topic: '{topic}'. Available: plot, axis, color, layout, grid, legend, annotate, style, save")
     
     ###########################################################
     #! Utilities for plotting
@@ -1269,6 +2041,274 @@ class Plotter:
             fill_between(ax, x_data, y1_data, y2_data, color='red', alpha=0.3)
         """
         ax.fill_between(x, y1, y2, color=color, alpha=alpha, **kwargs)
+    
+    # ################ LOG SCALE PLOTS ################
+    
+    @staticmethod
+    def semilogy(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, labelcond=True, zorder=5, **kwargs):
+        """
+        Plot with logarithmic y-axis.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axis to plot on.
+        x, y : array-like
+            Data to plot.
+        ls : str, default='-'
+            Line style.
+        lw : float, default=1.5
+            Line width.
+        color : str or int, default='black'
+            Line color. If int, uses colorsList[color].
+        label : str, optional
+            Legend label.
+        marker : str, optional
+            Marker style.
+        ms : float, optional
+            Marker size.
+        **kwargs
+            Additional arguments passed to ax.semilogy.
+        
+        Examples
+        --------
+        >>> Plotter.semilogy(ax, x, np.exp(-x), color='C0', label=r'$e^{-x}$')
+        """
+        color   = color     or kwargs.pop('c', 'black')
+        ls      = ls        or kwargs.pop('linestyle', '-')
+        lw      = lw        or kwargs.pop('linewidth', 1.5)
+        ms      = ms        or kwargs.pop('markersize', None)
+        marker  = marker    or kwargs.pop('marker', None)
+        
+        if isinstance(color, int):
+            color   = colorsList[color % len(colorsList)]
+        if isinstance(ls, int):
+            ls      = linestylesList[ls % len(linestylesList)]
+        if isinstance(marker, int):
+            marker  = markersList[marker % len(markersList)]
+        if label is None or label == '':
+            labelcond = False
+            
+        ax.semilogy(x, y, ls=ls, lw=lw, color=color, label=label if labelcond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
+    
+    @staticmethod
+    def semilogx(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, labelcond=True, zorder=5, **kwargs):
+        """
+        Plot with logarithmic x-axis.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axis to plot on.
+        x, y : array-like
+            Data to plot.
+        ls : str, default='-'
+            Line style.
+        lw : float, default=1.5
+            Line width.
+        color : str or int, default='black'
+            Line color. If int, uses colorsList[color].
+        label : str, optional
+            Legend label.
+        marker : str, optional
+            Marker style.
+        ms : float, optional
+            Marker size.
+        **kwargs
+            Additional arguments passed to ax.semilogx.
+        
+        Examples
+        --------
+        >>> Plotter.semilogx(ax, np.logspace(-3, 3, 100), y, color='C1')
+        """
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+        if isinstance(ls, int):
+            ls = linestylesList[ls % len(linestylesList)]
+        if isinstance(marker, int):
+            marker = markersList[marker % len(markersList)]
+        if label is None or label == '':
+            labelcond = False
+            
+        ax.semilogx(x, y, ls=ls, lw=lw, color=color, label=label if labelcond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
+    
+    @staticmethod
+    def loglog(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, labelcond=True, zorder=5, **kwargs):
+        """
+        Plot with logarithmic x and y axes.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axis to plot on.
+        x, y : array-like
+            Data to plot (must be positive).
+        ls : str, default='-'
+            Line style.
+        lw : float, default=1.5
+            Line width.
+        color : str or int, default='black'
+            Line color. If int, uses colorsList[color].
+        label : str, optional
+            Legend label.
+        marker : str, optional
+            Marker style.
+        ms : float, optional
+            Marker size.
+        **kwargs
+            Additional arguments passed to ax.loglog.
+        
+        Examples
+        --------
+        >>> # Power law: y = x^(-2)
+        >>> x = np.logspace(0, 3, 50)
+        >>> Plotter.loglog(ax, x, x**(-2), label=r'$x^{-2}$', color='C2')
+        """
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+        if isinstance(ls, int):
+            ls = linestylesList[ls % len(linestylesList)]
+        if isinstance(marker, int):
+            marker = markersList[marker % len(markersList)]
+        if label is None or label == '':
+            labelcond = False
+            
+        ax.loglog(x, y, ls=ls, lw=lw, color=color, label=label if labelcond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
+    
+    # -------------------- ERROR BARS --------------------
+    
+    @staticmethod
+    def errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', color='black', capsize=2, capthick=1.0, elinewidth=1.0, markersize=5, label=None, labelcond=True, alpha=1.0, zorder=5, **kwargs):
+        """
+        Plot data with error bars.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axis to plot on.
+        x, y : array-like
+            Data points.
+        yerr : float or array-like, optional
+            Vertical error bars. Can be:
+            - scalar: symmetric error for all points
+            - 1D array: symmetric errors
+            - 2D array (2, N): asymmetric [lower, upper] errors
+        xerr : float or array-like, optional
+            Horizontal error bars (same format as yerr).
+        fmt : str, default='o'
+            Format string for markers ('' for no markers, just error bars).
+        color : str or int, default='black'
+            Color for markers and error bars.
+        capsize : float, default=2
+            Length of error bar caps.
+        capthick : float, default=1.0
+            Thickness of error bar caps.
+        elinewidth : float, default=1.0
+            Width of error bar lines.
+        markersize : float, default=5
+            Size of markers.
+        label : str, optional
+            Legend label.
+        alpha : float, default=1.0
+            Transparency.
+        **kwargs
+            Additional arguments passed to ax.errorbar.
+        
+        Examples
+        --------
+        >>> # Symmetric error
+        >>> Plotter.errorbar(ax, x, y, yerr=sigma, label='Data')
+        
+        >>> # Asymmetric error
+        >>> Plotter.errorbar(ax, x, y, yerr=[lower_err, upper_err])
+        
+        >>> # Error band without markers
+        >>> Plotter.errorbar(ax, x, y, yerr=sigma, fmt='', elinewidth=2)
+        """
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+        if label is None or label == '':
+            labelcond = False
+        
+        ax.errorbar(x, y, yerr=yerr, xerr=xerr,
+                    fmt=fmt, color=color,
+                    capsize=capsize, capthick=capthick,
+                    elinewidth=elinewidth, markersize=markersize,
+                    label=label if labelcond else '',
+                    alpha=alpha, zorder=zorder, **kwargs)
+    
+    # -------------------- HISTOGRAM --------------------
+    
+    @staticmethod
+    def histogram(ax, data, bins=50, density=True, histtype='stepfilled', alpha=0.7, color='C0', edgecolor='black',
+                linewidth=1.0, label=None, orientation='vertical', cumulative=False, log=False, labelcond=True, zorder=5, **kwargs):
+        """
+        Plot a histogram.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axis to plot on.
+        data : array-like
+            Input data.
+        bins : int or array-like, default=50
+            Number of bins or bin edges.
+        density : bool, default=True
+            If True, normalize to form a probability density.
+        histtype : str, default='stepfilled'
+            Type of histogram: 'bar', 'barstacked', 'step', 'stepfilled'.
+        alpha : float, default=0.7
+            Transparency.
+        color : str, default='C0'
+            Fill color.
+        edgecolor : str, default='black'
+            Edge color.
+        linewidth : float, default=1.0
+            Edge line width.
+        label : str, optional
+            Legend label.
+        orientation : str, default='vertical'
+            'vertical' or 'horizontal'.
+        cumulative : bool, default=False
+            If True, plot cumulative histogram.
+        log : bool, default=False
+            If True, use log scale for counts axis.
+        **kwargs
+            Additional arguments passed to ax.hist.
+        
+        Returns
+        -------
+        n : array
+            Histogram values.
+        bins : array
+            Bin edges.
+        patches : list
+            Patch objects.
+        
+        Examples
+        --------
+        >>> # Basic histogram
+        >>> Plotter.histogram(ax, data, bins=30, label='Distribution')
+        
+        >>> # Step histogram (unfilled)
+        >>> Plotter.histogram(ax, data, histtype='step', linewidth=2)
+        
+        >>> # Cumulative distribution
+        >>> Plotter.histogram(ax, data, cumulative=True, density=True)
+        """
+        if isinstance(color, int):
+            color = colorsList[color % len(colorsList)]
+        if label is None or label == '':
+            labelcond = False
+        
+        return ax.hist(data, bins=bins, density=density,
+                    histtype=histtype, alpha=alpha,
+                    color=color, edgecolor=edgecolor,
+                    linewidth=linewidth, 
+                    label=label if labelcond else '',
+                    orientation=orientation,
+                    cumulative=cumulative, log=log,
+                    zorder=zorder, **kwargs)
 
     ###################################################
     
@@ -1731,106 +2771,182 @@ class Plotter:
     #################### U N S E T ####################
 
     @staticmethod
-    def unset_spines(   ax,
-                        xticks      =   False,
-                        yticks      =   False,
-                        left        =   False,
-                        right       =   False,
-                        top         =   False,
-                        bottom      =   False
-                     ):
+    def unset_spines(ax,
+                     top: bool = True,
+                     right: bool = True,
+                     bottom: bool = False,
+                     left: bool = False):
         """
-        Disables specified spines and optionally hides ticks on the axis.
-
-        Parameters:
-        - ax: Matplotlib axis object.
-        - top, right, bottom, left: Booleans to show/hide respective spines.
-        - xticks, yticks: Booleans to show/hide tick labels on the x and y axis.
-        """
-        ax.spines['top'].set_visible(top)
-        ax.spines['right'].set_visible(right)
-        ax.spines['bottom'].set_visible(bottom)
-        ax.spines['left'].set_visible(left)
+        Remove specified spines from the axis for cleaner publication-style plots.
         
-        if not xticks:
-            ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
-        if not yticks:
-            ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes to modify.
+        top : bool, default=True
+            If True, REMOVE the top spine. If False, KEEP it.
+        right : bool, default=True
+            If True, REMOVE the right spine. If False, KEEP it.
+        bottom : bool, default=False
+            If True, REMOVE the bottom spine. If False, KEEP it.
+        left : bool, default=False
+            If True, REMOVE the left spine. If False, KEEP it.
+        
+        Examples
+        --------
+        # Nature-style (remove top and right, keep left and bottom) - DEFAULT
+        >>> Plotter.unset_spines(ax)
+        
+        # Remove all spines (frameless plot)
+        >>> Plotter.unset_spines(ax, top=True, right=True, bottom=True, left=True)
+        
+        # Keep all spines
+        >>> Plotter.unset_spines(ax, top=False, right=False, bottom=False, left=False)
+        
+        # Only keep bottom spine (minimal style)
+        >>> Plotter.unset_spines(ax, top=True, right=True, bottom=False, left=True)
+        
+        Notes
+        -----
+        The default settings (top=True, right=True) produce the classic 
+        "Nature" or "Science" journal style with only left and bottom spines.
+        """
+        # True means REMOVE, so we set_visible(not param)
+        ax.spines['top'].set_visible(not top)
+        ax.spines['right'].set_visible(not right)
+        ax.spines['bottom'].set_visible(not bottom)
+        ax.spines['left'].set_visible(not left)
 
     @staticmethod
     def unset_ticks(ax,
-                    xticks=False,
-                    yticks=False,
-                    remove_labels_only=True,
-                    erase=False,
-                    spines=True):
-        '''
-        Disables or customizes the ticks on the axis.
-
-        Parameters:
-        - ax                : Axis to modify.
-        - xticks            : Disable x-ticks if False.
-        - yticks            : Disable y-ticks if False.
-        - remove_labels_only: Remove only the labels, keeping ticks visible.
-        - erase             : Completely hide the axis if True.
-        - spines            : Keep or remove spines based on tick visibility.
-        '''
-        if not xticks:
+                    xticks: bool = False,
+                    yticks: bool = False,
+                    xlabel: bool = False,
+                    ylabel: bool = False,
+                    remove_labels_only: bool = True):
+        """
+        Remove tick labels (and optionally tick marks) from the axis.
+        
+        Useful for creating clean shared-axis plots where inner panels
+        don't need redundant tick labels.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes to modify.
+        xticks : bool, default=False
+            If True, REMOVE x-tick labels. If False, KEEP them.
+        yticks : bool, default=False
+            If True, REMOVE y-tick labels. If False, KEEP them.
+        xlabel : bool, default=False
+            If True, also REMOVE the x-axis label.
+        ylabel : bool, default=False
+            If True, also REMOVE the y-axis label.
+        remove_labels_only : bool, default=True
+            If True, only remove the text labels, keeping tick marks visible.
+            If False, remove both the tick marks and labels.
+        
+        Examples
+        --------
+        # Remove x-tick labels for stacked plots with shared x-axis
+        >>> for ax in axes[:-1]:  # All except bottom
+        ...     Plotter.unset_ticks(ax, xticks=True, xlabel=True)
+        
+        # Remove all tick labels (keep tick marks)
+        >>> Plotter.unset_ticks(ax, xticks=True, yticks=True)
+        
+        # Remove tick marks AND labels (completely clean)
+        >>> Plotter.unset_ticks(ax, xticks=True, yticks=True, remove_labels_only=False)
+        
+        # Remove y-ticks and y-axis label for side-by-side shared y-axis
+        >>> for ax in axes[1:]:  # All except leftmost
+        ...     Plotter.unset_ticks(ax, yticks=True, ylabel=True)
+        
+        Notes
+        -----
+        This function is commonly used in combination with sharex/sharey in 
+        multi-panel figures to avoid redundant labels.
+        """
+        if xticks:
             if remove_labels_only:
-                ax.set_xticklabels([], minor=False)
-                ax.set_xticklabels([], minor=True)
+                ax.set_xticklabels([])
             else:
-                ax.set_xticks([], minor=False)
-                ax.set_xticks([], minor=True)
-                ax.set_xticklabels([], minor=False)
-                ax.set_xticklabels([], minor=True)
-                ax.xaxis.set_tick_params(which='both', labelbottom=False)
-
-            if erase:
-                ax.axes.get_xaxis().set_visible(False)
-
-        if not yticks:
+                ax.tick_params(axis='x', which='both', bottom=False, top=False, labelbottom=False)
+        
+        if yticks:
             if remove_labels_only:
-                ax.set_yticklabels([], minor=False)
-                ax.set_yticklabels([], minor=True)
+                ax.set_yticklabels([])
             else:
-                ax.set_yticks([], minor=False)
-                ax.set_yticks([], minor=True)
-                ax.set_yticklabels([], minor=False)
-                ax.set_yticklabels([], minor=True)
-                ax.yaxis.set_tick_params(which='both', labelleft=False)
-
-            if erase:
-                ax.axes.get_yaxis().set_visible(False)
-
-        if not spines:
-            # Handle spines
-            Plotter.unset_spines(
-                ax,
-                xticks=xticks,
-                yticks=yticks,
-                left=not ((not spines) and (not yticks)),
-                right=not ((not spines) and (not yticks)),
-                top=not ((not spines) and (not xticks)),
-                bottom=not ((not spines) and (not xticks))
-            )
+                ax.tick_params(axis='y', which='both', left=False, right=False, labelleft=False)
+        
+        if xlabel:
+            ax.set_xlabel('')
+        
+        if ylabel:
+            ax.set_ylabel('')
 
     @staticmethod
-    def unset_ticks_and_spines(ax, 
-                                xticks  = False,
-                                yticks  = False,
-                                erease  = False,
-                                spines  = True,
-                                left    = False,
-                                right   = False,
-                                top     = False,
-                                bottom  = False
-                               ):
-        '''
-        Unset ticks and spines
-        '''
-        Plotter.unset_spines(ax, xticks = False, yticks = False, left = left, right = right, top = top, bottom = bottom)
-        Plotter.unset_ticks(ax, xticks = xticks, yticks = yticks, erease = erease, spines = spines)
+    def unset_all(ax, spines: bool = True, ticks: bool = True, labels: bool = True):
+        """
+        Completely strip an axis of spines, ticks, and labels.
+        
+        Useful for image plots, heatmaps, or decorative panels where
+        axis elements are not needed.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes to modify.
+        spines : bool, default=True
+            If True, remove all spines.
+        ticks : bool, default=True
+            If True, remove all tick marks and labels.
+        labels : bool, default=True
+            If True, remove axis labels.
+        
+        Examples
+        --------
+        # Completely clean axis (for images/heatmaps)
+        >>> Plotter.unset_all(ax)
+        
+        # Keep only spines (box around plot)
+        >>> Plotter.unset_all(ax, spines=False)
+        """
+        if spines:
+            Plotter.unset_spines(ax, top=True, right=True, bottom=True, left=True)
+        if ticks:
+            Plotter.unset_ticks(ax, xticks=True, yticks=True, remove_labels_only=False)
+        if labels:
+            ax.set_xlabel('')
+            ax.set_ylabel('')
+
+    @staticmethod
+    def unset_ticks_and_spines(ax, xticks: bool = True, yticks: bool = True, top: bool = True, right: bool = True, bottom: bool = False, left: bool = False):
+        """
+        Convenience method to remove both ticks and spines in one call.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axes to modify.
+        xticks : bool, default=True
+            If True, REMOVE x-tick labels.
+        yticks : bool, default=True
+            If True, REMOVE y-tick labels.
+        top, right, bottom, left : bool
+            If True, REMOVE the corresponding spine.
+            Defaults remove top and right (Nature-style).
+        
+        Examples
+        --------
+        # Clean Nature-style with no tick labels
+        >>> Plotter.unset_ticks_and_spines(ax)
+        
+        # Only remove top/right spines, keep all ticks
+        >>> Plotter.unset_ticks_and_spines(ax, xticks=False, yticks=False)
+        """
+        Plotter.unset_spines(ax, top=top, right=right, bottom=bottom, left=left)
+        Plotter.unset_ticks(ax, xticks=xticks, yticks=yticks)
     
     ################### F O R M A T ###################
     
@@ -1863,159 +2979,944 @@ class Plotter:
             None
         """
         if 'x' in axis:
-            ax.xaxis.set_minor_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
-            ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.xaxis.set_minor_formatter(mticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: "%g"%x))
         if 'y' in axis:
-            ax.yaxis.set_minor_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
-            ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.yaxis.set_minor_formatter(mticker.FuncFormatter(lambda x, pos: "%g"%x))
+            ax.yaxis.set_major_formatter(mticker.FuncFormatter(lambda x, pos: "%g"%x))
     
     #################### G R I D S ####################
+    #
+    # Grid Layout System for Complex Multi-Panel Figures
+    # ===================================================
+    #
+    # This section provides comprehensive tools for creating complex figure layouts
+    # with fine control over panel sizes, spacing, and nesting.
+    #
+    # KEY CONCEPTS:
+    # - GridSpec: Define a grid layout with rows/columns and spacing
+    # - Subplots: Individual axes within the grid
+    # - Nesting: GridSpecFromSubplotSpec allows grids within grids
+    #
+    # COMMON WORKFLOWS:
+    #
+    # 1. Simple grid (equal panels):
+    #    >>> fig, axes = Plotter.make_grid(2, 3, figsize=(10, 8))
+    #
+    # 2. Unequal panel widths:
+    #    >>> fig, axes = Plotter.make_grid(1, 3, width_ratios=[2, 1, 1])
+    #    # First panel is 2x wider than others
+    #
+    # 3. Complex nested layouts:
+    #    >>> builder = Plotter.GridBuilder(figsize=(12, 8))
+    #    >>> builder.add_row(ncols=1, height_ratio=1)
+    #    >>> builder.add_row(ncols=3, height_ratio=2)
+    #    >>> fig, axes = builder.build()
+    #
+    ##########################################
+    
+    # GridBuilder class for complex nested layouts
+    class GridBuilder:
+        """
+        Builder class for creating complex figure layouts with nested grids.
+        
+        Use this when you need different numbers of columns in different rows,
+        or complex nested arrangements that can't be achieved with a simple grid.
+        
+        Parameters
+        ----------
+        figsize : tuple, default=(10, 8)
+            Figure size in inches (width, height).
+        
+        Examples
+        --------
+        Create a layout with varying column counts per row::
+        
+        >>> builder = Plotter.GridBuilder(figsize=(12, 8))
+        >>> builder.add_row(ncols=1, height_ratio=1)     # Header row (1 panel)
+        >>> builder.add_row(ncols=3, height_ratio=2)     # Main row (3 panels)
+        >>> builder.add_row(ncols=2, height_ratio=1.5)   # Footer row (2 panels)
+        >>> fig, axes = builder.build(wspace=0.2, hspace=0.3)
+        >>> # axes = [[ax00], [ax10, ax11, ax12], [ax20, ax21]]
+        
+        Access axes::
+        
+        >>> header_ax = axes[0][0]
+        >>> main_left, main_center, main_right = axes[1]
+        >>> footer_left, footer_right = axes[2]
+        """
+        
+        def __init__(self, figsize=(10, 8)):
+            self.figsize    = figsize
+            self.rows       = []
+            
+        def add_row(self, ncols: int, height_ratio: float = 1.0, 
+                    width_ratios: List[float] = None):
+            """
+            Add a row to the layout.
+            
+            Parameters
+            ----------
+            ncols : int
+                Number of columns in this row.
+            height_ratio : float, default=1.0
+                Relative height of this row compared to others.
+            width_ratios : list of float, optional
+                Relative widths of columns within this row.
+                If None, columns are equal width.
+            
+            Returns
+            -------
+            self : GridBuilder
+                For method chaining.
+            """
+            if width_ratios is not None and len(width_ratios) != ncols:
+                raise ValueError(f"width_ratios length ({len(width_ratios)}) must match ncols ({ncols})")
+            self.rows.append({
+                'ncols'         : ncols,
+                'height_ratio'  : height_ratio,
+                'width_ratios'  : width_ratios or [1.0] * ncols
+            })
+            return self
+        
+        def build(self, wspace: float = 0.2, hspace: float = 0.2,
+                  left: float = 0.1, right: float = 0.95,
+                  top: float = 0.95, bottom: float = 0.1):
+            """
+            Build the figure with the specified layout.
+            
+            Parameters
+            ----------
+            wspace : float, default=0.2
+                Horizontal space between columns within rows.
+            hspace : float, default=0.2
+                Vertical space between rows.
+            left, right, top, bottom : float
+                Figure margins (fraction of figure size).
+            
+            Returns
+            -------
+            fig : matplotlib.figure.Figure
+                The created figure.
+            axes : list of lists
+                2D list of axes, where axes[row][col] gives the axis
+                at that position.
+            """
+            fig = plt.figure(figsize=self.figsize)
+            
+            nrows = len(self.rows)
+            height_ratios = [r['height_ratio'] for r in self.rows]
+            
+            # Create outer grid (one column, multiple rows)
+            outer_gs = GridSpec(nrows=nrows, ncols=1, figure=fig,
+                               height_ratios=height_ratios, hspace=hspace,
+                               left=left, right=right, top=top, bottom=bottom)
+            
+            axes = []
+            for i, row_spec in enumerate(self.rows):
+                # Create inner grid for this row
+                inner_gs = GridSpecFromSubplotSpec(
+                    nrows=1, ncols=row_spec['ncols'],
+                    subplot_spec=outer_gs[i],
+                    width_ratios=row_spec['width_ratios'],
+                    wspace=wspace
+                )
+                row_axes = [fig.add_subplot(inner_gs[0, j]) for j in range(row_spec['ncols'])]
+                axes.append(row_axes)
+            
+            return fig, axes
     
     @staticmethod
-    def get_grid(nrows          :   int,
-                 ncols          :   int,
-                 wspace         =   None,
-                 hspace         =   None,
-                 width_ratios   =   None,
-                 height_ratios  =   None,
-                 ax_sub         =   None,
-                 **kwargs):
-        '''
-        Obtain grid from GridSubplotSpec
-        '''
+    def make_grid(nrows             : int, 
+                ncols               : int, 
+                figsize             : tuple = (10, 8),
+                width_ratios        : List[float] = None,
+                height_ratios       : List[float] = None,
+                wspace              : float = 0.2,
+                hspace              : float = 0.2,
+                left                : float = 0.1, right: float = 0.95,
+                top                 : float = 0.95, bottom: float = 0.1,
+                sharex              : str = False,
+                sharey              : str = False,
+                panel_labels        : bool = False,
+                panel_label_style   : str = 'parenthesis',
+                despine             : bool = False):
+        """
+        Create a figure with a grid of subplots with full control over layout.
+        
+        This is the recommended method for creating publication-quality
+        multi-panel figures with precise control over spacing and sizing.
+        
+        Parameters
+        ----------
+        nrows : int
+            Number of rows.
+        ncols : int
+            Number of columns.
+        figsize : tuple, default=(10, 8)
+            Figure size in inches (width, height).
+        width_ratios : list of float, optional
+            Relative widths of columns. Length must equal ncols.
+            Example: [2, 1, 1] makes first column 2x wider.
+        height_ratios : list of float, optional
+            Relative heights of rows. Length must equal nrows.
+            Example: [1, 3] makes second row 3x taller.
+        wspace : float, default=0.2
+            Horizontal space between columns (fraction of avg width).
+        hspace : float, default=0.2
+            Vertical space between rows (fraction of avg height).
+        left, right, top, bottom : float
+            Figure margins (0 to 1, fraction of figure size).
+        sharex : str or bool, default=False
+            Share x-axis: 'row', 'col', 'all', or False.
+        sharey : str or bool, default=False
+            Share y-axis: 'row', 'col', 'all', or False.
+        panel_labels : bool, default=False
+            Add panel labels (a), (b), (c), etc.
+        panel_label_style : str, default='parenthesis'
+            Style for panel labels: 'parenthesis', 'plain', 'bold'.
+        despine : bool, default=False
+            Remove top and right spines (Nature-style).
+        
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            The created figure.
+        axes : list of Axes
+            Flat list of axes [ax0, ax1, ax2, ...], row-major order.
+        
+        Examples
+        --------
+        Basic 2x3 grid::
+        
+        >>> fig, axes = Plotter.make_grid(2, 3, figsize=(10, 6))
+        >>> ax0, ax1, ax2, ax3, ax4, ax5 = axes
+        
+        Unequal column widths::
+        
+        >>> fig, axes = Plotter.make_grid(1, 2, width_ratios=[3, 1])
+        
+        Stacked panels with shared x-axis::
+        
+        >>> fig, axes = Plotter.make_grid(3, 1, sharex='col', hspace=0.05)
+        >>> for ax in axes[:-1]:
+        ...     Plotter.unset_ticks(ax, xticks=True, xlabel=True)
+        
+        Publication figure::
+        
+        >>> fig, axes = Plotter.make_grid(2, 2, figsize=(8, 8), 
+        ...                               panel_labels=True, despine=True)
+        """
+        fig, axs = plt.subplots(nrows, ncols, figsize=figsize,
+                                gridspec_kw =   {
+                                    'width_ratios'  : width_ratios,
+                                    'height_ratios' : height_ratios,
+                                    'wspace'        : wspace,
+                                    'hspace'        : hspace,
+                                    'left'          : left,
+                                    'right'         : right,
+                                    'top'           : top,
+                                    'bottom'        : bottom,
+                                },
+                                sharex              =   sharex, 
+                                sharey              =   sharey,
+                                squeeze             =   False)
+        
+        # Flatten to list
+        axes = axs.flatten().tolist()
+        
+        # Apply panel labels
+        if panel_labels:
+            labels = 'abcdefghijklmnopqrstuvwxyz'
+            for i, ax in enumerate(axes):
+                if i < len(labels):
+                    if panel_label_style == 'parenthesis':
+                        label = f'({labels[i]})'
+                    elif panel_label_style == 'bold':
+                        label = f'\\textbf{{{labels[i]}}}'
+                    else:
+                        label = labels[i]
+                    ax.text(-0.1, 1.05, label, transform=ax.transAxes, fontsize=12, fontweight='bold', va='bottom', ha='right')
+        
+        # Apply despine
+        if despine:
+            for ax in axes:
+                Plotter.unset_spines(ax, top=True, right=True)
+        
+        return fig, axes
+    
+    ##########################################
+    
+    @staticmethod
+    def figure(figsize: tuple = (10, 8), **kwargs) -> plt.Figure:
+        """
+        Create a Matplotlib figure with specified size and options.
+        
+        Parameters
+        ----------
+        figsize : tuple, default=(10, 8)
+            Figure size in inches (width, height).
+        **kwargs
+            Additional keyword arguments passed to plt.figure().
+        
+        Returns
+        -------
+        matplotlib.figure.Figure
+            The created figure object.
+        
+        Examples
+        --------
+        Basic figure creation::
+        
+        >>> fig = Plotter.figure(figsize=(12, 6))
+        
+        With additional options::
+        
+        >>> fig = Plotter.figure(figsize=(8, 8), dpi=150, facecolor='white')
+        """
+        return plt.figure(figsize=figsize, **kwargs)
+    
+    @staticmethod
+    def get_grid(nrows          : int,
+                ncols           : int,
+                *,
+                wspace          : float         = None,
+                hspace          : float         = None,
+                width_ratios    : List[float]   = None,
+                height_ratios   : List[float]   = None,
+                ax_sub          = None,
+                left            : float         = None, 
+                right           : float         = None,
+                top             : float         = None, 
+                bottom          : float         = None,
+                figure          = None,
+                **kwargs) -> GridSpec:
+        """
+        Create a GridSpec for flexible subplot layouts.
+        
+        This is the foundation for creating complex multi-panel figures with
+        control over panel sizes and spacing.
+        
+        Parameters
+        ----------
+        nrows : int
+            Number of rows in the grid.
+        ncols : int
+            Number of columns in the grid.
+        wspace : float, optional
+            Width space between columns (0.0 to 1.0, fraction of average axis width).
+            Recommended: 0.2-0.4 for labels, 0.05-0.1 for tight layouts.
+        hspace : float, optional
+            Height space between rows (0.0 to 1.0, fraction of average axis height).
+            Recommended: 0.2-0.4 for titles, 0.05-0.1 for tight layouts.
+        width_ratios : list of float, optional
+            Relative widths of columns. E.g., [2, 1, 1] makes first column 2x wider.
+            Length must equal ncols.
+        height_ratios : list of float, optional
+            Relative heights of rows. E.g., [1, 2] makes second row 2x taller.
+            Length must equal nrows.
+        ax_sub : SubplotSpec, optional
+            If provided, creates a nested GridSpec within this subplot.
+            Use for complex layouts with grids inside grids.
+        left, right, top, bottom : float, optional
+            Figure margins (0.0 to 1.0). Controls space for labels.
+        **kwargs
+            Additional arguments passed to GridSpec.
+        
+        Returns
+        -------
+        GridSpec or GridSpecFromSubplotSpec
+            The grid specification object.
+        
+        Examples
+        --------
+        Basic 2x3 grid::
+        
+        >>> fig = plt.figure(figsize=(12, 8))
+        >>> gs  = Plotter.get_grid(2, 3, wspace=0.3, hspace=0.4)
+        >>> ax0 = fig.add_subplot(gs[0, 0])  # Row 0, Col 0
+        >>> ax1 = fig.add_subplot(gs[0, 1:]) # Row 0, Cols 1-2 (span)
+        >>> ax2 = fig.add_subplot(gs[1, :])  # Row 1, all columns (span)
+        
+        Unequal widths (main panel + sidebar)::
+        
+        >>> gs = Plotter.get_grid(1, 2, width_ratios=[3, 1])
+        >>> # First column is 3x wider than second
+        
+        Nested grid (inset layout)::
+        
+        >>> outer       = Plotter.get_grid(1, 2)
+        >>> ax_left     = fig.add_subplot(outer[0])
+        >>> inner       = Plotter.get_grid(2, 2, ax_sub=outer[1], wspace=0.1, hspace=0.1)
+        >>> ax_inner_00 = fig.add_subplot(inner[0, 0])
+        
+        Control margins::
+        
+        >>> gs = Plotter.get_grid(2, 2, left=0.1, right=0.95, top=0.95, bottom=0.1)
+        
+        See Also
+        --------
+        get_grid_subplot    : Create subplot from GridSpec index
+        get_subplots        : High-level function for simple layouts
+        """
+        # Validate ratios
+        if width_ratios is not None and len(width_ratios) != ncols:
+            raise ValueError(f"width_ratios length ({len(width_ratios)}) must equal ncols ({ncols})")
+        if height_ratios is not None and len(height_ratios) != nrows:
+            raise ValueError(f"height_ratios length ({len(height_ratios)}) must equal nrows ({nrows})")
+        
+        # Build kwargs for GridSpec
+        gs_kwargs = {k: v for k, v in {
+            'wspace'        : wspace,
+            'hspace'        : hspace,
+            'width_ratios'  : width_ratios,
+            'height_ratios' : height_ratios,
+            'left'          : left,
+            'right'         : right,
+            'top'           : top,
+            'bottom'        : bottom,
+            'figure'        : figure,
+        }.items() if v is not None}
+        gs_kwargs.update(kwargs)
+        
         if ax_sub is not None:
-            return GridSpecFromSubplotSpec(nrows        =   nrows, 
-                                           ncols        =   ncols,
-                                           subplot_spec =   ax_sub, 
-                                           wspace       =   wspace,
-                                           hspace       =   hspace,
-                                           width_ratios =   width_ratios,
-                                           height_ratios=   height_ratios,
-                                           **kwargs)
+            return GridSpecFromSubplotSpec(nrows=nrows, ncols=ncols, subplot_spec=ax_sub, **gs_kwargs)
         else:
-            return GridSpec               (nrows        =   nrows, 
-                                           ncols        =   ncols,                                           
-                                           wspace       =   wspace,
-                                           hspace       =   hspace,
-                                           width_ratios =   width_ratios,
-                                           height_ratios=   height_ratios,
-                                           **kwargs)
+            return GridSpec(nrows=nrows, ncols=ncols, **gs_kwargs)
     
     @staticmethod
-    def get_grid_ax(nrows           : int,
-                    ncols           : int,
-                    wspace          = None,
-                    hspace          = None,
-                    width_ratios    = None,
-                    height_ratios   = None,
-                    ax_sub          = None,
+    def get_grid_subplot(gs, fig, index, sharex=None, sharey=None, **kwargs):
+        """
+        Create a subplot from a GridSpec at the specified index.
+        
+        Parameters
+        ----------
+        gs : GridSpec
+            The GridSpec object.
+        fig : matplotlib.figure.Figure
+            The figure to add the subplot to.
+        index : int, tuple, or slice
+            Position in the grid. Can be:
+            - int: Linear index (0, 1, 2, ...)
+            - tuple: (row, col) for single cell
+            - slice/tuple with slices: For spanning multiple cells
+        sharex, sharey : Axes, optional
+            Share axis with another subplot. Use for aligned multi-panel figures.
+        **kwargs
+            Additional arguments passed to fig.add_subplot.
+        
+        Returns
+        -------
+        matplotlib.axes.Axes
+            The created subplot.
+        
+        Examples
+        --------
+        Single cell by linear index::
+        
+            ax0 = Plotter.get_grid_subplot(gs, fig, 0)  # First cell
+            ax1 = Plotter.get_grid_subplot(gs, fig, 1)  # Second cell
+        
+        Single cell by (row, col)::
+        
+            ax = fig.add_subplot(gs[1, 2])  # Row 1, Col 2
+        
+        Span multiple cells::
+        
+            ax_wide = fig.add_subplot(gs[0, :])   # Entire first row
+            ax_tall = fig.add_subplot(gs[:, 0])   # Entire first column
+            ax_block = fig.add_subplot(gs[0:2, 1:3])  # 2x2 block
+        
+        Shared axes (for aligned panels)::
+        
+            ax0 = Plotter.get_grid_subplot(gs, fig, 0)
+            ax1 = Plotter.get_grid_subplot(gs, fig, 1, sharex=ax0)
+            ax2 = Plotter.get_grid_subplot(gs, fig, 2, sharex=ax0, sharey=ax0)
+            # ax1 and ax2 share x-axis with ax0; ax2 also shares y-axis
+        """
+        return fig.add_subplot(gs[index], sharex=sharex, sharey=sharey, **kwargs)
+    
+    @staticmethod
+    def get_grid_map(nrows: int, ncols: int) -> dict:
+        """
+        Generate a mapping from panel labels to grid indices.
+        
+        Useful for referencing panels by name rather than index.
+        
+        Parameters
+        ----------
+        nrows : int
+            Number of rows.
+        ncols : int
+            Number of columns.
+        
+        Returns
+        -------
+        dict
+            Mapping with keys:
+            - 'by_index': {0: (0,0), 1: (0,1), ...}
+            - 'by_letter': {'a': 0, 'b': 1, ...}
+            - 'by_rowcol': {(0,0): 0, (0,1): 1, ...}
+            - 'grid': 2D list of indices
+        
+        Examples
+        --------
+        >>> gmap = Plotter.get_grid_map(2, 3)
+        >>> gmap['by_letter']['c']  # Get index for panel 'c'
+        2
+        >>> gmap['by_index'][4]  # Get (row, col) for index 4
+        (1, 1)
+        >>> gmap['grid']  # 2D layout
+        [[0, 1, 2], [3, 4, 5]]
+        """
+        by_index = {}
+        by_letter = {}
+        by_rowcol = {}
+        grid = []
+        
+        idx = 0
+        for row in range(nrows):
+            row_list = []
+            for col in range(ncols):
+                by_index[idx] = (row, col)
+                by_rowcol[(row, col)] = idx
+                by_letter[chr(97 + idx)] = idx  # 'a', 'b', 'c', ...
+                row_list.append(idx)
+                idx += 1
+            grid.append(row_list)
+        
+        return {
+            'by_index': by_index,
+            'by_letter': by_letter,
+            'by_rowcol': by_rowcol,
+            'grid': grid,
+            'nrows': nrows,
+            'ncols': ncols,
+        }
+    
+    @staticmethod
+    def configure_axes(ax,
+                    # Visibility
+                    visible: bool = True,
+                    # Spines
+                    spines: Union[bool, dict, str] = True,
+                    # Ticks
+                    ticks: Union[bool, dict, str] = True,
+                    tick_labels: Union[bool, dict, str] = True,
+                    # Labels
+                    xlabel: str = None,
+                    ylabel: str = None,
+                    title: str = None,
+                    # Scale
+                    xscale: str = None,
+                    yscale: str = None,
+                    # Limits
+                    xlim: tuple = None,
+                    ylim: tuple = None,
+                    # Style
+                    fontsize: int = None,
                     **kwargs):
-        '''
-        Obtain grid from GridSubplotSpec
-        '''
-        return Plotter.get_grid(nrows, ncols, wspace, hspace, width_ratios, height_ratios, ax_sub, **kwargs), []
+        """
+        Configure axis visibility, spines, ticks, and labels in one call.
+        
+        This is a convenience function for common axis customizations.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axis to configure.
+        visible : bool, default=True
+            If False, hide the entire axis (ax.axis('off')).
+        spines : bool, dict, or str, default=True
+            Control spine visibility:
+            - True: Show all spines
+            - False: Hide all spines
+            - 'left': Hide all except left
+            - 'bottom': Hide all except bottom
+            - 'minimal': Hide top and right (Nature-style)
+            - dict: {'top': False, 'right': False, ...}
+        ticks : bool, dict, or str, default=True
+            Control tick visibility:
+            - True/False: Show/hide all ticks
+            - 'x'/'y': Show only x/y ticks
+            - dict: {'x': True, 'y': False}
+        tick_labels : bool, dict, or str, default=True
+            Control tick label visibility (same format as ticks).
+        xlabel, ylabel, title : str, optional
+            Axis labels and title.
+        xscale, yscale : str, optional
+            Axis scale: 'linear', 'log', 'symlog'.
+        xlim, ylim : tuple, optional
+            Axis limits as (min, max).
+        fontsize : int, optional
+            Font size for labels.
+        **kwargs
+            Additional arguments (e.g., labelpad).
+        
+        Examples
+        --------
+        Minimal style (no top/right spines)::
+        
+            Plotter.configure_axes(ax, spines='minimal', xlabel='Time', ylabel='Value')
+        
+        Hide axis completely (for images/heatmaps)::
+        
+            Plotter.configure_axes(ax, visible=False)
+        
+        Keep only left spine and y-ticks::
+        
+            Plotter.configure_axes(ax, spines='left', ticks='y', tick_labels='y')
+        
+        Log scale with custom limits::
+        
+            Plotter.configure_axes(ax, yscale='log', ylim=(1e-6, 1e0))
+        
+        Full configuration::
+        
+            Plotter.configure_axes(
+                ax,
+                spines='minimal',
+                xlabel=r'$x$ (nm)', ylabel=r'$\\rho$ (a.u.)',
+                xscale='linear', yscale='log',
+                xlim=(0, 100), ylim=(1e-3, 1),
+                fontsize=12
+            )
+        """
+        if not visible:
+            ax.axis('off')
+            return
+        
+        # --- Spines ---
+        if isinstance(spines, bool):
+            for sp in ['top', 'right', 'bottom', 'left']:
+                ax.spines[sp].set_visible(spines)
+        elif spines == 'minimal':
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+        elif spines == 'left':
+            for sp in ['top', 'right', 'bottom']:
+                ax.spines[sp].set_visible(False)
+        elif spines == 'bottom':
+            for sp in ['top', 'right', 'left']:
+                ax.spines[sp].set_visible(False)
+        elif isinstance(spines, dict):
+            for sp, vis in spines.items():
+                ax.spines[sp].set_visible(vis)
+        
+        # --- Ticks ---
+        def _parse_bool_dict(val, default=True):
+            if isinstance(val, bool):
+                return {'x': val, 'y': val}
+            elif val == 'x':
+                return {'x': True, 'y': False}
+            elif val == 'y':
+                return {'x': False, 'y': True}
+            elif isinstance(val, dict):
+                return {'x': val.get('x', default), 'y': val.get('y', default)}
+            return {'x': default, 'y': default}
+        
+        ticks_cfg = _parse_bool_dict(ticks)
+        labels_cfg = _parse_bool_dict(tick_labels)
+        
+        ax.tick_params(axis='x', which='both', bottom=ticks_cfg['x'], top=ticks_cfg['x'], labelbottom=labels_cfg['x'])
+        ax.tick_params(axis='y', which='both', left=ticks_cfg['y'], right=ticks_cfg['y'], labelleft=labels_cfg['y'])
+        
+        # --- Labels ---
+        fs = fontsize or plt.rcParams.get('axes.labelsize', 10)
+        if xlabel is not None:
+            ax.set_xlabel(xlabel, fontsize=fs, **{k: v for k, v in kwargs.items() if 'x' in k.lower() or k == 'labelpad'})
+        if ylabel is not None:
+            ax.set_ylabel(ylabel, fontsize=fs, **{k: v for k, v in kwargs.items() if 'y' in k.lower() or k == 'labelpad'})
+        if title is not None:
+            ax.set_title(title, fontsize=fs)
+        
+        # --- Scale & Limits ---
+        if xscale:
+            ax.set_xscale(xscale)
+        if yscale:
+            ax.set_yscale(yscale)
+        if xlim:
+            ax.set_xlim(xlim)
+        if ylim:
+            ax.set_ylim(ylim)
     
     @staticmethod
-    def get_grid_subplot(gs,
-                        fig,
-                        i: int,
-                        sharex      = None,
-                        sharey      = None,
-                        padding     = None,
-                        spacing     = None,
-                        empty_space = None,
-                        **kwargs):
-        '''
-        Creates the subaxis for the GridSpec with optional custom paddings.
+    def disable_axis(ax, which: str = 'both'):
+        """
+        Disable axis components for clean images/heatmaps.
         
-        Parameters:
-            gs (GridSpec): The GridSpec object.
-            fig (Figure): The matplotlib figure object.
-            i (int): Index of the subplot in the GridSpec.
-            sharex (Axes, optional)     : Share the x-axis with another subplot.
-            sharey (Axes, optional)     : Share the y-axis with another subplot.
-            padding (dict, optional)    : Custom paddings for the subplot layout.
-                                        Keys can include 'left', 'right', 'top', 'bottom'.
-            **kwargs: Additional keyword arguments passed to `add_subplot`.
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axis to modify.
+        which : str, default='both'
+            What to disable:
+            - 'both': Disable x and y (full axis off)
+            - 'x': Disable x-axis only
+            - 'y': Disable y-axis only
+            - 'labels': Keep ticks but hide labels
+            - 'ticks': Keep labels but hide ticks
+            - 'spines': Hide all spines
         
-        Returns:
-            Axes: The created subplot.
-        '''
-        ax = fig.add_subplot(gs[i], sharex=sharex, sharey=sharey, **kwargs)
-
-        # Apply custom paddings if provided
-        if padding is not None:
-            if not isinstance(padding, dict):
-                raise ValueError("Padding must be a dictionary with keys 'left', 'right', 'top', and 'bottom'.")
-            fig.subplots_adjust(**{k: v for k, v in padding.items() if k in ['left', 'right', 'top', 'bottom']})
-        # Apply custom spacings if provided
-        if spacing is not None:
-            if not isinstance(spacing, dict):
-                raise ValueError("Spacing must be a dictionary with keys 'wspace' and 'hspace'.")
-            fig.subplots_adjust(**{k: v for k, v in spacing.items() if k in ['wspace', 'hspace']})
+        Examples
+        --------
+        >>> Plotter.disable_axis(ax)  # Completely clean
+        >>> Plotter.disable_axis(ax, 'x')  # Keep y-axis
+        >>> Plotter.disable_axis(ax, 'labels')  # Keep ticks, no labels
+        """
+        if which == 'both':
+            ax.axis('off')
+        elif which == 'x':
+            ax.xaxis.set_visible(False)
+            ax.spines['bottom'].set_visible(False)
+            ax.spines['top'].set_visible(False)
+        elif which == 'y':
+            ax.yaxis.set_visible(False)
+            ax.spines['left'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+        elif which == 'labels':
+            ax.tick_params(labelbottom=False, labelleft=False)
+        elif which == 'ticks':
+            ax.tick_params(bottom=False, left=False, top=False, right=False)
+        elif which == 'spines':
+            for sp in ax.spines.values():
+                sp.set_visible(False)
+    
+    @staticmethod
+    def get_grid_ax(nrows           : int, 
+                    ncols           : int,
+                    wspace          : float = None,
+                    hspace          : float = None,
+                    width_ratios    : List[float] = None,
+                    height_ratios   : List[float] = None,
+                    ax_sub          = None,
+                    **kwargs) -> Tuple[GridSpec, list]:
+        """
+        Get a GridSpec and an empty list for axes (convenience wrapper).
         
-        if empty_space is not None:
-            
-            valid_sides = {'left', 'right', 'top', 'bottom'}        # Validate and parse empty_space
-            empty_space = empty_space or {}                         # Ensure empty_space is a dictionary
-            
-            if not all(side in valid_sides for side in empty_space):
-                raise ValueError(f"Keys in empty_space must be one of {valid_sides}, got {list(empty_space.keys())}.")
-
-            # Get current subplot adjustment parameters
-            bbox = ax.get_position()
-
-            # Apply adjustments based on the dictionary
-            if 'left' in empty_space:
-                bbox.x0 = empty_space['left']
-            if 'right' in empty_space:
-                bbox.x1 = 1 - empty_space['right']
-            if 'bottom' in empty_space:
-                bbox.y0 = empty_space['bottom']
-            if 'top' in empty_space:
-                bbox.y1 = 1 - empty_space['top']
-
-            # Adjust the subplot layout for the given axis
-            ax.set_position(bbox)
-            
-        return ax
+        Parameters
+        ----------
+        nrows, ncols : int
+            Grid dimensions.
+        wspace, hspace : float, optional
+            Spacing between subplots.
+        width_ratios, height_ratios : list, optional
+            Relative sizes.
+        ax_sub : SubplotSpec, optional
+            For nested grids.
+        **kwargs
+            Additional GridSpec arguments.
+        
+        Returns
+        -------
+        tuple
+            (GridSpec, empty_axes_list)
+        
+        Examples
+        --------
+        >>> gs, axes = Plotter.get_grid_ax(2, 3, wspace=0.3)
+        >>> for i in range(6):
+        ...     Plotter.app_grid_subplot(axes, gs, fig, i)
+        """
+        return Plotter.get_grid(nrows, ncols, wspace, hspace, width_ratios, height_ratios, ax_sub, **kwargs), []
 
     @staticmethod
-    def app_grid_subplot(   axes   : list,
-                            gs, 
-                            fig, 
-                            i      : int,
-                            sharex = None,
-                            sharey = None,
-                            **kwargs):
-        '''
-        Appends the subplot to the axes
-        '''
-        axes.append(Plotter.get_grid_subplot(gs, fig, i, sharex = sharex, sharey = sharey, **kwargs))
+    def app_grid_subplot(axes: list, gs, fig, index: int, sharex=None, sharey=None, **kwargs):
+        """
+        Append a subplot to an axes list (convenience method).
+        
+        Parameters
+        ----------
+        axes : list
+            List to append the new axis to.
+        gs : GridSpec
+            The GridSpec.
+        fig : Figure
+            The figure.
+        index : int
+            Grid index.
+        sharex, sharey : Axes, optional
+            Share axes with another subplot.
+        **kwargs
+            Additional arguments.
+        
+        Examples
+        --------
+        >>> gs, axes    = Plotter.get_grid_ax(2, 2)
+        >>> fig         = plt.figure()
+        >>> for i in range(4):
+        ...     Plotter.app_grid_subplot(axes, gs, fig, i)
+        >>> # axes is now [ax0, ax1, ax2, ax3]
+        """
+        axes.append(Plotter.get_grid_subplot(gs, fig, index, sharex=sharex, sharey=sharey, **kwargs))
+    
+    #################### T W I N  A X I S ####################
+    
+    @staticmethod
+    def twin_axis(ax, which='y', label='', color='C1', scale='linear', lim=None, fontsize=None, labelpad=0, **kwargs):
+        """
+        Create a twin axis with a secondary scale.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Primary axis.
+        which : str, default='y'
+            Which axis to twin: 'y' creates twinx(), 'x' creates twiny().
+        label : str, default=''
+            Label for the secondary axis.
+        color : str, default='C1'
+            Color for the secondary axis (spine, ticks, label).
+        scale : str, default='linear'
+            Scale for secondary axis: 'linear' or 'log'.
+        lim : tuple, optional
+            Limits for the secondary axis.
+        fontsize : int, optional
+            Font size for the label.
+        labelpad : float, default=0
+            Padding for the label.
+        **kwargs
+            Additional arguments passed to set_ylabel/set_xlabel.
+        
+        Returns
+        -------
+        ax2 : matplotlib.axes.Axes
+            The secondary axis.
+        
+        Examples
+        --------
+        >>> ax2 = Plotter.twin_axis(ax, which='y', label='Temperature (K)', color='red')
+        >>> Plotter.plot(ax2, x, temperature, color='red')
+        """
+        if which == 'y':
+            ax2 = ax.twinx()
+            ax2.set_ylabel(label, color=color, fontsize=fontsize, labelpad=labelpad, **kwargs)
+            ax2.set_yscale(scale)
+            
+            if lim is not None:
+                ax2.set_ylim(lim)
+            
+            ax2.tick_params(axis='y', labelcolor=color, colors=color)
+            ax2.spines['right'].set_color(color)
+
+        else: # which == 'x'
+            ax2 = ax.twiny()
+            ax2.set_xlabel(label, color=color, fontsize=fontsize, labelpad=labelpad, **kwargs)
+            ax2.set_xscale(scale)
+            
+            if lim is not None:
+                ax2.set_xlim(lim)
+            
+            ax2.tick_params(axis='x', labelcolor=color, colors=color)
+            ax2.spines['top'].set_color(color)
+        
+        return ax2
+    
+    #################### P O W E R  L A W ####################
+    
+    @staticmethod
+    def power_law_guide(ax, x_range, exponent, *, add_label: bool = True, label=None, position='lower right', color='gray', ls='--', lw=1.5, offset_log=0, zorder=3, **kwargs):
+        """
+        Add a power-law guide line to a log-log plot.
+        
+        Useful for showing scaling behavior (e.g., y ~ x^{-2}).
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Axis with log-log scale.
+        x_range : tuple
+            (x_start, x_end) for the guide line.
+        exponent : float
+            Power-law exponent (slope in log-log).
+        label : str, optional
+            Label (e.g., r'$\\sim N^{-2}$'). If None, auto-generates.
+        position : str, default='lower right'
+            Where to anchor the line: 'lower right', 'upper left', etc.
+        color : str, default='gray'
+            Line color.
+        ls : str, default='--'
+            Line style.
+        lw : float, default=1.5
+            Line width.
+        offset_log : float, default=0
+            Vertical offset in log10 units.
+        **kwargs
+            Additional arguments passed to ax.plot.
+        
+        Returns
+        -------
+        line : Line2D
+            The guide line object.
+        
+        Examples
+        --------
+        >>> # Show y ~ x^{-2} scaling
+        >>> Plotter.power_law_guide(ax, (10, 1000), -2, label=r'$\\sim N^{-2}$')
+        """
+        x0, x1      = x_range
+        x           = np.array([x0, x1])
+        
+        # Determine y values based on position
+        ylim        = ax.get_ylim()
+        y_log_range = np.log10(ylim[1]) - np.log10(ylim[0])
+        
+        if 'lower' in position:
+            y_anchor = ylim[0] * 10**(0.2 * y_log_range)
+        else:  # upper
+            y_anchor = ylim[1] * 10**(-0.3 * y_log_range)
+        
+        # Power law: y = A * x^exponent
+        # At x0: y0 = A * x0^exponent => A = y0 / x0^exponent
+        if 'right' in position:
+            y0  = y_anchor * (x1/x0)**(-exponent)  # Anchor at x1
+            A   = y0 / (x0**exponent)
+        else:  # left
+            A   = y_anchor / (x0**exponent)
+        
+        y = A * x**exponent * 10**offset_log
+        
+        if label is None and add_label:
+            if exponent == int(exponent):
+                label = rf'$\sim x^{{{int(exponent)}}}$'
+            else:
+                label = rf'$\sim x^{{{exponent:.1f}}}$'
+        
+        line, = ax.plot(x, y, color=color, ls=ls, lw=lw, label=label, zorder=zorder, **kwargs)
+        return line
     
     #################### I N S E T ####################
 
     @staticmethod
     def get_inset(ax, 
-                  position    = [0.0, 0.0, 1.0, 1.0], 
-                  add_box     = False, 
-                  box_alpha   = 0.5, 
-                  box_ext     = 0.02,
-                  facecolor   = 'white',
-                  zorder      = 1,
-                  **kwargs):
+                position    = [0.0, 0.0, 1.0, 1.0], 
+                add_box     = False, 
+                box_alpha   = 0.5, 
+                box_ext     = 0.02,
+                facecolor   = 'white',
+                zorder      = 1,
+                **kwargs):
         """
         Create an inset axis within the given axis.
 
-        Parameters:
-        - ax: The parent axis.
-        - position: List of [x0, y0, width, height] for the inset axis in relative coordinates.
-        - add_box: Whether to add a semi-transparent box around the inset.
-        - box_alpha: Transparency of the box.
-        - box_ext: Extension of the box beyond the inset axis.
-        - facecolor: Face color of the box.
-        - zorder: Z-order of the inset axis.
-        - kwargs: Additional arguments passed to plt.axes.
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The parent axis.
+        position : list
+            [x0, y0, width, height] for the inset axis in relative coordinates.
+        add_box : bool, default=False
+            Whether to add a semi-transparent box around the inset.
+        box_alpha : float, default=0.5
+            Transparency of the box.
+        box_ext : float, default=0.02
+            Extension of the box beyond the inset axis.
+        facecolor : str, default='white'
+            Face color of the box.
+        zorder : int, default=1
+            Z-order of the inset axis.
+        **kwargs
+            Additional arguments passed to fig.add_axes.
 
         Returns:
         - ax2: The inset axis.
@@ -2215,7 +4116,7 @@ class Plotter:
         axis_off      = kwargs.pop('axis_off', False)
         suptitle      = kwargs.pop('suptitle', None)
         suptitle_kws  = dict(kwargs.pop('suptitle_kws', {}) or {})
-        post_hook     = kwargs.pop('post_hook', None)            # type: Optional[PostHook]
+        post_hook     = kwargs.pop('post_hook', None)
 
         # Use constrained_layout by default unless user opted for tight_layout or already set it
         if 'constrained_layout' not in kwargs and not kwargs.get('tight_layout', False):
@@ -2368,6 +4269,8 @@ class Plotter:
                       vmin      = None,
                       vmax      = None,
                       **kwargs):
+        import seaborn as sns
+        
         size        = len(dfs)
         plotwidth   = 1.0 / len(dfs)
         cbarwidth   = 0.1 * plotwidth
@@ -2387,6 +4290,7 @@ class Plotter:
             for i in range(size):
                 heatmap[i].index += heatmap[i].index[1] - heatmap[i].index[0]
         plots       = []
+        
         for i, df in enumerate(heatmap):
             plot = sns.heatmap(df, ax = ax[i], cbar = i == size - 1, 
                                cbar_kws = {
@@ -2414,10 +4318,6 @@ class Plotter:
         return fig, ax, plots
 
 ##########################################################################
-
-
-import numpy as np
-import json
 
 class PlotterSave:
     
@@ -2576,13 +4476,16 @@ class PlotterSave:
 
 ##############################################################################
 
-from sympy import Matrix, init_printing
 try:
     from IPython.display import display
+    from sympy import Matrix, init_printing
         
     class MatrixPrinter:
         '''
-        Class for printing matrices and vectors
+        Class for printing matrices and vectors using IPython and sympy.
+        
+        This class provides methods for displaying matrices and vectors
+        in a nicely formatted way in Jupyter notebooks.
         '''
         
         def __init__(self):
@@ -2590,33 +4493,26 @@ try:
         
         @staticmethod
         def print_matrix(matrix: np.ndarray):
-            '''
-            Prints the matrix in a nice form
-            '''
+            '''Prints the matrix in a nice form.'''
             display(Matrix(matrix))
         
         @staticmethod
         def print_vector(vector: np.ndarray):
-            '''
-            Prints the vector in a nice form
-            '''
+            '''Prints the vector in a nice form.'''
             display(Matrix(vector))
         
         @staticmethod
         def print_matrices(matrices: list):
-            '''
-            Prints a list of matrices in a nice form
-            '''
+            '''Prints a list of matrices in a nice form.'''
             for matrix in matrices:
                 display(Matrix(matrix))
         
         @staticmethod
         def print_vectors(vectors: list):
-            '''
-            Prints a list of vectors in a nice form
-            '''
+            '''Prints a list of vectors in a nice form.'''
             for vector in vectors:
                 display(Matrix(vector))
+
 except ImportError:
     print("IPython is not installed. Matrix display will not work.")
 
