@@ -53,11 +53,6 @@ def binary_search_numpy(arr, l_point, r_point, elem):
     '''
     Perform a binary search for 'elem' in the sorted NumPy array 'arr'.
     
-    Note: Numba may emit a reflected list deprecation warning during compilation.
-    This is a known numba limitation - the function works correctly with numpy arrays
-    and the warning can be safely ignored. The reflected list path is not actually used
-    at runtime when proper numpy arrays are passed.
-    
     Parameters
     ----------
     arr : np.ndarray
@@ -81,14 +76,19 @@ def binary_search_numpy(arr, l_point, r_point, elem):
     '''
     if l_point < 0 or r_point >= len(arr):
         return _BAD_BINARY_SEARCH_STATE
-    if l_point > r_point:
-        return _BAD_BINARY_SEARCH_STATE
-    middle = l_point + (r_point - l_point) // 2
-    if arr[middle] == elem:
-        return middle
-    if arr[middle] < elem:
-        return binary_search_numpy(arr, middle + 1, r_point, elem)
-    return binary_search_numpy(arr, l_point, middle - 1, elem)
+
+    while l_point <= r_point:
+        middle  = l_point + (r_point - l_point) // 2
+        mid_val = arr[middle]
+
+        if mid_val == elem:
+            return middle
+        if mid_val < elem:
+            l_point = middle + 1
+        else:
+            r_point = middle - 1
+
+    return -1
 
 def _binary_search_list_notol(arr, l_point, r_point, elem) -> int:
     '''

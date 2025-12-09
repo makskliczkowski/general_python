@@ -799,7 +799,7 @@ for ax in axes:
 Plotter.setup_log_y(ax, ylims=(1e-6, 1e0), decade_step=1)
 ''',
             
-            'color': '''
+            'color': r'''
 ==================
 COLORS & COLORBARS
 ==================
@@ -832,7 +832,7 @@ Reset Cycles:
     reset_color_cycles('Plastic')  # Reset specific
 ''',
             
-            'layout': '''
+            'layout': r'''
 =================
 LAYOUT & SUBPLOTS
 =================
@@ -943,7 +943,7 @@ Unify Axis Limits Across Panels:
     Plotter.unify_limits(axes, which='y')  # Same y-limits for all
 ''',
             
-            'legend': '''
+            'legend': r'''
 =======
 LEGENDS
 =======
@@ -970,7 +970,7 @@ Available Styles:
     'publication' - Solid frame, Nature-style formatting
 ''',
             
-            'save': '''
+            'save': r'''
 ==============
 SAVING FIGURES
 ==============
@@ -993,7 +993,7 @@ Recommended Formats:
 Tip: Use constrained_layout=True in get_subplots() to avoid clipping.
 ''',
             
-            'grid': '''
+            'grid': r'''
 =====================
 ADVANCED GRID CONTROL
 =====================
@@ -1056,7 +1056,7 @@ fig, axes = Plotter.make_grid(1, 2, figsize=(7, 5), width_ratios=[20, 1])
 fig, axes = Plotter.make_grid(2, 2, figsize=(8, 8), panel_labels=True)
 ''',
             
-            'style': '''
+            'style': r'''
 ==================
 PUBLICATION STYLES
 ==================

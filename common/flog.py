@@ -287,6 +287,9 @@ class Logger:
         Returns:
             str: Colorized text.
         """
+        if not color or color.lower() == 'white' or len(color) == 0:
+            return str(txt)
+        
         return str(Colors(color)) + str(txt) + Colors.white
 
     # --------------------------------------------------------------
