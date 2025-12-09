@@ -397,70 +397,70 @@ class Lattice(ABC):
     # -----------------------------------------------------------------------------
 
     @property
-    def k1(self):           return self._k1
+    def k1(self):                   return self._k1
     @k1.setter
-    def k1(self, value):    self._k1 = value
+    def k1(self, value):            self._k1 = value
     @property
-    def b1(self):           return self._k1
+    def b1(self):                   return self._k1
     @b1.setter
-    def b1(self, value):    self._k1 = value
+    def b1(self, value):            self._k1 = value
     
     @property
-    def k2(self):           return self._k2
+    def k2(self):                   return self._k2
     @k2.setter
-    def k2(self, value):    self._k2 = value
+    def k2(self, value):            self._k2 = value
     @property
-    def b2(self):           return self._k2
+    def b2(self):                   return self._k2
     @b2.setter
-    def b2(self, value):    self._k2 = value
+    def b2(self, value):            self._k2 = value
     
     @property
-    def k3(self):           return self._k3
+    def k3(self):                   return self._k3
     @k3.setter
-    def k3(self, value):    self._k3 = value
+    def k3(self, value):            self._k3 = value
     @property
-    def b3(self):           return self._k3
+    def b3(self):                   return self._k3
     @b3.setter
-    def b3(self, value):    self._k3 = value
+    def b3(self, value):            self._k3 = value
     
     # ------------------------------------------------------------------
     
     @property
-    def n1(self):           return self._n1
+    def n1(self):                   return self._n1
     @n1.setter
-    def n1(self, value):    self._n1 = value
+    def n1(self, value):            self._n1 = value
 
     @property
-    def n2(self):           return self._n2
+    def n2(self):                   return self._n2
     @n2.setter
-    def n2(self, value):    self._n2 = value
+    def n2(self, value):            self._n2 = value
     
     @property
-    def n3(self):           return self._n3
+    def n3(self):                   return self._n3
     @n3.setter
-    def n3(self, value):    self._n3 = value
+    def n3(self, value):            self._n3 = value
     
     @property
-    def basis(self):        return self._basis
+    def basis(self):                return self._basis
     @basis.setter
-    def basis(self, value): self._basis = value
+    def basis(self, value):         self._basis = value
     @property
-    def multipartity(self): return self._basis.shape[0]
+    def multipartity(self):         return self._basis.shape[0]
     
     @property
-    def vectors(self):      return self._vectors
+    def vectors(self):              return self._vectors
     @vectors.setter
-    def vectors(self, value): self._vectors = value
+    def vectors(self, value):       self._vectors = value
     
     @property
-    def avec(self):         return np.stack((self._a1, self._a2, self._a3), axis=0)
+    def avec(self):                 return np.stack((self._a1, self._a2, self._a3), axis=0)
     @avec.setter
-    def avec(self, value):  self._a1 = value[0]; self._a2 = value[1]; self._a3 = value[2]
+    def avec(self, value):          self._a1 = value[0]; self._a2 = value[1]; self._a3 = value[2]
     
     @property
-    def bvec(self):         return np.stack((self._k1, self._k2, self._k3), axis=0)
+    def bvec(self):                 return np.stack((self._k1, self._k2, self._k3), axis=0)
     @bvec.setter
-    def bvec(self, value):  self._k1 = value[0]; self._k2 = value[1]; self._k3 = value[2]
+    def bvec(self, value):          self._k1 = value[0]; self._k2 = value[1]; self._k3 = value[2]
 
     # ------------------------------------------------------------------
     #! DFT Matrix

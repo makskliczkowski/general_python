@@ -7,17 +7,16 @@ Author          : Maksymilian Kliczkowski
 --------------------------------
 '''
 
-from __future__ import annotations
-from typing import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict, NamedTuple
-from dataclasses import dataclass, field
-
-from enum import Enum
-import numpy as np
-import scipy.sparse as sp
+from    __future__      import annotations
+from    typing          import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict, NamedTuple
+from    dataclasses     import dataclass, field
+from    enum            import Enum
+import  numpy           as np
+import  scipy.sparse    as sp
 
 if TYPE_CHECKING:
-    from ..lattice import Lattice
-    from QES.Algebra.hamil_quadratic import QuadraticBlockDiagonalInfo
+    from ..lattice                      import Lattice
+    from QES.Algebra.hamil_quadratic    import QuadraticBlockDiagonalInfo
 
 # -----------------------------------------------------------------------------------------------------------
 # HIGH-SYMMETRY POINTS DEFINITIONS
