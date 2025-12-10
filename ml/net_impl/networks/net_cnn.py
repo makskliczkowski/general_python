@@ -306,8 +306,12 @@ class CNN(FlaxInterface):
         if not JAX_AVAILABLE:
             raise ImportError("CNN requires JAX.")
 
-        if len(input_shape) != 1:
-            raise ValueError("input_shape must be 1-D, e.g. (n_visible,)")
+        if len(input_shape) == 1 and reshape_dims is None:
+            reshape_dims = (input_shape[0], 1)  # default to 2D with second dim 1
+        elif len(input_shape) == 1 and reshape_dims is not None:
+            pass  # use provided reshape_dims
+        elif len(input_shape) > 1 and reshape_dims is None:
+            reshape_dims = input_shape
 
         n_visible   = input_shape[0]
         n_dim       = len(reshape_dims)
