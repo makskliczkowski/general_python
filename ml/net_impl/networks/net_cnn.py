@@ -292,7 +292,7 @@ class CNN(FlaxInterface):
                 features            : Sequence[int]                                         = (8, 16),
                 kernel_sizes        : Sequence[Union[int, Tuple[int,...]]]                  = (3, 3),
                 strides             : Optional[Sequence[Union[int, Tuple[int,...]]]]        = None,
-                activations         : Union[str, Callable, Sequence[Union[str, Callable]]]  = 'relu',
+                activations         : Union[str, Callable, Sequence[Union[str, Callable]]]  = 'log_cosh',
                 use_bias            : Union[bool, Sequence[bool]]                           = True,
                 output_shape        : Tuple[int, ...]                                       = (1,),
                 in_activation       : Optional[Callable]                                    = None,
