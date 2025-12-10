@@ -387,7 +387,7 @@ class Logger:
 
     # --------------------------------------------------------------
     
-    def say(self, *args, end=True, log=logging.INFO, lvl=0, verbose=True):
+    def say(self, *args, end=True, log=logging.INFO, lvl=0, verbose=True, color=None):
         """
         Print and log multiple messages if verbosity is enabled.
 
@@ -398,6 +398,19 @@ class Logger:
             lvl (int)       : Indentation level.
             verbose (bool)  : Log if True (default: True).
         """
+        if isinstance(log, str):
+            log = log.lower()
+            if log.startswith('i'):
+                log = logging.INFO
+            elif log.startswith('e'):
+                log = logging.ERROR
+            elif log.startswith('w'):
+                log = logging.WARNING
+            elif log.startswith('d'):
+                log = logging.DEBUG
+            else:
+                log = logging.DEBUG
+        
         if not verbose or log < self.lvl:
             return
         
@@ -406,6 +419,8 @@ class Logger:
         # if end is True, append newlin
         # Log the combined message only once.
         combined_message = ' '.join(messages) if not end else '\n'.join(messages)
+        if color is not None and self.has_colors:
+            combined_message = self.colorize(combined_message, color)
         self._log_message(log, combined_message, lvl)
     
     # --------------------------------------------------------------
