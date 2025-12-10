@@ -11,21 +11,23 @@ email       : maxgrom97@gmail.com
 version     : 1.0.0
 '''
 
-import time
-from typing import List, Optional
-
 try:
-    from ...algebra.utils import JAX_AVAILABLE
+    import          jax
+    JAX_AVAILABLE   = True
 except ImportError:
-    JAX_AVAILABLE = False
+    jax             = None
+    JAX_AVAILABLE   = False
 
 # --------------------------------------------------------------------------------------------------
 
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax
-    from ...algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE
-    from ...algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
+    try:
+        from ...algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE
+        from ...algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
+    except ImportError:
+        raise ImportError("QES.general_python.common.algebra.utils module is required for binary_jax.")
 
     def reverse_byte(b : int):
         """

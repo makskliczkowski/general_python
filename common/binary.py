@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 """
 binary.py
 
@@ -19,27 +17,40 @@ It includes functions to:
 Functions are written so that they work with plain Python 
 integers as well as with NumPy or JAX arrays.
 You can choose the backend (np or jnp) by passing the corresponding module.
+
+-----------------------------------------------------------------------
+Author          : Maks Kliczkowski
+Date            : December 2025
+Description     : This module implements binary - manipulation routines that allow you to work with binary representations of integers
+                or vectors.
+-----------------------------------------------------------------------
 """
 
-import time
-import numpy as np
-import numba
+import  time
+import  numba
+import  numpy as np
+from    typing import Optional
 
-from typing import Optional
-from ..algebra.utils import DEFAULT_NP_FLOAT_TYPE, Array
-from ..algebra.utils import (get_backend, maybe_jit, is_traced_jax,
-    DEFAULT_NP_INT_TYPE, JAX_AVAILABLE, BACKEND_REPR, BACKEND_DEF_SPIN)
-from ..common.tests import GeneralAlgebraicTest
+try:
+    from ..algebra.utils    import DEFAULT_NP_FLOAT_TYPE, Array
+    from ..algebra.utils    import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE, JAX_AVAILABLE, BACKEND_REPR, BACKEND_DEF_SPIN
+    from ..common.tests     import GeneralAlgebraicTest
+except ImportError:
+    raise ImportError("QES.general_python.common.binary module requires QES.general_python.common.algebra.utils and QES.general_python.common.tests modules.")
 
 ####################################################################################################
+
 if JAX_AVAILABLE:
     from ..common.embedded import binary_jax as jaxpy
 else:
     jaxpy = None
-    
+
 #! extraction
-from ..common.embedded import bit_extract as extract
-from ..common.embedded import binary_search as bin_search
+try:
+    from ..common.embedded  import bit_extract      as extract
+    from ..common.embedded  import binary_search    as bin_search
+except ImportError:
+    raise ImportError("QES.general_python.common.binary module requires QES.general_python.common.embedded.bit_extract and binary_search modules.")
 
 ####################################################################################################
 #! Global functions
@@ -748,7 +759,6 @@ def _popcount_spin(n : Array, backend = 'default'):
     # arrays are assumed to be NumPy or JAX arrays
     backend = get_backend(backend)
     return backend.sum(n > 0)
-                    
 
 @maybe_jit
 def _popcount_nspin(n : Array, backend = 'default'):
@@ -774,7 +784,6 @@ def popcount(n : int, spin : bool = BACKEND_DEF_SPIN, backend : str = 'default')
         # Python's int.bit_count() returns the number of set bits; no argument required
         return n.bit_count()
     return int(_popcount_spin(n, backend) if spin else _popcount_nspin(n, backend))
-    
 
 ####################################################################################################
 
