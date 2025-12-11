@@ -80,6 +80,13 @@ class Directories(object):
         """
         return self.join(other)
     
+    def __iter__(self) -> Iterator[Path]:
+        """
+        Iterate over parts of the path.
+        >>> d = Directories("foo/bar")  # -> iterates over ["foo", "bar"]
+        """
+        yield from self.path.parts
+    
     #! Comparison
     
     def __eq__(self, other: PathLike) -> bool:
