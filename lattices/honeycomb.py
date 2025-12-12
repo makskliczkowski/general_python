@@ -40,12 +40,16 @@ class HoneycombLattice(Lattice):
     are computed based on a hexagonal unit cell.
     
     High-symmetry points in the Brillouin zone:
-    - Γ (Gamma): Zone center at (0, 0)
-    - K: Dirac point at (2/3, 1/3) - hosts linear band crossings in graphene
-    - K': Other Dirac point at (1/3, 2/3)
-    - M: Edge midpoint at (1/2, 0)
+    - Gamma: 
+        Zone center at (0, 0)
+    - K:
+        Dirac point at (2/3, 1/3) - hosts linear band crossings in graphene
+    - K': 
+        Other Dirac point at (1/3, 2/3)
+    - M:    
+        Edge midpoint at (1/2, 0)
     
-    Default path: Γ → K → M → Γ
+    Default path: Γ -> K -> M -> Γ
     
     References:
         - Phys. Rev. Research 3, 013160 (2021)
@@ -117,7 +121,7 @@ class HoneycombLattice(Lattice):
             - K': Other Dirac point at (1/3, 2/3)
             - M: Edge midpoint at (1/2, 0)
             
-            Default path: Γ → K → M → Γ
+            Default path: Γ -> K -> M -> Γ
         """
         return HighSymmetryPoints.honeycomb_2d()
 
