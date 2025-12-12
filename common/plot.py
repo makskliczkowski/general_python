@@ -1946,6 +1946,9 @@ Custom Adjustments:
         # override the color if it is provided in the kwargs
         if 'color' in kwargs:
             c = None
+        
+        if 'edgecolors' in kwargs:
+            edgecolor = None
             
         if isinstance(c, int):
             c = colorsList[c % len(colorsList)]
@@ -2741,9 +2744,12 @@ Custom Adjustments:
     
     #################### L A B E L ####################
     
-    # @staticmethod
-    # def set_ax_ticks(ax, 
-    #                   )
+    @staticmethod
+    def hide_unused_panels(axes: plt.Axes, n_panels: int):
+        """Hide unused panels in a subplot grid."""
+        if n_panels > 1:
+            for idx in range(n_panels, len(axes.flatten())):
+                axes.flatten()[idx].set_visible(False)
     
     @staticmethod
     def labellines(ax, 
@@ -4552,5 +4558,5 @@ except ImportError:
             '''
             for vector in vectors:
                 MatrixPrinter.print_vector(vector)
-    
+
 ##############################################################################

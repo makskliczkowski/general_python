@@ -1697,6 +1697,30 @@ class Lattice(ABC):
 
     def calculate_plaquettes(self):     raise NotImplementedError("Plaquette calculation not implemented for this lattice.")
 
+    def calculate_wilson_loops(self):
+        """
+        Calculates the Wilson loops (non-contractible loops) for the lattice based on its boundary conditions.
+        Returns a list of lists, where each inner list contains the site indices of a Wilson loop.
+        
+        Assumes standard lexicographic site indexing (x + y*Lx + z*Lx*Ly).
+        """
+        loops                           = []
+        is_pbc_x, is_pbc_y, is_pbc_z    = self.periodic_flags()
+        
+        # Wilson loop along X (at y=0, z=0)
+        if is_pbc_x and self.lx > 0:
+            loops.append([x for x in range(self.lx)])
+            
+        # Wilson loop along Y (at x=0, z=0)
+        if is_pbc_y and self.dim >= 2 and self.ly > 0:
+            loops.append([y * self.lx for y in range(self.ly)])
+            
+        # Wilson loop along Z (at x=0, y=0)
+        if is_pbc_z and self.dim >= 3 and self.lz > 0:
+            loops.append([z * self.lx * self.ly for z in range(self.lz)])
+            
+        return loops
+
     # -----------------------------------------------------------------------------
     #! Next nearest neighbors
     # -----------------------------------------------------------------------------
