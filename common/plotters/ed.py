@@ -534,53 +534,61 @@ def plot_correlation_grid(
 # c) Multi-state vs parameter plotter
 
 def plot_multistate_vs_param(
-        directory: str,
-        param_name: str,
-        x_param: str = 'hx', 
-        p_param: str = 'Gz', 
-        p_values: list = None,
-        filters = None, 
-        lx = None, ly = None,
-        nstates: int = 10, 
+        directory           : str,
+        param_name          : str,
+        x_param             : str = 'hx', 
+        p_param             : str = 'Gz', 
+        p_values            : list = None,
+        filters             = None, 
         *,
-        figsize_per_panel: tuple = (4, 3),
-        xlim = None, ylim = None,
-        cmap: str = 'viridis',
-        param_fun: callable = lambda r, key: r.get(key, []),
-        trans_fun: callable = lambda raw_data_array, state_index: raw_data_array[state_index],
-        ylabel: str = None,
-        title: str = '',
-        derivative_order: int = 0,
-        susceptibility_sign: bool = False,
-        param_labels: dict = {},
+        lx                  = None, 
+        ly                  = None,
+        lz                  = None,
+        Ns                  = None,
+        # plot settings
+        nstates             : int   = 10, 
+        figsize_per_panel   : tuple = (4, 3),
+        xlim                = None, 
+        ylim                = None,
+        cmap                : str = 'viridis',
+        # data extraction
+        param_fun           : callable  = lambda r, key: r.get(key, []),
+        param_labels        : dict      = {},
+        trans_fun           : callable  = lambda raw_data_array, state_index: raw_data_array[state_index],
+        post_process_func   : callable  = None,
+        # labels
+        ylabel              : str = None,
+        title               : str = '',
+        # advanced
+        derivative_order    : int  = 0,
+        susceptibility_sign : bool = False,
         **kwargs):
 
-    results = load_results(data_dir=directory, filters=filters, lx=lx, ly=ly)
+    results = load_results(data_dir=directory, filters=filters, lx=lx, ly=ly, lz=lz, Ns=Ns, post_process_func=post_process_func, logger=kwargs.get('logger', None))
     if not results: return None, None
 
     if p_values is None:
-        _, _, _, unique_p = PlotEDHelpers.extract_parameter_arrays(results, x_param, p_param)
-        p_values = sorted(unique_p)
+        _, _, _, unique_p   = PlotEDHelpers.extract_parameter_arrays(results, x_param, p_param)
+        p_values            = sorted(unique_p)
         if len(p_values) > 9 and kwargs.get('limit_panels', True):
             p_values = p_values[:9]
 
-    n_panels = len(p_values)
-    fig, axes, n_rows, n_cols = PlotEDHelpers.create_subplot_grid(n_panels, max_cols=3, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
+    n_panels                    = len(p_values)
+    fig, axes, n_rows, n_cols   = PlotEDHelpers.create_subplot_grid(n_panels, max_cols=3, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
     if hasattr(fig, 'set_constrained_layout'):
         fig.set_constrained_layout(True)
-    axes = axes.flatten()
     
-    labelcond = lambda idx: {'x': idx // n_cols == n_rows - 1, 'y': idx % n_cols == 0}
-    xlabel_str = param_labels.get(x_param, x_param)
-    ylabel_str = ylabel if ylabel else param_labels.get(param_name, param_name)
+    axes                        = axes.flatten()
+    labelcond                   = lambda idx: {'x': idx // n_cols == n_rows - 1, 'y': idx % n_cols == 0}
+    xlabel_str                  = param_labels.get(x_param, x_param)
+    ylabel_str                  = ylabel if ylabel else param_labels.get(param_name, param_name)
+    getcolor, _, _, mappable    = Plotter.get_colormap(values=np.arange(nstates), cmap=cmap, elsecolor='black', get_mappable=True)
     
-    getcolor, _, _, mappable = Plotter.get_colormap(values=np.arange(nstates), cmap=cmap, elsecolor='black', get_mappable=True)
-
     for idx, p_val in enumerate(p_values):
-        ax = axes[idx]
-        
         # Filter for panel param
-        panel_results = []
+        ax              = axes[idx]
+        panel_results   = []
+        
         for r in results:
             val = r.params.get(p_param, np.nan)
             if abs(val - p_val) < 1e-6:
@@ -590,8 +598,8 @@ def plot_multistate_vs_param(
             ax.text(0.5, 0.5, "No Data", ha='center', va='center', transform=ax.transAxes)
             continue
 
-        x_vals, sort_idx = PlotEDHelpers.sort_results_by_param(panel_results, x_param)
-        sorted_res = [panel_results[i] for i in sort_idx]
+        x_vals, sort_idx    = PlotEDHelpers.sort_results_by_param(panel_results, x_param)
+        sorted_res          = [panel_results[i] for i in sort_idx]
 
         for state_i in range(nstates):
             y_vals, valid_x = [], []
@@ -613,7 +621,6 @@ def plot_multistate_vs_param(
                 
                 if derivative_order >= 1: y_arr = np.gradient(y_arr, x_arr)
                 if derivative_order >= 2: y_arr = np.gradient(y_arr, x_arr) * (-1 if susceptibility_sign else 1)
-                
                 ax.plot(x_arr, y_arr, color=getcolor(state_i), marker='o', markersize=3, ls='-')
 
         p_label = param_labels.get(p_param, p_param)
@@ -625,11 +632,11 @@ def plot_multistate_vs_param(
     Plotter.hide_unused_panels(axes, n_panels)
     
     cbar_pos = kwargs.get('cbar_pos', [0.92, 0.2, 0.02, 0.6])
-    Plotter.add_colorbar(fig=fig, pos=cbar_pos, mappable=mappable, cmap=cmap, scale='linear', vmin=0, vmax=nstates - 1,
-        label=r'State Index $n$', extend=None, format='%d', remove_pdf_lines=True)
+    Plotter.add_colorbar(fig=fig, pos=cbar_pos, mappable=mappable, cmap=cmap, scale='linear', vmin=0, vmax=nstates - 1, label=r'State Index $n$', extend=None, format='%d', remove_pdf_lines=True)
 
-    if title: fig.suptitle(title, fontsize=14)
-    PlotEDHelpers.savefig(fig, directory, param_name, x_param, p_param)
+    if title: 
+        fig.suptitle(title, fontsize=kwargs.get('suptitle_fontsize', 12))
+        
     plt.show()
     return fig, axes
 
