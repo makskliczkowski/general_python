@@ -13,7 +13,7 @@ License     : MIT
 '''
 
 import numpy as np
-from typing import Optional
+from typing import Optional, List, Tuple, Union
 
 try:
     from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType

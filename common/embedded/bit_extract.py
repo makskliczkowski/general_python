@@ -426,7 +426,7 @@ def test(size           : int   = 12,
         t0              = time.perf_counter()
         packed_A        = extract(state, state_a_mask)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  A scalar-mask : {int2binstr(packed_A, La)}   [{dt:.1f} \mus]")
+        logger.info(rf"  A scalar-mask : {int2binstr(packed_A, La)}   [{dt:.1f} \mus]")
 
         t0              = time.perf_counter()
         packed_B        = extract(state, state_b_mask)
@@ -437,12 +437,12 @@ def test(size           : int   = 12,
         t0              = time.perf_counter()
         packed_A_vec    = extract_vnb(state, shifts_a)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  A vector-mask : {int2binstr(packed_A_vec, La)}   [{dt:.1f} \mus]")
+        logger.info(rf"  A vector-mask : {int2binstr(packed_A_vec, La)}   [{dt:.1f} \mus]")
 
         t0              = time.perf_counter()
         packed_B_vec    = extract_vnb(state, shifts_b)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  B vector-mask : {int2binstr(packed_B_vec, Lb)}   [{dt:.1f} \mus]")
+        logger.info(rf"  B vector-mask : {int2binstr(packed_B_vec, Lb)}   [{dt:.1f} \mus]")
 
         # ---- sanity check -----------------------------------------------
         assert packed_A == packed_A_vec, "Mismatch for subsystem A!"

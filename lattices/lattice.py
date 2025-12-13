@@ -310,6 +310,205 @@ class Lattice(ABC):
         self._n2    = self._delta_y / np.linalg.norm(self._delta_y)
         self._n3    = self._delta_z / np.linalg.norm(self._delta_z)
     
+    # -----------------------------------------------------------------------------
+    #! Region generators
+    # -----------------------------------------------------------------------------
+
+    def get_region(
+        self,
+        kind: str = "half",
+        *,
+        origin: Optional[Union[int, List[float]]] = None,
+        radius: Optional[float] = None,
+        direction: Optional[str] = None,
+        sublattice: Optional[int] = None,
+        sites: Optional[List[int]] = None,
+        depth: Optional[int] = None,
+        plaquettes: Optional[List[int]] = None,
+        **kwargs
+    ) -> List[int]:
+        """
+        Return a list of site indices defining a spatial region.
+        
+        Parameters
+        ----------
+        kind : str
+            Type of region: 'half', 'disk', 'sublattice', 'graph', 'plaquette', 'custom'.
+        origin : int or list[float], optional
+            Center of the region. Can be a site index or coordinate vector.
+        radius : float, optional
+            Radius for 'disk' regions.
+        direction : str, optional
+            Direction for 'half' cuts ('x', 'y', 'z').
+        sublattice : int, optional
+            Sublattice index for 'sublattice' regions.
+        sites : list[int], optional
+            Explicit list of sites for 'custom' regions.
+        depth : int, optional
+            Depth/distance for 'graph' regions.
+        plaquettes : list[int], optional
+            List of plaquette indices for 'plaquette' regions.
+            
+        Returns
+        -------
+        list[int]
+            Sorted list of site indices belonging to the region.
+        """
+        kind = kind.lower()
+        
+        if kind == "half":
+            return self.region_half(direction or "x")
+        
+        elif kind == "disk":
+            if origin is None or radius is None:
+                raise ValueError("region_disk requires 'origin' and 'radius'.")
+            return self.region_disk(origin, radius)
+        
+        elif kind == "graph":
+            if origin is None or depth is None:
+                raise ValueError("region_graph requires 'origin' (center site) and 'depth'.")
+            if not isinstance(origin, int):
+                 raise ValueError("region_graph 'origin' must be a site index.")
+            return self.region_graph_ball(origin, depth)
+        
+        elif kind == "sublattice":
+            if sublattice is None:
+                raise ValueError("region_sublattice requires 'sublattice' index.")
+            return self.region_sublattice(sublattice)
+        
+        elif kind == "plaquette":
+            if plaquettes is None:
+                raise ValueError("region_plaquette requires 'plaquettes' list.")
+            return self.region_plaquettes(plaquettes)
+        
+        elif kind == "custom":
+            return sorted(list(set(sites))) if sites else []
+        
+        else:
+            raise ValueError(f"Unknown region type: {kind}")
+
+    def region_half(self, direction: str = "x") -> List[int]:
+        """
+        Half-system cut along a cardinal direction.
+        
+        Useful for area law scaling. Handles PBC by cutting based on coordinates relative to median.
+        """
+        coords = self.rvectors
+        direction = direction.lower()
+        
+        if direction == "x":
+            axis = 0
+        elif direction == "y":
+            axis = 1
+        elif direction == "z":
+            axis = 2
+        else:
+            raise ValueError("direction must be 'x', 'y', or 'z'")
+            
+        cut_val = np.median(coords[:, axis])
+        return sorted(np.where(coords[:, axis] < cut_val)[0].tolist())
+
+    def get_shortest_displacement(self, i: int, j: int) -> np.ndarray:
+        """
+        Compute the shortest displacement vector r_j - r_i respecting PBC.
+        """
+        n_i = self._fracs[i]
+        n_j = self._fracs[j]
+        dn = np.array(n_j - n_i, dtype=float)
+        
+        dims = [self.Lx, max(self.Ly, 1), max(self.Lz, 1)]
+        pbc_flags = self.periodic_flags()
+        
+        for d in range(3):
+            if pbc_flags[d]:
+                L = dims[d]
+                dn[d] = dn[d] - L * np.round(dn[d] / L)
+                
+        disp = dn[0] * self.a1 + dn[1] * self.a2 + dn[2] * self.a3
+        disp += self.basis[self._subs[j]] - self.basis[self._subs[i]]
+        return disp
+
+    def region_disk(self, center: Union[int, List[float]], radius: float) -> List[int]:
+        """
+        Spherical/Circular region based on Euclidean distance (PBC-aware).
+        
+        Parameters
+        ----------
+        center : int or list[float]
+            Site index or coordinate vector of the center.
+        radius : float
+            Radius of the disk.
+        """
+        if not isinstance(center, int):
+             # Fallback for arbitrary coordinates (not fully PBC aware without cell info)
+             r0 = np.array(center)
+             dist = np.linalg.norm(self.rvectors - r0, axis=1)
+             return sorted(np.where(dist <= radius)[0].tolist())
+
+        # Vectorized PBC distance for site center
+        n_center = self._fracs[center]
+        dn_all = np.array(self._fracs - n_center, dtype=float)
+        
+        dims = [self.Lx, max(self.Ly, 1), max(self.Lz, 1)]
+        pbc_flags = self.periodic_flags()
+        
+        for d in range(3):
+            if pbc_flags[d]:
+                L = dims[d]
+                dn_all[:, d] = dn_all[:, d] - L * np.round(dn_all[:, d] / L)
+        
+        R_disp = np.outer(dn_all[:, 0], self.a1) + np.outer(dn_all[:, 1], self.a2) + np.outer(dn_all[:, 2], self.a3)
+        r_basis_diff = self.basis[self._subs] - self.basis[self._subs[center]]
+        
+        total_disp = R_disp + r_basis_diff
+        dists = np.linalg.norm(total_disp, axis=1)
+        
+        return sorted(np.where(dists <= radius)[0].tolist())
+
+    def region_sublattice(self, sub: int) -> List[int]:
+        """
+        Return all sites belonging to a specific sublattice.
+        """
+        return [i for i in range(self.Ns) if self.sublattice(i) == sub]
+
+    def region_graph_ball(self, center: int, depth: int) -> List[int]:
+        """
+        Graph-distance ball (breadth-first search).
+        
+        Returns all sites within `depth` bonds from `center` (inclusive).
+        """
+        visited = {center}
+        frontier = {center}
+
+        for _ in range(depth):
+            new_nodes = set()
+            for s in frontier:
+                for n in self.neighbors(s, order=1):
+                    if n is not None and n >= 0 and n not in visited and n != self._BAD_LATTICE_SITE:
+                        new_nodes.add(n)
+            visited |= new_nodes
+            frontier = new_nodes
+
+        return sorted(list(visited))
+
+    def region_plaquettes(self, plaquette_ids: List[int]) -> List[int]:
+        """
+        Region defined by a union of plaquettes.
+        
+        Requires the lattice to implement `calculate_plaquettes()` and store `_plaquettes`.
+        """
+        if not hasattr(self, "_plaquettes") or self._plaquettes is None:
+            try:
+                self.calculate_plaquettes()
+            except NotImplementedError:
+                raise ValueError("Plaquettes are not defined for this lattice.")
+
+        sites = set()
+        for pid in plaquette_ids:
+            if 0 <= pid < len(self._plaquettes):
+                sites.update(self._plaquettes[pid])
+        return sorted(list(sites))
+
     ################################### GETTERS ###################################
     
     @property

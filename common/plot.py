@@ -1,4 +1,4 @@
-'''
+r'''
 Plotting Utilities for Scientific Publications
 ===============================================
 
