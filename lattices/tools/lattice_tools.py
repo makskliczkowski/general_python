@@ -20,9 +20,9 @@ class LatticeDirection(Enum):
     '''
     Enumeration for the lattice directions
     '''
-    X = auto()
-    Y = auto()
-    Z = auto()
+    X = 0
+    Y = 1
+    Z = 2
     
     def __str__(self):      return str(self.name).lower()
     def __repr__(self):     return f"LatticeDirection.{self.name}"

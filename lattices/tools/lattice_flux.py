@@ -7,9 +7,9 @@ Author          : Maksymilian Kliczkowski
 --------------------------------
 """
 
-from dataclasses import dataclass
-from typing import Mapping, Union, Optional, Dict, TYPE_CHECKING
-import numpy as np
+from    dataclasses import dataclass
+from    typing      import Mapping, Union, Optional, Dict, TYPE_CHECKING
+import  numpy as np
 
 if TYPE_CHECKING:
     from .lattice_tools import LatticeDirection

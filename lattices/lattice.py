@@ -981,8 +981,32 @@ class Lattice(ABC):
     def boundary_phase(self, direction: LatticeDirection, winding: int = 1) -> complex:
         """
         Return the complex phase accumulated after crossing the boundary along ``direction``.
+        
+        Parameters:
+        -----------
+        direction : LatticeDirection
+            The lattice direction (X, Y, or Z).
+        winding : int
+            The winding number (number of times crossing the boundary).
+        Returns:
+        --------
+        complex
+            The complex phase factor e^{i * flux * winding}.
         """
         return self._flux.phase(direction, winding=winding)
+    
+    def boundary_phases(self) -> dict[LatticeDirection, complex]:
+        """
+        Return a dictionary of complex boundary phases for each lattice direction.
+        It creates a table for precalculated phases
+        """
+        ndirs   = 3
+        ns      = self.ns
+        table   = np.ones((ndirs, ns + 1), dtype=np.complex128)
+        for d in LatticeDirection:
+            for w in range(ns + 1):
+                table[d.value, w] = self.boundary_phase(d, winding=w)
+        return table
 
     def boundary_phase_from_winding(self, wx: int, wy: int, wz: int) -> complex:
         """
