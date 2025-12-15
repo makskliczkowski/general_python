@@ -12,13 +12,13 @@ License     : MIT
 ---------------------------------
 '''
 
-import numpy as np
-from typing import Optional, List, Tuple, Union
+import  numpy   as np
+from    typing  import Optional
 
 try:
     from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
-    from ..maths.math_utils import mod_euc
-    from .tools.lattice_kspace import HighSymmetryPoints
+    from ..maths.math_utils     import mod_euc
+    from .tools.lattice_kspace  import HighSymmetryPoints
 except ImportError:
     raise ImportError("Could not import Lattice base classes. Ensure the module is in the PYTHONPATH.")
 
@@ -362,7 +362,7 @@ class HoneycombLattice(Lattice):
         """
         return True
     
-    def get_bond_type(self, site1: int, site2: int):
+    def bond_type(self, site1: int, site2: int):
         """
         Determines the bond type between two sites.
         

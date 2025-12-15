@@ -248,10 +248,19 @@ def rho_two_sites(psi, site_i, site_j, ns):
         size       = ns,
         tol        = 1e-12,
     )
-    rho = psi_mat @ psi_mat.conj().T
-    rho = 0.5 * (rho + rho.conj().T)
+    rho     = psi_mat @ psi_mat.conj().T
+    rho     = 0.5 * (rho + rho.conj().T)
     return rho
 
+def rho_spectrum(rho: np.ndarray, eps: 1e-13):
+    '''
+    Diagonalize the density matrix
+    '''
+    w = np.linalg.eigvalsh(rho)
+    w = np.clip(w.real, 0.0, 1.0)
+    w = w[w > eps]
+    return w
+    
 # -----------------------------------------------------------------------------
 
 #! Numba

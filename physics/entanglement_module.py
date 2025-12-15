@@ -86,10 +86,10 @@ Manual many-body entropy calculations:
     >>> S_manual    = ent.entropy_correlation(bipart, orbitals)
 """
 
-import numpy as np
-from enum import Enum
-from typing import Union, List, Tuple, Optional, Callable, Dict, Literal
-from dataclasses import dataclass
+import  numpy as np
+from    enum import Enum
+from    typing import Union, List, Tuple, Optional, Callable, Dict, Literal
+from    dataclasses import dataclass
 
 try:
     from ..common.binary        import extract as Extractor
