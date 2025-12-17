@@ -234,23 +234,22 @@ if JAX_AVAILABLE:
         return derivatives - derivatives_m
 
     # @jax.jit
-    def gradient_jax(derivatives_c_h: jnp.ndarray, loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+    def gradient_jax(derivatives_c: jnp.ndarray, loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """F = (1/N) * O^dag @ E_c"""
-        return jnp.matmul(derivatives_c_h, loss_c) / n_samples
+        return jnp.matmul(derivatives_c.T.conj(), loss_c) / n_samples
 
     # @jax.jit
-    def covariance_jax(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+    def covariance_jax(derivatives_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """S = (1/N) * O^dag @ O (Standard SR)"""
-        return (derivatives_c_h @ derivatives_c) / n_samples
+        return (derivatives_c.T.conj() @ derivatives_c) / n_samples
 
     @jax.jit
-    def covariance_jax_minsr(derivatives_c: jnp.ndarray, derivatives_c_h: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+    def covariance_jax_minsr(derivatives_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """T = (1/N) * O @ O^dag (MinSR)"""
         # Note: derivatives_c is    (N_samples, N_params)
         # We want                   (N_s, N_s).
         # Correct math:             T = O . O^dag
-        # Input derivatives_c_h is usually O^dag (N_p, N_s)
-        return (derivatives_c @ derivatives_c_h) / n_samples
+        return (derivatives_c @ derivatives_c.T.conj()) / n_samples
     
     # -------------------------------------------------------
     
@@ -264,9 +263,9 @@ if JAX_AVAILABLE:
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
         var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
-        var_deriv_c_h   = jnp.conj(var_deriv_c.T)
+        # var_deriv_c_h   = jnp.conj(var_deriv_c.T) # Optimized out
         
-        return loss_c, var_deriv_c, var_deriv_c_h, var_deriv_m, n_samples, full_size
+        return loss_c, var_deriv_c, var_deriv_m, n_samples, full_size
 
     @jax.jit
     def solve_jax_prepare_modified_ratios(loss: jnp.ndarray, var_deriv: jnp.ndarray, betas: jnp.ndarray, r_el: jnp.ndarray, r_le: jnp.ndarray):
@@ -280,9 +279,9 @@ if JAX_AVAILABLE:
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
         var_deriv_c     = derivatives_centered_jax(var_deriv, var_deriv_m)
-        var_deriv_c_h   = jnp.conj(var_deriv_c.T)
+        # var_deriv_c_h   = jnp.conj(var_deriv_c.T) # Optimized out
         
-        return loss_c, var_deriv_c, var_deriv_c_h, var_deriv_m, n_samples, full_size
+        return loss_c, var_deriv_c, var_deriv_m, n_samples, full_size
 
     # Unified Solver Logic
 
@@ -293,12 +292,12 @@ if JAX_AVAILABLE:
         """
         
         # Prepare
-        loss_c, O_c, O_dag, N, _ = solve_jax_prepare(loss, var_deriv)
+        loss_c, O_c, _, N, _ = solve_jax_prepare(loss, var_deriv)
         
         if min_sr:
             # MinSR: T = (1/N) O O^dag. Solve T x = E/N. Update = O^dag x.
             # Calculate T
-            T       = covariance_jax_minsr(O_c, O_dag, N)
+            T       = covariance_jax_minsr(O_c, N)
             rhs     = loss_c / N
             
             # Solve T x = rhs
@@ -306,14 +305,14 @@ if JAX_AVAILABLE:
             x_minsr = solve_func(s=T, s_p=None, b=rhs, x0=None, precond_apply=precond_apply, maxiter=maxiter, tol=tol)
             
             # Map back to params
-            return jnp.matmul(O_dag, x_minsr)
+            return jnp.matmul(O_c.T.conj(), x_minsr)
         else:
             # Standard: S = (1/N) O^dag O. Solve S x = F.
-            F       = gradient_jax(O_dag, loss_c, N)
+            F       = gradient_jax(O_c, loss_c, N)
             
             # Solve S x = F
             # Pass (O^dag, O) so solver can form S lazily or explicitly
-            return solve_func(s=O_dag, s_p=O_c, b=F, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)    
+            return solve_func(s=O_c.T.conj(), s_p=O_c, b=F, x0=x0, precond_apply=precond_apply, maxiter=maxiter, tol=tol)    
 
 #####################################
 # NumPy Implementation (Legacy/CPU)
@@ -329,16 +328,20 @@ if True:
         return derivatives - derivatives_m
     
     @numba.njit
-    def gradient_np(derivatives_c_h, loss_c, num_samples):
-        return np.matmul(derivatives_c_h, loss_c) / num_samples
+    def gradient_np(derivatives_c, loss_c, num_samples):
+        # Implicit transpose: (N_s, N_p).conj().T -> (N_p, N_s)
+        # Numba supports matmul with array.T
+        return np.matmul(derivatives_c.conj().T, loss_c) / num_samples
 
     @numba.njit
-    def covariance_np(derivatives_c, derivatives_c_h, num_samples):
-        return np.matmul(derivatives_c_h, derivatives_c) / num_samples
+    def covariance_np(derivatives_c, num_samples):
+        # S = O^dag O = (N_p, N_s) @ (N_s, N_p)
+        return np.matmul(derivatives_c.conj().T, derivatives_c) / num_samples
 
     @numba.njit
-    def covariance_np_minsr(derivatives_c, derivatives_c_h, num_samples):
-        return np.matmul(derivatives_c, derivatives_c_h) / num_samples
+    def covariance_np_minsr(derivatives_c, num_samples):
+        # T = O O^dag = (N_s, N_p) @ (N_p, N_s)
+        return np.matmul(derivatives_c, derivatives_c.conj().T) / num_samples
 
     @numba.njit
     def solve_numpy_prepare(loss, var_deriv):
@@ -347,21 +350,34 @@ if True:
         loss_c = loss_centered(loss, loss_m)
         var_deriv_m = np.mean(var_deriv, axis=0)
         var_deriv_c = derivatives_centered(var_deriv, var_deriv_m)
-        var_deriv_c_h = np.conj(var_deriv_c).T
-        return loss_c, var_deriv_c, var_deriv_c_h, n_samples, var_deriv.shape[1]
+        # var_deriv_c_h = np.conj(var_deriv_c).T # Optimized out
+        return loss_c, var_deriv_c, var_deriv_m, n_samples, var_deriv.shape[1]
 
     # NumPy solver wrapper (simplified)
     def solve_numpy(solver, loss, var_deriv, min_sr, **kwargs):
-        loss_c, O_c, O_dag, N, _ = solve_numpy_prepare(loss, var_deriv)
+        loss_c, O_c, _, N, _ = solve_numpy_prepare(loss, var_deriv)
+        
+        # Compute explicit O_dag locally if needed for legacy solver interfaces
+        # Most solvers expect (S, S_p) or A.
+        # Standard: S = O^dag O. Pass (O^dag, O)
+        # MinSR: T = O O^dag. Pass T.
         
         if min_sr:
-            T = covariance_np_minsr(O_c, O_dag, N)
+            T = covariance_np_minsr(O_c, N)
             rhs = loss_c / N
             if hasattr(solver, 'init_from_matrix'): solver.init_from_matrix(T, rhs)
             x_sol = solver.solve(rhs, **kwargs)
-            return np.matmul(O_dag, x_sol)
+            
+            # Update = O^dag x
+            return np.matmul(O_c.conj().T, x_sol)
         else:
-            F = gradient_np(O_dag, loss_c, N)
+            F = gradient_np(O_c, loss_c, N)
+            
+            # Construct O_dag for solver (some solvers might need explicit matrix)
+            # If solver supports implicit operations, we could avoid this, but 
+            # Solver interface usually takes (s, s_p) which are matrices/arrays.
+            O_dag = O_c.conj().T
+            
             if hasattr(solver, 'init_from_fisher'): solver.init_from_fisher(O_dag, O_c, F)
             return solver.solve(F, **kwargs)
         

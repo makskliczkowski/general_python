@@ -124,6 +124,7 @@ class _FlaxCNN(nn.Module):
     input_channels : int                = 1
     periodic       : bool               = True
     use_sum_pool   : bool               = True
+    transform_input: bool               = True
 
     def setup(self):
         iter_specs              = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
@@ -165,7 +166,13 @@ class _FlaxCNN(nn.Module):
 
         batch_size      = s.shape[0]
         target_shape    = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
-        x               = (s.reshape(target_shape) * 2.0).astype(self.dtype)
+        
+        x               = s.reshape(target_shape)
+        if self.transform_input:
+            # Map 0/1 to -1/1: x -> 2*x - 1
+            x           = (x * 2 - 1).astype(self.dtype)
+        else:
+            x           = x.astype(self.dtype)
 
         # Optional input activation (rarely used)
         if self.in_act is not None:
@@ -297,6 +304,7 @@ class CNN(FlaxInterface):
                 output_shape        : Tuple[int, ...]                                       = (1,),
                 in_activation       : Optional[Callable]                                    = None,
                 final_activation    : Union[str, Callable, None]                            = None,
+                transform_input     : bool                                                  = True,
                 *,
                 dtype               : Any                                                   = jnp.float32,
                 param_dtype         : Optional[Any]                                         = None,
@@ -376,6 +384,7 @@ class CNN(FlaxInterface):
             dtype           =   dtype,
             param_dtype     =   p_dtype,
             input_channels  =   1,
+            transform_input =   transform_input
         )
 
         self._out_shape = output_shape  # store for __call__

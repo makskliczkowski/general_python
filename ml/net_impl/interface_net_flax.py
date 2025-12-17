@@ -469,7 +469,10 @@ class FlaxInterface(GeneralNet):
             array-like
                 Output of the network.
         """
-        return self._compiled_apply_fn(self._parameters, x.astype(self._dtype))
+        # Optimization: avoid cast if already correct dtype
+        if x.dtype != self._dtype:
+            x = x.astype(self._dtype)
+        return self._compiled_apply_fn(self._parameters, x)
 
     #########################################################
     #! CHECK HOLOMORPHICITY
@@ -606,11 +609,7 @@ class FlaxInterface(GeneralNet):
             grad_u_tree         = jax.grad(u_fun)(current_params)
             # grad_v_tree = ∇p(Im[f]) = (∂v/∂pR) + i(∂v/∂pI)
             grad_v_tree         = jax.grad(v_fun)(current_params)
-            flat_u, _           = tree_flatten(grad_u_tree)
-            flat_v, _           = tree_flatten(grad_v_tree)       
-            vec_u               = jnp.concatenate([x.ravel() for x in flat_u])
-            vec_v               = jnp.concatenate([x.ravel() for x in flat_v])                 
-                 
+            
             #! Check CR Condition: grad_u ≈ i * grad_v
             # Calculate the difference: diff = grad_u - i * grad_v
             # Check Cauchy-Riemann: dRe/dx = dIm/dy, dRe/dy = -dIm/dx
@@ -625,10 +624,18 @@ class FlaxInterface(GeneralNet):
             # This requires careful handling of complex gradients.
             # Flatten the difference and one of the gradients (e.g., grad_u) for norm comparison
             # Check: || grad_u - (i * grad_v) ||
-            diff                = vec_u - (1j * vec_v)
+            # Optimized norm calculation without full flattening
+            def sq_diff_norm(u, v):
+                return jnp.sum(jnp.abs(u - 1j * v)**2)
             
-            norm_diff           = jnp.linalg.norm(diff)
-            norm_base           = jnp.linalg.norm(vec_u) + 1e-12
+            def sq_norm(u):
+                return jnp.sum(jnp.abs(u)**2)
+                
+            diff_sq_norm        = sum(tree_flatten(tree_map(sq_diff_norm, grad_u_tree, grad_v_tree))[0])
+            base_sq_norm        = sum(tree_flatten(tree_map(sq_norm, grad_u_tree))[0])
+            
+            norm_diff           = jnp.sqrt(diff_sq_norm)
+            norm_base           = jnp.sqrt(base_sq_norm) + 1e-12
             
             self._holomorphic   = float(norm_diff / norm_base) < self._TOL_HOLOMORPHIC
             
