@@ -22,7 +22,7 @@ except ImportError as e:
 # The JIT Kernel (The math from arXiv:2302.01941)
 # -----------------------------------------------------------
 
-def _spectral_solve_kernel(matrix, b, rcond, sigma):
+def _spectral_solve_kernel(matrix, b, rcond, sigma, snr_tol=0.0):
     """
     JIT-friendly core solver.
     Solves (matrix + sigma*I) x = b using Eigendecomposition + SNR Cutoff.
@@ -59,7 +59,7 @@ def _spectral_solve_kernel(matrix, b, rcond, sigma):
     return x
 
 # Compile the kernel
-_spectral_solve_kernel_jit = jax.jit(_spectral_solve_kernel, static_argnums=(2,))
+_spectral_solve_kernel_jit = jax.jit(_spectral_solve_kernel, static_argnums=(2, 4))
 
 # -----------------------------------------------------------
 # The Solver Wrapper Class
@@ -98,19 +98,30 @@ class SpectralExactSolver(Solver):
         default_sigma = 0.0 if sigma is None else float(sigma)
         
         def _solve_wrapper(a=None, s=None, s_p=None, b=None, x0=None, tol=1e-10, maxiter=100, 
-                          precond_apply=None, sigma=None, **extra_kwargs):
+                          precond_apply=None, sigma=None, snr_tol=0.0, **extra_kwargs):
             """
             Solve the linear system using spectral decomposition.
             
-            Args:
-                a: Dense matrix (if use_matrix=True)
-                s, s_p: Fisher components O and O^H (if use_fisher=True)
-                b: Right-hand side vector
-                x0: Ignored (direct solver)
-                tol: Used as spectral cutoff (rcond)
-                maxiter: Ignored (direct solver)
-                precond_apply: Ignored (not needed for direct solve)
-                sigma: Diagonal shift (overrides default)
+            Parameters:
+            ------------
+                a: 
+                    Dense matrix (if use_matrix=True)
+                s, s_p: 
+                    Fisher components O and O^H (if use_fisher=True)
+                b: 
+                    Right-hand side vector
+                x0: 
+                    Ignored (direct solver)
+                tol:
+                    Used as spectral cutoff (rcond)
+                maxiter: 
+                    Ignored (direct solver)
+                precond_apply: 
+                    Ignored (not needed for direct solve)
+                sigma: 
+                    Diagonal shift (overrides default)
+                snr_tol: 
+                    Signal-to-noise ratio tolerance (passed to kernel)
             
             Returns:
                 SolverResult with solution
@@ -133,7 +144,7 @@ class SpectralExactSolver(Solver):
                 matrix      = jnp.eye(b.shape[0], dtype=b.dtype)
 
             # Call the JIT-compiled kernel
-            x = _spectral_solve_kernel_jit(matrix, b, tol, effective_sigma)
+            x = _spectral_solve_kernel_jit(matrix, b, tol, effective_sigma, snr_tol)
             return SolverResult(x=x, converged=True, iterations=1, residual_norm=0.0)
         
         # Return the wrapper (no additional JIT needed - kernel is already JIT'd)
