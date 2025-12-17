@@ -22,16 +22,18 @@ except ImportError as e:
 # The JIT Kernel (The math from arXiv:2302.01941)
 # -----------------------------------------------------------
 
-def _spectral_solve_kernel(matrix, b, rcond, sigma, snr_tol=0.0):
+def _spectral_solve_kernel(matrix, b, rcond, sigma):
     """
-    JIT-friendly core solver.
-    Solves (matrix + sigma*I) x = b using Eigendecomposition + SNR Cutoff.
+    JIT-friendly core solver for MinSR.
+    Solves (matrix + sigma*I) x = b using Eigendecomposition.
     
-    Steps:
-    1. Apply diagonal shift (Tikhonov regularization)
-    2. Compute eigendecomposition of the shifted matrix
-    3. Apply spectral filtering (truncate small eigenvalues)
-    4. Reconstruct solution via pseudoinverse
+    Equivalent to: x = pinv(matrix + sigma*I, rcond=rcond) @ b
+    
+    Args:
+        matrix: The Gram matrix T = O @ O^H
+        b: The vector b (local energies)
+        rcond: Cutoff for small eigenvalues (relative to max eigenvalue)
+        sigma: Diagonal shift (regularization)
     """
     
     # 1. Apply Diagonal Shift (Tikhonov Regularization)
@@ -43,12 +45,12 @@ def _spectral_solve_kernel(matrix, b, rcond, sigma, snr_tol=0.0):
     # Faster and more stable than SVD for square symmetric/hermitian matrices
     w, v = jnp.linalg.eigh(matrix)
     
-    # 3. Spectral Filtering (SNR Cutoff)
+    # 3. Spectral Filtering
     # Filter eigenvalues that are indistinguishable from noise (relative to max eigenval)
     max_w   = jnp.max(jnp.abs(w))
     cutoff  = rcond * max_w
     
-    # Invert: 1/w if w > cutoff else 0 (pseudoinverse)
+    # Invert: 1/w if w > cutoff else 0 (pseudoinverse behavior)
     inv_w   = jnp.where(w > cutoff, 1.0 / w, 0.0)
     
     # 4. Reconstruct Solution: x = V @ diag(1/w) @ V^H @ b
@@ -59,7 +61,7 @@ def _spectral_solve_kernel(matrix, b, rcond, sigma, snr_tol=0.0):
     return x
 
 # Compile the kernel
-_spectral_solve_kernel_jit = jax.jit(_spectral_solve_kernel, static_argnums=(2, 4))
+_spectral_solve_kernel_jit = jax.jit(_spectral_solve_kernel)
 
 # -----------------------------------------------------------
 # The Solver Wrapper Class
@@ -69,13 +71,10 @@ class SpectralExactSolver(Solver):
     """
     Exact solver for MinSR using Eigendecomposition and Spectral Filtering.
     
-    This is a direct solver (not iterative) that:
-    1. Applies diagonal shift for regularization
-    2. Computes eigendecomposition
-    3. Filters small eigenvalues (spectral cutoff)
-    4. Computes pseudoinverse solution
-    
-    Best for small to medium sized problems where direct solve is feasible.
+    Matches logic from jVMC's MinSR and TDVP implementations:
+    - Constructs T = O @ O^H (Gram matrix)
+    - Applies diagonal shift (sigma/diagonalShift)
+    - Inverts using spectral decomposition with rcond cutoff (tol/pinvTol)
     """
     
     _solver_type = SolverType.DIRECT
@@ -84,16 +83,6 @@ class SpectralExactSolver(Solver):
     def get_solver_func(backend_module, use_matvec=True, use_fisher=False, use_matrix=False, sigma=None, **kwargs):
         """
         Returns a solver function compatible with the Solver wrapper interface.
-        
-        Args:
-            backend_module: jax.numpy or numpy
-            use_matvec: Ignored (we need direct matrix access)
-            use_fisher: If True, expects s, s_p (Fisher/Gram components)
-            use_matrix: If True, expects a (dense matrix)
-            sigma: Default diagonal shift
-            
-        Returns:
-            Callable solver function
         """
         default_sigma = 0.0 if sigma is None else float(sigma)
         
@@ -102,41 +91,35 @@ class SpectralExactSolver(Solver):
             """
             Solve the linear system using spectral decomposition.
             
-            Parameters:
-            ------------
-                a: 
-                    Dense matrix (if use_matrix=True)
-                s, s_p: 
-                    Fisher components O and O^H (if use_fisher=True)
-                b: 
-                    Right-hand side vector
-                x0: 
-                    Ignored (direct solver)
-                tol:
-                    Used as spectral cutoff (rcond)
-                maxiter: 
-                    Ignored (direct solver)
-                precond_apply: 
-                    Ignored (not needed for direct solve)
-                sigma: 
-                    Diagonal shift (overrides default)
-                snr_tol: 
-                    Signal-to-noise ratio tolerance (passed to kernel)
-            
-            Returns:
-                SolverResult with solution
+            Args:
+                a: Dense matrix (if use_matrix=True)
+                s, s_p: Fisher components O^H and O (if use_fisher=True). 
+                        For MinSR: s=O^H (Np, Ns), s_p=O (Ns, Np).
+                b: Right-hand side vector
+                tol: Used as spectral cutoff (rcond)
+                sigma: Diagonal shift (overrides default)
+                snr_tol: (Unused in exact kernel currently, kept for interface compatibility)
+                **extra_kwargs: Supports 'pinvTol' and 'diagonalShift' aliases from jVMC.
             """
             # Use runtime sigma if provided, else default
             effective_sigma = default_sigma if sigma is None else sigma
+            
+            # Support aliases from jVMC/other contexts
+            # jVMC uses 'pinvTol' for cutoff and 'diagonalShift' for regularization
+            rcond       = extra_kwargs.get('rcond', extra_kwargs.get('pinvTol', tol))
+            diag_shift  = extra_kwargs.get('diagonalShift', effective_sigma)
             
             # Case 1: Pre-formed Matrix A provided
             if a is not None:
                 matrix = a
                 
             # Case 2: Fisher/Gram components (s, s_p) provided
-            # Compute: matrix = (1/n) * s_p @ s = (1/n) * O^H @ O
+            # For MinSR: T = (1/n) * s_p @ s = (1/n) * O @ O^H
+            # Note: s_p is O (Ns, Np), s is O^H (Np, Ns)
             elif s is not None and s_p is not None:
-                n_samples   = s.shape[0] if s.shape[0] > s.shape[1] else s.shape[1]
+                # We normalize by n_samples to be consistent with the 1/N scaling of the loss vector b
+                # and to keep sigma (diagonal shift) as an intensive parameter.
+                n_samples   = s_p.shape[0] # Assumes O is (Ns, Np)
                 matrix      = jnp.matmul(s_p, s) / n_samples
                 
             else:
@@ -144,7 +127,7 @@ class SpectralExactSolver(Solver):
                 matrix      = jnp.eye(b.shape[0], dtype=b.dtype)
 
             # Call the JIT-compiled kernel
-            x = _spectral_solve_kernel_jit(matrix, b, tol, effective_sigma, snr_tol)
+            x = _spectral_solve_kernel_jit(matrix, b, rcond, diag_shift)
             return SolverResult(x=x, converged=True, iterations=1, residual_norm=0.0)
         
         # Return the wrapper (no additional JIT needed - kernel is already JIT'd)

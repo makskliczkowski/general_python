@@ -653,10 +653,14 @@ if JAX_AVAILABLE:
         # - `out_axes=0` means the output gradients should be stacked along axis 0.
         batch_grads_fun = jax.vmap(compute_grad_for_one_state, in_axes=(None, 0), out_axes=0)
 
-        # Apply the vmapped function to the parameters and the batch of states
-        gradients = jax.vmap(batch_grads_fun, in_axes=(None, 0), out_axes=0)(params, batches)
-        # # jax.debug.print("jax compute gradients: {}", gradients[0])
-        # Reshape gradients to match the original number of samples
+        # Apply the function to the batches.
+        # Use lax.map instead of vmap for the outer loop to process batches sequentially.
+        # This prevents OOM errors when the total number of samples is large (e.g. 50k),
+        # as it limits the size of the active AD graph / intermediates to a single batch.
+        def process_batch(batch):
+            return batch_grads_fun(params, batch)
+            
+        gradients = jax.lax.map(process_batch, batches)             # process each batch sequentially
         gradients = gradients.reshape(-1, gradients.shape[-1])      # flatten first
         gradients = gradients[: states.shape[0]]                    # drop padding
         return gradients, shapes, sizes, is_cpx

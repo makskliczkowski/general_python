@@ -270,7 +270,7 @@ class FlaxComplexAutoregressive(nn.Module):
     def setup(self):
         ''' Initialize Amplitude and Phase Networks '''
         
-        # 1. Amplitude: Standard Init (LeCun Normal) allows breaking symmetry early
+        # Amplitude: Standard Init (LeCun Normal) allows breaking symmetry early
         self.amplitude_net      = FlaxMADE(
                                     n_sites         =   self.n_sites, 
                                     hidden_dims     =   self.ar_hidden, 
@@ -278,16 +278,17 @@ class FlaxComplexAutoregressive(nn.Module):
                                     name            =   'amplitude_made'
                                 )
             
-        # 2. Phase: ZERO Init
-        # We define a specialized MADE that starts with near-zero weights
+        # Phase: Small Random Init
+        # We define a specialized MADE that starts with small random weights to break symmetry
+        # but remains close to zero to start with a near-real wavefunction.
         self.phase_net          = FlaxMADE(
                                     n_sites         =   self.n_sites, 
                                     hidden_dims     =   self.phase_hidden, 
                                     dtype           =   self.dtype, 
                                     name            =   'phase_made',
-                                    # Overwrite init to be small/zero
-                                    kernel_init     =   nn.initializers.zeros, 
-                                    bias_init       =   nn.initializers.zeros
+                                    # Overwrite init to be small noise instead of zero
+                                    kernel_init     =   nn.initializers.normal(stddev=0.01), 
+                                    bias_init       =   nn.initializers.normal(stddev=0.01)
                                 )    
     
     def _flatten_input(self, x):
