@@ -296,7 +296,7 @@ class Solver(ABC):
                 The matrix-vector product function.
         """
         def matvec(x): 
-            return np.dot(a, x) + sigma_val * x
+            return np.dot(a, x) + sigma * x
         return matvec
     
     @staticmethod
@@ -1011,7 +1011,7 @@ class Solver(ABC):
 
     # -------------------------------------------------------------------------
 
-    def __repr__(self) -> str:                  return f"{self.__class__.__name__}(type={self._solver_type.name if self._solver_type else 'Unknown'}, backend='{self.backend_str}')"
+    def __repr__(self) -> str:                  return f"{self.__class__.__name__}(type={self._solver_type.name if self._solver_type else 'Unknown'}')"
     def __str__(self) -> str:                   return self.__repr__()
 
 # -----------------------------------------------------------------------------

@@ -124,7 +124,7 @@ class _FlaxCNN(nn.Module):
     input_channels : int                = 1
     periodic       : bool               = True
     use_sum_pool   : bool               = True
-    transform_input: bool               = True
+    transform_input: bool               = False
 
     def setup(self):
         iter_specs              = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)

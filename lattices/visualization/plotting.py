@@ -64,7 +64,7 @@ def _finalise_figure(fig: Figure, *, top_padding: float = 0.88) -> None:
     Apply a consistent layout so that titles and labels do not overlap the data.
     """
     try:
-        fig.tight_layout()
+        # fig.tight_layout()
         fig.subplots_adjust(top=top_padding)
     except Exception:
         # Some projections (e.g. 3D) do not play nicely with tight_layout; ignore.

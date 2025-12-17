@@ -252,7 +252,7 @@ def rho_two_sites(psi, site_i, site_j, ns):
     rho     = 0.5 * (rho + rho.conj().T)
     return rho
 
-def rho_spectrum(rho: np.ndarray, eps: 1e-13):
+def rho_spectrum(rho: np.ndarray, eps: float = 1e-13):
     '''
     Diagonalize the density matrix
     '''

@@ -982,8 +982,8 @@ class MinresQLPSolver(Solver):
     >>> solver_func = MinresQLPSolver.get_solver_func(jnp, use_fisher=True, sigma=1e-4)
     >>> result = solver_func(S, Sp, b, x0, tol=1e-8, maxiter=500)
     """
-    _solver_type = SolverType.MINRES_QLP
-    _symmetric = True
+    _solver_type    = SolverType.MINRES_QLP
+    _symmetric      = True
 
     @staticmethod
     def get_solver_func(
@@ -1028,9 +1028,9 @@ class MinresQLPSolver(Solver):
         *,
         tol             : float,
         maxiter         : int,
-        precond_apply   : Optional[Callable[[Array], Array]] = None,
-        backend_module  : Any = np,
-        sigma           : Optional[float] = None,
+        precond_apply   : Optional[Callable[[Array], Array]]    = None,
+        backend_module  : Any                                   = jnp,
+        sigma           : Optional[float]                       = None,
         **kwargs
     ) -> SolverResult:
         """

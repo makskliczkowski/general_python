@@ -38,6 +38,7 @@ from typing import Tuple, Callable, Optional, Any, Sequence, Union
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
     from ....ml.net_impl.activation_functions import log_cosh_jnp
+    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
     from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
     raise ImportError("Required modules for ResNet not found. Ensure QES.general_python.ml and QES.general_python.algebra are accessible.") from e
@@ -89,32 +90,38 @@ class ResNetBlock(nn.Module):
     dtype       : Any
     param_dtype : Any
     act_fn      : Callable = log_cosh_jnp
+    periodic    : bool = True
+    init_fn     : Callable = nn.initializers.lecun_normal()
     
     @nn.compact
     def __call__(self, x):
         residual    = x
         
         # Layer 1
-        # 1. Manual Circular Pad
-        h           = circular_pad(x, self.kernel_size)
-        # 2. Convolution (VALID padding because we manually padded)
-        h           = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
-                        padding='VALID', dtype=self.dtype, param_dtype=self.param_dtype)(h)
-        # 3. Activation
-        h           = self.act_fn(h)
+        h = x
+        if self.periodic:
+            h = circular_pad(h, self.kernel_size)
+            padding = 'VALID'
+        else:
+            padding = 'SAME'
+            
+        h = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
+                    padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, kernel_init=self.init_fn)(h)
+        h = self.act_fn(h)
         
         # Layer 2
-        # 1. Manual Circular Pad
-        h           = circular_pad(h, self.kernel_size)
-        # 2. Convolution
-        h           = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
-                        padding='VALID', dtype=self.dtype, param_dtype=self.param_dtype)(h)
-        
-        # 3. Activation
-        h           = self.act_fn(h)
+        if self.periodic:
+            h = circular_pad(h, self.kernel_size)
+            padding = 'VALID'
+        else:
+            padding = 'SAME'
+            
+        h = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
+                    padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, kernel_init=self.init_fn)(h)
+        h = self.act_fn(h)
 
         # Scale down initialization to start close to Identity
-        h           = h * 0.1
+        h = h * 0.1
         
         return residual + h
 
@@ -129,14 +136,29 @@ class _FlaxResNet(nn.Module):
     4. Sum Pooling (Spatial)
     5. Final Dense Layer -> Log Amplitude
     """
-    reshape_dims    : Tuple[int, ...]
-    features        : int
-    depth           : int
-    kernel_size     : Tuple[int, ...]
-    param_dtype     : jnp.dtype
-    dtype           : jnp.dtype
-    input_channels  : int = 1
+    reshape_dims        : Tuple[int, ...]
+    features            : int
+    depth               : int
+    kernel_size         : Tuple[int, ...]
+    param_dtype         : jnp.dtype
+    dtype               : jnp.dtype
+    input_channels      : int = 1
+    periodic_boundary   : bool = True
+    use_pooling         : bool = True
+    input_scale         : float = 1.0
+    input_shift         : float = 0.0
+    map_input_to_spin   : bool = False
+    init_scale          : float = 1.0
+    init_mode           : str = 'fan_in'
+    init_dist           : str = 'normal'
     
+    def setup(self):
+        is_cplx = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
+        if is_cplx:
+            self.k_init = lambda: cplx_variance_scaling(self.init_scale, self.init_mode, self.init_dist, self.param_dtype)
+        else:
+            self.k_init = lambda: nn.initializers.variance_scaling(self.init_scale, self.init_mode, self.init_dist, self.param_dtype)
+
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         
@@ -147,33 +169,45 @@ class _FlaxResNet(nn.Module):
         batch_size   = s.shape[0]
         # (Batch, L1, L2, ..., 1)
         target_shape = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
-        x            = s.reshape(target_shape).astype(self.dtype)
+        
+        # Apply input scaling/shifting
+        s = s * self.input_scale + self.input_shift
+            
+        x = s.reshape(target_shape).astype(self.dtype)
 
         # Initial Projection
-        # Map input spins (usually 1 channel) to feature space
-        x           = circular_pad(x, self.kernel_size)
-        x           = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
-                        padding='VALID', dtype=self.dtype, param_dtype=self.param_dtype, name="conv_init")(x)
-        x           = log_cosh_jnp(x)
+        if self.periodic_boundary:
+            x = circular_pad(x, self.kernel_size)
+            padding = 'VALID'
+        else:
+            padding = 'SAME'
+            
+        x = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
+                    padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, 
+                    kernel_init=self.k_init(), name="conv_init")(x)
+        x = log_cosh_jnp(x)
 
         # Residual Blocks
         for i in range(self.depth):
-            x       = ResNetBlock(features=self.features, 
+            x = ResNetBlock(features=self.features, 
                             kernel_size=self.kernel_size,
                             dtype=self.dtype, 
                             param_dtype=self.param_dtype,
+                            periodic=self.periodic_boundary,
+                            init_fn=self.k_init(),
                             name=f"res_block_{i}")(x)
 
-        # Sum Pooling
-        # Sum over all spatial dimensions (axes 1 to N-1)
-        # Result shape: (Batch, Features)
-        spatial_axes = tuple(range(1, x.ndim - 1))
-        x = jnp.sum(x, axis=spatial_axes)
+        # Pooling or Flatten
+        if self.use_pooling:
+            # Sum Pooling: Sum over all spatial dimensions (axes 1 to N-1)
+            spatial_axes = tuple(range(1, x.ndim - 1))
+            x = jnp.sum(x, axis=spatial_axes)
+        else:
+            x = x.reshape((x.shape[0], -1))
 
         # Final Dense Layer
-        # Map features to single scalar log-amplitude
-        # (Batch, Features) -> (Batch, 1)
-        x = nn.Dense(features=1, dtype=self.dtype, param_dtype=self.param_dtype, name="dense_out")(x)
+        x = nn.Dense(features=1, dtype=self.dtype, param_dtype=self.param_dtype, 
+                     kernel_init=self.k_init(), name="dense_out")(x)
         
         return x.reshape(-1)
 
@@ -199,6 +233,20 @@ class ResNet(FlaxInterface):
             Number of residual blocks. Default 4.
         kernel_size (Union[int, Tuple[int,...]]):
             Spatial kernel size. Default (3, 3).
+        periodic_boundary (bool):
+            Whether to use periodic boundary conditions. Default True.
+        use_pooling (bool):
+            Whether to use global sum pooling (TI). Default True.
+        input_scale (float):
+            Scaling factor for input. Default 1.0.
+        input_shift (float):
+            Shift factor for input. Default 0.0.
+        init_scale (float):
+            Scale for variance scaling initialization. Default 1.0.
+        init_mode (str):
+            Mode for initialization ('fan_in', 'fan_avg', 'fan_out'). Default 'fan_in'.
+        init_dist (str):
+            Distribution for initialization ('normal', 'uniform'). Default 'normal'.
         dtype (Any):
             Computation data type. Default complex128 for Physics.
         param_dtype (Optional[Any]):
@@ -213,6 +261,14 @@ class ResNet(FlaxInterface):
                 depth           : int                                   = 4,
                 kernel_size     : Union[int, Tuple[int,...]]            = 3,
                 *,
+                periodic_boundary: bool                                 = True,
+                use_pooling     : bool                                  = True,
+                input_scale     : float                                 = 1.0,
+                input_shift     : float                                 = 0.0,
+                map_input_to_spin: bool                                 = False,
+                init_scale      : float                                 = 1.0,
+                init_mode       : str                                   = 'fan_in',
+                init_dist       : str                                   = 'normal',
                 dtype           : Any                                   = DEFAULT_JP_CPX_TYPE,
                 param_dtype     : Optional[Any]                         = None,
                 seed            : int                                   = 0,
@@ -227,8 +283,6 @@ class ResNet(FlaxInterface):
         
         # Validation
         if math.prod(reshape_dims) != n_visible:
-            # Try to handle Honeycomb (2 sites per unit cell) or similar logic if needed
-            # For now, strict check
             pass # Or warning
 
         # Normalize kernel size
@@ -247,7 +301,15 @@ class ResNet(FlaxInterface):
             kernel_size     = kernel_tuple,
             dtype           = dtype,
             param_dtype     = p_dtype,
-            input_channels  = 1
+            input_channels  = 1,
+            periodic_boundary=periodic_boundary,
+            use_pooling     = use_pooling,
+            input_scale     = input_scale,
+            input_shift     = input_shift,
+            map_input_to_spin = map_input_to_spin,
+            init_scale      = init_scale,
+            init_mode       = init_mode,
+            init_dist       = init_dist
         )
 
         super().__init__(
