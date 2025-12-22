@@ -11,38 +11,58 @@ Author  : Maksymilian Kliczkowski
 Date    : 2025-02-01
 """
 
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
-from enum import Enum, auto, unique                 # for enumerations
-from typing import Dict, List, Mapping, Optional, Tuple, Union, Any
+from    __future__  import annotations
+from    dataclasses import dataclass
+from    abc         import ABC, abstractmethod
+from    enum        import Enum, auto, unique
+from    typing      import Dict, List, Mapping, Optional, Tuple, Union, Any
 
-import numpy as np
-import scipy.sparse as sp
+import  numpy as np
+import  scipy.sparse as sp
 
 try:
-    from .tools.lattice_tools import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
-    from .tools.lattice_flux import BoundaryFlux, _normalize_flux_dict
-    from .tools.lattice_kspace import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path, 
-                                    reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
-                                    build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
-                                    KPathResult, find_nearest_kpoints
-                                    )
-    from ..common import hdf5man as HDF5Mod
-    from ..common import directories as DirectoriesMod
+    from .tools.lattice_tools   import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
+    from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
+    from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path, 
+                                        reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
+                                        build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
+                                        KPathResult, find_nearest_kpoints)
+    from ..common               import hdf5man as HDF5Mod
 except ImportError:
     raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")
 
 ############################################## GENERAL LATTICE ##############################################
 
 Backend = np
-
 class Lattice(ABC):
-    '''
+    """
     General Lattice class. This class contains the general lattice model.
     It is an abstract class and is not meant to be instantiated. It is meant to be inherited by other classes.
 
-    The lattice sites, no matter the lattice type are indexed from 0 to Ns - 1. Importantly,
-    it can include multiple top
+    The lattice sites, no matter the lattice type, are indexed from 0 to Ns - 1. Importantly,
+    it can include multiple topologies.
+
+    Key Features:
+    -------------
+    - **Geometry**: Real-space coordinates, reciprocal vectors, neighbor connectivity (NN, NNN).
+    - **Boundaries**: Supports PBC, OBC, MBC, SBC boundary conditions.
+    - **K-Space**: Brillouin zone paths, high-symmetry points, band structure utilities.
+    - **Visualisation**: Built-in plotting helpers for structure and reciprocal space via `.plot`.
+
+    Plotting Usage:
+    ---------------
+    Access plotting methods via the `.plot` property:
+    >>> lattice.plot.real_space(show_indices=True)
+    >>> lattice.plot.reciprocal_space()
+    >>> lattice.plot.brillouin_zone()
+    >>> lattice.plot.structure(highlight_boundary=True)
+
+    Connectivity Convention:
+    ------------------------
+    Sites are indexed 0 to Ns-1. Neighbors are typically ordered:
+    - 1D: left -> right
+    - 2D: bottom-left -> top-right (snake-like or row-major depending on implementation)
+    
     Example:
     1D:
         - 1D lattice with 10 sites, site 0 has nearest neighbors 1 and 9 (PBC)
@@ -82,7 +102,7 @@ class Lattice(ABC):
             3 -> 4 -> 5
             |    |    |
             6 -> 7 -> 8
-    '''
+    """
     
     _BAD_LATTICE_SITE   = None
     _DFT_LIMIT_SITES    = 100 
@@ -440,10 +460,10 @@ class Lattice(ABC):
             Radius of the disk.
         """
         if not isinstance(center, int):
-             # Fallback for arbitrary coordinates (not fully PBC aware without cell info)
-             r0 = np.array(center)
-             dist = np.linalg.norm(self.rvectors - r0, axis=1)
-             return sorted(np.where(dist <= radius)[0].tolist())
+            # Fallback for arbitrary coordinates (not fully PBC aware without cell info)
+            r0      = np.array(center)
+            dist    = np.linalg.norm(self.rvectors - r0, axis=1)
+            return sorted(np.where(dist <= radius)[0].tolist())
 
         # Vectorized PBC distance for site center
         n_center = self._fracs[center]
@@ -2265,7 +2285,6 @@ class Lattice(ABC):
         Convenience wrapper returning the matplotlib figure and axes for a reciprocal-space scatter plot.
         """
         from .visualization import plot_reciprocal_space
-
         return plot_reciprocal_space(self, **kwargs)
 
     def plot_brillouin_zone(self, **kwargs):
@@ -2273,16 +2292,32 @@ class Lattice(ABC):
         Convenience wrapper returning the matplotlib figure and axes for a Brillouin zone plot.
         """
         from .visualization import plot_brillouin_zone
-
         return plot_brillouin_zone(self, **kwargs)
-
+    
     def plot_structure(self, **kwargs):
         """
-        Visualise lattice connectivity with boundary condition annotations.
+        Convenience wrapper returning the matplotlib figure and axes for a detailed lattice structure plot.
         """
         from .visualization import plot_lattice_structure
-
         return plot_lattice_structure(self, **kwargs)
+
+    @property
+    def plot(self):
+        """
+        Access plotting utilities for this lattice.
+        
+        Returns a LatticePlotter instance providing methods:
+        - real_space(**kwargs)          : Scatter plot of sites.
+        - reciprocal_space(**kwargs)    : Scatter plot of reciprocal lattice vectors.
+        - brillouin_zone(**kwargs)      : Visualization of the Brillouin Zone.
+        - structure(**kwargs)           : Detailed connectivity plot with boundaries.
+        
+        Example:
+            >>> lat.plot.structure(show_indices=True, highlight_boundary=True)
+            >>> lat.plot.brillouin_zone()
+        """
+        from .visualization.plotting import LatticePlotter
+        return LatticePlotter(self)
 
 #############################################################################################################
 #! SAVE LATTICE HELPERS

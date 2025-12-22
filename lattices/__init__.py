@@ -26,8 +26,11 @@ from .lattice   import (
 from .square        import SquareLattice
 from .hexagonal     import HexagonalLattice
 from .honeycomb     import HoneycombLattice
+from .triangular    import TriangularLattice
 from .graph         import GraphLattice
 from ..common.plot  import colorsCycle
+
+# Import visualization utilities
 from .visualization import (
     format_lattice_summary,
     format_vector_table,

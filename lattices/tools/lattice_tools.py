@@ -51,6 +51,7 @@ class LatticeType(Enum):
     HEXAGONAL   = auto()    # Hexagonal lattice
     HONEYCOMB   = auto()    # Honeycomb lattice
     GRAPH       = auto()    # Generic graph lattice (adjacency-defined)
+    TRIANGULAR  = auto()    # Triangular lattice
     
     def __str__(self):      return str(self.name).lower()
     def __repr__(self):     return self.__str__()
