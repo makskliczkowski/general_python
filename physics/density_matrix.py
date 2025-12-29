@@ -13,7 +13,7 @@ except ImportError as e:
     numba   = None
     
 from scipy.linalg import svd, eigh
-from typing import Union, List, Callable, Tuple
+from typing import Callable, Tuple
 
 try:
     from ..algebra.utils import Array
