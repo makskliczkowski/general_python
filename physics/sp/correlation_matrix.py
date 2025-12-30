@@ -34,7 +34,6 @@ from typing import Literal, Sequence, Tuple, Optional, Literal
 
 import numpy as np
 import numba
-from torch import mode
 
 try:
     from ...algebra.utils import JAX_AVAILABLE, Array

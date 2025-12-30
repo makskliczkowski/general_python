@@ -809,6 +809,154 @@ def plot_lattice_structure(
         
     return fig, axis
 
+def plot_regions(
+    lattice         : Lattice,
+    regions         : Dict[str, List[int]],
+    *,
+    ax              : Optional[Axes]                = None,
+    show_indices    : bool                          = False,
+    show_system     : bool                          = True,
+    system_color    : str                           = 'lightgray',
+    system_alpha    : float                         = 0.5,
+    cmap            : str                           = 'tab10',
+    fill            : bool                          = False,
+    fill_alpha      : float                         = 0.2,
+    figsize         : Optional[Tuple[float, float]] = None,
+    title           : Optional[str]                 = None,
+    title_kwargs    : Optional[Dict[str, object]]   = None,
+    tight_layout    : bool                          = True,
+    elev            : Optional[float]               = None,
+    azim            : Optional[float]               = None,
+    **scatter_kwargs,
+) -> Tuple[Figure, Axes]:
+    """
+    Plot specific regions on the lattice.
+
+    Parameters
+    ----------
+    lattice : Lattice
+        The lattice object.
+    regions : Dict[str, List[int]]
+        Dictionary mapping region names to lists of site indices.
+    ax : Axes, optional
+        Matplotlib axes.
+    show_indices : bool
+        If True, annotate sites with indices.
+    show_system : bool
+        If True, plot all lattice sites faintly in the background.
+    system_color : str
+        Color for background system sites.
+    system_alpha : float
+        Alpha for background system sites.
+    cmap : str
+        Colormap name for distinct regions.
+    fill : bool
+        If True and dim=2, fill the region with a polygon (requires scipy).
+    fill_alpha : float
+        Transparency of filled regions.
+    ... other args mirror plot_real_space ...
+    """
+    coords      = _ensure_numpy(lattice.rvectors)
+    target_dim  = lattice.dim if lattice.dim else coords.shape[1]
+    dim         = max(1, min(coords.shape[1], target_dim, 3))
+    coords      = coords[:, :dim]
+    
+    fig, axis   = _init_axes(ax, dim)
+    
+    if figsize is not None and axis is fig.axes[0]:
+        fig.set_size_inches(*figsize, forward=True)
+        
+    if dim == 3 and (elev is not None or azim is not None):
+        current_elev = elev if elev is not None else getattr(axis, "elev", None)
+        current_azim = azim if azim is not None else getattr(axis, "azim", None)
+        axis.view_init(elev=current_elev, azim=current_azim)
+
+    # Plot full system background
+    if show_system:
+        bg_args = dict(color=system_color, alpha=system_alpha, marker='o', s=30, label='System')
+        if dim == 1:
+            axis.scatter(coords[:, 0], np.zeros_like(coords[:, 0]), **bg_args)
+        elif dim == 2:
+            axis.scatter(coords[:, 0], coords[:, 1], **bg_args)
+        else:
+            axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **bg_args)
+
+    # Plot regions
+    try:
+        import matplotlib.cm as cm
+        colormap = cm.get_cmap(cmap, max(len(regions), 10))
+    except ImportError:
+        def colormap(i): return f"C{i}"
+
+    for i, (name, indices) in enumerate(regions.items()):
+        if not indices: continue
+        
+        region_coords = coords[indices]
+        color_val = colormap(i)
+        
+        # 1. Fill polygon (2D only)
+        if fill and dim == 2 and ConvexHull is not None and len(region_coords) >= 3:
+            try:
+                hull = ConvexHull(region_coords)
+                # hull.vertices returns indices into region_coords
+                hull_points = region_coords[hull.vertices]
+                axis.fill(hull_points[:, 0], hull_points[:, 1], color=color_val, alpha=fill_alpha, label=f'{name} (Area)')
+            except Exception:
+                pass # Fallback to just points if collinear or degenerate
+
+        # 2. Scatter points
+        sc_args = dict(color=color_val, marker='o', s=50, label=f'{name}', **scatter_kwargs)
+        
+        if dim == 1:
+            axis.scatter(region_coords[:, 0], np.zeros_like(region_coords[:, 0]), **sc_args)
+        elif dim == 2:
+            axis.scatter(region_coords[:, 0], region_coords[:, 1], **sc_args)
+        else:
+            axis.scatter(region_coords[:, 0], region_coords[:, 1], region_coords[:, 2], **sc_args)
+            
+        # 3. Label center of region
+        if len(region_coords) > 0:
+            com = np.mean(region_coords, axis=0)
+            txt_args = dict(fontsize=12, fontweight='bold', color='black', ha='center', va='center', 
+                            bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=0.5))
+            if dim == 1:
+                axis.text(com[0], 0, name, **txt_args)
+            elif dim == 2:
+                axis.text(com[0], com[1], name, **txt_args)
+            else:
+                axis.text(com[0], com[1], com[2], name, **txt_args)
+
+    # Axis setup
+    if dim == 1:
+        axis.set_ylim(-0.5, 0.5)
+        axis.set_yticks([])
+        axis.set_xlabel("x")
+    elif dim == 2:
+        axis.set_aspect("equal", adjustable="datalim")
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+    else:
+        axis.set_zlabel("z")
+        axis.set_ylabel("y")
+        axis.set_xlabel("x")
+
+    if title:
+        kw = {"pad": 12}
+        if title_kwargs: kw.update(title_kwargs)
+        axis.set_title(title, **kw)
+    elif not title and ax is None:
+        axis.set_title("Lattice Regions")
+
+    # Deduplicate legend labels
+    handles, labels = axis.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    axis.legend(by_label.values(), by_label.keys(), loc='best')
+
+    if tight_layout:
+        _finalise_figure(fig)
+        
+    return fig, axis
+
 # ==============================================================================
 # Plotter Class
 # ==============================================================================
@@ -821,6 +969,7 @@ class LatticePlotter:
     Usage:
         lattice.plot.real_space()
         lattice.plot.structure(show_indices=True)
+        lattice.plot.regions(regions_dict)
     """
 
     lattice: Lattice
@@ -841,9 +990,78 @@ class LatticePlotter:
         return plot_brillouin_zone(self.lattice, **kwargs)
 
     def structure(self, **kwargs) -> Tuple[Figure, Axes]:
-        """ Plot detailed lattice structure with connectivity. """
+        """ 
+        Plot detailed lattice structure with connectivity. 
+        
+        Parameters
+        ----------
+        ax : Axes, optional
+            Matplotlib axes to plot on. If None, a new figure is created.
+        show_indices : bool
+            If True, annotates nodes with their site indices.
+        highlight_boundary : bool
+            If True, draws boundary nodes with a distinct color/edge.
+        show_axes : bool
+            If False, hides the coordinate axes for a cleaner diagram.
+        edge_color : str
+            Color of the edges.
+        node_color : str
+            Color of the nodes.
+        boundary_node_color : str
+            Color of the boundary node edges.
+        periodic_color : str
+            Color for periodic boundary annotations.
+        open_color : str
+            Color for open boundary annotations.
+        node_size : int
+            Size of the node markers.
+        edge_alpha : float
+            Transparency of the edges.
+        label_padding : float
+            Fractional padding for node index labels.
+        boundary_offset : float
+            Fractional offset for boundary annotations.
+        figsize : tuple, optional
+            Figure size in inches (width, height).
+        title : str, optional
+            Title of the plot.
+        title_kwargs : dict, optional
+            Additional keyword arguments for the title.
+        tight_layout : bool
+            If True, applies tight layout to the figure.
+        elev, azim : float, optional
+            Elevation and azimuth angles for 3D plots.
+        partition_colors : tuple of str, optional
+            Colors to use for bipartite/sublattice coloring. If provided, nodes are
+            colored based on sublattice parity.
+        show_periodic_connections : bool
+            If True, indicates wrap-around connections textually or graphically.
+        show_primitive_cell : bool
+            If True, overlays the primitive unit cell vectors/box.
+        **scatter_kwargs
+            Additional arguments passed to `ax.scatter`.
+        """
         kwargs.setdefault("figsize", (5.5, 5.5))
         return plot_lattice_structure(self.lattice, **kwargs)
+
+    def regions(self, regions: Dict[str, List[int]], **kwargs) -> Tuple[Figure, Axes]:
+        """
+        Plot specific regions on the lattice.
+        
+        Parameters
+        ----------
+        regions : Dict[str, List[int]]
+            Dictionary mapping region names to lists of site indices.
+        show_system : bool
+            If True, plot all lattice sites faintly in the background.
+        system_color : str
+            Color for background system sites.
+        cmap : str
+            Colormap name for distinct regions.
+        ... other args mirror plot_real_space ...
+        """
+        kwargs.setdefault("figsize", (6.0, 6.0))
+        return plot_regions(self.lattice, regions, **kwargs)
 
 # ------------------------------------------------------------------------------
 #! EOF

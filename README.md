@@ -1,112 +1,195 @@
 # General Python Utilities
 
 [![Documentation Status](https://readthedocs.org/projects/general-python/badge/?version=latest)](https://general-python.readthedocs.io/en/latest/?badge=latest)
+[![Python Versions](https://img.shields.io/pypi/pyversions/general-python-utils.svg)](https://pypi.org/project/general-python-utils/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
-A comprehensive Python library providing utilities for scientific computing, particularly focused on quantum physics simulations and numerical methods. This library consolidates commonly used functionalities into a unified, easy-to-use package with support for both NumPy and JAX backends.
+A comprehensive Python library providing utilities for scientific computing, particularly focused on quantum physics simulations, linear algebra, and numerical methods. This library consolidates commonly used functionalities into a unified, easy-to-use package with seamless support for both **NumPy** and **JAX** backends.
 
 ## Key Features
 
-### 🧮 **Algebra & Linear Algebra**
-- Advanced linear algebra operations with NumPy/JAX backend support
-- Sparse matrix operations and solvers
-- Eigenvalue/eigenvector computations
-- Preconditioners for iterative solvers
-- ODE solving utilities
-- Mathematical and API summary: `algebra/README.md`
+### Algebra & Linear Algebra
+- **Backend Agnostic**: Seamlessly switch between NumPy and JAX backends.
+- **Advanced Solvers**: Sparse matrix operations, eigenvalue/eigenvector computations (Arnoldi, Lanczos).
+- **Optimization**: Preconditioners for iterative solvers and ODE solving utilities.
+- *More details in [`algebra/README.md`](algebra/README.md)*.
 
-### 🎲 **Mathematics & Random Numbers**
-- High-quality pseudorandom number generators
-- Statistical functions and utilities
-- Mathematical utilities and special functions
-- Support for reproducible random sequences
+### Physics & Quantum Tools
+- **Quantum States**:   Density matrix operations, entropy calculations, and pure state manipulations.
+- **Operators**:        Basis-aware operators and efficient observable calculations.
+- **Thermodynamics**:   Statistical mechanics utilities and thermal property calculations.
+- *More details in [`physics/README.md`](physics/README.md)*.
 
-### 🔗 **Lattice Structures**
-- Tools for creating and manipulating lattice geometries
-- Support for square, hexagonal, and honeycomb lattices
-- Neighbor finding and lattice navigation
-- Tenpy-inspired visualisation utilities for real/reciprocal space, Brillouin zones, and boundary conditions
-- Jupyter demo (`Python/test/lattices/lattice_visualization_demo.ipynb`) showcasing these plotting helpers
-- Common lattice operations for condensed matter physics
+### Lattice Geometries
+- **Topologies**:       Built-in support for Square, Hexagonal, Triangular, and Honeycomb lattices.
+- **Navigation**:       Efficient neighbor finding and boundary condition handling (PBC/OBC).
+- **Visualization**: Tools for plotting lattices, Brillouin zones, and reciprocal space.
 
-### 🧠 **Machine Learning**
-- Neural network implementations with JAX/NumPy backends
-- Training utilities and optimizers
-- Loss functions and schedulers
-- Keras integration utilities
+### Machine Learning
+- **Neural Networks**:  Implementations compatible with JAX/NumPy.
+- **Training**:         Custom optimizers, loss functions, and schedulers.
+- **Integration**:      Utilities for bridging with Keras and other frameworks.
 
-### ⚛️ **Physics Utilities**
-- Quantum state manipulations
-- Density matrix operations
-- Entropy calculations
-- Eigenstate analysis
-- Quantum operator utilities
-- Mathematical and module map: `physics/README.md`
+### Mathematics & Random
+- **RNG**:              High-quality, reproducible pseudorandom number generators.
+- **Statistics**:       Statistical functions and special mathematical utilities.
 
-### 🛠️ **Common Utilities**
-- File and directory management
-- Data handling and HDF5 support
-- Plotting and visualization tools
-- Logging and debugging utilities
-- Binary operations and bit manipulation
-- Detailed module map: `common/README.md`
+### Common Utilities
+- **IO**:               HDF5 support, efficient file/directory management.
+- **Tools**:            Logging, debugging, and binary bit manipulation helpers.
+- *More details in [`common/README.md`](common/README.md)*.
 
-## Documentation Map
-
-- [`algebra/README.md`](algebra/README.md) — scope of linear algebra, random ensembles, IVPs, and backend rules.
-- [`algebra/solvers/README.md`](algebra/solvers/README.md) — iterative/direct solver catalogue and convergence criteria.
-- [`algebra/eigen/README.md`](algebra/eigen/README.md) — Arnoldi, Lanczos, and block-Lanczos algorithms with residual controls.
-- [`algebra/examples/README.md`](algebra/examples/README.md) — runnable scripts illustrating solver usage patterns.
-- [`physics/README.md`](physics/README.md) — thermodynamics, spectral/response functions, and correlation matrix tooling.
-- [`common/README.md`](common/README.md) — bitstring, filesystem, plotting, and diagnostic helpers shared across packages.
-- [`common/embedded/README.md`](common/embedded/README.md) — low-level kernels that power the binary utilities.
-- [`BACKEND_INTEGRATION.md`](BACKEND_INTEGRATION.md) — backend (NumPy/JAX) compatibility notes for solvers and eigensolvers.
-- [`PRECONDITIONERS.md`](PRECONDITIONERS.md) — catalogue of supported preconditioners with mathematical guarantees.
-- [`DOCUMENTATION_SUMMARY.md`](DOCUMENTATION_SUMMARY.md) — high-level overview of the entire `general_python` package.
+---
 
 ## Installation
 
-### From Source (Recommended for Development)
+### Prerequisites
+- Python 3.8+
+- pip
+
+### User Installation
+Install the latest stable version directly from PyPI (if available) or from the source:
 
 ```bash
-git clone <repository-url>
-cd general_python
-pip install -e .
-```
-
-The package uses a **src-layout** with symlinks for editable installs. The `src/general_python/` directory is auto-generated during installation and should not be committed to version control.
-
-### From PyPI
-
-```bash
+# From PyPI
 pip install general-python-utils
+
+# Or locally
+pip install .
 ```
+
+### Development Installation (Recommended)
+For contributors or those who want to modify the source code, use an editable install:
+
+```bash
+git clone https://github.com/makskliczkowski/general_python.git
+cd general_python
+pip install -e ".[dev,docs,ml]"
+```
+This installs the package in editable mode along with development dependencies (pytest, black, flake8) and optional ML/documentation tools.
+
+---
+
+## Import Strategy & Best Practices
+
+The package uses a **lazy import system** to minimize startup time and memory footprint. Submodules and heavy dependencies are only loaded when explicitly accessed.
+
+### Recommended Usage
+
+**Do not import deep trees.** Instead, access submodules through the top-level package or main subpackages.
+
+**Good (Lazy & Clean):**
+```python
+import general_python as gp
+
+# Access submodules lazily
+solver  = gp.algebra.solvers.MinresQLPSolver
+lattice = gp.lattices.SquareLattice(4, 4)
+entropy = gp.physics.entropy.von_neumann_entropy(rho)
+```
+
+**Good (Explicit Imports):**
+```python
+from general_python.algebra import solvers
+from general_python.physics import entropy
+
+# Use specific functions
+s = entropy.von_neumann_entropy(rho)
+```
+
+**Bad (Deep, Brittle Imports):**
+```python
+# Avoid importing from deep internal paths unless necessary
+from general_python.algebra.solvers.minres_qlp  import MinresQLPSolver
+from general_python.physics.entropy             import von_neumann_entropy
+```
+
+### Aliases and Shortcuts
+
+The package provides several top-level aliases for convenience:
+
+- **`gp.random`**           -> `general_python.algebra.ran_wrapper`
+- **`gp.random_matrices`**  -> `general_python.algebra.ran_matrices`
+- **`gp.physics.sp`**       -> `general_python.physics.single_particle`
+
+### Backend Management
+
+The backend (NumPy vs JAX) is managed centrally:
+
+```python
+from general_python.algebra import utils
+
+# Check active backend
+print(utils.ACTIVE_BACKEND_NAME)
+
+# Get backend module dynamically
+xp = utils.get_backend("jax") 
+```
+
+---
 
 ## Quick Start
 
 ```python
 import general_python as gp
 
-# Use algebra utilities with automatic backend detection
+# 1. Automatic Backend Management (NumPy/JAX)
 from general_python.algebra import utils
 backend = utils.get_global_backend()
+print(f"Using backend: {backend.name}")
 
-# Create a lattice
+# 2. Creating a Quantum Lattice
 from general_python.lattices import SquareLattice
-lattice = SquareLattice(4, 4)
-
-# Mathematical utilities
-from general_python.maths import math_utils
-result = math_utils.some_function()
+# Create a 4x4 square lattice with Periodic Boundary Conditions
+lattice = SquareLattice(4, 4, bc='pbc')
+print(f"Lattice sites: {lattice.Ns}")
 ```
+
+---
+
+## Testing
+
+The project uses `pytest` for testing. To run the test suite:
+
+```bash
+# Run all tests
+pytest
+
+# Run tests with coverage
+pytest --cov=general_python
+```
+
+Ensure you have the development dependencies installed (`pip install -e ".[dev]"`).
+
+---
 
 ## Documentation
 
-Full documentation is available at [Read the Docs](https://general-python.readthedocs.io/).
+Comprehensive documentation is hosted on Read the Docs. You can also build it locally:
 
-## License
+```bash
+cd docs
+pip install -r requirements.txt
+make html
+```
+Open `docs/_build/html/index.html` in your browser to view the local documentation.
 
-MIT License - see LICENSE file for details.
+---
 
 ## Contributing
 
-Contributions are welcome! Please see the contributing guidelines in the documentation.
+Contributions are welcome! We follow standard open-source best practices.
+
+1.  **Fork**    the repository.
+2.  **Create**  a feature branch (`git checkout -b feature/amazing-feature`).
+3.  **Commit**  your changes (`git commit -m 'Add amazing feature'`).
+4.  **Lint**    your code using `black` and `flake8`.
+5.  **Push**    to the branch (`git push origin feature/amazing-feature`).
+6.  **Open**    a Pull Request.
+
+Please ensure your code adheres to the project's style guidelines (Black formatting) and includes appropriate tests.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

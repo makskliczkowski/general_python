@@ -36,17 +36,14 @@ date:       2025-02-01
 -----------------------------------------------------------------------------
 '''
 
-from typing import Optional, Callable, Any
-import numpy as np
-import enum
+from    typing import Optional, Callable, Any
+import  numpy as np
+import  enum
 
 # Base Solver classes and types
 try:
-    from ..solver import (
-        Solver, SolverResult, SolverType, 
-        Array, MatVecFunc, StaticSolverFunc
-    )
-    from ..preconditioners import PreconitionerApplyFun
+    from ..solver           import Solver, SolverResult, SolverType, Array, MatVecFunc, StaticSolverFunc
+    from ..preconditioners  import PreconitionerApplyFun
 except ImportError:
     raise ImportError("QES package is required to use MINRES-QLP solver.")
 
@@ -129,16 +126,26 @@ def _minres_qlp_logic_numpy(
     **kwargs
 ) -> SolverResult:
     """
-    Pure NumPy MINRES-QLP implementation matching C++ exactly.
+    Pure NumPy MINRES-QLP implementation.
+    Check:
+    - https://web.stanford.edu/group/SOL/software/minresqlp/
+    - https://epubs.siam.org/doi/10.1137/100804959
     
-    Args:
-        matvec: Matrix-vector product function (already includes -sigma shift if needed)
-        b: Right-hand side vector
-        x0: Initial guess
-        tol: Relative tolerance
-        maxiter: Maximum iterations
-        precond_apply: Optional preconditioner M^{-1}
-        sigma: Shift parameter (applied as A - sigma*I)
+    Parameters:
+        matvec:
+            Matrix-vector product function (already includes -sigma shift if needed)
+        b: 
+            Right-hand side vector
+        x0: 
+            Initial guess
+        tol:
+            Relative tolerance
+        maxiter:
+            Maximum iterations
+        precond_apply: 
+            Optional preconditioner M^{-1}
+        sigma: 
+            Shift parameter (applied as A - sigma*I)
         
     Returns:
         SolverResult with solution, convergence status, iterations, residual
@@ -156,74 +163,77 @@ def _minres_qlp_logic_numpy(
     has_precond = precond_apply is not None
     
     # =========================================================================
-    # INITIALIZATION (C++ lines 89-113)
+    # INITIALIZATION
     # =========================================================================
     
     # Lanczos vectors
-    z_km2 = np.zeros(n, dtype=b.dtype)
-    z_km1 = b.copy()
-    z_k = precond_apply(z_km1) if has_precond else z_km1.copy()
+    z_km2   = np.zeros(n, dtype=b.dtype)
+    
+    # Initialize with residual: r0 = b - A*x0
+    r0      = b - _matvec(x0)
+    z_km1   = r0.copy()
+    z_k     = precond_apply(z_km1) if has_precond else z_km1.copy()
     
     # Initial beta
-    beta1 = np.real(np.vdot(b, z_k))
+    beta1   = np.real(np.vdot(r0, z_k))
     
     # Check preconditioner definiteness
-    flag = int(MinresQLPFlag.PROCESSING)
+    flag    = int(MinresQLPFlag.PROCESSING)
     if has_precond:
         if beta1 < 0:
-            return SolverResult(x0, False, 0, np.linalg.norm(b))
+            return SolverResult(x0, False, 0, np.linalg.norm(r0))
         elif abs(beta1) < _MIN_NORM:
             return SolverResult(x0, True, 0, 0.0)
         beta1 = np.sqrt(beta1)
     else:
         beta1 = np.sqrt(beta1)
     
-    beta_k = beta1
-    beta_km1 = 0.0
-    beta_last = 0.0
-    phi_k = beta_k
+    beta_k          = beta1
+    beta_km1        = 0.0
+    beta_last       = 0.0
+    phi_k           = beta_k
     
     # Solution vectors
-    x_k = x0.copy()
-    x_km1 = x_k.copy()
+    x_k             = x0.copy()
+    x_km1           = x_k.copy()
     
     # Search directions
-    w_k = np.zeros(n, dtype=b.dtype)
-    w_km1 = np.zeros(n, dtype=b.dtype)
-    w_km2 = np.zeros(n, dtype=b.dtype)
+    w_k             = np.zeros(n, dtype=b.dtype)
+    w_km1           = np.zeros(n, dtype=b.dtype)
+    w_km2           = np.zeros(n, dtype=b.dtype)
     
     # Rotation coefficients (Initial: c=-1, s=0 per C++ line 68-69)
-    c_k_1, s_k_1 = -1.0, 0.0
-    c_k_2, s_k_2 = -1.0, 0.0
-    c_k_3, s_k_3 = -1.0, 0.0
-    delta_k = 0.0
-    eps_kp1 = 0.0
+    c_k_1, s_k_1    = -1.0, 0.0
+    c_k_2, s_k_2    = -1.0, 0.0
+    c_k_3, s_k_3    = -1.0, 0.0
+    delta_k         = 0.0
+    eps_kp1         = 0.0
     
     # Tridiagonal elements
-    gamma_k = gamma_km1 = gamma_km2 = gamma_km3 = 0.0
-    theta_k = theta_km1 = theta_km2 = 0.0
-    eta_k = eta_km1 = eta_km2 = 0.0
-    tau_k = tau_km1 = tau_km2 = 0.0
+    gamma_k         = gamma_km1 = gamma_km2 = gamma_km3 = 0.0
+    theta_k         = theta_km1 = theta_km2 = 0.0
+    eta_k           = eta_km1 = eta_km2 = 0.0
+    tau_k           = tau_km1 = tau_km2 = 0.0
     
     # Solution coefficients
-    mu_k = mu_km1 = mu_km2 = mu_km3 = mu_km4 = 0.0
+    mu_k            = mu_km1 = mu_km2 = mu_km3 = mu_km4 = 0.0
     
     # Norms
-    xl2norm_k = 0.0
-    xnorm_k = 0.0
-    a_norm = 0.0
-    a_cond = 1.0
-    gamma_min = 1e30
+    xl2norm_k       = 0.0
+    xnorm_k         = 0.0
+    a_norm          = 0.0
+    a_cond          = 1.0
+    gamma_min       = 1e30
     
     # QLP history
-    qlp_iter = 0
-    gamma_qlp_k = gamma_qlp_km1 = 0.0
-    theta_qlp_k = 0.0
-    mu_qlp_k = mu_qlp_km1 = 0.0
+    qlp_iter        = 0
+    gamma_qlp_k     = gamma_qlp_km1 = 0.0
+    theta_qlp_k     = 0.0
+    mu_qlp_k        = mu_qlp_km1 = 0.0
     
-    relres = 1.0
-    rnorm = beta_k
-    k = 0
+    relres          = 1.0
+    rnorm           = beta_k
+    k               = 0
     
     # =========================================================================
     # MAIN ITERATION LOOP (C++ lines 126-362)
@@ -232,29 +242,28 @@ def _minres_qlp_logic_numpy(
     while flag == int(MinresQLPFlag.PROCESSING) and k < maxiter:
         
         # ---------------------------------------------------------------------
-        # 1. PRECONDITIONED LANCZOS (C++ lines 129-157)
+        # 1. PRECONDITIONED LANCZOS
         # ---------------------------------------------------------------------
-        beta_last = beta_km1
-        beta_km1 = beta_k
+        beta_last   = beta_km1
+        beta_km1    = beta_k
         
         # Normalize
         if abs(beta_km1) < _TINY:
             break
-        v = z_k / beta_km1
-        
         # Matrix-vector product
+        v   = z_k / beta_km1
         z_k = _matvec(v)
         
         # Lanczos orthogonalization
         if k > 0 and abs(beta_last) > _TINY:
             z_k = z_k - z_km2 * (beta_km1 / beta_last)
         
-        alpha = np.real(np.vdot(z_k, v))
-        z_k = z_k - z_km1 * (alpha / beta_km1)
+        alpha   = np.real(np.vdot(z_k, v))
+        z_k     = z_k - z_km1 * (alpha / beta_km1)
         
         # Shift Lanczos vectors
-        z_km2 = z_km1.copy()
-        z_km1 = z_k.copy()
+        z_km2   = z_km1.copy()
+        z_km1   = z_k.copy()
         
         # Apply preconditioner and compute new beta
         if has_precond:
@@ -281,52 +290,52 @@ def _minres_qlp_logic_numpy(
         pnorm_rho_k = np.sqrt(beta_last**2 + alpha**2 + beta_k**2)
         
         # ---------------------------------------------------------------------
-        # 2. PREVIOUS LEFT REFLECTION Q_{k-1} (C++ lines 163-177)
+        # 2. PREVIOUS LEFT REFLECTION Q_{k-1} - for QLP
         # ---------------------------------------------------------------------
-        dbar = delta_k
-        delta = c_k_1 * dbar + s_k_1 * alpha
-        eps_k = eps_kp1
-        eps_kp1 = s_k_1 * beta_k
-        gammabar = s_k_1 * dbar - c_k_1 * alpha
-        delta_k = -c_k_1 * beta_k
-        deltaqlp = delta
+        dbar        = delta_k
+        delta       = c_k_1 * dbar + s_k_1 * alpha
+        eps_k       = eps_kp1
+        eps_kp1     = s_k_1 * beta_k
+        gammabar    = s_k_1 * dbar - c_k_1 * alpha
+        delta_k     = -c_k_1 * beta_k
+        deltaqlp    = delta
         
         # ---------------------------------------------------------------------
-        # 3. CURRENT LEFT REFLECTION Q_k (C++ lines 183-195)
+        # 3. CURRENT LEFT REFLECTION Q_k - for QLP 
         # ---------------------------------------------------------------------
-        gamma_km3 = gamma_km2
-        gamma_km2 = gamma_km1
-        gamma_km1 = gamma_k
+        gamma_km3   = gamma_km2
+        gamma_km2   = gamma_km1
+        gamma_km1   = gamma_k
         
         c_k_1, s_k_1, gamma_k = _sym_ortho_np(gammabar, beta_k)
         gamma_k_tmp = gamma_k
         
-        tau_km2 = tau_km1
-        tau_km1 = tau_k
-        tau_k = c_k_1 * phi_k
-        phi_k = s_k_1 * phi_k
+        tau_km2     = tau_km1
+        tau_km1     = tau_k
+        tau_k       = c_k_1 * phi_k
+        phi_k       = s_k_1 * phi_k
         
         # ---------------------------------------------------------------------
-        # 4. PREVIOUS RIGHT REFLECTION P_{k-2,k} (C++ lines 201-216)
+        # 4. PREVIOUS RIGHT REFLECTION P_{k-2,k}
         # ---------------------------------------------------------------------
         if k > 1:
-            theta_km2 = theta_km1
-            eta_km2 = eta_km1
-            eta_km1 = eta_k
+            theta_km2   = theta_km1
+            eta_km2     = eta_km1
+            eta_km1     = eta_k
             
-            delta_tmp = s_k_2 * theta_k - c_k_2 * delta
-            theta_km1 = c_k_2 * theta_k + s_k_2 * delta
-            delta = delta_tmp
-            eta_k = s_k_2 * gamma_k
-            gamma_k = -c_k_2 * gamma_k
+            delta_tmp   = s_k_2 * theta_k - c_k_2 * delta
+            theta_km1   = c_k_2 * theta_k + s_k_2 * delta
+            delta       = delta_tmp
+            eta_k       = s_k_2 * gamma_k
+            gamma_k     = -c_k_2 * gamma_k
         
         # ---------------------------------------------------------------------
-        # 5. CURRENT RIGHT REFLECTION P_{k-1,k} (C++ lines 222-231)
+        # 5. CURRENT RIGHT REFLECTION P_{k-1,k}
         # ---------------------------------------------------------------------
         if k > 0:
             c_k_3, s_k_3, gamma_km1 = _sym_ortho_np(gamma_km1, delta)
-            theta_k = s_k_3 * gamma_k
-            gamma_k = -c_k_3 * gamma_k
+            theta_k                 = s_k_3 * gamma_k
+            gamma_k                 = -c_k_3 * gamma_k
         
         # ---------------------------------------------------------------------
         # 6. UPDATE MU & XNORM (C++ lines 237-263)
@@ -351,23 +360,23 @@ def _minres_qlp_logic_numpy(
             if flag == int(MinresQLPFlag.PROCESSING):
                 flag = int(MinresQLPFlag.SINGULAR)
         
-        xl2norm_k = np.sqrt(xl2norm_k**2 + mu_km2**2)
-        xnorm_k = np.sqrt(xl2norm_k**2 + mu_km1**2 + mu_k**2)
+        xl2norm_k   = np.sqrt(xl2norm_k**2 + mu_km2**2)
+        xnorm_k     = np.sqrt(xl2norm_k**2 + mu_km1**2 + mu_k**2)
         
         # ---------------------------------------------------------------------
-        # 7. UPDATE W & X (MINRES vs QLP path) (C++ lines 269-322)
+        # 7. UPDATE W & X (MINRES vs QLP path)
         # ---------------------------------------------------------------------
         if np.real(a_cond) < _TRANS_A_COND and flag == int(MinresQLPFlag.PROCESSING) and qlp_iter == 0:
             # MINRES updates
             w_km2 = w_km1.copy()
             w_km1 = w_k.copy()
             if abs(gamma_k_tmp) > _TINY:
-                w_k = (v - eps_k * w_km2 - deltaqlp * w_km1) / gamma_k_tmp
+                w_k     = (v - eps_k * w_km2 - deltaqlp * w_km1) / gamma_k_tmp
             
             if xnorm_k < _MAX_X_NORM:
-                x_k = x_k + tau_k * w_k
+                x_k     = x_k + tau_k * w_k
             else:
-                flag = int(MinresQLPFlag.X_NORM_LIMIT)
+                flag    = int(MinresQLPFlag.X_NORM_LIMIT)
         else:
             # MINRES-QLP updates
             qlp_iter += 1
@@ -384,41 +393,41 @@ def _minres_qlp_logic_numpy(
             w_km2_old = w_km2.copy()
             
             if k == 0:
-                w_km1 = v * s_k_3
-                w_k = -v * c_k_3
+                w_km1       = v * s_k_3
+                w_k         = -v * c_k_3
             elif k == 1:
-                w_km1 = w_k * c_k_3 + v * s_k_3
-                w_k = w_k * s_k_3 - v * c_k_3
+                w_km1       = w_k * c_k_3 + v * s_k_3
+                w_k         = w_k * s_k_3 - v * c_k_3
             else:
-                w_km1_old = w_k.copy()
-                w_k = w_km2_old * s_k_2 - v * c_k_2
-                w_km2 = w_km2_old * c_k_2 + v * s_k_2
-                v_tmp = w_km1_old * c_k_3 + w_k * s_k_3
-                w_k = w_km1_old * s_k_3 - w_k * c_k_3
-                w_km1 = v_tmp
+                w_km1_old   = w_k.copy()
+                w_k         = w_km2_old * s_k_2 - v * c_k_2
+                w_km2       = w_km2_old * c_k_2 + v * s_k_2
+                v_tmp       = w_km1_old * c_k_3 + w_k * s_k_3
+                w_k         = w_km1_old * s_k_3 - w_k * c_k_3
+                w_km1       = v_tmp
             
-            x_km1 = x_km1 + w_km2 * mu_km2
-            x_k = x_km1 + w_km1 * mu_km1 + w_k * mu_k
+            x_km1   = x_km1 + w_km2 * mu_km2
+            x_k     = x_km1 + w_km1 * mu_km1 + w_k * mu_k
         
         # ---------------------------------------------------------------------
-        # 8. PREPARE NEXT P2 ROTATION (C++ lines 328-331)
+        # 8. PREPARE NEXT P2 ROTATION
         # ---------------------------------------------------------------------
         c_k_2, s_k_2, gamma_km1 = _sym_ortho_np(gamma_km1, eps_kp1)
         
         # ---------------------------------------------------------------------
-        # 9. STORE QLP QUANTITIES (C++ lines 337-342)
+        # 9. STORE QLP QUANTITIES
         # ---------------------------------------------------------------------
-        gamma_qlp_km1 = gamma_k_tmp
-        theta_qlp_k = theta_k
-        gamma_qlp_k = gamma_k
-        mu_qlp_km1 = mu_km1
-        mu_qlp_k = mu_k
+        gamma_qlp_km1   = gamma_k_tmp
+        theta_qlp_k     = theta_k
+        gamma_qlp_k     = gamma_k
+        mu_qlp_km1      = mu_km1
+        mu_qlp_k        = mu_k
         
         # ---------------------------------------------------------------------
-        # 10. ESTIMATE NORMS & CHECK CONVERGENCE (C++ lines 348-416)
+        # 10. ESTIMATE NORMS & CHECK CONVERGENCE
         # ---------------------------------------------------------------------
-        abs_gamma = abs(gamma_k)
-        a_norm = max(a_norm, abs(gamma_km1), abs_gamma, pnorm_rho_k)
+        abs_gamma   = abs(gamma_k)
+        a_norm      = max(a_norm, abs(gamma_km1), abs_gamma, pnorm_rho_k)
         
         if k == 0:
             gamma_min = abs_gamma
@@ -448,14 +457,14 @@ def _minres_qlp_logic_numpy(
     # FINAL RESULT
     # =========================================================================
     
-    converged = (flag > 0 and flag < 8)
-    final_residual = rnorm
+    converged       = (flag > 0 and flag < 8)
+    final_residual  = rnorm
     
     return SolverResult(
-        x=x_k, 
-        converged=converged, 
-        iterations=k, 
-        residual_norm=final_residual
+        x               =   x_k, 
+        converged       =   converged, 
+        iterations      =   k, 
+        residual_norm   =  final_residual
     )
 
 # ##############################################################################
@@ -484,16 +493,16 @@ if JAX_AVAILABLE:
         # For complex inputs, we want real outputs (c, s are rotation angles, r is norm)
         input_dtype = jnp.result_type(a, b)
         # For rotation matrix elements, use real dtype
-        real_dtype = jnp.finfo(input_dtype).dtype if jnp.issubdtype(input_dtype, jnp.complexfloating) else input_dtype
+        real_dtype  = jnp.finfo(input_dtype).dtype if jnp.issubdtype(input_dtype, jnp.complexfloating) else input_dtype
         
-        zero = jnp.zeros((), dtype=real_dtype)
-        one = jnp.ones((), dtype=real_dtype)
+        zero        = jnp.zeros((), dtype=real_dtype)
+        one         = jnp.ones((), dtype=real_dtype)
         
         # Cast abs values to real dtype for consistent output
-        abs_a_real = abs_a.astype(real_dtype)
-        abs_b_real = abs_b.astype(real_dtype)
-        a_real = jnp.real(a).astype(real_dtype) if jnp.issubdtype(input_dtype, jnp.complexfloating) else a.astype(real_dtype)
-        b_real = jnp.real(b).astype(real_dtype) if jnp.issubdtype(input_dtype, jnp.complexfloating) else b.astype(real_dtype)
+        abs_a_real  = abs_a.astype(real_dtype)
+        abs_b_real  = abs_b.astype(real_dtype)
+        a_real      = jnp.real(a).astype(real_dtype) if jnp.issubdtype(input_dtype, jnp.complexfloating) else a.astype(real_dtype)
+        b_real      = jnp.real(b).astype(real_dtype) if jnp.issubdtype(input_dtype, jnp.complexfloating) else b.astype(real_dtype)
         
         def case_b_zero():
             # b ≈ 0: rotation is identity or sign flip
@@ -540,30 +549,34 @@ if JAX_AVAILABLE:
         
         # === DTYPE SETUP ===
         # Vector dtype matches input (can be complex)
-        vec_dtype = jnp.result_type(b)
         # Scalar dtype is always real (for rotation angles, norms, etc.)
-        scalar_dtype = jnp.finfo(vec_dtype).dtype if jnp.issubdtype(vec_dtype, jnp.complexfloating) else vec_dtype
+        vec_dtype       = jnp.result_type(b)
+        scalar_dtype    = jnp.finfo(vec_dtype).dtype if jnp.issubdtype(vec_dtype, jnp.complexfloating) else vec_dtype
         
         # Real scalar constants for rotation angles, norms, etc.
-        _zero = jnp.zeros((), dtype=scalar_dtype)
-        _one = jnp.ones((), dtype=scalar_dtype)
-        _neg_one = -_one
-        _large = jnp.array(1e30, dtype=scalar_dtype)
+        _zero           = jnp.zeros((), dtype=scalar_dtype)
+        _one            = jnp.ones((), dtype=scalar_dtype)
+        _neg_one        = -_one
+        _large          = jnp.array(1e30, dtype=scalar_dtype)
         
         # === PRECONDITIONER SETUP ===
-        precond_fn  = precond_apply if precond_apply is not None else (lambda x: x)
-        has_precond = precond_apply is not None
+        precond_fn      = precond_apply if precond_apply is not None else (lambda x: x)
+        has_precond     = precond_apply is not None
         
         # === INITIAL RESIDUAL AND BETA ===
-        # z_km1 = b, z_k = M^{-1}b
-        z_km1_init = b
-        z_k_init = precond_fn(b)
-        # beta0 = sqrt(<b, M^{-1}b>) is always real
-        beta0_sq = jnp.real(jnp.vdot(b, z_k_init))
-        beta0 = jnp.sqrt(jnp.maximum(beta0_sq, _zero))
+        # z_km1 = r0, z_k = M^{-1}r0
+        # Calculate initial residual: r0 = b - A*x0
+        Ax0             = matvec(x0)
+        r0              = b - Ax0
+        
+        z_km1_init      = r0
+        z_k_init        = precond_fn(r0)
+        # beta0 = sqrt(<r0, M^{-1}r0>) is always real
+        beta0_sq        = jnp.real(jnp.vdot(r0, z_k_init))
+        beta0           = jnp.sqrt(jnp.maximum(beta0_sq, _zero))
         
         # Zero vector for initialization (matches input dtype)
-        zeros = jnp.zeros_like(x0)
+        zeros           = jnp.zeros_like(x0)
         
         # === STATE LAYOUT ===
         # Vectors (indices 1-8): match input dtype (can be complex)
@@ -610,8 +623,8 @@ if JAX_AVAILABLE:
         )
         
         def cond_fun(state):
-            flag = state[52]
-            k = state[0]
+            flag    = state[52]
+            k       = state[0]
             return jnp.logical_and(
                 flag == int(MinresQLPFlag.PROCESSING),
                 k < maxiter
@@ -933,31 +946,29 @@ if JAX_AVAILABLE:
                 relres_new, flag_final
             )
         
-        final_state = lax.while_loop(cond_fun, body_fun, init_state)
+        # Run the while loop with the condition and body functions
+        final_state     = lax.while_loop(cond_fun, body_fun, init_state)
         
-        k_final = final_state[0]
-        x_final = final_state[1]
-        beta1_final = final_state[13]
-        relres_final = final_state[51]
-        flag_final = final_state[52]
+        k_final         = final_state[0]
+        x_final         = final_state[1]
+        beta1_final     = final_state[13]
+        relres_final    = final_state[51]
+        flag_final      = final_state[52]
         
-        converged = jnp.logical_and(flag_final > 0, flag_final < 8)
-        residual = relres_final * beta1_final
+        converged       = jnp.logical_and(flag_final > 0, flag_final < 8)
+        residual        = relres_final * beta1_final
         
         return SolverResult(
-            x=x_final,
-            converged=converged,
-            iterations=k_final,
-            residual_norm=residual
+            x               =   x_final,
+            converged       =   converged,
+            iterations      =   k_final,
+            residual_norm   =   residual
         )
 
     # Compile with static args: 
     # matvec (0), tol (3), maxiter (4), precond_apply (5)
     # NOTE: sigma is NOT in the signature - it should be incorporated into matvec
-    _minres_qlp_logic_jax_compiled = jax.jit(
-        _minres_qlp_logic_jax, 
-        static_argnums=(0, 3, 4, 5)
-    )
+    _minres_qlp_logic_jax_compiled = jax.jit(_minres_qlp_logic_jax, static_argnums=(0, 3, 4, 5))
 
 else:
     _minres_qlp_logic_jax_compiled = None
@@ -1010,8 +1021,6 @@ class MinresQLPSolver(Solver):
         if backend_module is jnp:
             if _minres_qlp_logic_jax_compiled is None:
                 raise ImportError("JAX not available but JAX backend requested.")
-            # Use non-JIT'd version - the wrapper will JIT the whole thing
-            # This avoids nested JIT issues with static arguments
             func = _minres_qlp_logic_jax
         elif backend_module is np:
             func = _minres_qlp_logic_numpy

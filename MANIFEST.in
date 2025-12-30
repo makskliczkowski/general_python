@@ -1,0 +1,10 @@
+include README.md
+include LICENSE
+include pyproject.toml
+recursive-include docs *
+recursive-include tests *
+recursive-include *.c *.h
+recursive-include common
+recursive-include physics
+global-exclude *.py[cod]
+global-exclude __pycache__

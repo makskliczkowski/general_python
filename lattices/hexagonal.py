@@ -13,7 +13,7 @@ class HexagonalLattice(Lattice):
     - K': Inequivalent corner (1/3, 2/3)
     - M: Edge midpoint (1/2, 0)
     
-    Default path: Γ → K → M → Γ
+    Default path: Γ -> K -> M -> Γ
     """
 
     def __init__(self, dim, lx, ly, lz, bc, *args, **kwargs):

@@ -852,7 +852,7 @@ class LanczosEigensolverScipy(EigenSolver):
         Returns:
             EigenResult with eigenvalues and eigenvectors (but NO Krylov basis)
         """
-        from scipy.sparse.linalg import LinearOperator
+        from scipy.sparse.linalg import LinearOperator, ArpackError
         
         # Determine Dimension and Dtype
         if A is None and matvec is not None:
@@ -867,9 +867,7 @@ class LanczosEigensolverScipy(EigenSolver):
             raise ValueError("Either A or matvec must be provided")
         
         # Setup Random Seed
-        use_seed        = seed if seed is not None else self.seed
-        rng             = np.random.RandomState(use_seed) if use_seed is not None else np.random
-
+        current_seed    = seed if seed is not None else self.seed
         # Resolve Parameters
         k               = self.k if k is None else k
         which           = self.which if which is None else which
@@ -898,68 +896,112 @@ class LanczosEigensolverScipy(EigenSolver):
             if 'OPinv' not in kwargs:
                 raise ValueError("Matrix-Free Shift-Invert mode ('sigma') requires 'OPinv' argument. SciPy cannot invert your function automatically.")
 
-        # Initialize v0
-        use_v0 = v0 if v0 is not None else self.v0
-        if use_v0 is None:
-            if np.issubdtype(op_dtype, np.complexfloating):
-                use_v0 = (rng.randn(dim) + 1j * rng.randn(dim)).astype(op_dtype)
-            else:
-                use_v0 = rng.randn(dim).astype(op_dtype)
-            use_v0 /= np.linalg.norm(use_v0)
-        else:
-            use_v0 = np.asarray(use_v0, dtype=op_dtype)
-        
         # Create LinearOperator
         if A is None and matvec is not None:
-            A = LinearOperator((dim, dim), matvec=matvec, dtype=op_dtype)
-        
-        # Call SciPy eigsh
-        try:
-            # Remove arguments we handled explicitly to avoid collisions
-            # But KEEP everything else (like OPinv, mode, etc.)
-            call_kwargs = kwargs.copy()
-            call_kwargs.pop('sigma', None)
-            call_kwargs.pop('ncv', None)
-            call_kwargs.pop('max_iter', None)
-            call_kwargs.pop('v0', None) 
-            call_kwargs.pop('tol', None)
-            call_kwargs.pop('which', None)
-            call_kwargs.pop('k', None)
-            call_kwargs.pop('return_eigenvectors', None)
-            call_kwargs.pop('maxiter', None)
-            
-            eigenvalues, eigenvectors = eigsh(
-                A,
-                k                   = k,
-                which               = which,
-                tol                 = tol,
-                maxiter             = maxiter,
-                v0                  = use_v0,
-                return_eigenvectors = True,
-                sigma               = sigma,
-                ncv                 = ncv,
-                **call_kwargs       # <--- Pass remaining args (Critical for Shift-Invert)
-            )
-            
-            converged           = True
-            iterations          = None 
-            order               = np.argsort(eigenvalues)        
-            eigenvalues         = eigenvalues[order]
-            eigenvectors        = eigenvectors[:, order]
+            A_op = LinearOperator((dim, dim), matvec=matvec, dtype=op_dtype)
+        else:
+            A_op = A
 
+        # Sanity Check: NaNs in MatVec
+        # Generate a test probe to ensure the operator is healthy
+        try:
+            check_rng = np.random.RandomState(42)
+            check_vec = check_rng.randn(dim).astype(op_dtype)
+            if np.issubdtype(op_dtype, np.complexfloating):
+                check_vec += 1j * check_rng.randn(dim).astype(op_dtype)
+            
+            check_res = A_op @ check_vec
+            if not np.all(np.isfinite(check_res)):
+                raise ValueError("Hamiltonian/Operator produces NaNs or Infs! Check your model parameters or potential division by zero.")
         except Exception as e:
-            raise RuntimeError(f"SciPy eigsh failed: {e}")
+            if "NaN" in str(e) or "Inf" in str(e):
+                raise
+            # If matvec fails for other reasons, let eigsh handle/report it later or warn
+            # print(f"Warning: Pre-check matvec failed: {e}")
         
-        return EigenResult(
-            eigenvalues     =   eigenvalues,
-            eigenvectors    =   eigenvectors,
-            iterations      =   iterations,
-            converged       =   converged,
-            residual_norms  =   None,
-            lanczos_alpha   =   None,
-            lanczos_beta    =   None,
-            krylov_basis    =   None
-        )
+        # Prepare call args, removing those we handle explicitly
+        call_kwargs = kwargs.copy()
+        call_kwargs.pop('sigma', None)
+        call_kwargs.pop('ncv', None)
+        call_kwargs.pop('max_iter', None)
+        call_kwargs.pop('v0', None) 
+        call_kwargs.pop('tol', None)
+        call_kwargs.pop('which', None)
+        call_kwargs.pop('k', None)
+        call_kwargs.pop('return_eigenvectors', None)
+        call_kwargs.pop('maxiter', None)
+        call_kwargs.pop('hilbert', None)
+
+        # Retries
+        max_retries = 3
+        last_error  = None
+        
+        for attempt in range(max_retries):
+            try:
+                # Initialize v0 for this attempt
+                if attempt == 0 and v0 is not None:
+                    use_v0 = np.asarray(v0, dtype=op_dtype)
+                else:
+                    # Generate new random seed for retry
+                    retry_seed = (current_seed + attempt) if current_seed is not None else None
+                    rng_retry  = np.random.RandomState(retry_seed)
+                    
+                    if np.issubdtype(op_dtype, np.complexfloating):
+                        use_v0 = (rng_retry.randn(dim) + 1j * rng_retry.randn(dim)).astype(op_dtype)
+                    else:
+                        use_v0 = rng_retry.randn(dim).astype(op_dtype)
+                    use_v0 /= np.linalg.norm(use_v0)
+
+                eigenvalues, eigenvectors = eigsh(
+                    A_op,
+                    k                   = k,
+                    which               = which,
+                    tol                 = tol,
+                    maxiter             = maxiter,
+                    v0                  = use_v0,
+                    return_eigenvectors = True,
+                    sigma               = sigma,
+                    ncv                 = ncv,
+                    **call_kwargs
+                )
+                
+                # Check for NaNs/Infs in results
+                if not np.all(np.isfinite(eigenvalues)) or not np.all(np.isfinite(eigenvectors)):
+                    raise RuntimeError("eigsh returned Non-finite values (NaN/Inf).")
+
+                # Success
+                if attempt > 0:
+                    # If we recovered from a failure, let the user know
+                    print(f"Warning: Lanczos converged after {attempt} retries.")
+
+                order = np.argsort(eigenvalues)
+                if which in ['LM', 'LA']: 
+                     if which == 'LA': order = order[::-1]
+                     pass
+                     
+                return EigenResult(
+                    eigenvalues     =   eigenvalues[order],
+                    eigenvectors    =   eigenvectors[:, order],
+                    iterations      =   -1, # Unknown with scipy eigsh
+                    converged       =   True,
+                    residual_norms  =   None,
+                    lanczos_alpha   =   None,
+                    lanczos_beta    =   None,
+                    krylov_basis    =   None
+                )
+
+            except (ArpackError, RuntimeError) as e:
+                last_error = e
+                # Check for ZLASCL or ARPACK specific errors to decide if retry is worth it
+                err_str = str(e)
+                if "ZLASCL" in err_str or "ARPACK error" in err_str or "did not converge" in err_str or "Non-finite" in err_str:
+                    # Transient numerical issue, try new vector
+                    if attempt < max_retries - 1:
+                        continue
+                raise RuntimeError(f"SciPy eigsh failed after {max_retries} attempts. Last error: {e}")
+
+        # Should be unreachable due to raise
+        raise RuntimeError(f"SciPy eigsh failed: {last_error}")
 
 # ------------------------------------------------------------------------------------------------
 #! EOF

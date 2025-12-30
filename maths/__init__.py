@@ -8,9 +8,9 @@ design.
 
 Available submodule aliases
 ---------------------------
-- ``MathMod``      -> ``general_python.maths.math_utils``
-- ``RandomMod``    -> ``general_python.maths.random``
-- ``StatisticsMod``-> ``general_python.maths.statistics``
+- ``math_utils``   : General mathematical functions and utilities.
+- ``random``       : High-quality pseudorandom number generators and CUE matrices.
+- ``statistics``   : Statistical functions and data analysis utilities.
 
 ---------------------------------------------------------------------------
 File        : general_python/maths/__init__.py
@@ -20,89 +20,99 @@ Copyright   : (c) 2021-2024 QES Group
 ---------------------------------------------------------------------------
 """
 
-from __future__ import annotations
-
-from importlib import import_module
-from typing import Dict, List
+import  sys
+import  importlib
+from    typing import TYPE_CHECKING, List
 
 # Description used by QES.registry
 MODULE_DESCRIPTION = (
     "Mathematical utilities, random number generators, and statistical analysis tools."
 )
 
-# ---------------------------------------------------------------------------
-# Lazy submodule registry
+# -----------------------------------------------------------------------------------------------
+# Lazy Import Configuration
+# -----------------------------------------------------------------------------------------------
 
-_ALIAS_TO_MODULE: Dict[str, str] = {
-    "MathMod": "math_utils",
-    "RandomMod": "random",
-    "StatisticsMod": "statistics",
+# Mapping of attribute names to (module_relative_path, attribute_name_in_module)
+_LAZY_IMPORTS = {
+    # Modules
+    "math_utils"    : (".math_utils",   None),
+    "random"        : (".random",       None),
+    "statistics"    : (".statistics",   None),
+    
+    # Aliases for backward compatibility or convenience (optional)
+    "MathMod"       : (".math_utils",   None),
+    "RandomMod"     : (".random",       None),
+    "StatisticsMod" : (".statistics",   None),
 }
 
-__all__: List[str] = [
-    *tuple(_ALIAS_TO_MODULE.keys()),
-    "get_module_description",
-    "list_available_modules",
-]
+# Cache for lazily loaded modules/attributes
+_LAZY_CACHE = {}
 
-_DESCRIPTIONS: Dict[str, str] = {
-    "MathMod": "Provides general mathematical functions and utilities.",
-    "RandomMod": "High-quality pseudorandom number generators and CUE matrices.",
-    "StatisticsMod": "Statistical functions and data analysis utilities.",
-}
+if TYPE_CHECKING:
+    from . import math_utils
+    from . import random
+    from . import statistics
+    # Aliases
+    from . import math_utils as MathMod
+    from . import random as RandomMod
+    from . import statistics as StatisticsMod
 
-# ---------------------------------------------------------------------------
+# -----------------------------------------------------------------------------------------------
+# Lazy Import Implementation
+# -----------------------------------------------------------------------------------------------
 
-def _load_alias(name: str):
-    """Import the requested maths submodule on first access."""
-    module_path = _ALIAS_TO_MODULE.get(name)
-    if module_path is None:
-        raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-    module = import_module(f".{module_path}", __name__)
-    globals()[name] = module  # cache to avoid repeated imports
-    return module
-
+def _lazy_import(name: str):
+    """
+    Lazily import a module or attribute based on _LAZY_IMPORTS configuration.
+    """
+    if name in _LAZY_CACHE:
+        return _LAZY_CACHE[name]
+    
+    if name not in _LAZY_IMPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    
+    module_path, attr_name = _LAZY_IMPORTS[name]
+    
+    try:
+        module = importlib.import_module(module_path, package=__name__)
+        
+        if attr_name is None:
+            result = module
+        else:
+            result = getattr(module, attr_name)
+        
+        _LAZY_CACHE[name] = result
+        return result
+    except ImportError as e:
+        raise ImportError(f"Failed to import lazy module '{name}' from '{module_path}': {e}") from e
 
 def __getattr__(name: str):
-    """
-    Provide lazy access to maths submodules using friendly aliases.
+    return _lazy_import(name)
 
-    Examples
-    --------
-    >>> from general_python.maths import MathMod
-    >>> MathMod  # doctest: +SKIP
-    <module 'general_python.maths.math_utils' ...>
-    """
-    return _load_alias(name)
-
-
-def __dir__() -> List[str]:  # pragma: no cover - trivial shell helper
-    return sorted(set(globals()) | set(_ALIAS_TO_MODULE))
-
+def __dir__() -> List[str]:
+    return sorted(list(globals().keys()) + list(_LAZY_IMPORTS.keys()))
 
 def get_module_description(module_name: str) -> str:
-    """
-    Return a human-readable description for a maths submodule alias.
-
-    Parameters
-    ----------
-    module_name : str
-        Alias registered in :data:`_ALIAS_TO_MODULE`.
-    """
-    return _DESCRIPTIONS.get(module_name, "Module not found.")
-
+    """Return a description for a maths submodule."""
+    _descriptions = {
+        "math_utils": "General mathematical functions and utilities.",
+        "random": "High-quality pseudorandom number generators and CUE matrices.",
+        "statistics": "Statistical functions and data analysis utilities.",
+    }
+    # Handle aliases
+    real_name = _LAZY_IMPORTS.get(module_name, (None, None))[0]
+    if real_name:
+        real_name = real_name.lstrip(".")
+        return _descriptions.get(real_name, "Module not found.")
+    return "Module not found."
 
 def list_available_modules() -> List[str]:
-    """
-    Return the list of available maths submodule aliases.
+    """Return the list of available maths submodules."""
+    return sorted([k for k in _LAZY_IMPORTS.keys() if not k.endswith("Mod")])
 
-    Returns
-    -------
-    list of str
-        Sorted list of alias names (e.g., ``['MathMod', 'RandomMod', ...]``).
-    """
-    return sorted(_ALIAS_TO_MODULE.keys())
+__all__ = list(_LAZY_IMPORTS.keys()) + ["get_module_description", "list_available_modules"]
 
-# ---------------------------------------------------------------------------
+# -------------------------------------------------------------------------
 #! EOF
 # -------------------------------------------------------------------------

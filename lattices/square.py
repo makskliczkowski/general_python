@@ -28,9 +28,9 @@ class SquareLattice(Lattice):
     - c* = [0, 0, 2*pi]
     
     High-symmetry points in the Brillouin zone:
-    - 1D: Γ (0) → X (π) → Γ (2π)
-    - 2D: Γ (0,0) → X (π,0) → M (π,π) → Γ (0,0)  
-    - 3D: Γ → X → M → Γ → R → X
+    - 1D: Γ (0) -> X (π) -> Γ (2π)
+    - 2D: Γ (0,0) -> X (π,0) -> M (π,π) -> Γ (0,0)  
+    - 3D: Γ -> X -> M -> Γ -> R -> X
     '''
 
     def __init__(self, lx=1, ly=1, lz=1, dim=None, bc=LatticeBC.PBC, **kwargs):
@@ -100,9 +100,9 @@ class SquareLattice(Lattice):
         -------
         HighSymmetryPoints
             High-symmetry points with default path based on dimension:
-            - 1D: Γ → X → Γ (zone boundary at π)
-            - 2D: Γ → X → M → Γ (standard square BZ path)
-            - 3D: Γ → X → M → Γ → R → X (standard cubic BZ path)
+            - 1D: Γ -> X -> Γ (zone boundary at π)
+            - 2D: Γ -> X -> M -> Γ (standard square BZ path)
+            - 3D: Γ -> X -> M -> Γ -> R -> X (standard cubic BZ path)
         """
         if self.dim == 1:
             return HighSymmetryPoints.chain_1d()

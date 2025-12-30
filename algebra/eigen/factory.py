@@ -209,9 +209,9 @@ def choose_eigensolver(
             # Map 'smallest'/'largest' to SciPy's 'SA'/'LA'
             scipy_which     = {'smallest': 'SA', 'largest': 'LA', 'both': 'BE'}.get(which, 'SA')
             # Extract parameters that go to __init__ vs solve()
-            init_kwargs     = {k: v for k, v in kwargs.items() if k in ['tol', 'maxiter', 'v0', 'seed']}
+            init_kwargs     = {k: v for k, v in kwargs.items() if k in ['tol', 'hilbert', 'maxiter', 'v0', 'seed']}
             solver          = LanczosEigensolverScipy(k=k, which=scipy_which, dtype=dtype, **init_kwargs)
-            solve_kwargs    = {k: v for k, v in kwargs.items() if k not in ['tol', 'maxiter', 'v0', 'seed', 'reorthogonalize']}
+            solve_kwargs    = {k: v for k, v in kwargs.items() if k not in ['tol', 'hilbert', 'maxiter', 'v0', 'seed', 'reorthogonalize']}
             result          = solver.solve(A=A, matvec=matvec, n=n, k=k, dtype=dtype, **solve_kwargs)
             return result
         elif backend == 'jax':

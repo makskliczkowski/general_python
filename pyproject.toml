@@ -47,15 +47,24 @@ dev = [
 ]
 
 [project.urls]
-Homepage        = "https://github.com/yourusername/general_python"
-Documentation   = "https://general-python.readthedocs.io/"
-Repository      = "https://github.com/yourusername/general_python.git"
-Issues          = "https://github.com/yourusername/general_python/issues"
+Homepage            = "https://github.com/makskliczkowski/general_python"
+Documentation       = "https://general-python.readthedocs.io/"
+Repository          = "https://github.com/yourusername/general_python.git"
+Issues              = "https://github.com/yourusername/general_python/issues"
 
 [tool.setuptools]
-py-modules      = []
-packages        = ["general_python"]
+py-modules          = []
+packages            = ["general_python"]
 
 [tool.setuptools.package-dir]
-""              = "."
-general_python  = "."
+general_python      = "."
+
+[tool.black]
+line-length         = 88
+target-version      = ['py38']
+include             = '\.pyi?$'
+
+[tool.isort]
+profile             = "black"
+multi_line_output   = 3
+

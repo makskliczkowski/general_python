@@ -27,6 +27,7 @@ try:
                                         reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
                                         build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
                                         KPathResult, find_nearest_kpoints)
+    from .tools.region_handler  import LatticeRegionHandler
     from ..common               import hdf5man as HDF5Mod
 except ImportError:
     raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")
@@ -168,6 +169,10 @@ class Lattice(ABC):
         
         # flux piercing the boundaries - for topological models
         self._flux          = _normalize_flux_dict(flux)
+        
+        # Region handler
+        self.regions        = LatticeRegionHandler(self)
+        
         super().__init__(*args, **kwargs)
         
         # neighbors
@@ -336,15 +341,15 @@ class Lattice(ABC):
 
     def get_region(
         self,
-        kind: str = "half",
+        kind                : str = "half",
         *,
-        origin: Optional[Union[int, List[float]]] = None,
-        radius: Optional[float] = None,
-        direction: Optional[str] = None,
-        sublattice: Optional[int] = None,
-        sites: Optional[List[int]] = None,
-        depth: Optional[int] = None,
-        plaquettes: Optional[List[int]] = None,
+        origin              : Optional[Union[int, List[float]]] = None,
+        radius              : Optional[float]                   = None,
+        direction           : Optional[str]                     = None,
+        sublattice          : Optional[int]                     = None,
+        sites               : Optional[List[int]]               = None,
+        depth               : Optional[int]                     = None,
+        plaquettes          : Optional[List[int]]               = None,
         **kwargs
     ) -> List[int]:
         """
@@ -401,6 +406,11 @@ class Lattice(ABC):
                 raise ValueError("region_plaquette requires 'plaquettes' list.")
             return self.region_plaquettes(plaquettes)
         
+        elif kind == "kitaev_preskill":
+            regions     = self.region_kitaev_preskill(origin=origin)
+            region_id   = kwargs.get('region', 'A').upper()
+            return regions.get(region_id, [])
+
         elif kind == "custom":
             return sorted(list(set(sites))) if sites else []
         
@@ -412,9 +422,22 @@ class Lattice(ABC):
         Half-system cut along a cardinal direction.
         
         Useful for area law scaling. Handles PBC by cutting based on coordinates relative to median.
+        
+        Example
+        -------
+        For direction 'x', returns all sites with x-coordinate less than the median x-coordinate.
+        
+        Parameters
+        ----------
+        direction : str
+            Direction to cut ('x', 'y', or 'z').
+        Returns
+        -------
+        list[int]
+            Sorted list of site indices in the half-region.
         """
-        coords = self.rvectors
-        direction = direction.lower()
+        coords      = self.rvectors
+        direction   = direction.lower()
         
         if direction == "x":
             axis = 0
@@ -428,62 +451,84 @@ class Lattice(ABC):
         cut_val = np.median(coords[:, axis])
         return sorted(np.where(coords[:, axis] < cut_val)[0].tolist())
 
+    def region_kitaev_preskill(self, origin: Optional[Union[int, List[float]]] = None) -> Dict[str, List[int]]:
+        r"""
+        Divide the lattice into three regions A, B, C meeting at a point (origin).
+        Uses azimuthal angles from the origin to define sectors.
+        
+        The three regions are defined as:
+        - A: angles in [-π, -π/3)
+        - B: angles in [-π/3, π/3)
+        - C: angles in [π/3, π]
+        
+        Parameters
+        ----------
+        origin : int or list[float], optional
+            Center point for defining regions. Can be a site index or coordinate vector.
+        
+        Ultimately, this method returns a dictionary with keys 'A', 'B', 'C' and their site indices.
+        It allows for easy extraction of combined regions like 'AB', 'BC', 'AC', and 'ABC'.
+        This is useful for entanglement entropy calculations in topological phases.
+        
+        Returns
+        -------
+        dict[str, list[int]]
+            Dictionary with keys 'A', 'B', 'C' and their site indices.
+            Also includes combinations 'AB', 'BC', 'AC', 'ABC'.
+        """
+        coords = self.rvectors
+        if origin is None:
+            r0  = np.mean(coords, axis=0)
+        elif isinstance(origin, int):
+            r0  = coords[origin]
+        else:
+            r0  = np.array(origin)
+            
+        # relative coords
+        dr      = coords - r0
+        angles  = np.arctan2(dr[:, 1], dr[:, 0]) # -pi to pi
+        
+        # sectors: divide 2pi into 3 equal parts
+        # A: [-pi, -pi/3), B: [-pi/3, pi/3), C: [pi/3, pi]
+        A_mask  = (angles >= -np.pi)    & (angles < -np.pi/3)
+        B_mask  = (angles >= -np.pi/3)  & (angles <  np.pi/3)
+        C_mask  = (angles >= np.pi/3)   & (angles <= np.pi  )
+        
+        regions = {
+            'A': np.where(A_mask)[0].tolist(),
+            'B': np.where(B_mask)[0].tolist(),
+            'C': np.where(C_mask)[0].tolist()
+        }
+        # combinations
+        regions['AB']   = sorted(list(set(regions['A']) | set(regions['B'])))
+        regions['BC']   = sorted(list(set(regions['B']) | set(regions['C'])))
+        regions['AC']   = sorted(list(set(regions['A']) | set(regions['C'])))
+        regions['ABC']  = sorted(list(set(regions['A']) | set(regions['B']) | set(regions['C'])))
+        
+        return regions
+
     def get_shortest_displacement(self, i: int, j: int) -> np.ndarray:
         """
         Compute the shortest displacement vector r_j - r_i respecting PBC.
         """
-        n_i = self._fracs[i]
-        n_j = self._fracs[j]
-        dn = np.array(n_j - n_i, dtype=float)
+        n_i         = self._fracs[i]
+        n_j         = self._fracs[j]
+        dn          = np.array(n_j - n_i, dtype=float)
         
-        dims = [self.Lx, max(self.Ly, 1), max(self.Lz, 1)]
-        pbc_flags = self.periodic_flags()
+        dims        = [self.Lx, max(self.Ly, 1), max(self.Lz, 1)]
+        pbc_flags   = self.periodic_flags()
         
         for d in range(3):
             if pbc_flags[d]:
-                L = dims[d]
-                dn[d] = dn[d] - L * np.round(dn[d] / L)
+                L       = dims[d]
+                dn[d]   = dn[d] - L * np.round(dn[d] / L)
                 
-        disp = dn[0] * self.a1 + dn[1] * self.a2 + dn[2] * self.a3
-        disp += self.basis[self._subs[j]] - self.basis[self._subs[i]]
+        disp    = dn[0] * self.a1 + dn[1] * self.a2 + dn[2] * self.a3
+        disp   += self.basis[self._subs[j]] - self.basis[self._subs[i]]
         return disp
 
     def region_disk(self, center: Union[int, List[float]], radius: float) -> List[int]:
-        """
-        Spherical/Circular region based on Euclidean distance (PBC-aware).
-        
-        Parameters
-        ----------
-        center : int or list[float]
-            Site index or coordinate vector of the center.
-        radius : float
-            Radius of the disk.
-        """
-        if not isinstance(center, int):
-            # Fallback for arbitrary coordinates (not fully PBC aware without cell info)
-            r0      = np.array(center)
-            dist    = np.linalg.norm(self.rvectors - r0, axis=1)
-            return sorted(np.where(dist <= radius)[0].tolist())
-
-        # Vectorized PBC distance for site center
-        n_center = self._fracs[center]
-        dn_all = np.array(self._fracs - n_center, dtype=float)
-        
-        dims = [self.Lx, max(self.Ly, 1), max(self.Lz, 1)]
-        pbc_flags = self.periodic_flags()
-        
-        for d in range(3):
-            if pbc_flags[d]:
-                L = dims[d]
-                dn_all[:, d] = dn_all[:, d] - L * np.round(dn_all[:, d] / L)
-        
-        R_disp = np.outer(dn_all[:, 0], self.a1) + np.outer(dn_all[:, 1], self.a2) + np.outer(dn_all[:, 2], self.a3)
-        r_basis_diff = self.basis[self._subs] - self.basis[self._subs[center]]
-        
-        total_disp = R_disp + r_basis_diff
-        dists = np.linalg.norm(total_disp, axis=1)
-        
-        return sorted(np.where(dists <= radius)[0].tolist())
+        ""
 
     def region_sublattice(self, sub: int) -> List[int]:
         """
@@ -1891,6 +1936,32 @@ class Lattice(ABC):
         self.kvectors       = k_grid.reshape(-1, 3)
         self.kvectors_frac  = np.stack([kx_frac, ky_frac, kz_frac], axis=-1).reshape(-1, 3)
         return self.kvectors
+    
+    def filter_k_vectors(self, qx: Optional[int] = None, qy: Optional[int] = None, qz: Optional[int] = None) -> np.ndarray:
+        """
+        Filters the k-vectors to find those matching the specified fractional components.
+
+        Args:
+            qx (int): Fractional component in the x-direction.
+            qy (int, optional): Fractional component in the y-direction. Defaults to None.
+            qz (int, optional): Fractional component in the z-direction. Defaults to None.
+
+        Returns:
+            np.ndarray: Array of indices of k-vectors matching the specified components.
+        """
+        if self.kvectors_frac is None:
+            raise ValueError("k-vectors have not been calculated yet.")
+        
+        mask = np.ones(len(self.kvectors_frac), dtype=bool)
+        
+        if qx is not None:
+            mask &= (self.kvectors_frac[:, 0] == qx / self.Lx)
+        if qy is not None and self._dim >= 2:
+            mask &= (self.kvectors_frac[:, 1] == qy / self.Ly)
+        if qz is not None and self._dim >= 3:
+            mask &= (self.kvectors_frac[:, 2] == qz / self.Lz)
+        
+        return np.where(mask)[0]
 
     def translation_operators(self):
         """Return translation matrices T1, T2, T3 on the one-hot basis."""
@@ -2272,7 +2343,7 @@ class Lattice(ABC):
     # -----------------------------------------------------------------------------
     #! PLOTTING HELPERS
     # -----------------------------------------------------------------------------
-
+    
     def plot_real_space(self, **kwargs):
         """
         Convenience wrapper returning the matplotlib figure and axes for a real-space scatter plot.

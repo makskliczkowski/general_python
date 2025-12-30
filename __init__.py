@@ -34,6 +34,7 @@ License : MIT
 
 import sys
 import importlib
+from typing import TYPE_CHECKING
 
 # Package metadata
 __version__         = "0.1.0"
@@ -44,10 +45,107 @@ __license__         = "MIT"
 # Description used by QES.registry
 MODULE_DESCRIPTION  = "Shared scientific utilities: algebra backends, logging, lattices, maths, ML, physics."
 
-# List of available modules (not imported by default)
-__all__             = ["algebra", "common", "lattices", "maths", "ml", "physics", "random", "random_matrices"]
+# -----------------------------------------------------------------------------------------------
+# Lazy Import Configuration
+# -----------------------------------------------------------------------------------------------
 
-# Description of modules
+# Mapping of attribute names to (module_relative_path, attribute_name_in_module)
+# If attribute_name_in_module is None, the module itself is imported.
+_LAZY_IMPORTS = {
+    # Subpackages
+    "algebra"           : (".algebra",              None),
+    "common"            : (".common",               None),
+    "lattices"          : (".lattices",             None),
+    "maths"             : (".maths",                None),
+    "ml"                : (".ml",                   None),
+    "physics"           : (".physics",              None),
+    
+    # Algebra conveniences
+    "random"            : (".algebra.ran_wrapper",  None),
+    "random_matrices"   : (".algebra.ran_matrices", None),
+}
+
+# Cache for lazily loaded modules/attributes
+_LAZY_CACHE = {}
+
+# For type checking, import modules explicitly to support static analysis
+if TYPE_CHECKING:
+    from . import algebra
+    from . import common
+    from . import lattices
+    from . import maths
+    from . import ml
+    from . import physics
+    from .algebra import ran_wrapper as random
+    from .algebra import ran_matrices as random_matrices
+
+# -----------------------------------------------------------------------------------------------
+# Lazy Import Implementation
+# -----------------------------------------------------------------------------------------------
+
+def _lazy_import(name: str):
+    """
+    Lazily import a module or attribute based on _LAZY_IMPORTS configuration.
+    
+    Parameters
+    ----------
+    name : str
+        The name of the attribute to import lazily.
+        
+    Returns
+    -------
+    The imported module or attribute.
+    """
+    if name in _LAZY_CACHE:
+        return _LAZY_CACHE[name]
+    
+    if name not in _LAZY_IMPORTS:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    
+    module_path, attr_name = _LAZY_IMPORTS[name]
+    
+    try:
+        # Import the module
+        module = importlib.import_module(module_path, package=__name__)
+        
+        # If attr_name is None, we want the module itself
+        if attr_name is None:
+            result = module
+        else:
+            result = getattr(module, attr_name)
+        
+        _LAZY_CACHE[name] = result
+        return result
+    except ImportError as e:
+        # Provide more context if a sub-module fails to import (e.g. missing optional dependencies)
+        raise ImportError(f"Failed to import lazy module '{name}' from '{module_path}': {e}") from e
+
+
+def __getattr__(name: str):
+    """
+    Module-level __getattr__ for lazy imports (PEP 562).
+    """
+    return _lazy_import(name)
+
+
+def __dir__():
+    """
+    Support for autocompletion of lazy attributes.
+    """
+    return sorted(list(globals().keys()) + list(_LAZY_IMPORTS.keys()))
+
+
+# List of available modules (public API)
+__all__ = list(_LAZY_IMPORTS.keys()) + [
+    "get_module_description",
+    "list_available_modules",
+    "list_capabilities"
+]
+
+# -----------------------------------------------------------------------------------------------
+# Utility Functions
+# -----------------------------------------------------------------------------------------------
+
 def get_module_description(module_name):
     """
     Get the description of a specific module in the general_python package.
@@ -72,32 +170,16 @@ def get_module_description(module_name):
     }
     return descriptions.get(module_name, "Module not found.")
 
-# List available modules
 def list_available_modules():
     """
-    List all available modules in the general_python package.
+    List all available submodules in the general_python package.
     
     Returns
     -------
     list
-        List of available module names.
+        List of available submodule names.
     """
-    return __all__
-
-# Lazy import subpackages on attribute access (PEP 562)
-def __getattr__(name):  # pragma: no cover - simple indirection
-    # Convenience aliases
-    if name == "random":
-        return importlib.import_module(".algebra.ran_wrapper", __name__)
-    if name == "random_matrices":
-        return importlib.import_module(".algebra.ran_matrices", __name__)
-    if name in __all__:
-        return importlib.import_module(f".{name}", __name__)
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-
-def __dir__():  # pragma: no cover
-    return sorted(list(globals().keys()) + __all__)
-
+    return sorted([k for k, v in _LAZY_IMPORTS.items() if v[1] is None])
 
 def list_capabilities():
     """Summarize core capabilities across subpackages.
@@ -106,31 +188,17 @@ def list_capabilities():
     """
     caps = {}
     try:
-        rw = __getattr__("random")
-        caps["random"] = rw.list_capabilities()
+        rw              = _lazy_import("random")
+        caps["random"]  = rw.list_capabilities()
     except Exception:
-        caps["random"] = {}
+        caps["random"]  = {}
     try:
-        rm = __getattr__("random_matrices")
+        rm                      = _lazy_import("random_matrices")
         caps["random_matrices"] = rm.list_capabilities()
     except Exception:
         caps["random_matrices"] = {}
     caps["modules"] = list_available_modules()
     return caps
-
-# ---------------------------------------------------------------------
-
-# # Import all modules for documentation and access
-# from . import algebra
-# from . import common
-# from . import lattices
-# from . import maths
-# try:
-#     from . import ml
-# except ImportError:
-#     # ML module might fail during documentation builds due to sklearn dependencies
-#     pass
-# from . import physics
 
 # ---------------------------------------------------------------------
 #! EOF

@@ -6,9 +6,6 @@ Test script to verify the general_python module documentation and functionality.
 import sys
 import os
 
-# Add the path so we can import general_python
-sys.path.insert(0, '/Users/makskliczkowski/Codes/QuantumEigenSolver/Python/QES')
-
 def test_import_all_modules():
     """Test that all documented modules can be imported."""
     print("Testing module imports...")

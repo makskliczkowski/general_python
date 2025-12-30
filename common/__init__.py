@@ -47,6 +47,8 @@ if TYPE_CHECKING:
     from .datah         import DataHandler, complement_indices, indices_from_mask
     from .hdf5man       import HDF5Manager
     from .flog          import Logger, get_global_logger
+    from .memory        import log_memory_status, check_memory_for_operation
+    from .timer         import Timer
 
 # Lazy loading registry
 _LAZY_IMPORTS = {
@@ -74,6 +76,11 @@ _LAZY_IMPORTS = {
     # logging
     'Logger'                    : ('.flog', 'Logger'),
     'get_global_logger'         : ('.flog', 'get_global_logger'),
+    # memory
+    'log_memory_status'         : ('.memory', 'log_memory_status'),
+    'check_memory_for_operation': ('.memory', 'check_memory_for_operation'),
+    # timer
+    'Timer'                     : ('.timer', 'Timer'),
 }
 
 # Cache for loaded modules
@@ -111,7 +118,9 @@ def get_module_description(module_name):
         "plot"          : "Provides visualization utilities (Plotter, PlotterSave, MatrixPrinter).",
         "datah"         : "Handles various data operations and transformations.",
         "hdf5man"       : "Manages reading and writing HDF5 files.",
-        "flog"          : "Provides logging functionalities for structured output."
+        "flog"          : "Provides logging functionalities for structured output.",
+        "memory"        : "Memory monitoring and management utilities.",
+        "timer"         : "Context manager and utilities for performance timing."
     }
     return descriptions.get(module_name, "Module not found.")
 
@@ -122,7 +131,7 @@ def list_available_modules():
     Returns:
     - list: A list of available module names.
     """
-    return ["binary", "directories", "plot", "datah", "hdf5man", "flog"]
+    return ["binary", "directories", "plot", "datah", "hdf5man", "flog", "memory", "timer"]
 
 # Expose all lazy-loadable names for `from common import *`
 __all__ = list(_LAZY_IMPORTS.keys()) + ['get_module_description', 'list_available_modules']

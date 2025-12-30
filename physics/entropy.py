@@ -719,6 +719,88 @@ def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, *, typ
     
     return Si + Sj - Sij, (Si, Sj, Sij)
 
+def topological_entropy(psi, regions: dict, ns: int, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> tuple:
+    r"""
+    Calculate the topological entanglement entropy (TEE) \gamma.
+    
+    Parameters:
+        psi (np.ndarray): 
+            Quantum state vector.
+        regions (dict): 
+        Dictionary of regions (name -> list of site indices).
+        - Expected keys for Kitaev-Preskill:
+            'A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC'.
+        - Expected keys for Levin-Wen:
+            'inner', 'outer', 'inner_outer'.
+        ns (int): 
+            Total number of sites.
+        q (float):
+            Order of Rényi entropy.
+        base (float):
+            Logarithm base.
+        typek (Entanglement):
+            Entropy type.
+        
+    Returns:
+        gamma (float):
+            Topological entanglement entropy.
+        entropies (dict):
+            Dictionary of computed entropies for each region.
+        
+    Notes:
+        Regions can be generated using `Lattice.region_kitaev_preskill()` or similar methods.
+    """
+    from .density_matrix import rho_numba_mask, schmidt_numba_mask
+    
+    entropies = {}
+    
+    for name, indices in regions.items():
+        indices     = np.asarray(indices, dtype=np.int64)
+        size_a      = len(indices)
+        
+        if size_a == 0 or size_a == ns:
+            entropies[name] = 0.0
+            continue
+            
+        # Complement indices
+        mask            = np.ones(ns, dtype=bool)
+        mask[indices]   = False
+        indices_b       = np.arange(ns)[mask]
+        
+        # Calculate entropy of region
+        if rho_numba_mask is not None:
+            order           = tuple(indices) + tuple(indices_b)
+            psi_reshaped    = rho_numba_mask(psi, order, size_a)
+            vals, _         = schmidt_numba_mask(psi_reshaped, order, size_a, eig=False)
+        else:
+            # Numpy fallback
+            order          = tuple(indices) + tuple(indices_b)
+            psi_nd         = psi.reshape((2,)*ns, order='F')
+            psi_reshaped   = psi_nd.transpose(order).reshape((1 << size_a, -1))
+            # SVD
+            s              = np.linalg.svd(psi_reshaped, compute_uv=False)
+            vals           = s*s
+             
+        S               = entropy(vals, q, base, typek=typek, backend=backend, **kwargs)
+        entropies[name] = S
+        
+    # Calculate Gamma
+    gamma = 0.0
+    if all(k in entropies for k in ['A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC']):
+        # Kitaev-Preskill
+        gamma   = (entropies['A'] + entropies['B'] + entropies['C'] 
+                - entropies['AB'] - entropies['BC'] - entropies['AC'] 
+                + entropies['ABC'])
+    elif all(k in entropies for k in ['inner', 'outer', 'inner_outer']):
+         # Levin-Wen
+         gamma  = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
+         
+    return {
+        'gamma'     : gamma,
+        'entropies' : entropies,
+        'regions'   : regions
+    }
+
 ####################################
 
 class Fractal:
@@ -755,3 +837,7 @@ class Fractal:
             return (np.log2(pr_lp1) - np.log2(pr_l)) / (1 - q)
         else:
             return (np.log2(pr_lp1) - np.log2(pr_l))
+        
+# ---------------------------------
+#! EOF
+# ---------------------------------
