@@ -976,9 +976,9 @@ class LanczosEigensolverScipy(EigenSolver):
 
                 order = np.argsort(eigenvalues)
                 if which in ['LM', 'LA']: 
-                     if which == 'LA': order = order[::-1]
-                     pass
-                     
+                    if which == 'LA': order = order[::-1]
+                    pass
+
                 return EigenResult(
                     eigenvalues     =   eigenvalues[order],
                     eigenvectors    =   eigenvectors[:, order],
