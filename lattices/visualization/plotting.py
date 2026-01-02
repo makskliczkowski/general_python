@@ -810,27 +810,43 @@ def plot_lattice_structure(
     return fig, axis
 
 def plot_regions(
-    lattice         : Lattice,
-    regions         : Dict[str, List[int]],
+    lattice             : Lattice,
+    regions             : Dict[str, List[int]],
     *,
-    ax              : Optional[Axes]                = None,
-    show_indices    : bool                          = False,
-    show_system     : bool                          = True,
-    system_color    : str                           = 'lightgray',
-    system_alpha    : float                         = 0.5,
-    cmap            : str                           = 'tab10',
-    fill            : bool                          = False,
-    fill_alpha      : float                         = 0.2,
-    figsize         : Optional[Tuple[float, float]] = None,
-    title           : Optional[str]                 = None,
-    title_kwargs    : Optional[Dict[str, object]]   = None,
-    tight_layout    : bool                          = True,
-    elev            : Optional[float]               = None,
-    azim            : Optional[float]               = None,
+    ax                  : Optional[Axes]                = None,
+    show_indices        : bool                          = False,
+    show_system         : bool                          = True,
+    show_complement     : bool                          = True,
+    show_labels         : bool                          = True,
+    show_connections    : bool                          = False,
+    show_overlaps       : bool                          = True,
+    system_color        : str                           = 'lightgray',
+    system_alpha        : float                         = 0.3,
+    complement_color    : str                           = 'wheat',
+    complement_alpha    : float                         = 0.6,
+    overlap_color       : str                           = 'red',
+    cmap                : str                           = 'Set2',
+    fill                : bool                          = False,
+    fill_alpha          : float                         = 0.2,
+    marker_size         : int                           = 100,
+    edge_width          : float                         = 2.0,
+    figsize             : Optional[Tuple[float, float]] = None,
+    title               : Optional[str]                 = None,
+    title_kwargs        : Optional[Dict[str, object]]   = None,
+    tight_layout        : bool                          = True,
+    elev                : Optional[float]               = None,
+    azim                : Optional[float]               = None,
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
     """
-    Plot specific regions on the lattice.
+    Plot specific regions on the lattice with enhanced visualization.
+
+    This function provides comprehensive region visualization including:
+    - Individual regions with distinct colors
+    - Complement region (sites not in any region)
+    - Overlap detection and highlighting
+    - Region labels and statistics
+    - Optional connectivity between regions
 
     Parameters
     ----------
@@ -844,16 +860,34 @@ def plot_regions(
         If True, annotate sites with indices.
     show_system : bool
         If True, plot all lattice sites faintly in the background.
+    show_complement : bool
+        If True, highlight sites not in any region.
+    show_labels : bool
+        If True, add text labels for each region.
+    show_connections : bool
+        If True, draw lines between adjacent regions.
+    show_overlaps : bool
+        If True, highlight sites belonging to multiple regions.
     system_color : str
         Color for background system sites.
     system_alpha : float
         Alpha for background system sites.
+    complement_color : str
+        Color for complement region.
+    complement_alpha : float
+        Alpha for complement region.
+    overlap_color : str
+        Color to highlight overlapping sites.
     cmap : str
         Colormap name for distinct regions.
     fill : bool
         If True and dim=2, fill the region with a polygon (requires scipy).
     fill_alpha : float
         Transparency of filled regions.
+    marker_size : int
+        Size of region markers.
+    edge_width : float
+        Width of marker edges.
     ... other args mirror plot_real_space ...
     """
     coords      = _ensure_numpy(lattice.rvectors)
@@ -881,6 +915,30 @@ def plot_regions(
         else:
             axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **bg_args)
 
+    # Compute complement and overlaps
+    all_region_sites    = set()
+    site_counts         = {}
+    for indices in regions.values():
+        for idx in indices:
+            all_region_sites.add(idx)
+            site_counts[idx] = site_counts.get(idx, 0) + 1
+    
+    complement_sites    = [i for i in range(len(coords)) if i not in all_region_sites]
+    overlap_sites       = [i for i, count in site_counts.items() if count > 1]
+    
+    # Plot complement region
+    if show_complement and complement_sites:
+        comp_coords = coords[complement_sites]
+        comp_args   = dict(color=complement_color, alpha=complement_alpha, marker='x', 
+                        s=marker_size*0.8, edgecolors='black', linewidths=edge_width*0.5, 
+                        label='Complement')
+        if dim == 1:
+            axis.scatter(comp_coords[:, 0], np.zeros_like(comp_coords[:, 0]), **comp_args)
+        elif dim == 2:
+            axis.scatter(comp_coords[:, 0], comp_coords[:, 1], **comp_args)
+        else:
+            axis.scatter(comp_coords[:, 0], comp_coords[:, 1], comp_coords[:, 2], **comp_args)
+    
     # Plot regions
     try:
         import matplotlib.cm as cm
@@ -898,14 +956,15 @@ def plot_regions(
         if fill and dim == 2 and ConvexHull is not None and len(region_coords) >= 3:
             try:
                 hull = ConvexHull(region_coords)
-                # hull.vertices returns indices into region_coords
                 hull_points = region_coords[hull.vertices]
-                axis.fill(hull_points[:, 0], hull_points[:, 1], color=color_val, alpha=fill_alpha, label=f'{name} (Area)')
+                axis.fill(hull_points[:, 0], hull_points[:, 1], color=color_val, 
+                         alpha=fill_alpha, label=f'{name} (Area)')
             except Exception:
-                pass # Fallback to just points if collinear or degenerate
+                pass
 
         # 2. Scatter points
-        sc_args = dict(color=color_val, marker='o', s=50, label=f'{name}', **scatter_kwargs)
+        sc_args = dict(color=color_val, marker='o', s=marker_size, edgecolors='black', 
+                      linewidths=edge_width, label=f'{name}', **scatter_kwargs)
         
         if dim == 1:
             axis.scatter(region_coords[:, 0], np.zeros_like(region_coords[:, 0]), **sc_args)
@@ -915,16 +974,29 @@ def plot_regions(
             axis.scatter(region_coords[:, 0], region_coords[:, 1], region_coords[:, 2], **sc_args)
             
         # 3. Label center of region
-        if len(region_coords) > 0:
+        if show_labels and len(region_coords) > 0:
             com = np.mean(region_coords, axis=0)
             txt_args = dict(fontsize=12, fontweight='bold', color='black', ha='center', va='center', 
-                            bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=0.5))
+                           bbox=dict(facecolor='white', alpha=0.7, edgecolor='black', pad=1.0))
             if dim == 1:
                 axis.text(com[0], 0, name, **txt_args)
             elif dim == 2:
                 axis.text(com[0], com[1], name, **txt_args)
             else:
                 axis.text(com[0], com[1], com[2], name, **txt_args)
+    
+    # Highlight overlapping sites
+    if show_overlaps and overlap_sites:
+        overlap_coords  = coords[overlap_sites]
+        overlap_args    = dict(color='none', edgecolors=overlap_color, marker='o', 
+                           s=marker_size*1.5, linewidths=edge_width*2, 
+                           label=f'Overlaps ({len(overlap_sites)})')
+        if dim == 1:
+            axis.scatter(overlap_coords[:, 0], np.zeros_like(overlap_coords[:, 0]), **overlap_args)
+        elif dim == 2:
+            axis.scatter(overlap_coords[:, 0], overlap_coords[:, 1], **overlap_args)
+        else:
+            axis.scatter(overlap_coords[:, 0], overlap_coords[:, 1], overlap_coords[:, 2], **overlap_args)
 
     # Axis setup
     if dim == 1:
@@ -940,12 +1012,26 @@ def plot_regions(
         axis.set_ylabel("y")
         axis.set_xlabel("x")
 
+    # Build informative title
     if title:
         kw = {"pad": 12}
         if title_kwargs: kw.update(title_kwargs)
         axis.set_title(title, **kw)
     elif not title and ax is None:
-        axis.set_title("Lattice Regions")
+        n_total         = len(coords)
+        n_covered       = len(all_region_sites)
+        n_complement    = len(complement_sites)
+        n_overlaps      = len(overlap_sites)
+        coverage_pct    = (n_covered / n_total * 100) if n_total > 0 else 0
+        
+        title_parts     = [f"Lattice Regions ({len(regions)} regions)"]
+        title_parts.append(f"\nCoverage: {n_covered}/{n_total} ({coverage_pct:.1f}%)")
+        if n_complement > 0:
+            title_parts.append(f", Complement: {n_complement}")
+        if n_overlaps > 0:
+            title_parts.append(f", Overlaps: {n_overlaps}")
+        
+        axis.set_title(''.join(title_parts), fontsize=10, pad=12)
 
     # Deduplicate legend labels
     handles, labels = axis.get_legend_handles_labels()
