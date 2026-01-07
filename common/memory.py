@@ -70,8 +70,15 @@ def log_memory_status(context: str = "", logger: Optional["Logger"] = None, lvl:
     if PSUTIL_AVAILABLE:
         used        = get_used_memory_gb()
         available   = get_available_memory_gb()
+        
         if logger is not None:
-            logger.info(f"Memory [{context}]: Used={used:.2f}GB, Available={available:.2f}GB", lvl=lvl, color='yellow')
+            # Display in mB for smaller values
+            if used < 1.0 or available < 1.0:
+                used_mB         = used * 1024
+                available_mB    = available * 1024
+                logger.info(f"Memory [{context}]: Used={used_mB:.2f}mB, Available={available_mB:.2f}mB", lvl=lvl, color='yellow')
+            else:
+                logger.info(f"Memory [{context}]: Used={used:.2f}GB, Available={available:.2f}GB", lvl=lvl, color='yellow')
 
 # --------------------------------------------------------------------------------
 #! End of File
