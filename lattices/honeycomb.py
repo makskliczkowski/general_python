@@ -399,7 +399,7 @@ class HoneycombLattice(Lattice):
         Y           = Y_BOND_NEI
         X           = X_BOND_NEI
 
-        bond_cycle  = [Z, X, Y, Z, X, Y]
+        bond_cycle  = [0, 2, 1, 0, 2, 1]
 
         plaquettes  = []
         seen        = set()
@@ -412,7 +412,7 @@ class HoneycombLattice(Lattice):
 
             # Must have a valid Z-neighbor above (this ensures bottom-left anchor)
             z1 = self.get_nn(i, Z)
-            if z1 < 0:
+            if self.wrong_nei(z1):
                 continue # boundary or missing hexagon here
 
             # Now walk the cycle
@@ -434,7 +434,6 @@ class HoneycombLattice(Lattice):
 
             # Keep exactly the 6 unique sites
             hex_sites   = tuple(loop[:-1])
-
             # Deduplicate by sorted site set
             key         = tuple(sorted(hex_sites))
             if key not in seen:

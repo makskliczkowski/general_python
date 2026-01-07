@@ -868,6 +868,7 @@ class LanczosEigensolverScipy(EigenSolver):
         
         # Setup Random Seed
         current_seed    = seed if seed is not None else self.seed
+        current_seed    = 420
         # Resolve Parameters
         k               = self.k if k is None else k
         which           = self.which if which is None else which

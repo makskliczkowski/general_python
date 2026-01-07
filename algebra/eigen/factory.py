@@ -186,7 +186,7 @@ def choose_eigensolver(
     
     if method == 'exact':
         # Exact diagonalization - compute all eigenvalues
-        if use_scipy or backend == 'scipy':
+        if backend == 'scipy':
             solver = ExactEigensolverScipy(hermitian=hermitian, **kwargs)
         elif backend == 'jax':
             solver = ExactEigensolver(hermitian=hermitian, backend='jax', **kwargs)
