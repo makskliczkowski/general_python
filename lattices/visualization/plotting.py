@@ -558,10 +558,10 @@ def plot_lattice_structure(
     boundary_node_color         : str                           = "tab:red",
     periodic_color              : str                           = "tab:orange",
     open_color                  : str                           = "tab:green",
-    node_size                   : int                           = 50,
+    node_size                   : int                           = 30,
     edge_alpha                  : float                         = 0.7,
     label_padding               : float                         = 0.05,
-    boundary_offset             : float                         = 0.08,
+    boundary_offset             : float                         = 0.05,
     figsize                     : Optional[Tuple[float, float]] = None,
     title                       : Optional[str]                 = None,
     title_kwargs                : Optional[Dict[str, object]]   = None,
@@ -653,14 +653,9 @@ def plot_lattice_structure(
         if is_periodic:
             periodic_neighbors[i].append(j)
             periodic_neighbors[j].append(i)
-            # Optionally don't draw long periodic lines across the plot
-            # or draw them faintly
-            if dim == 2:
-                # Draw short stubs instead? For now, just dashed lines.
-                pass
         
         # Plot the line
-        line_args = dict(color=edge_color, alpha=edge_alpha, linestyle=linestyle, linewidth=1.0)
+        line_args = dict(color=edge_color, alpha=edge_alpha, linestyle=linestyle, linewidth=1.0, zorder=2)
         
         if dim == 3:
             axis.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **line_args)

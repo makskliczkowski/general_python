@@ -222,9 +222,9 @@ class Logger:
         # Check if this logger was already configured (prevents duplicates in notebooks)
         global _SHARED_CONSOLE_HANDLER, _NOTEBOOK_MODE_CHECKED, _IS_NOTEBOOK
         
-        logger_name = name or __name__
-        console_fmt = '%(asctime)s [%(levelname)s] %(message)s' if use_ts_in_cmd else '[%(levelname)s] %(message)s'
-        
+        logger_name             = name or __name__
+        console_fmt             = '%(asctime)s [%(levelname)s] %(message)s' if use_ts_in_cmd else '[%(levelname)s] %(message)s'
+            
         # Check notebook mode once
         if not _NOTEBOOK_MODE_CHECKED:
             _IS_NOTEBOOK = _is_interactive_notebook()
@@ -247,21 +247,30 @@ class Logger:
             if _SHARED_CONSOLE_HANDLER is None:
                 _SHARED_CONSOLE_HANDLER = logging.StreamHandler(sys.stdout)
                 _SHARED_CONSOLE_HANDLER.setLevel(self.lvl)
-                _SHARED_CONSOLE_HANDLER.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                if use_ts_in_cmd:
+                    _SHARED_CONSOLE_HANDLER.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                else:
+                    _SHARED_CONSOLE_HANDLER.setFormatter(logging.Formatter(console_fmt))
             self.logger.addHandler(_SHARED_CONSOLE_HANDLER)
         else:
             # Normal mode: each logger gets its own handler (standard behavior)
             if logger_name not in _CONFIGURED_LOGGERS:
                 ch = logging.StreamHandler(sys.stdout)
                 ch.setLevel(self.lvl)
-                ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                if use_ts_in_cmd:
+                    ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                else:
+                    ch.setFormatter(logging.Formatter(console_fmt))
                 self.logger.addHandler(ch)
                 _CONFIGURED_LOGGERS.add(logger_name)
             else:
                 # Re-add handler if needed
                 ch = logging.StreamHandler(sys.stdout)
                 ch.setLevel(self.lvl)
-                ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                if use_ts_in_cmd:
+                    ch.setFormatter(logging.Formatter(console_fmt, datefmt="%d_%m_%Y_%H-%M_%S"))
+                else:
+                    ch.setFormatter(logging.Formatter(console_fmt))
                 self.logger.addHandler(ch)
         
         # Set the log file name
@@ -721,6 +730,28 @@ def get_global_logger(**kwargs) -> Logger:
         _G_LOGGER       = logger
         _G_LOGGER_PID   = pid
         return _G_LOGGER
+
+def get_logger(**kwargs) -> Logger:
+    """
+    Simple wrapper to create a new Logger instance.
+    
+    Params:
+    - name (str): Name of the logger (default: "Global").
+    - lvl (int): Logging level (default: logging.INFO).
+    - append_ts (bool): Whether to append timestamps (default: True).
+    - use_ts_in_cmd (bool): Whether to use timestamps in commands (default: True).
+    - logfile (str or None): Path to a logfile (default: None).
+    
+    Returns:
+    - Logger: A new Logger instance.
+    """
+    return Logger(
+        name            = kwargs.get("name", "Global"),
+        lvl             = kwargs.get("lvl",             logging.INFO),
+        append_ts       = kwargs.get("append_ts",       True),
+        use_ts_in_cmd   = kwargs.get("use_ts_in_cmd",   True),
+        logfile         = kwargs.get("logfile",         None),
+    )
 
 ######################################################
 

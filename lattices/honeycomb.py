@@ -24,12 +24,12 @@ except ImportError:
 
 ################################### LATTICE IMPLEMENTATION #######################################
 
-X_BOND_NEI = 2
-Y_BOND_NEI = 1
-Z_BOND_NEI = 0
-# X_BOND_NEI = 0
+# X_BOND_NEI = 2
 # Y_BOND_NEI = 1
-# Z_BOND_NEI = 2
+# Z_BOND_NEI = 0
+X_BOND_NEI = 0
+Y_BOND_NEI = 1
+Z_BOND_NEI = 2
 
 class HoneycombLattice(Lattice):
     """
@@ -81,21 +81,25 @@ class HoneycombLattice(Lattice):
         self._ns        = 2 * self.Lx * self.Ly * self.Lz
 
         # Define lattice parameters
-        # self._a1        = np.array([np.sqrt(3) * self.a, 0, 0])
-        # self._a2        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        # self._a1        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        # self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
         # self._a3        = np.array([0, 0, self.c])
-        self._a1        = np.array([np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
-        self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
+        self._a1        = np.array([3 * self.a / 2.0,  +np.sqrt(3) * self.a / 2.0, 0])
+        self._a2        = np.array([0,  3 * self.a / 2.0, 0])
         self._a3        = np.array([0, 0, self.c])
-
+        
         self._basis     = np.array([
-                            [0.0, 0.0, 0.0],      # A sublattice
-                            [0.0, self.a, 0.0]    # B sublattice
+                            [0.0, 0.0, 0.0],                            # A sublattice  - first node in the unit cell
+                            [self.a / 2.0, np.sqrt(3)*self.a/2.0, 0.0]  # B sublattice  - second node in the unit cell
                         ])
 
-        self._delta_x   = np.array([0.0, self.a, 0.0])
-        self._delta_y   = np.array([-np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
-        self._delta_z   = np.array([ np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
+        # self._delta_x   = np.array([0.0, self.a, 0.0])
+        # self._delta_y   = np.array([-np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
+        # self._delta_z   = np.array([ np.sqrt(3)*self.a/2.0, -self.a/2.0, 0.0])
+        self._delta_x   = np.array([self.a / 2.0, -np.sqrt(3)*self.a/2.0, 0.0])
+        self._delta_y   = np.array([self.a / 2.0,  np.sqrt(3)*self.a/2.0, 0.0])
+        self._delta_z   = np.array([-self.a, 0.0, 0.0])
+        
         self.init(**kwargs)
         
     def __str__(self):
@@ -137,22 +141,22 @@ class HoneycombLattice(Lattice):
 
     ###################################
 
-    def get_real_vec(self, x: int, y: int, z: int):
+    def get_real_vec(self, x: int, y: int, z: int = 0):
         """
         Returns the real-space vector for a given (x, y, z) coordinate.
         """
-        cell_x = x
+        cell_x  = x                                     # cell x index
         # coordinates are stored as (x, 2*y + sublattice, z)
-        cell_y = y // 2
-        sub = y % 2
-        base = cell_x * self._a1 + cell_y * self._a2
-        return base + self._basis[sub] + z * self._a3
+        cell_y  = y // 2                                # cell y index
+        sub     = y % 2                                 # sublattice index (0 or 1)
+        base    = cell_x * self._a1 + cell_y * self._a2 # base vector for the unit cell
+        return base + self._basis[sub] + z * self._a3   # add z component
 
     def get_norm(self, x: int, y: int, z: int):
         """
         Returns the Euclidean norm of the real-space vector.
         """
-        return np.sqrt(x**2 + y**2 + z**2)
+        return np.linalg.norm(self.get_real_vec(x, y, z))
 
     def get_nn_direction(self, site, direction):
         """
@@ -163,7 +167,7 @@ class HoneycombLattice(Lattice):
             LatticeDirection.Y -> neighbor at index 1 of _nn[site]
             LatticeDirection.Z -> neighbor at index 2 of _nn[site]
         """
-        mapping = {LatticeDirection.X: 0, LatticeDirection.Y: 1, LatticeDirection.Z: 2}
+        mapping = { LatticeDirection.X: X_BOND_NEI, LatticeDirection.Y: Y_BOND_NEI, LatticeDirection.Z: Z_BOND_NEI }
         idx     = mapping.get(direction, -1)
         return self._nn[site][idx] if idx >= 0 and idx < len(self._nn[site]) else -1
 
@@ -220,60 +224,81 @@ class HoneycombLattice(Lattice):
         # 2D: Map honeycomb sites onto an underlying square lattice.
         elif self.dim == 2:
             for i in range(self.Ns):
-                n       = i // 2        # n: site index on the square lattice.
-                r       = i % 2         # r: sublattice index (0 for first node, 1 for second) - idx in the elementary cell.
-                X       = n % self.Lx   # X: x coordinate on the square lattice.
-                Y       = n // self.Lx  # Y: y coordinate on the square lattice.
-                _even   = (r == 0)      # _even: whether the site is on the even sublattice.
+                n           = i // 2        # n: site index on the square lattice.
+                r           = i % 2         # r: sublattice index (0 for first node, 1 for second) - idx in the elementary cell.
+                X           = n % self.Lx   # X: x coordinate on the corresponding square lattice.
+                Y           = n // self.Lx  # Y: y coordinate on the corresponding square lattice.
+                _even       = (r == 0)      # _even: whether the site is on the even sublattice.
                 
-                # z bond: for even sites
-                YP      = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
-                XP      = X
-                if YP == -1:
-                    self._nn[i].append(-1)
-                else:
-                    self._nn[i].append((YP * self.Lx + XP) * 2 + int(_even))
-                self._nn_forward[i].append((-1 if _even else self._nn[i][0]))
+                # Initialize bond indices
+                self._nn[i] = [-1, -1, -1]
                 
-                # y bond: for even sites, use X - 1; for odd, use X + 1.
-                XP      = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
-                YP      = Y
+                # z bond: for even sites, we take z bond to be the one at X - 1 for even, X + 1 for odd. Same Y.
+                XP          = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
+                YP          = Y
                 if XP == -1:
-                    self._nn[i].append(-1)
+                    self._nn[i][Z_BOND_NEI] = -1
                 else:
-                    self._nn[i].append((YP * self.Lx + XP) * 2 + int(_even))
-                self._nn_forward[i].append(-1 if _even else self._nn[i][1])
+                    self._nn[i][Z_BOND_NEI] = (YP * self.Lx + XP) * 2 + int(_even)      # changes sublattice
+                self._nn_forward[i].append((-1 if _even else self._nn[i][Z_BOND_NEI]))  # z bond forward, we take only +1 direction for odd sites.
                 
-                # x bond: always within the same square cell.
-                self._nn[i].append(i + 1 if _even else i - 1)
-                self._nn_forward[i].append(-1 if not _even else self._nn[i][2])
+                # y bond: for even sites, it is in the same cell always but either we go to even->odd or odd->even in Y direction.
+                self._nn[i][Y_BOND_NEI] = (i + 1 if _even else i - 1)
+                self._nn_forward[i].append((self._nn[i][Y_BOND_NEI] if _even else -1))  # y bond forward, we take only +1 direction for even sites.
+                
+                # x bond: we need to go -1 for even sites, +1 for odd sites in Y direction.
+                YP          = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
+                XP          = X
+                if YP == -1:
+                    self._nn[i][X_BOND_NEI] = -1
+                else:
+                    self._nn[i][X_BOND_NEI] = (YP * self.Lx + XP) * 2 + int(_even)      # changes sublattice
+                self._nn_forward[i].append((self._nn[i][X_BOND_NEI] if _even else -1))  # x bond forward, we take only +1 direction for even sites.
 
         elif self.dim == 3:
-            # 3D: Similar to 2D but with additional bonds in the z direction.
+            # 3D: Extend the 2D honeycomb logic to 3D, with clear sublattice and bond assignments. 
             for i in range(self.Ns):
                 n       = i // 2
                 r       = i % 2
                 X       = n % self.Lx
-                Y       = n // self.Lx
+                Y       = (n // self.Lx) % self.Ly
                 Z       = n // (self.Lx * self.Ly)
                 _even   = (r == 0)
+
+                # Initialize bond indices
+                self._nn[i] = [-1, -1, -1, -1]
+
+                # z bond (in the xy plane): for even sites, X+1; for odd sites, X-1 (same Y, Z)
+                XP = _bcfun(X + 1, self.Lx, pbcx) if _even else _bcfun(X - 1, self.Lx, pbcx)
+                YP = Y
+                ZP = Z
+                if XP == -1:
+                    self._nn[i][Z_BOND_NEI] = -1
+                else:
+                    self._nn[i][Z_BOND_NEI] = (ZP * self.Ly * self.Lx + YP * self.Lx + XP) * 2 + int(_even)
+                self._nn_forward[i].append((-1 if _even else self._nn[i][Z_BOND_NEI]))
+
+                # y bond: for even sites, it is in the same cell always but either we go to even->odd or odd->even in Y direction.
+                self._nn[i][Y_BOND_NEI] = (i + 1 if _even else i - 1)
+
+                # x bond: for even sites, Y-1; for odd sites, Y+1 (same X, Z)
+                YP = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
+                XP = X
+                ZP = Z
+                if YP == -1:
+                    self._nn[i][X_BOND_NEI] = -1
+                else:
+                    self._nn[i][X_BOND_NEI] = (ZP * self.Ly * self.Lx + YP * self.Lx + XP) * 2 + int(_even)
+                self._nn_forward[i].append((self._nn[i][X_BOND_NEI] if _even else -1))
                 
-                # z bond (in the xy plane): for even, Y - 1; odd, Y + 1.
-                Yprime  = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
-                bond0   = (Yprime * self.Lx + X) * 2 + (1 if _even else 0)
-                # y bond: for even, X - 1; odd, X + 1.
-                Xprime  = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
-                bond1   = (Yprime * self.Lx + Xprime) * 2 + (1 if _even else 0)
-                # x bond: within the same cell.
-                bond2   = i + 1 if _even else i - 1
-                # z top bond:
-                Zprime_top = _bcfun(Z + 1, self.Lz, pbcz)
-                bond3   = _bcfun(Zprime_top * self.Lx * self.Ly + Y * self.Lx + X, self.Ns, True)
-                # z bottom bond:
-                Zprime_bot = _bcfun(Z - 1, self.Lz, pbcz)
-                bond4   = _bcfun(Zprime_bot * self.Lx * self.Ly + Y * self.Lx + X, self.Ns, True)
-                self._nn[i] = [bond0, bond1, bond2, bond3, bond4]
-                self._nn_forward[i] = [bond0, bond1, bond2, bond3, bond4]
+                # Go to next layer in Z direction
+                ZP = _bcfun(Z + 1, self.Lz, pbcz)
+                if ZP == -1:
+                    self._nn[i][3] = -1
+                else:
+                    self._nn[i][3] = (ZP * self.Ly * self.Lx + Y * self.Lx + X) * 2 + int(_even)
+                self._nn_forward[i].append((self._nn[i][3] if _even else -1))
+                
         else:
             raise ValueError("Only dimensions 1, 2, and 3 are supported for nearest neighbor calculation.")
         
@@ -334,7 +359,7 @@ class HoneycombLattice(Lattice):
         Here we simply use the Euclidean norm of the coordinate as a symmetry measure.
         In a more advanced implementation, this might account for sublattice or other symmetries.
         """
-        self.norm_sym = {i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns)}
+        self.norm_sym = { i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns) }
 
     ################################### SYMMETRY & INDEXING #######################################
 
@@ -367,15 +392,15 @@ class HoneycombLattice(Lattice):
         Determines the bond type between two sites.
         
         Returns:
-            int: 0 for x-bond, 1 for y-bond, 2 for z-bond, -1 if no bond exists.
+            int: Bond type index (X_BOND_NEI, Y_BOND_NEI, Z_BOND_NEI) or -1 if not a nearest neighbor.
         """
         if site2 in self._nn[site1]:
             idx = self._nn[site1].index(site2)
-            if idx == 2:
+            if idx == X_BOND_NEI:
                 return X_BOND_NEI
-            elif idx == 1:
+            elif idx == Y_BOND_NEI:
                 return Y_BOND_NEI
-            elif idx == 0:
+            elif idx == Z_BOND_NEI:
                 return Z_BOND_NEI
         return -1
 
@@ -383,7 +408,7 @@ class HoneycombLattice(Lattice):
     #! Plaquettes
     ###############################################################################################
     
-    def calculate_plaquettes(self):
+    def calculate_plaquettes(self, use_obc: bool = True):
         """
         Compute all hexagonal Kitaev plaquettes, matching the exact geometry
         and numbering convention in the hand-drawn lattice.
@@ -392,15 +417,14 @@ class HoneycombLattice(Lattice):
         the bottom-left A-sublattice site of the hexagon.
 
         Bond sequence:
-            1 --Z--> 2 --X--> 3 --Y--> 4 --Z--> 5 --X--> 6 --Y--> 1
+            X -> Y -> Z -> X -> Y -> Z (CCW around hexagon)
         """
 
         Z           = Z_BOND_NEI
         Y           = Y_BOND_NEI
         X           = X_BOND_NEI
 
-        bond_cycle  = [0, 2, 1, 0, 2, 1]
-
+        bond_cycle  = [X, Y, Z, X, Y, Z]  # CCW bond sequence around the hexagon
         plaquettes  = []
         seen        = set()
 
@@ -420,11 +444,18 @@ class HoneycombLattice(Lattice):
             cur     = i
             valid   = True
 
-            for b in bond_cycle:
+            for bi, b in enumerate(bond_cycle):
                 nxt = self.get_nn(cur, b)
+                
                 if self.wrong_nei(nxt):
                     valid = False
                     break
+                
+                if use_obc and bi < len(bond_cycle) // 2 and nxt < cur:
+                    # Enforce CCW ordering for first half of the loop
+                    valid = False
+                    break
+                
                 loop.append(nxt)
                 cur = nxt
 
@@ -434,6 +465,7 @@ class HoneycombLattice(Lattice):
 
             # Keep exactly the 6 unique sites
             hex_sites   = tuple(loop[:-1])
+            
             # Deduplicate by sorted site set
             key         = tuple(sorted(hex_sites))
             if key not in seen:

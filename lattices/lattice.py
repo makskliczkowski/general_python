@@ -556,7 +556,7 @@ class Lattice(ABC):
 
         return sorted(list(visited))
 
-    def region_plaquettes(self, plaquette_ids: List[int]) -> List[int]:
+    def region_plaquettes(self, plaquette_ids: List[int], use_obc: bool = True) -> List[int]:
         """
         Region defined by a union of plaquettes.
         
@@ -564,7 +564,7 @@ class Lattice(ABC):
         """
         if not hasattr(self, "_plaquettes") or self._plaquettes is None:
             try:
-                self.calculate_plaquettes()
+                self.calculate_plaquettes(use_obc=use_obc)
             except NotImplementedError:
                 raise ValueError("Plaquettes are not defined for this lattice.")
 
@@ -2009,7 +2009,7 @@ class Lattice(ABC):
             case _:
                 raise ValueError("The boundary conditions are not implemented.")
 
-    def calculate_plaquettes(self):     raise NotImplementedError("Plaquette calculation not implemented for this lattice.")
+    def calculate_plaquettes(self, use_obc: bool = True): raise NotImplementedError("Plaquette calculation not implemented for this lattice.")
 
     def calculate_wilson_loops(self):
         """
