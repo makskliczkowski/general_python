@@ -5,9 +5,9 @@ Unified spectral function backend for computing spectral properties
 of quantum systems from eigenvalues, eigenvectors, or Lanczos coefficients.
 
 Type Safety:
-  - Explicit handling of complex spectral functions
-  - Proper dtype preservation (complex stays complex, real stays real)
-  - No implicit casting of complex to real
+    - Explicit handling of complex spectral functions
+    - Proper dtype preservation (complex stays complex, real stays real)
+    - No implicit casting of complex to real
 
 ----------------------------------------------------------------------------
 File        : general_python/algebra/spectral_backend.py
@@ -130,6 +130,8 @@ def greens_function_lanczos_vectors(
         max_krylov  : int = 200) -> np.ndarray:
     """
     Computes G(w) = <v_left | (w - (H-E0))^{-1} | v_right>
+    using Bi-Lanczos iteration and continued fraction expansion.
+    
     No operator matrices required.
     """
     w           = np.atleast_1d(np.asarray(omega, dtype=complex))
@@ -252,8 +254,7 @@ def _run_hermitian_lanczos(H, v0, max_krylov, tol=1e-12):
     T           = np.diag(alpha_list) + np.diag(beta_list[:m-1], k=1) + np.diag(beta_list[:m-1], k=-1)
     return (*np.linalg.eigh(T), beta_0)
 
-def _greens_lanczos_single_chain(omega, lanczos_eigenvalues, lanczos_eigenvector, eta=0.01, *, 
-                                 mb_states=None, backend="default", kind="retarded"):
+def _greens_lanczos_single_chain(omega, lanczos_eigenvalues, lanczos_eigenvector, eta=0.01, *, mb_states=None, backend="default", kind="retarded"):
     """Vectorized sum over poles of the T-matrix."""
     be      = np
     evals   = be.asarray(lanczos_eigenvalues, dtype=be.complex128)

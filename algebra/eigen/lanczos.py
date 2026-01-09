@@ -94,7 +94,7 @@ except ImportError:
 def get_lanczos_parameters(hilbert_dim          : int, 
                         ns                      : int,
                         requested_k             : Optional[int]         = None,
-                        requested_max_iter      : Optional[int]         = None,
+                        requested_maxiter      : Optional[int]         = None,
                         convergence_factor      : float                 = 2.5,
                         logger                  : Optional['Logger']    = None
                         ) -> Dict[str, int]:
@@ -104,17 +104,17 @@ def get_lanczos_parameters(hilbert_dim          : int,
     The key insight is that for convergence:
     - k (number of eigenvalues) should be enough to capture the pbhysics. We don't need much more than the low-energy spectrum.
         - usually k ~ 10-200 for typical systems.
-    - max_iter should be >> k for good convergence (typically 2-5x k)
+    - maxiter should be >> k for good convergence (typically 2-5x k)
     - Reorthogonalization is ESSENTIAL for numerical stability. Always enable it.
     
     For state-of-the-art sizes (N_s ~ 32-48 spins, dim ~ 10^9 - 10^14):
     - We want k ~ 20-100    low-energy states
-    - max_iter  ~ 200-500   depending on gap structure and the degeneracy
+    - maxiter  ~ 200-500   depending on gap structure and the degeneracy
     
     Rules of thumb:
     - min(k)    = 10 (to capture ground state + some excitations reliably)
     - max(k)    = min(5000, dim/10) (don't exceed 10% of Hilbert space)
-    - max_iter >= convergence_factor * k (typically 2-5x, higher for gapless systems)
+    - maxiter >= convergence_factor * k (typically 2-5x, higher for gapless systems)
     
     Args:
         hilbert_dim:
@@ -123,15 +123,15 @@ def get_lanczos_parameters(hilbert_dim          : int,
             Number of sites
         requested_k: 
             User-requested number of eigenvalues (None for auto)
-        requested_max_iter: 
+        requested_maxiter: 
             User-requested max iterations (None for auto)
         target_gap_resolution: 
             Target relative resolution for energy gaps
         convergence_factor: 
-            max_iter / k ratio (higher for harder problems)
+            maxiter / k ratio (higher for harder problems)
     
     Returns:
-        Dict with 'k', 'max_iter', 'tol', 'reorthogonalize' parameters
+        Dict with 'k', 'maxiter', 'tol', 'reorthogonalize' parameters
     """
     
     # Base k scaling: starts at ~20 for small systems, grows logarithmically
@@ -150,60 +150,60 @@ def get_lanczos_parameters(hilbert_dim          : int,
     # Ensure minimum k for reliable ground state
     k               = max(k, min(10, hilbert_dim - 1))
     
-    # max_iter scaling: needs to be larger than k for convergence
+    # maxiter scaling: needs to be larger than k for convergence
     # For gapped systems: 2-3x k is often enough
     # For gapless/critical: may need 5-10x k
     # Scale with system size as larger systems tend to have denser spectra
     
     size_factor     = 1.0 + 0.5 * np.log2(max(ns / 8, 1))           # Increases with system size
-    base_max_iter   = int(k * convergence_factor * size_factor)     # Base scaling
+    base_maxiter   = int(k * convergence_factor * size_factor)     # Base scaling
     
     # Additional buffer for large systems
     if hilbert_dim > 1e6:
-        base_max_iter = int(base_max_iter * 1.5)
+        base_maxiter = int(base_maxiter * 1.5)
     if hilbert_dim > 1e9:
-        base_max_iter = int(base_max_iter * 2.0)
+        base_maxiter = int(base_maxiter * 2.0)
     
-    # Cap max_iter at Hilbert dimension and reasonable compute time
-    max_iter_cap = min(hilbert_dim, 10000)                          # 10000 iterations is usually overkill
+    # Cap maxiter at Hilbert dimension and reasonable compute time
+    maxiter_cap = min(hilbert_dim, 10000)                          # 10000 iterations is usually overkill
     
-    if requested_max_iter is not None:
-        max_iter = min(requested_max_iter, max_iter_cap)
+    if requested_maxiter is not None:
+        maxiter = min(requested_maxiter, maxiter_cap)
     else:
-        max_iter = min(base_max_iter, max_iter_cap)
+        maxiter = min(base_maxiter, maxiter_cap)
     
-    # Ensure max_iter > k
-    max_iter = max(max_iter, k + 50)
+    # Ensure maxiter > k
+    maxiter = max(maxiter, k + 50)
     
     # Tolerance: tighter for smaller systems, relaxed for huge systems
     if hilbert_dim < 1e4:
-        tol = 1e-12
-    elif hilbert_dim < 1e6:
         tol = 1e-10
+    elif hilbert_dim < 1e6:
+        tol = 1e-9
     elif hilbert_dim < 1e9:
-        tol = 1e-8
+        tol = 1e-7
     else:
         tol = 1e-6  # For truly massive systems, accept slightly lower precision
     
     params = {
         'k'                 : k,
-        'max_iter'          : max_iter,
+        'maxiter'          : maxiter,
         'tol'               : tol,
         'reorthogonalize'   : True, # ALWAYS reorthogonalize for numerical stability
     }
     if logger:
         logger.info(f"Lanczos parameters for dim={hilbert_dim:.2e}, ns={ns}:", lvl=1, color='green')
-        logger.info(f"k={k}, max_iter={max_iter}, tol={tol:.0e}", lvl=2, color='green')
+        logger.info(f"k={k}, maxiter={maxiter}, tol={tol:.0e}", lvl=2, color='green')
     
     return params
 
-def get_lanczos_memory_estimate_gb(hilbert_dim: int, max_iter: int, dtype=np.complex128) -> float:
+def get_lanczos_memory_estimate_gb(hilbert_dim: int, maxiter: int, dtype=np.complex128) -> float:
     """
     Estimate memory needed for Lanczos iteration.
     
     Lanczos stores:
     - ~3 current vectors (v, v_old, w) during iteration
-    - If full reorthogonalization: all max_iter Krylov vectors
+    - If full reorthogonalization: all maxiter Krylov vectors
     - Tridiagonal matrix: negligible
     
     For SciPy's eigsh with full reorthogonalization, it stores the Lanczos basis.
@@ -216,7 +216,7 @@ def get_lanczos_memory_estimate_gb(hilbert_dim: int, max_iter: int, dtype=np.com
     basic_memory        = 3 * vec_size
     
     # Full reorthogonalization: store all Krylov vectors
-    krylov_memory       = max_iter * vec_size
+    krylov_memory       = maxiter * vec_size
     
     # Eigenvector storage (at end)
     # Usually much smaller than Krylov basis
@@ -244,7 +244,7 @@ class LanczosEigensolver(EigenSolver):
             Number of eigenvalues to compute
         which: 
             Which eigenvalues to compute ('smallest', 'largest', 'both')
-        max_iter: 
+        maxiter: 
             Maximum number of Lanczos iterations (default: min(2*k+1, n))
         tol: 
             Convergence tolerance for eigenvalues (default: 1e-10)
@@ -265,7 +265,7 @@ class LanczosEigensolver(EigenSolver):
     def __init__(self,
                 k               : int = 6,
                 which           : Literal['smallest', 'largest', 'both'] = 'smallest',
-                max_iter        : Optional[int] = None,
+                maxiter        : Optional[int] = None,
                 tol             : float = 1e-10,
                 reorthogonalize : bool = True,
                 reorth_tol      : float = 1e-12,
@@ -279,7 +279,7 @@ class LanczosEigensolver(EigenSolver):
             Number of eigenvalues to compute
         which: {'smallest', 'largest', 'both'}
             Which eigenvalues to compute
-        max_iter: int, optional
+        maxiter: int, optional
             Maximum number of Lanczos iterations
         tol: float
             Convergence tolerance
@@ -296,7 +296,7 @@ class LanczosEigensolver(EigenSolver):
         
         self.k                  = k
         self.which              = which
-        self.max_iter           = max_iter
+        self.maxiter           = maxiter
         self.tol                = tol
         self.reorthogonalize    = reorthogonalize
         self.reorth_tol         = reorth_tol
@@ -317,7 +317,7 @@ class LanczosEigensolver(EigenSolver):
             *,
             k                   : int                                       = None,
             which               : Literal['smallest', 'largest', 'both']    = None,
-            max_iter            : Optional[int]                             = None,
+            maxiter            : Optional[int]                             = None,
             reorthogonalize     : bool                                      = True,
             dtype               : Optional[np.dtype]                        = None,
             reorth_tol          : float                                     = 1e-12) -> EigenResult:
@@ -334,7 +334,7 @@ class LanczosEigensolver(EigenSolver):
                 Initial vector (random if None)
             n: 
                 Dimension of the problem (required if matvec provided without A)
-            max_iter:
+            maxiter:
                 Maximum number of Lanczos iterations
             tol:
                 Convergence tolerance
@@ -383,9 +383,9 @@ class LanczosEigensolver(EigenSolver):
         # Determine max iterations
         # Default: Use min(n, max(50, 3*k)) for better convergence
         k               = k if k is not None else self.k
-        self.max_iter   = max_iter if max_iter is not None else self.max_iter
-        max_iter        = self.max_iter if self.max_iter is not None else min(n, max(50, 3*k))
-        max_iter        = min(max_iter, n)  # Cannot exceed dimension
+        self.maxiter   = maxiter if maxiter is not None else self.maxiter
+        maxiter        = self.maxiter if self.maxiter is not None else min(n, max(50, 3*k))
+        maxiter        = min(maxiter, n)  # Cannot exceed dimension
         which           = self.which if which is None else which
         
         # If using NumPy backend with a matvec and SciPy is available, prefer robust eigsh
@@ -393,9 +393,9 @@ class LanczosEigensolver(EigenSolver):
         if self.backend == 'numpy' and matvec is not None and SCIPY_AVAILABLE:
             from scipy.sparse.linalg import LinearOperator, eigsh as _eigsh
             which_map = {
-                'smallest': 'SA',
-                'largest' : 'LA',
-                'both'    : 'BE',
+                'smallest'  : 'SA',
+                'largest'   : 'LA',
+                'both'      : 'BE',
             }
             which_scipy     = which_map.get(which, 'SA')
             Aop             = LinearOperator((n, n), matvec=_matvec)
@@ -424,13 +424,13 @@ class LanczosEigensolver(EigenSolver):
 
         # Use appropriate backend
         if self.backend == 'numpy':
-            return LanczosEigensolver._lanczos_numpy(_matvec, n, v0, max_iter, 
+            return LanczosEigensolver._lanczos_numpy(_matvec, n, v0, maxiter, 
                                         k               = k,
                                         which           = which,
                                         reorthogonalize = reorthogonalize,
                                         reorth_tol      = reorth_tol)
         else:  # jax
-            return LanczosEigensolver._lanczos_jax(_matvec, n, v0, max_iter,
+            return LanczosEigensolver._lanczos_jax(_matvec, n, v0, maxiter,
                                         k               = k,
                                         which           = which,
                                         reorthogonalize = reorthogonalize,
@@ -443,7 +443,7 @@ class LanczosEigensolver(EigenSolver):
                     matvec          : Callable[[NDArray], NDArray],
                     n               : int,
                     v0              : Optional[NDArray],
-                    max_iter        : int,
+                    maxiter        : int,
                     k               : int,
                     *,
                     which           : Literal['smallest', 'largest', 'both'] = 'smallest',
@@ -461,7 +461,7 @@ class LanczosEigensolver(EigenSolver):
                 Dimension of the problem - required - original matrix size
             v0: 
                 Initial vector
-            max_iter: 
+            maxiter: 
                 Maximum number of Lanczos iterations - required - maximum number of Lanczos iterations
         Returns:
             EigenResult with eigenvalues, eigenvectors, and convergence info
@@ -482,12 +482,12 @@ class LanczosEigensolver(EigenSolver):
         v0             /= np.linalg.norm(v0)
         
         # Storage for Krylov basis (columns are basis vectors)
-        V               = np.zeros((n, max_iter + 1), dtype=dtype)
+        V               = np.zeros((n, maxiter + 1), dtype=dtype)
         V[:, 0]         = v0
         
         # Tridiagonal matrix elements
-        alpha           = np.zeros(max_iter, dtype=float)   # always real
-        beta            = np.zeros(max_iter - 1, dtype=float)
+        alpha           = np.zeros(maxiter, dtype=float)   # always real
+        beta            = np.zeros(maxiter - 1, dtype=float)
 
         # Lanczos iteration
         w               = matvec(v0) # First matvec
@@ -495,9 +495,9 @@ class LanczosEigensolver(EigenSolver):
         # Initial projection alpha_0 = v0* . A . v0
         alpha[0]        = np.real(np.vdot(v0, w))
         w               = w - alpha[0] * v0             # Orthogonalize w against v0 to start the next step
-        m_steps         = max_iter
+        m_steps         = maxiter
         
-        for j in range(1, max_iter):
+        for j in range(1, maxiter):
             
             # Compute beta_{j-1} = || w ||
             beta_val    = np.linalg.norm(w)
@@ -602,7 +602,7 @@ class LanczosEigensolver(EigenSolver):
     def _lanczos_jax(matvec         : Callable[[NDArray], NDArray],
                     n               : int,
                     v0              : Optional[NDArray],
-                    max_iter        : int,
+                    maxiter        : int,
                     k               : int,
                     *,
                     which           : Literal['smallest', 'largest', 'both'] = 'smallest',
@@ -624,20 +624,20 @@ class LanczosEigensolver(EigenSolver):
         v0              = v0 / jnp.linalg.norm(v0)
         
         # Storage for Krylov basis
-        V               = jnp.zeros((n, max_iter + 1), dtype=v0.dtype)
+        V               = jnp.zeros((n, maxiter + 1), dtype=v0.dtype)
         V               = V.at[:, 0].set(v0)
 
         # Tridiagonal matrix elements
-        alpha           = jnp.zeros(max_iter, dtype=jnp.float64)
-        beta            = jnp.zeros(max_iter, dtype=jnp.float64)
+        alpha           = jnp.zeros(maxiter, dtype=jnp.float64)
+        beta            = jnp.zeros(maxiter, dtype=jnp.float64)
 
         # Lanczos iteration (note: JAX prefers functional style)
         v_prev          = jnp.zeros(n, dtype=v0.dtype)
         beta_prev       = 0.0
 
-        actual_iters    = max_iter
+        actual_iters    = maxiter
         
-        for j in range(max_iter):
+        for j in range(maxiter):
             # Apply matrix
             w       = matvec(V[:, j])
             
@@ -662,7 +662,7 @@ class LanczosEigensolver(EigenSolver):
                 break
             
             # Normalize new vector
-            if j < max_iter - 1:
+            if j < maxiter - 1:
                 V           = V.at[:, j + 1].set(w / beta_j)
                 v_prev      = V[:, j]
                 beta_prev   = beta_j
@@ -776,13 +776,13 @@ class LanczosEigensolverScipy(EigenSolver):
     """
     
     def __init__(self,
-                k       : int = 6,
+                k       : int                   = 6,
                 which   : Literal['SM', 'LM', 'SA', 'LA', 'BE'] = 'SA',
-                tol     : float = 0.0,
-                maxiter : Optional[int] = None,
-                v0      : Optional[NDArray] = None,
-                dtype   : Optional[np.dtype]= None,
-                seed    : Optional[int]     = None):
+                tol     : float                 = 0.0,
+                maxiter : Optional[int]         = None,
+                v0      : Optional[NDArray]     = None,
+                dtype   : Optional[np.dtype]    = None,
+                seed    : Optional[int]         = None):
         """
         Initialize SciPy Lanczos eigensolver.
         
@@ -823,7 +823,7 @@ class LanczosEigensolverScipy(EigenSolver):
             *,
             k         : int = None,
             which     : Literal['SM', 'LM', 'SA', 'LA', 'BE'] = 'SA',
-            tol       : float               = 0.0,
+            tol       : float               = None,
             maxiter   : Optional[int]       = None,
             v0        : Optional[NDArray]   = None,
             seed      : Optional[int]       = None,
@@ -868,12 +868,12 @@ class LanczosEigensolverScipy(EigenSolver):
         
         # Setup Random Seed
         current_seed    = seed if seed is not None else self.seed
-        current_seed    = 420
+
         # Resolve Parameters
-        k               = self.k if k is None else k
-        which           = self.which if which is None else which
-        maxiter         = self.maxiter if maxiter is None else maxiter
-        tol             = self.tol if tol == 0.0 else tol
+        k               = self.k        if k                    is None else k
+        which           = self.which    if which                is None else which
+        maxiter         = self.maxiter  if maxiter              is None else maxiter
+        tol             = self.tol      if tol == 0.0 or tol    is None else tol
         
         # Extract special args
         sigma           = kwargs.get('sigma', None)
@@ -883,7 +883,7 @@ class LanczosEigensolverScipy(EigenSolver):
         if ncv is None:
             # Standard rule: 2*k + 1 is efficient.
             # 20 is a safe minimum floor for convergence stability.
-            desired_ncv = max(2 * k + 1, 20)
+            desired_ncv = max(2 * k + 1, 64)
             ncv         = min(dim, desired_ncv)
             
             # ARPACK Constraint: ncv must be > k
@@ -895,6 +895,9 @@ class LanczosEigensolverScipy(EigenSolver):
         # Shift-Invert Validation
         if sigma is not None and A is None:
             if 'OPinv' not in kwargs:
+                # OPinv is required for matrix-free shift-invert. It is an argument that defines 
+                # the action of (A - sigma*I)^(-1) on a vector, if A is not provided or one knows 
+                # how to efficiently solve linear systems with (A - sigma*I).
                 raise ValueError("Matrix-Free Shift-Invert mode ('sigma') requires 'OPinv' argument. SciPy cannot invert your function automatically.")
 
         # Create LinearOperator
@@ -922,49 +925,49 @@ class LanczosEigensolverScipy(EigenSolver):
         
         # Prepare call args, removing those we handle explicitly
         call_kwargs = kwargs.copy()
-        call_kwargs.pop('sigma', None)
-        call_kwargs.pop('ncv', None)
-        call_kwargs.pop('max_iter', None)
-        call_kwargs.pop('v0', None) 
-        call_kwargs.pop('tol', None)
-        call_kwargs.pop('which', None)
-        call_kwargs.pop('k', None)
-        call_kwargs.pop('return_eigenvectors', None)
-        call_kwargs.pop('maxiter', None)
-        call_kwargs.pop('hilbert', None)
+        call_kwargs.pop('sigma',                None)
+        call_kwargs.pop('ncv',                  None)
+        call_kwargs.pop('maxiter',              None)
+        call_kwargs.pop('v0',                   None) 
+        call_kwargs.pop('tol',                  None)
+        call_kwargs.pop('which',                None)
+        call_kwargs.pop('k',                    None)
+        call_kwargs.pop('return_eigenvectors',  None)
+        call_kwargs.pop('maxiter',              None)
+        call_kwargs.pop('hilbert',              None)
 
         # Retries
-        max_retries = 3
-        last_error  = None
+        max_retries                             = 3
+        last_error                              = None
         
         for attempt in range(max_retries):
             try:
                 # Initialize v0 for this attempt
                 if attempt == 0 and v0 is not None:
-                    use_v0 = np.asarray(v0, dtype=op_dtype)
+                    use_v0      = np.asarray(v0, dtype=op_dtype)
                 else:
                     # Generate new random seed for retry
-                    retry_seed = (current_seed + attempt) if current_seed is not None else None
-                    rng_retry  = np.random.RandomState(retry_seed)
+                    retry_seed  = (current_seed + attempt) if current_seed is not None else None
+                    rng_retry   = np.random.RandomState(retry_seed)
                     
                     if np.issubdtype(op_dtype, np.complexfloating):
-                        use_v0 = (rng_retry.randn(dim) + 1j * rng_retry.randn(dim)).astype(op_dtype)
+                        use_v0  = (rng_retry.randn(dim) + 1j * rng_retry.randn(dim)).astype(op_dtype)
                     else:
-                        use_v0 = rng_retry.randn(dim).astype(op_dtype)
+                        use_v0  = rng_retry.randn(dim).astype(op_dtype)
                     use_v0 /= np.linalg.norm(use_v0)
 
-                eigenvalues, eigenvectors = eigsh(
-                    A_op,
-                    k                   = k,
-                    which               = which,
-                    tol                 = tol,
-                    maxiter             = maxiter,
-                    v0                  = use_v0,
-                    return_eigenvectors = True,
-                    sigma               = sigma,
-                    ncv                 = ncv,
-                    **call_kwargs
-                )
+                kwargs_in                   = {
+                                                'k'                     : k,
+                                                'which'                 : which,
+                                                'tol'                   : tol,
+                                                'maxiter'               : maxiter,
+                                                'return_eigenvectors'   : True,
+                                                'sigma'                 : sigma,
+                                                'ncv'                   : ncv,
+                                                **call_kwargs
+                                            }
+                print(f"Attempt {attempt+1}/{max_retries}: Calling eigsh with parameters: {kwargs_in}")
+                eigenvalues, eigenvectors   = eigsh(A_op, **kwargs_in, v0=use_v0)
                 
                 # Check for NaNs/Infs in results
                 if not np.all(np.isfinite(eigenvalues)) or not np.all(np.isfinite(eigenvectors)):
@@ -983,7 +986,7 @@ class LanczosEigensolverScipy(EigenSolver):
                 return EigenResult(
                     eigenvalues     =   eigenvalues[order],
                     eigenvectors    =   eigenvectors[:, order],
-                    iterations      =   -1, # Unknown with scipy eigsh
+                    iterations      =   maxiter,
                     converged       =   True,
                     residual_norms  =   None,
                     lanczos_alpha   =   None,
@@ -992,9 +995,9 @@ class LanczosEigensolverScipy(EigenSolver):
                 )
 
             except (ArpackError, RuntimeError) as e:
-                last_error = e
                 # Check for ZLASCL or ARPACK specific errors to decide if retry is worth it
-                err_str = str(e)
+                last_error  = e
+                err_str     = str(e)
                 if "ZLASCL" in err_str or "ARPACK error" in err_str or "did not converge" in err_str or "Non-finite" in err_str:
                     # Transient numerical issue, try new vector
                     if attempt < max_retries - 1:

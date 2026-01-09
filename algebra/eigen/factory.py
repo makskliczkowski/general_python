@@ -115,7 +115,7 @@ def choose_eigensolver(
         **kwargs: Additional arguments passed to the solver
             - sigma             : float - Shift value for shift-invert (default: 0.0)
             - tol               : float - Convergence tolerance
-            - max_iter          : int - Maximum iterations
+            - maxiter           : int   - Maximum iterations
             - M                 : Preconditioner for lobpcg (callable or matrix)
             - subset_by_index   : tuple - (lo, hi) for scipy-eigh subset
             - subset_by_value   : tuple - (lo, hi) for scipy-eigh subset
@@ -209,9 +209,9 @@ def choose_eigensolver(
             # Map 'smallest'/'largest' to SciPy's 'SA'/'LA'
             scipy_which     = {'smallest': 'SA', 'largest': 'LA', 'both': 'BE'}.get(which, 'SA')
             # Extract parameters that go to __init__ vs solve()
-            init_kwargs     = {k: v for k, v in kwargs.items() if k in ['tol', 'hilbert', 'maxiter', 'v0', 'seed']}
+            init_kwargs     = {k: v for k, v in kwargs.items() if k in      ['tol', 'hilbert', 'maxiter', 'v0', 'seed']}
             solver          = LanczosEigensolverScipy(k=k, which=scipy_which, dtype=dtype, **init_kwargs)
-            solve_kwargs    = {k: v for k, v in kwargs.items() if k not in ['tol', 'hilbert', 'maxiter', 'v0', 'seed', 'reorthogonalize']}
+            solve_kwargs    = {k: v for k, v in kwargs.items() if k not in  ['tol', 'hilbert', 'maxiter', 'v0', 'seed', 'reorthogonalize']}
             result          = solver.solve(A=A, matvec=matvec, n=n, k=k, dtype=dtype, **solve_kwargs)
             return result
         elif backend == 'jax':
@@ -220,8 +220,7 @@ def choose_eigensolver(
             # Native numpy implementation - exposes Krylov basis and tridiagonal matrix
             solver = LanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
         
-        return solver.solve(A=A, matvec=matvec, n=n, k=k, dtype=dtype,
-                max_iter=kwargs.get('max_iter', None), reorthogonalize=kwargs.get('reorthogonalize', True))
+        return solver.solve(A=A, matvec=matvec, n=n, k=k, dtype=dtype, maxiter=kwargs.get('maxiter', None), reorthogonalize=kwargs.get('reorthogonalize', True))
     
     # ----------------------------------------------    
     elif method == 'arnoldi':
@@ -272,7 +271,7 @@ def choose_eigensolver(
             which_si        = which_map.get(which, 'LM')                            # Use 'LM' for shift-invert
             OP              = get_spectral_shift_operator(A, sigma, n)              # Create shift-invert operator
             sigma           = kwargs.get('sigma', 0.0)                              # Shift value
-            evals, evecs    = scipy_eigsh(A, k=k, sigma=sigma, which=which_si, tol=kwargs.get('tol', 0), maxiter=kwargs.get('max_iter', None))
+            evals, evecs    = scipy_eigsh(A, k=k, sigma=sigma, which=which_si, tol=kwargs.get('tol', 0), maxiter=kwargs.get('maxiter', None))
             true_evals      = sigma + 1.0 / evals
                                         
             # Sort by eigenvalue
@@ -306,7 +305,7 @@ def choose_eigensolver(
         else:
             solver  = BlockLanczosEigensolver(k=k, which=which, backend='numpy', **kwargs)
             
-        return solver.solve(A=A, matvec=matvec, n=n, max_iter=kwargs.get('max_iter', None), k=k, X0=kwargs.get('X0', None))
+        return solver.solve(A=A, matvec=matvec, n=n, maxiter=kwargs.get('maxiter', None), k=k, X0=kwargs.get('X0', None))
     # ----------------------------------------------
     
     elif method == 'scipy-eigh':
@@ -395,7 +394,7 @@ def choose_eigensolver(
         eigenvalues, eigenvectors = scipy_sparse_linalg.eigs(
             A, k=k, which=which,
             tol=kwargs.get('tol', 0),
-            maxiter=kwargs.get('max_iter', None),
+            maxiter=kwargs.get('maxiter', None),
             v0=kwargs.get('v0', None)
         )
         
@@ -449,7 +448,7 @@ def choose_eigensolver(
         # Map which to largest parameter
         largest     = (which in ['largest', 'LA', 'LM'])
         tol         = kwargs.get('tol', 1e-8)
-        max_iter    = kwargs.get('max_iter', 1000)
+        maxiter    = kwargs.get('maxiter', 1000)
         
         # Call scipy.sparse.linalg.lobpcg
         eigenvalues, eigenvectors   = lobpcg(
@@ -457,7 +456,7 @@ def choose_eigensolver(
             X, 
             M       = M, 
             tol     = tol, 
-            maxiter = max_iter, 
+            maxiter = maxiter, 
             largest = largest, 
         )
         
@@ -471,7 +470,7 @@ def choose_eigensolver(
         return EigenResult(
             eigenvalues     = eigenvalues,
             eigenvectors    = eigenvectors,
-            iterations      = max_iter,
+            iterations      = maxiter,
             converged       = True,
             residual_norms  = None
         )
