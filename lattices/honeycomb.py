@@ -231,29 +231,30 @@ class HoneycombLattice(Lattice):
                 _even       = (r == 0)      # _even: whether the site is on the even sublattice.
                 
                 # Initialize bond indices
-                self._nn[i] = [-1, -1, -1]
+                self._nn[i]         = [-1, -1, -1]
+                self._nn_forward[i] = [-1, -1, -1]
                 
                 # z bond: for even sites, we take z bond to be the one at X - 1 for even, X + 1 for odd. Same Y.
                 XP          = _bcfun(X - 1, self.Lx, pbcx) if _even else _bcfun(X + 1, self.Lx, pbcx)
                 YP          = Y
                 if XP == -1:
-                    self._nn[i][Z_BOND_NEI] = -1
+                    self._nn[i][Z_BOND_NEI]     = -1
                 else:
-                    self._nn[i][Z_BOND_NEI] = (YP * self.Lx + XP) * 2 + int(_even)      # changes sublattice
-                self._nn_forward[i].append((-1 if _even else self._nn[i][Z_BOND_NEI]))  # z bond forward, we take only +1 direction for odd sites.
+                    self._nn[i][Z_BOND_NEI]     = (YP * self.Lx + XP) * 2 + int(_even)          # changes sublattice
+                self._nn_forward[i][Z_BOND_NEI] = (-1 if _even else self._nn[i][Z_BOND_NEI])    # z bond forward, we take only +1 direction for odd sites.
                 
                 # y bond: for even sites, it is in the same cell always but either we go to even->odd or odd->even in Y direction.
-                self._nn[i][Y_BOND_NEI] = (i + 1 if _even else i - 1)
-                self._nn_forward[i].append((self._nn[i][Y_BOND_NEI] if _even else -1))  # y bond forward, we take only +1 direction for even sites.
+                self._nn[i][Y_BOND_NEI]         = (i + 1 if _even else i - 1)
+                self._nn_forward[i][Y_BOND_NEI] = (self._nn[i][Y_BOND_NEI] if _even else -1)    # y bond forward, we take only +1 direction for even sites.
                 
                 # x bond: we need to go -1 for even sites, +1 for odd sites in Y direction.
                 YP          = _bcfun(Y - 1, self.Ly, pbcy) if _even else _bcfun(Y + 1, self.Ly, pbcy)
                 XP          = X
                 if YP == -1:
-                    self._nn[i][X_BOND_NEI] = -1
+                    self._nn[i][X_BOND_NEI]     = -1
                 else:
-                    self._nn[i][X_BOND_NEI] = (YP * self.Lx + XP) * 2 + int(_even)      # changes sublattice
-                self._nn_forward[i].append((self._nn[i][X_BOND_NEI] if _even else -1))  # x bond forward, we take only +1 direction for even sites.
+                    self._nn[i][X_BOND_NEI]     = (YP * self.Lx + XP) * 2 + int(_even)          # changes sublattice
+                self._nn_forward[i][X_BOND_NEI] = (self._nn[i][X_BOND_NEI] if _even else -1)    # x bond forward, we take only +1 direction for even sites.
 
         elif self.dim == 3:
             # 3D: Extend the 2D honeycomb logic to 3D, with clear sublattice and bond assignments. 
@@ -387,87 +388,64 @@ class HoneycombLattice(Lattice):
         """
         return True
     
-    def bond_type(self, site1: int, site2: int):
-        """
-        Determines the bond type between two sites.
-        
-        Returns:
-            int: Bond type index (X_BOND_NEI, Y_BOND_NEI, Z_BOND_NEI) or -1 if not a nearest neighbor.
-        """
-        if site2 in self._nn[site1]:
-            idx = self._nn[site1].index(site2)
-            if idx == X_BOND_NEI:
-                return X_BOND_NEI
-            elif idx == Y_BOND_NEI:
-                return Y_BOND_NEI
-            elif idx == Z_BOND_NEI:
-                return Z_BOND_NEI
+    def bond_type(self, s1: int, s2: int) -> int:
+        if s2 == self._nn[s1][X_BOND_NEI]: return X_BOND_NEI
+        if s2 == self._nn[s1][Y_BOND_NEI]: return Y_BOND_NEI
+        if s2 == self._nn[s1][Z_BOND_NEI]: return Z_BOND_NEI
         return -1
 
     ###############################################################################################
     #! Plaquettes
     ###############################################################################################
     
-    def calculate_plaquettes(self, use_obc: bool = True):
-        """
-        Compute all hexagonal Kitaev plaquettes, matching the exact geometry
-        and numbering convention in the hand-drawn lattice.
+    def calculate_plaquettes(self, open_bc: bool = True):
+        X = X_BOND_NEI
+        Y = Y_BOND_NEI
+        Z = Z_BOND_NEI
 
-        Each plaquette is returned as 6 site indices in CCW order starting from
-        the bottom-left A-sublattice site of the hexagon.
+        # For your NN convention, an A-anchored CCW walk is:
+        bond_cycle = [Y, X, Z, Y, X, Z]
 
-        Bond sequence:
-            X -> Y -> Z -> X -> Y -> Z (CCW around hexagon)
-        """
+        plaquettes = []
+        seen       = set()
 
-        Z           = Z_BOND_NEI
-        Y           = Y_BOND_NEI
-        X           = X_BOND_NEI
+        for i in range(self.Ns):
 
-        bond_cycle  = [X, Y, Z, X, Y, Z]  # CCW bond sequence around the hexagon
-        plaquettes  = []
-        seen        = set()
-
-        for i in range(self._ns):
-
-            # Only A sites (even indices) can be bottom-left of a plaquette
-            if self.sublattice(i) != 1:
+            # Anchor on A sites (r=0)
+            if self.sublattice(i) != 0:
                 continue
 
-            # Must have a valid Z-neighbor above (this ensures bottom-left anchor)
-            z1 = self.get_nn(i, Z)
-            if self.wrong_nei(z1):
-                continue # boundary or missing hexagon here
+            loop  = [i]
+            cur   = i
+            cur_y = cur // (2 * self.Lx)    # y coordinate on square lattice
+            cur_x = (cur // 2) % self.Lx    # x coordinate on square lattice
+            valid = True
 
-            # Now walk the cycle
-            loop    = [i]
-            cur     = i
-            valid   = True
-
-            for bi, b in enumerate(bond_cycle):
+            for ib, b in enumerate(bond_cycle):
                 nxt = self.get_nn(cur, b)
-                
                 if self.wrong_nei(nxt):
                     valid = False
                     break
                 
-                if use_obc and bi < len(bond_cycle) // 2 and nxt < cur:
-                    # Enforce CCW ordering for first half of the loop
-                    valid = False
-                    break
+                if open_bc:
+                    # Hexagon can only have x+1 or y+1 steps, not x-1 or y-1
+                    # but it can also be current
+                    nxt_y = nxt // (2 * self.Lx)
+                    nxt_x = (nxt // 2) % self.Lx
+                    if (nxt_x not in (cur_x - 1, cur_x)) or (nxt_y not in (cur_y, cur_y + 1)):
+                        valid = False
+                        break
                 
                 loop.append(nxt)
                 cur = nxt
 
-            # Should return to starting site
+            # loop has 7 entries, last must equal start
             if not valid or loop[-1] != i:
                 continue
 
-            # Keep exactly the 6 unique sites
-            hex_sites   = tuple(loop[:-1])
-            
-            # Deduplicate by sorted site set
-            key         = tuple(sorted(hex_sites))
+            hex_sites = tuple(loop[:-1])          # 6 unique sites in order
+            key       = tuple(sorted(hex_sites))  # dedup independent of rotation
+
             if key not in seen:
                 seen.add(key)
                 plaquettes.append(list(hex_sites))
