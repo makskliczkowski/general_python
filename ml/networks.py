@@ -85,6 +85,8 @@ _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
     'ar'     : ('.net_impl.networks.net_autoregressive',    'ComplexAR'),
     'res'    : ('.net_impl.networks.net_res',               'ResNet'),
     'resnet' : ('.net_impl.networks.net_res',               'ResNet'),
+    'pp'     : ('.net_impl.networks.net_pp',                'PairProduct'),
+    'rbmpp'  : ('.net_impl.networks.net_pp',                'PairProduct'),
     # Add future networks here without importing them!
 }
 
@@ -309,6 +311,8 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                     raise ValueError("`input_shape` must be provided when using `alpha` for RBM.")
                 n_visible           = np.prod(input_shape)
                 kwargs['n_hidden']  = int(alpha * n_visible)
+        elif key == 'rbmpp':
+            kwargs['use_rbm']       = True
 
         net_cls = _lazy_load_class(key)
         return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)

@@ -339,6 +339,28 @@ if JAX_AVAILABLE:
 
             return final_out
 
+        ########################################################################
+        #! Log-Pfaffian (JAX)
+        ########################################################################
+
+        @staticmethod
+        def log_pfaffian(A):
+            """
+            Computes log(Pf(A)) for a skew-symmetric matrix A using log(det(A))/2.
+            
+            Approximation: log Pf(A) = 0.5 * (log |det(A)| + i * arg(det(A))).
+            This is numerically stable for large matrices and sufficient for NQS optimization
+            where the relative sign structure is captured by the determinant.
+            
+            Parameters:
+                A (jnp.ndarray): Skew-symmetric matrix.
+                
+            Returns:
+                jnp.ndarray: The logarithm of the Pfaffian.
+            """
+            sign, logdet = jnp.linalg.slogdet(A)
+            return 0.5 * (logdet + jnp.log(sign.astype(jnp.complex128)))
+
 else: # JAX not available
     class PfaffianJAX:
         """Placeholder class if JAX is not installed."""
