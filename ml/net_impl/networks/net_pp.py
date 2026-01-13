@@ -269,7 +269,6 @@ class PairProduct(FlaxInterface):
             net_args    = (),
             net_kwargs  = net_kwargs,
             input_shape = input_shape,
-            backend     = 'jax',
             dtype       = dtype,
             seed        = seed,
             **kwargs
@@ -284,6 +283,9 @@ class PairProduct(FlaxInterface):
             return f"RBMPP(n_sites={mod.n_sites}, n_hidden={mod.n_hidden}, dtype={self.dtype})"
         else:
             return f"PP(n_sites={mod.n_sites}, dtype={self.dtype})"
+        
+    def __str__(self) -> str:
+        return self.__repr__()
 
 # ----------------------------------------------------------------------
 # End of File
