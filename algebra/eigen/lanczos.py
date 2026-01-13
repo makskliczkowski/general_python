@@ -966,7 +966,7 @@ class LanczosEigensolverScipy(EigenSolver):
                                                 'ncv'                   : ncv,
                                                 **call_kwargs
                                             }
-                print(f"Attempt {attempt+1}/{max_retries}: Calling eigsh with parameters: {kwargs_in}")
+                # print(f"Attempt {attempt+1}/{max_retries}: Calling eigsh with parameters: {kwargs_in}")
                 eigenvalues, eigenvectors   = eigsh(A_op, **kwargs_in, v0=use_v0)
                 
                 # Check for NaNs/Infs in results
