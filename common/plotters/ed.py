@@ -10,8 +10,8 @@ License             : MIT
 
 from    typing              import List, Callable, TYPE_CHECKING, Optional, Tuple, Union
 from    scipy.interpolate   import griddata
-import  numpy as np
-import  matplotlib.pyplot as plt
+import  numpy               as np
+import  matplotlib.pyplot   as plt
 
 try:
     from general_python.lattices.lattice    import Lattice
@@ -147,6 +147,7 @@ def plot_phase_diagram_states(
         # parameter labels
         param_labels        : dict  = {},
         param_fun           : callable          = lambda r, param_name: r.get(param_name, []),
+        param_x_fun         : callable          = None,
         param_lbl           : Optional[str]     = None,
         # plot limits
         xlim                : Optional[tuple]   = None,
@@ -155,6 +156,8 @@ def plot_phase_diagram_states(
         vmin                = None, 
         vmax                = None, 
         # plot settings
+        ylabel              : Optional[str]     = None,
+        xlabel              : Optional[str]     = None,
         cmap                = 'viridis', 
         logger              : Optional['Logger'] = None,
         save                : bool = False,
@@ -186,8 +189,10 @@ def plot_phase_diagram_states(
     fig, axes, _, _                     = PlotEDHelpers.create_subplot_grid(n_panels=npanels , max_cols=ncols, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
     axes                                = axes.flatten()
     
-    xlabel                              = param_labels.get(x_param, x_param) if len(unique_x) > 1 else param_labels.get(y_param, y_param)
-    ylabel                              = param_labels.get(y_param, y_param) if len(unique_y) > 1 else param_labels.get(x_param, x_param)
+    if xlabel is None:
+        xlabel                          = param_labels.get(x_param, x_param) if len(unique_x) > 1 else param_labels.get(y_param, y_param)
+    if ylabel is None:
+        ylabel                          = param_labels.get(y_param, y_param) if len(unique_y) > 1 else param_labels.get(x_param, x_param)
     
     if plot_map:
         labelcond = lambda state_idx: {'x': state_idx // ncols == nrows - 1, 'y': state_idx % ncols == 0}
@@ -212,7 +217,7 @@ def plot_phase_diagram_states(
             x_plot, y_plot = [], []
             for r in results:
                 y   = param_fun(r, param_name)
-                x   = r.params.get(param_plot, 0.0)
+                x   = param_x_fun(r, param_plot) if param_x_fun is not None else r.params.get(param_plot, 0.0)
                 
                 if len(y) > ii:
                     x_plot.append(x)
@@ -221,7 +226,7 @@ def plot_phase_diagram_states(
             sort_idx    = np.argsort(x_plot)
             x_plot      = np.array(x_plot)[sort_idx]
             y_plot      = np.array(y_plot)[sort_idx]
-            Plotter.plot(ax, x=x_plot, y=y_plot, ls='-', marker='o', ms=4, color=getcolor(ii), label=rf'$|\Psi_{{{ii}}}\rangle$')
+            Plotter.plot(ax, x=x_plot, y=y_plot, ls='-', marker='o', ms=4, color=getcolor(ii), label=rf'$|\Psi_{{{ii}}}\rangle$', zorder=100-ii)
         
         Plotter.set_ax_params(ax, xlabel=label, ylabel=param_lbl if param_lbl is not None else param_labels.get(param_name, param_name), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'),)
         Plotter.set_annotate_letter(ax, iter=0, x=letter_x, y=letter_y, boxaround=False)
@@ -229,7 +234,7 @@ def plot_phase_diagram_states(
         Plotter.grid(ax, alpha=0.3)
 
     # b) Colormap - Both X and Y Variation
-    else:
+    elif len(unique_x) > 1 and len(unique_y) > 1:
         xi                          = np.linspace(min(unique_x), max(unique_x), 200)
         yi                          = np.linspace(min(unique_y), max(unique_y), 200)
         Xi, Yi                      = np.meshgrid(xi, yi)
@@ -243,7 +248,7 @@ def plot_phase_diagram_states(
             for r in results:
                 val     = param_fun(r, param_name)
                 # X param
-                x_val   = r.params.get(x_param, 0.0)
+                x_val   = param_x_fun(r, x_param) if param_x_fun is not None else r.params.get(x_param, 0.0)
                 
                 # Y param
                 y_val   = r.params.get(y_param, 0.0)
@@ -282,6 +287,9 @@ def plot_phase_diagram_states(
                     vmin=vmin, vmax=vmax, label=param_labels.get(param_name, param_name) if param_lbl is None else param_lbl,
                     extend=None, format='%.1e' if scale_type == 'log' else '%.2f', remove_pdf_lines=True
                 )
+    else:
+        if logger: logger.warning("Insufficient parameter variation for phase diagram plot.")
+        return None, None
         
     for ax in axes:
         Plotter.set_tickparams(ax)
