@@ -406,7 +406,7 @@ class CNN(FlaxInterface):
     @property
     def output_shape(self) -> Tuple[int, ...]:
         """Returns the configured output shape (excluding batch dimension)."""
-        return self._output_shape
+        return self._out_shape
 
     #! Callable interface
     def __call__(self, s: 'Array'):

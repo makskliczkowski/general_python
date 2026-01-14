@@ -60,7 +60,7 @@ def load_results(data_dir: str, *,
                 logger: 'Logger'            =   None,
                 **kwargs
                 ) -> List['LazyHDF5Entry']:
-    """
+    r"""
     Load all HDF5 results from directory.
     
     It searches recursively for .h5 files in data_dir, extracts parameters from filenames,

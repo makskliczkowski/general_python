@@ -22,6 +22,41 @@ if TYPE_CHECKING:
 # HIGH-SYMMETRY POINTS DEFINITIONS
 # -----------------------------------------------------------------------------------------------------------
 
+def ws_bz_mask(KX, KY, b1, b2, shells=1):
+    """
+    Wigner-Seitz (first BZ) mask for a 2D reciprocal lattice.
+
+    Keeps points closer to Gamma than to any other reciprocal lattice point
+    in a neighborhood of translations (m,n) with |m|,|n|<=shells.
+    """
+    b1 = np.asarray(b1, float)[:2]
+    b2 = np.asarray(b2, float)[:2]
+
+    kx = KX[..., None]
+    ky = KY[..., None]
+
+    # List reciprocal lattice translation vectors around origin
+    G = []
+    for m in range(-shells, shells + 1):
+        for n in range(-shells, shells + 1):
+            if m == 0 and n == 0:
+                continue
+            g = m * b1 + n * b2
+            G.append(g)
+    G = np.asarray(G, float)  # (Ng,2)
+
+    # distances: |k|^2 and |k-G|^2
+    k2      = kx**2 + ky**2
+    dG2     = (kx - G[:, 0])**2 + (ky - G[:, 1])**2  # (Ny,Nx,Ng)
+
+    # inside WS cell iff |k| <= |k-G| for all G
+    inside = np.all(k2 <= dG2 + 1e-14, axis=-1)
+    return inside
+
+# -----------------------------------------------------------------------------------------------------------
+#! HIGH-SYMMETRY POINTS AND PATHS
+# -----------------------------------------------------------------------------------------------------------
+
 @dataclass
 class HighSymmetryPoint:
     """
@@ -62,7 +97,6 @@ class HighSymmetryPoint:
     def as_tuple(self) -> Tuple[str, List[float]]:
         """Return as (label, [f1, f2, f3]) tuple for path generation."""
         return (self.latex_label, list(self.frac_coords))
-
 
 @dataclass
 class HighSymmetryPoints:
@@ -191,10 +225,10 @@ class HighSymmetryPoints:
         pts = cls(
             _default_path=['Gamma', 'K', 'M', 'Gamma']
         )
-        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
-        pts.add(HighSymmetryPoint('K', (2/3, 1/3, 0.0), r'$K$', 'Dirac point'))
-        pts.add(HighSymmetryPoint('Kp', (1/3, 2/3, 0.0), r"$K'$", 'Other Dirac point'))
-        pts.add(HighSymmetryPoint('M', (0.5, 0.0, 0.0), r'$M$', 'Edge midpoint'))
+        pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$\Gamma$',   'BZ center'))
+        pts.add(HighSymmetryPoint('K',      (2/3, 1/3, 0.0), r'$K$',        'Dirac point'))
+        pts.add(HighSymmetryPoint('Kp',     (1/3, 2/3, 0.0), r"$K'$",       'Other Dirac point'))
+        pts.add(HighSymmetryPoint('M',      (0.5, 0.0, 0.0), r'$M$',        'Edge midpoint'))
         return pts
     
     @classmethod

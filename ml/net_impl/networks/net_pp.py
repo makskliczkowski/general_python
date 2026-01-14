@@ -71,6 +71,7 @@ def log_pfaffian_proxy(A):
     """
     Computes log(Pf(A)) using the shared Pfaffian utility if available.
     Falls back to a stable slogdet approximation if necessary.
+    Supports batched inputs with shape (..., N, N).
     """
     if Pfaffian is not None and hasattr(Pfaffian, 'log_pfaffian'):
         return Pfaffian.log_pfaffian(A)
@@ -78,7 +79,8 @@ def log_pfaffian_proxy(A):
     # Fallback: 0.5 * log(det(A))
     # Approximation: log Pf(A) = 0.5 * (log |det(A)| + i * arg(det(A)))
     sign, logdet = jnp.linalg.slogdet(A)
-    return 0.5 * (logdet + jnp.log(sign.astype(jnp.complex128)))
+    complex_dtype = jnp.result_type(A, jnp.complex64)
+    return 0.5 * (logdet + jnp.log(sign.astype(complex_dtype)))
 
 # ----------------------------------------------------------------------
 # Inner Flax Modules
@@ -104,6 +106,7 @@ class _FlaxPP(nn.Module):
             init_fn = nn.initializers.normal(stddev=self.init_scale)
             
         self.F      = self.param('F', init_fn, (self.n_sites, self.n_sites, 2, 2), self.param_dtype)
+        self._i_idx = jnp.arange(self.n_sites, dtype=jnp.int32)
 
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
@@ -114,31 +117,25 @@ class _FlaxPP(nn.Module):
         s_idx           = (s > 0).astype(jnp.int32)
         
         # 2. Cast Parameters to High Precision for Pfaffian
-        F_high          = self.F.astype(self.dtype)
+        F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
+        F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
         
         # 3. Construct X Matrices (Vectorized)
-        n               = self.n_sites
-        
-        # Pre-compute indices grid (static)
-        i_grid, j_grid  = jnp.meshgrid(jnp.arange(n), jnp.arange(n), indexing='ij')
+        i_idx = self._i_idx[:, None]
+        j_idx = self._i_idx[None, :]
         
         def build_X_for_single(config):
             # config: (N,)
-            si              = config[i_grid] # (N, N) broadcast
-            sj              = config[j_grid] # (N, N) broadcast
+            si              = config[:, None]
+            sj              = config[None, :]
             
-            # F[i, j, s_i, s_j]
-            val_direct      = F_high[i_grid, j_grid, si, sj]
-            # F[j, i, s_j, s_i]
-            val_transpose   = F_high[j_grid, i_grid, sj, si]
-            
-            return val_direct - val_transpose
+            return F_sym[i_idx, j_idx, si, sj]
 
         # X_batch: (Batch, N, N)
         X_batch = jax.vmap(build_X_for_single)(s_idx)
         
         # 4. Compute Log Pfaffian
-        return jax.vmap(log_pfaffian_proxy)(X_batch)
+        return log_pfaffian_proxy(X_batch)
 
 # ----------------------------------------------------------------------
 # RBM + PP Module
@@ -164,6 +161,7 @@ class _FlaxRBMPP(nn.Module):
             init_fn = nn.initializers.normal(stddev=self.init_scale)
             
         self.F      = self.param('F', init_fn, (self.n_sites, self.n_sites, 2, 2), self.param_dtype)
+        self._i_idx = jnp.arange(self.n_sites, dtype=jnp.int32)
         
         # --- RBM Part ---
         self.rbm_dense  = nn.Dense(
@@ -189,18 +187,18 @@ class _FlaxRBMPP(nn.Module):
         
         # --- PP Part ---
         s_idx           = (s > 0).astype(jnp.int32)
-        F_high          = self.F.astype(self.dtype)
-        n               = self.n_sites
-        i_grid, j_grid  = jnp.meshgrid(jnp.arange(n), jnp.arange(n), indexing='ij')
+        F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
+        F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
+        i_idx = self._i_idx[:, None]
+        j_idx = self._i_idx[None, :]
         
         def build_X_for_single(config):
-            si          = config[i_grid]; sj = config[j_grid]
-            val_dir     = F_high[i_grid, j_grid, si, sj]
-            val_trans   = F_high[j_grid, i_grid, sj, si]
-            return val_dir - val_trans
+            si          = config[:, None]
+            sj          = config[None, :]
+            return F_sym[i_idx, j_idx, si, sj]
 
         X_batch         = jax.vmap(build_X_for_single)(s_idx)
-        log_pp          = jax.vmap(log_pfaffian_proxy)(X_batch)
+        log_pp          = log_pfaffian_proxy(X_batch)
         
         return log_rbm + log_pp
 

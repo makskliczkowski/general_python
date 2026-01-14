@@ -218,26 +218,29 @@ class FlaxMADE(nn.Module):
     
     n_sites         : int
     hidden_dims     : Sequence[int]
-    dtype           : Any = jnp.complex128      # Data type for complex outputs
-    activation      : Any = nn.gelu             # GELU is often preferred in SOTA Transformers/NQS
-    kernel_init     : Any = nn.initializers.lecun_normal() # Default
+    dtype           : Any = jnp.complex128                  # Data type for complex outputs
+    activation      : Any = nn.gelu                         # GELU is often preferred in SOTA Transformers/NQS
+    kernel_init     : Any = nn.initializers.lecun_normal()  # Default
     bias_init       : Any = nn.initializers.zeros
     
+    def setup(self):
+        self._masks = create_masks(
+            self.n_sites,
+            self.hidden_dims,
+            n_out_per_site=1,
+            dtype=jnp.bool_,
+        )
+
     @nn.compact
     def __call__(self, x):
         # x shape: (Batch, N_sites)
         
-        # Generate Masks on the fly (or cache them)
-        # Since topology is static, this overhead is negligible during JIT compilation.
-        masks_np    = create_masks(self.n_sites, self.hidden_dims, n_out_per_site=1)
-        masks       = [jnp.array(m) for m in masks_np]
-
         # Forward Pass
         # We iterate through config, creating layers lazily.
         # This completely Bypasses the 'tuple has no append' error in Flax.
         
         # Input -> Hidden layers
-        for i, (h_dim, mask) in enumerate(zip(self.hidden_dims, masks[:-1])):
+        for i, (h_dim, mask) in enumerate(zip(self.hidden_dims, self._masks[:-1])):
             # Create layer with a unique name based on index
             layer   = MaskedDense(features=h_dim, mask=mask, dtype=self.dtype, name=f'masked_dense_{i}', 
                                   kernel_init=self.kernel_init, bias_init=self.bias_init)
@@ -245,7 +248,7 @@ class FlaxMADE(nn.Module):
             x       = self.activation(x)
             
         # Hidden -> Output (No activation, these are logits)
-        output_layer    = MaskedDense(features=self.n_sites, mask=masks[-1], dtype=self.dtype, name='masked_out', 
+        output_layer    = MaskedDense(features=self.n_sites, mask=self._masks[-1], dtype=self.dtype, name='masked_out', 
                                       kernel_init=self.kernel_init, bias_init=self.bias_init)
         x               = output_layer(x)
         

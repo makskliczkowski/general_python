@@ -141,7 +141,7 @@ class _FlaxRBM(nn.Module):
         log_psi = jnp.sum(log_cosh_jnp(theta), axis=-1)
 
         if self.visible_bias:
-            bias        = self.variables["params"]["visible_bias"]
+            bias        = self.visible_bias_param
             log_psi    += jnp.sum(v * bias, axis=-1)
 
         return log_psi if self.islog else jnp.exp(log_psi)
@@ -201,14 +201,20 @@ class RBM(FlaxInterface):
     
         # Define input activation based on map_to_pm1 flag
         # input_activation        = (lambda x: 2 * x - 1) if map_to_pm1 else None
-        self._in_activation     = in_activation
+        if callable(in_activation):
+            input_activation = in_activation
+        elif in_activation:
+            input_activation = lambda x: 2 * x - 1
+        else:
+            input_activation = None
+        self._in_activation     = input_activation
         # Prepare kwargs for _FlaxRBM
         net_kwargs = {
             'n_visible'       : np.prod(input_shape), # Flatten input shape
             'n_hidden'        : n_hidden,
             'bias'            : bias,
             'visible_bias'    : visible_bias,
-            'input_activation': None,
+            'input_activation': input_activation,
             'param_dtype'     : final_param_dtype,
             'dtype'           : final_dtype,
             **kwargs
