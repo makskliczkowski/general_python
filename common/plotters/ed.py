@@ -4,26 +4,79 @@ This module contains common plotting utilities for Quantum EigenSolver.
 Modular architecture for ED plotting with support for:
 - Real-space and k-space correlation functions
 - Dynamical spectral functions A(k,w) and S(k,w)
-- Discrete k-point handling
-- High-symmetry path extraction
+- Static structure factors S(k,n) for eigenstates
+- Discrete k-point handling with path or grid modes
+- High-symmetry path extraction with BZ extension
 - Flexible visualization options
+
+Key Features
+------------
+1. **Spectral Functions**
+   - plot_spectral_function_2d: 
+        Universal 2D spectral plotter (k,w) or (k,n)
+   - plot_static_structure_factor: 
+        Eigenstate-resolved structure factors
+   - Supports path mode (band structure) or full grid mode
+   - Optional BZ extension to show multiple copies
+
+2. **K-Space Utilities**
+   - select_kpoints_along_path: 
+        Extract k-points along high-symmetry paths
+   - extend_kspace_data: 
+        Replicate data across BZ copies for visualization
+   - Tolerance-based path matching for discrete k-grids
+
+3. **Correlation Functions**
+   - plot_correlation_grid: 
+        Multi-mode correlation visualization (matrix, lattice, kspace, kpath)
+   - plot_bz_path_from_corr: 
+        Structure factor along paths
+   - Automatic S(k) computation from real-space correlations
+
+4. **Parameter Studies**
+   - plot_phase_diagram_states: 
+        Eigenstate properties across parameter space
+   - plot_multistate_vs_param: 
+        Multi-state line plots
+   - plot_scaling_analysis: 
+        System size scaling
+
+Usage Patterns
+--------------
+All high-level plotters support:
+- Path mode: 
+    path_labels=['Gamma', 'K', 'M'] with use_extend=True
+- Grid mode: 
+    Full k-space with optional BZ extension
+- Configurable styling via PlotStyle and KSpaceConfig dataclasses
 
 ----------------------------------------------------------------
 Author              : Maksymilian Kliczkowski
-Date                : 2025-12-01
+Date                : 2025-01-15 (Updated)
 License             : MIT
 ----------------------------------------------------------------
 '''
 
-from    typing              import List, Callable, TYPE_CHECKING, Optional, Tuple, Union, Literal, Any
-from    dataclasses         import dataclass, field
+from    typing              import List, TYPE_CHECKING, Optional, Tuple, Union, Literal, Any
 from    scipy.interpolate   import griddata
+from    scipy.spatial       import cKDTree
+
 import  numpy               as np
 import  matplotlib.pyplot   as plt
 
 try:
     from general_python.lattices.lattice    import Lattice
     from .data_loader                       import load_results, PlotDataHelpers
+    from .config                            import PlotStyle, KSpaceConfig, KPathConfig, SpectralConfig, FigureConfig
+    from .kspace_utils                      import (
+                                                    point_to_segment_distance_2d,
+                                                    select_kpoints_along_path,
+                                                    compute_structure_factor_from_corr,
+                                                    label_high_sym_points,
+                                                    format_pi_ticks
+                                                )
+    from .spectral_utils                    import compute_spectral_broadening, extract_spectral_data
+    from .plot_helpers                      import plot_spectral_function_2d, plot_static_structure_factor, plot_kspace_intensity
     from ..plot                             import Plotter
 except ImportError:
     raise ImportError("Failed to import required modules from the current package.")
@@ -32,1033 +85,10 @@ if TYPE_CHECKING:
     from general_python.common.flog         import Logger
 
 # ==============================================================================
-# CONFIGURATION DATACLASSES
+# HIGH-LEVEL PLOTTERS
 # ==============================================================================
 
-@dataclass
-class PlotStyle:
-    """Styling configuration for plots."""
-    cmap                : str               = 'viridis'
-    vmin                : Optional[float]   = None
-    vmax                : Optional[float]   = None
-    vmin_strategy       : Literal['auto', 'percentile', 'absolute'] = 'auto'
-    vmax_strategy       : Literal['auto', 'percentile', 'absolute'] = 'auto'
-    percentile_low      : float             = 2.0
-    percentile_high     : float             = 98.0
-    # fontsizes
-    fontsize_label      : int               = 10
-    fontsize_tick       : int               = 8
-    fontsize_title      : int               = 12
-    fontsize_annotation : int               = 8
-    # line styles
-    marker              : str               = 'o'
-    markersize          : float             = 5.0
-    linewidth           : float             = 1.5
-    alpha               : float             = 0.8
-
-@dataclass
-class KSpaceConfig:
-    """Configuration for k-space plotting."""
-    grid_n              : int   = 220
-    interp_method       : Literal['linear', 'cubic', 'nearest'] = 'linear'
-    mask_outside_bz     : bool  = True
-    show_discrete_points: bool  = True
-    point_size          : float = 10.0
-    point_alpha         : float = 0.35
-    draw_bz_outline     : bool  = True
-    label_high_symmetry : bool  = True
-    ws_shells           : int   = 1
-    blob_radius_factor  : float = 2.5
-    imshow_interp       : str   = 'bilinear'
-
-@dataclass
-class KPathConfig:
-    """Configuration for k-path extraction and plotting."""
-    path                : Optional[Union[str, List[str]]] = None  # None = use lattice default
-    points_per_seg      : Optional[int]     = None  # None = auto-detect from k-grid
-    auto_pps_factor     : float             = 0.5  # sqrt(Nk) * factor
-    auto_pps_min        : int               = 20
-    tick_format         : Literal['labels', 'fractional', 'distance'] = 'labels'
-    show_separators     : bool              = True
-    separator_style     : dict              = field(default_factory=lambda: {"ls": "--", "lw": 1.0, "alpha": 0.35})
-    tolerance           : Optional[float]   = None  # Tolerance for k-point selection (None = auto from k-spacing)
-
-@dataclass
-class SpectralConfig:
-    """Configuration for spectral function plotting."""
-    omega_grid          : Optional[np.ndarray] = None  # Custom omega grid
-    broadening_type     : Literal['none', 'lorentzian', 'gaussian'] = 'lorentzian'
-    eta                 : float             = 0.1  # Broadening parameter
-    normalization       : Literal['none', 'per_k', 'global', 'sum_rule'] = 'none'
-    sum_rule_target     : Optional[float]   = None  # For sum rule enforcement
-    energy_shift        : float             = 0.0  # Subtract E0 or mu
-    log_scale           : bool              = False
-    omega_label         : str               = r'$\omega$'
-    omega_units         : str               = ''
-    intensity_label     : str               = r'$A(\mathbf{k},\omega)$'
-    vmin_omega          : Optional[float]   = None
-    vmax_omega          : Optional[float]   = None
-
-# ==============================================================================
-# HELPER FUNCTIONS: PHYSICS TRANSFORMS
-# ==============================================================================
-
-def point_to_segment_distance_2d(
-        points      : np.ndarray,
-        p1          : np.ndarray,
-        p2          : np.ndarray
-    ) -> np.ndarray:
-    """
-    Compute perpendicular distance from points to line segment p1-p2 in 2D.
-    
-    Uses vector projection to find closest point on segment, then computes distance.
-    Handles endpoints correctly by clamping projection parameter to [0,1].
-    
-    Parameters
-    ----------
-    points : (N, 2) array
-        Points to check
-    p1, p2 : (2,) arrays
-        Segment endpoints
-        
-    Returns
-    -------
-    distances : (N,) array
-        Perpendicular distance from each point to segment
-        
-    Notes
-    -----
-    Algorithm:
-    1. Project point onto infinite line: t = (p-p1)·(p2-p1) / |p2-p1|²
-    2. Clamp t to [0,1] to stay on segment
-    3. Find closest point: c = p1 + t*(p2-p1)
-    4. Distance: |p - c|
-    """
-    points  = np.asarray(points, dtype=float)
-    p1      = np.asarray(p1, dtype=float).ravel()
-    p2      = np.asarray(p2, dtype=float).ravel()
-    
-    if points.ndim == 1:
-        points = points[None, :]
-    
-    # Vector from p1 to p2
-    v       = p2 - p1
-    v_len_sq= np.dot(v, v)
-    
-    if v_len_sq < 1e-14:
-        # Degenerate segment (p1 ≈ p2)
-        return np.linalg.norm(points - p1[None, :], axis=1)
-    
-    # Project each point onto line
-    # t = (points - p1) · v / |v|²
-    dp      = points - p1[None, :]
-    t       = np.dot(dp, v) / v_len_sq
-    
-    # Clamp to [0,1] to stay on segment
-    t       = np.clip(t, 0.0, 1.0)
-    
-    # Closest point on segment
-    closest = p1[None, :] + t[:, None] * v[None, :]
-    
-    # Distance
-    dist    = np.linalg.norm(points - closest, axis=1)
-    
-    return dist
-
-def compute_structure_factor_from_corr(
-        C           : np.ndarray,
-        r_vectors   : np.ndarray,
-        k_vectors   : np.ndarray,
-        normalize   : bool = True) -> np.ndarray:
-    r"""
-    Compute structure factor S(k) from correlation matrix C(i,j).
-    
-    S(k)    = (1/Ns) sum _{i,j} C_{ij} exp[-ik . (r_i - r_j)]
-            = (1/Ns) Re[Tr(P C P†)]
-    
-    where P_{k,i} = exp(-ik . r_i).
-    
-    Parameters
-    ----------
-    C : (Ns, Ns) array
-        Correlation matrix in site basis
-    r_vectors : (Ns, D) array
-        Real-space position vectors
-    k_vectors : (Nk, D) array
-        Momentum vectors
-    normalize : bool
-        If True, divide by Ns
-        
-    Returns
-    -------
-    Sk : (Nk,) array
-        Structure factor at each k-point
-    """
-    C   = np.asarray(C, float)
-    r2  = np.asarray(r_vectors, float)[:, :2]
-    k2  = np.asarray(k_vectors, float)[:, :2]
-    
-    Ns  = C.shape[0]
-    P   = np.exp(-1j * (k2 @ r2.T))     # (Nk, Ns)
-    PC  = P @ C                         # (Nk, Ns)
-    Sk  = np.real((PC * np.conjugate(P)).sum(axis=1))
-    
-    if normalize:
-        Sk /= Ns
-        
-    return Sk
-
-def compute_spectral_broadening(
-        energies        : np.ndarray,
-        weights         : np.ndarray,
-        omega_grid      : np.ndarray,
-        eta             : float = 0.1,
-        kind            : Literal['lorentzian', 'gaussian', 'none'] = 'lorentzian'
-    ) -> np.ndarray:
-    """
-    Apply spectral broadening to discrete delta peaks (ED spectra).
-    
-    Converts discrete excitation spectrum into smooth spectral function:
-    A(ω) = Σ_n w_n * f(ω - E_n)
-    
-    where f is Lorentzian or Gaussian kernel.
-    
-    Parameters
-    ----------
-    energies : (N,) array
-        Excitation energies (delta peak positions)
-    weights : (N,) array
-        Spectral weights (delta peak heights)
-    omega_grid : (Nω,) array
-        Frequency/energy grid for output
-    eta : float
-        Broadening parameter (FWHM for Lorentzian, std for Gaussian)
-    kind : str
-        Broadening kernel: 'lorentzian', 'gaussian', or 'none'
-        
-    Returns
-    -------
-    spectrum : (Nω,) array
-        Broadened spectral function
-        
-    Notes
-    -----
-    - Lorentzian: L(ω) = (1/π) * (η / ((ω-E)² + η²))
-    - Gaussian: G(ω) = (1/√(2πη²)) * exp(-(ω-E)²/(2η²))
-    """
-    energies    = np.asarray(energies, dtype=float).ravel()
-    weights     = np.asarray(weights, dtype=float).ravel()
-    omega_grid  = np.asarray(omega_grid, dtype=float).ravel()
-    
-    if len(energies) == 0 or len(weights) == 0:
-        return np.zeros_like(omega_grid)
-    
-    if len(energies) != len(weights):
-        raise ValueError(f"energies and weights must have same length: {len(energies)} vs {len(weights)}")
-    
-    if eta <= 0:
-        raise ValueError(f"eta must be positive, got {eta}")
-    
-    # Filter out invalid values
-    valid_mask  = np.isfinite(energies) & np.isfinite(weights)
-    energies    = energies[valid_mask]
-    weights     = weights[valid_mask]
-    
-    if len(energies) == 0:
-        return np.zeros_like(omega_grid)
-    
-    # Vectorized broadening: omega[Nω, None] - energies[None, N] -> (Nω, N)
-    omega_diff  = omega_grid[:, None] - energies[None, :]
-    
-    if kind == 'lorentzian':
-        # Lorentzian: L(ω-E) = (1/π) * η / ((ω-E)² + η²)
-        kernel      = (eta / np.pi) / (omega_diff**2 + eta**2)
-    elif kind == 'gaussian':
-        # Gaussian: G(ω-E) = (1/√(2πη²)) * exp(-(ω-E)²/(2η²))
-        norm        = 1.0 / (np.sqrt(2 * np.pi) * eta)
-        kernel      = norm * np.exp(-omega_diff**2 / (2 * eta**2))
-    elif kind == 'none':
-        # No broadening - just return histogram
-        spectrum    = np.zeros_like(omega_grid)
-        for E, w in zip(energies, weights):
-            idx     = np.argmin(np.abs(omega_grid - E))
-            spectrum[idx] += w
-        return spectrum
-    else:
-        raise ValueError(f"Unknown broadening kind: {kind}")
-    
-    # Sum weighted kernels: A(ω) = Σ_n w_n * kernel(ω - E_n)
-    spectrum        = np.sum(weights[None, :] * kernel, axis=1)
-    
-    return spectrum
-
-def extract_spectral_data(
-        result,
-        key                 : str,
-        state_idx           : Optional[int]         = None,
-        component           : Optional[str]         = None,
-        reshape_to_komega   : bool                  = True,
-        omega_key           : Optional[str]         = '/omega', 
-        kvectors_key        : Optional[str]         = '/kvectors',
-        kvectors            : Optional[np.ndarray]  = None
-    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """
-    Extract spectral function data from result object.
-    
-    Handles various common storage layouts and reshapes to canonical form:
-    - omega: (Nw,)
-    - k_vectors: (Nk, D)
-    - data: (Nk, Nw)
-    
-    Parameters
-    ----------
-    result : Result object
-        ED result containing spectral data
-    key : str
-        Data key (e.g., 'akw', 'spectral/skw')
-    state_idx : int, optional
-        Which state to extract if multiple
-    component : str, optional
-        Which component (e.g., 'xx', 'zz') for multi-component data
-    reshape_to_komega : bool
-        If True, ensure output is (Nk, Nω); otherwise keep original shape
-        
-    Returns
-    -------
-    omega : (Nω,) array
-    k_vectors : (Nk, D) array
-    data : (Nk, Nω) array
-    """
-    # Try to extract data
-    data_raw    = result.get(key, None)
-    if data_raw is None:
-        raise ValueError(f"Key '{key}' not found in result")
-    
-    # Extract omega grid
-    omega       = result.get(key + omega_key, None)
-    if omega is None:
-        omega   = result.get('omega', None)
-    if omega is None:
-        # Fallback: create uniform grid
-        omega   = np.arange(data_raw.shape[-1])
-    
-    # Extract k-vectors (if available)
-    k_vectors   = kvectors if kvectors is not None else result.get(kvectors_key, None)
-    if k_vectors is None:
-        k_vectors   = np.zeros((data_raw.shape[0], 3))
-    
-    # Convert data to array
-    data        = np.asarray(data_raw, dtype=complex)
-    
-    # Handle state selection
-    if state_idx is not None and data.ndim >= 3:
-        data    = data[..., state_idx]
-    
-    # Reshape to (Nk, Nw) if requested
-    if reshape_to_komega:
-        if data.ndim == 1:
-            data = data.reshape(1, -1)
-        elif data.ndim > 2:
-            # Flatten extra dimensions
-            data = data.reshape(-1, data.shape[-1])
-    
-    # Take absolute value if complex
-    if np.iscomplexobj(data):
-        data = np.abs(data)
-    
-    omega       = np.asarray(omega, float)
-    k_vectors   = np.asarray(k_vectors, float)
-    
-    return omega, k_vectors, data
-
-def select_k_indices(
-        lattice         : "Lattice",
-        k_vectors       : np.ndarray,
-        selector_spec   : Union[str, int, np.ndarray, List[int], dict]
-    ) -> dict:
-    """
-    Unified k-point selection interface.
-    
-    Parameters
-    ----------
-    lattice : Lattice
-    k_vectors : (Nk, D) array
-    selector_spec :
-        - "all" or "sum": 
-            all k-points
-        - int: 
-            single k-point by index
-        - array (D,): 
-            nearest k-point to vector
-        - list of int: 
-            multiple indices
-        - dict with 'path', 'indices', or 'vectors'
-        
-    Returns
-    -------
-    selection : dict
-        {
-            'indices'   : array of selected indices,
-            'labels'    : list of labels,
-            'distances' : array of path distances (if applicable),
-            'type'      : 'all'|'single'|'indices'|'path'
-        }
-    """
-    if isinstance(selector_spec, str):
-        if selector_spec.lower() in ('all', 'sum'):
-            return {
-                'indices'       : np.arange(len(k_vectors)),
-                'labels'        : [f'k{i}' for i in range(len(k_vectors))],
-                'distances'     : None,
-                'type'          : 'all'
-            }
-    
-    elif isinstance(selector_spec, int):
-        return {
-            'indices'           : np.array([selector_spec]),
-            'labels'            : [f'k{selector_spec}'],
-            'distances'         : None,
-            'type'              : 'single'
-        }
-    
-    elif isinstance(selector_spec, (list, tuple)):
-        return {
-            'indices'           : np.array(selector_spec),
-            'labels'            : [f'k{i}' for i in selector_spec],
-            'distances'         : None,
-            'type'              : 'indices'
-        }
-    
-    elif isinstance(selector_spec, np.ndarray):
-        # Find nearest k-point to vector
-        k2      = k_vectors[:, :2]
-        vec2    = np.asarray(selector_spec)[:2]
-        dists   = np.sum((k2 - vec2)**2, axis=1)
-        idx     = np.argmin(dists)
-        return {
-            'indices'           : np.array([idx]),
-            'labels'            : [f'k≈({vec2[0]:.2f},{vec2[1]:.2f})'],
-            'distances'         : None,
-            'type'              : 'single'
-        }
-    
-    elif isinstance(selector_spec, dict):
-        if 'path' in selector_spec:
-            # Use lattice path extraction
-            # This would call lattice.extract_bz_path_data or similar
-            # For now, return placeholder
-            return lattice.extract_bz_path_data(
-                k_vectors,
-                **selector_spec['path']
-            )
-            
-        elif 'indices' in selector_spec:
-            return {
-                'indices'       : np.array(selector_spec['indices']),
-                'labels'        : selector_spec.get('labels', []),
-                'distances'     : selector_spec.get('distances', None),
-                'type'          : 'indices'
-            }
-    
-    raise ValueError(f"Invalid selector_spec: {selector_spec}")
-
-# ==============================================================================
-# PLOTTING PRIMITIVES
-# ==============================================================================
-
-def plot_komega_heatmap(
-        ax,
-        k_dist          : np.ndarray,
-        omega           : np.ndarray,
-        intensity       : np.ndarray,
-        *,
-        style           : Optional[PlotStyle] = None,
-        spectral_config : Optional[SpectralConfig] = None,
-        aspect          : str = 'auto',
-        origin          : str = 'lower'
-    ):
-    """
-    Plot intensity(k_path_index, ω) as heatmap.
-    
-    Parameters
-    ----------
-    ax : Axes
-    k_dist : (Nk_path,)
-        Distance along k-path
-    omega : (Nω,)
-        Energy/frequency grid
-    intensity : (Nk_path, Nω)
-        Spectral intensity
-    """
-    if style is None:
-        style = PlotStyle()
-    if spectral_config is None:
-        spectral_config = SpectralConfig()
-    
-    # Determine vmin/vmax
-    vmin = style.vmin if style.vmin is not None else np.nanmin(intensity)
-    vmax = style.vmax if style.vmax is not None else np.nanmax(intensity)
-    
-    if spectral_config.log_scale and vmin <= 0:
-        vmin = np.nanmin(intensity[intensity > 0]) if np.any(intensity > 0) else 1e-10
-    
-    K, Omega = np.meshgrid(k_dist, omega, indexing='ij')
-    
-    if spectral_config.log_scale:
-        from matplotlib.colors import LogNorm
-        norm = LogNorm(vmin=vmin, vmax=vmax)
-    else:
-        norm = None
-    
-    im = ax.pcolormesh(
-        K, Omega, intensity,
-        cmap=style.cmap,
-        vmin=vmin if not spectral_config.log_scale else None,
-        vmax=vmax if not spectral_config.log_scale else None,
-        norm=norm,
-        shading='auto'
-    )
-    
-    ax.set_ylabel(spectral_config.omega_label)
-    ax.set_xlim(k_dist.min(), k_dist.max())
-    
-    if spectral_config.vmin_omega is not None:
-        ax.set_ylim(bottom=spectral_config.vmin_omega)
-    if spectral_config.vmax_omega is not None:
-        ax.set_ylim(top=spectral_config.vmax_omega)
-    
-    return im
-
-def plot_kspace_intensity(
-        ax,
-        k2: np.ndarray,
-        intensity: np.ndarray,
-        *,
-        style: Optional[PlotStyle] = None,
-        ks_config: Optional[KSpaceConfig] = None,
-        lattice: Optional["Lattice"] = None,
-        show_extended_bz: bool = True,
-        bz_copies: int = 2
-    ):
-    """
-    Plot intensity(k) in 2D k-space.
-    
-    Can show:
-    - Discrete scatter plot of k-points
-    - Interpolated map with optional BZ masking
-    - BZ boundary outline
-    - High-symmetry point markers in all BZ copies
-    - Extended k-space showing multiple Brillouin zones
-    
-    Parameters
-    ----------
-    ax : Axes
-        Matplotlib axes
-    k2 : (Nk, 2) array
-        k-point coordinates (first BZ)
-    intensity : (Nk,) array
-        Values at each k-point
-    style : PlotStyle, optional
-        Styling configuration
-    ks_config : KSpaceConfig, optional
-        K-space plotting configuration
-    lattice : Lattice, optional
-        Lattice object for BZ info and high-symmetry points
-    show_extended_bz : bool
-        If True, replicate k-points to show multiple BZ copies from -2π to 2π
-    bz_copies : int
-        Number of BZ copies in each direction (default 2 for -2π to 2π)
-    """
-    if style is None:
-        style = PlotStyle()
-    if ks_config is None:
-        ks_config = KSpaceConfig()
-    
-    k2_orig     = np.asarray(k2, dtype=float)
-    intensity   = np.asarray(intensity, dtype=float)
-    
-    # ALWAYS interpolate on original k-points only
-    k2_for_interp = k2_orig
-    intensity_for_interp = intensity
-    
-    # Determine color scale
-    vmin = style.vmin if style.vmin is not None else np.nanmin(intensity)
-    vmax = style.vmax if style.vmax is not None else np.nanmax(intensity)
-    
-    # Interpolated background (optional)
-    if ks_config.grid_n > 0:
-        # Interpolate on ORIGINAL k-points only
-        kx_min, kx_max = k2_for_interp[:, 0].min(), k2_for_interp[:, 0].max()
-        ky_min, ky_max = k2_for_interp[:, 1].min(), k2_for_interp[:, 1].max()
-        
-        pad = 0.05
-        kx = np.linspace(kx_min - pad * (kx_max - kx_min), 
-                        kx_max + pad * (kx_max - kx_min), 
-                        ks_config.grid_n)
-        ky = np.linspace(ky_min - pad * (ky_max - ky_min),
-                        ky_max + pad * (ky_max - ky_min),
-                        ks_config.grid_n)
-        KX, KY = np.meshgrid(kx, ky)
-        
-        try:
-            # Interpolate on original k-points
-            Z = griddata(k2_for_interp, intensity_for_interp, (KX, KY), method=ks_config.interp_method)
-            
-            # Don't mask when showing extended BZ
-            if ks_config.mask_outside_bz and lattice is not None and not show_extended_bz:
-                try:
-                    from general_python.lattices.tools.lattice_kspace import ws_bz_mask
-                    k1_vec = None
-                    k2_vec = None
-                    
-                    for attr1 in ['k1', 'b1']:
-                        if hasattr(lattice, attr1):
-                            k1_vec = np.asarray(getattr(lattice, attr1), float).ravel()[:2]
-                            break
-                    
-                    for attr2 in ['k2', 'b2']:
-                        if hasattr(lattice, attr2):
-                            k2_vec = np.asarray(getattr(lattice, attr2), float).ravel()[:2]
-                            break
-                    
-                    if k1_vec is not None and k2_vec is not None:
-                        inside = ws_bz_mask(KX, KY, k1_vec, k2_vec, shells=ks_config.ws_shells)
-                        Z = np.where(inside, Z, np.nan)
-                except Exception:
-                    pass
-            
-            # Display: tile if extended BZ, otherwise show single image
-            if show_extended_bz and lattice is not None:
-                try:
-                    if hasattr(lattice, 'calculate_reciprocal_vectors'):
-                        lattice.calculate_reciprocal_vectors()
-                    
-                    k1_vec = None
-                    k2_vec = None
-                    
-                    for attr1 in ['k1', 'b1']:
-                        if hasattr(lattice, attr1):
-                            vec = getattr(lattice, attr1)
-                            if vec is not None:
-                                k1_vec = np.asarray(vec, float).ravel()[:2]
-                                break
-                    
-                    for attr2 in ['k2', 'b2']:
-                        if hasattr(lattice, attr2):
-                            vec = getattr(lattice, attr2)
-                            if vec is not None:
-                                k2_vec = np.asarray(vec, float).ravel()[:2]
-                                break
-                    
-                    if k1_vec is not None and k2_vec is not None:
-                        # Tile: show same interpolated image at each G shift
-                        for m in range(-bz_copies, bz_copies + 1):
-                            for n in range(-bz_copies, bz_copies + 1):
-                                G               = m * k1_vec + n * k2_vec
-                                extent_shifted  = (
-                                    kx[0] + G[0], kx[-1] + G[0],
-                                    ky[0] + G[1], ky[-1] + G[1]
-                                )
-                                ax.imshow(
-                                    Z,
-                                    extent=extent_shifted,
-                                    origin='lower',
-                                    cmap=style.cmap,
-                                    vmin=vmin,
-                                    vmax=vmax,
-                                    interpolation=ks_config.imshow_interp,
-                                    alpha=0.9,
-                                    zorder=1
-                                )
-                    else:
-                        ax.imshow(Z, extent=(kx[0], kx[-1], ky[0], ky[-1]),
-                                origin='lower', cmap=style.cmap, vmin=vmin, vmax=vmax,
-                                interpolation=ks_config.imshow_interp, alpha=0.9)
-                except Exception:
-                    ax.imshow(Z, extent=(kx[0], kx[-1], ky[0], ky[-1]),
-                            origin='lower', cmap=style.cmap, vmin=vmin, vmax=vmax,
-                            interpolation=ks_config.imshow_interp, alpha=0.9)
-            else:
-                # Not extended: show single image
-                ax.imshow(
-                    Z,
-                    extent=(kx[0], kx[-1], ky[0], ky[-1]),
-                    origin='lower',
-                    cmap=style.cmap,
-                    vmin=vmin,
-                    vmax=vmax,
-                    interpolation=ks_config.imshow_interp,
-                    alpha=0.9
-                )
-        except Exception:
-            pass
-    
-    # Prepare k-points for scatter plot (extend if needed)
-    k2_scatter = k2_orig
-    intensity_scatter = intensity
-    
-    if show_extended_bz and lattice is not None and ks_config.show_discrete_points:
-        try:
-            # Get reciprocal vectors
-            if hasattr(lattice, 'calculate_reciprocal_vectors'):
-                lattice.calculate_reciprocal_vectors()
-            
-            k1_vec = None
-            k2_vec = None
-            
-            for attr1 in ['k1', 'b1']:
-                if hasattr(lattice, attr1):
-                    vec = getattr(lattice, attr1)
-                    if vec is not None:
-                        k1_vec = np.asarray(vec, float).ravel()[:2]
-                        break
-            
-            for attr2 in ['k2', 'b2']:
-                if hasattr(lattice, attr2):
-                    vec = getattr(lattice, attr2)
-                    if vec is not None:
-                        k2_vec = np.asarray(vec, float).ravel()[:2]
-                        break
-            
-            if k1_vec is not None and k2_vec is not None:
-                # Replicate scatter points for each BZ copy
-                k2_list = []
-                intensity_list = []
-                
-                for m in range(-bz_copies, bz_copies + 1):
-                    for n in range(-bz_copies, bz_copies + 1):
-                        G = m * k1_vec + n * k2_vec
-                        k2_shifted = k2_orig + G[np.newaxis, :]
-                        k2_list.append(k2_shifted)
-                        intensity_list.append(intensity)
-                
-                k2_scatter = np.vstack(k2_list)
-                intensity_scatter = np.concatenate(intensity_list)
-        except Exception:
-            pass
-    
-    # Discrete points overlay
-    if ks_config.show_discrete_points:
-        ax.scatter(
-            k2_scatter[:, 0], k2_scatter[:, 1],
-            c=intensity_scatter,
-            cmap=style.cmap,
-            vmin=vmin,
-            vmax=vmax,
-            s=ks_config.point_size,
-            alpha=ks_config.point_alpha,
-            edgecolors='none',
-            zorder=10
-        )
-    
-    # Draw BZ outline - skip when showing extended BZ
-    if ks_config.draw_bz_outline and lattice is not None and not show_extended_bz:
-        try:
-            _draw_bz_boundary(ax, lattice)
-        except Exception:
-            pass
-    
-    # Label high-symmetry points in all BZ copies
-    if ks_config.label_high_symmetry and lattice is not None:
-        try:
-            _label_high_symmetry_points_extended(ax, lattice, bz_copies if show_extended_bz else 0, show_labels=True)
-        except Exception:
-            pass
-    
-    ax.set_aspect('equal')
-    ax.set_xlabel(r'$k_x$', fontsize=style.fontsize_label)
-    ax.set_ylabel(r'$k_y$', fontsize=style.fontsize_label)
-    ax.tick_params(labelsize=style.fontsize_tick)
-    
-    # Set strict limits to -2π to 2π when showing extended BZ
-    if show_extended_bz and bz_copies >= 1:
-        ax.set_xlim(-bz_copies * np.pi / 2, bz_copies * np.pi / 2)
-        ax.set_ylim(-bz_copies * np.pi / 2, bz_copies * np.pi / 2)
-    
-    # Format tick labels as multiples of π
-    _format_pi_ticks(ax, axis='both')
-
-def _draw_bz_boundary(ax, lattice: "Lattice"):
-    """
-    Draw the first Brillouin zone boundary.
-    
-    For 2D lattices, draws the hexagon/rectangle boundary using
-    reciprocal lattice vectors.
-    """
-    # Get reciprocal vectors - try multiple attribute names
-    k1_vec = None
-    k2_vec = None
-    
-    for attr1 in ['k1', 'b1', 'avec']:
-        if hasattr(lattice, attr1):
-            k1_vec = np.asarray(getattr(lattice, attr1), float).ravel()[:2]
-            break
-    
-    for attr2 in ['k2', 'b2', 'bvec']:
-        if hasattr(lattice, attr2):
-            k2_vec = np.asarray(getattr(lattice, attr2), float).ravel()[:2]
-            break
-    
-    if k1_vec is None or k2_vec is None:
-        return
-    
-    # Generate BZ boundary points using perpendicular bisectors
-    # For a 2D reciprocal lattice, the BZ is bounded by planes
-    # perpendicular to G at |G|/2 for reciprocal lattice vectors G
-    
-    # Simple approach: find BZ vertices by intersecting bisector planes
-    # For common lattices (square, hexagonal), we can use the corners
-    
-    # Generate corner candidates from ±k1/2 ± k2/2 and their combinations
-    corners = []
-    for m in [-1, 0, 1]:
-        for n in [-1, 0, 1]:
-            if m == 0 and n == 0:
-                continue
-            G = m * k1_vec + n * k2_vec
-            # Perpendicular bisector passes through G/2
-            corners.append(G / 2)
-    
-    corners = np.array(corners)
-    
-    # Find convex hull to get BZ boundary
-    try:
-        from scipy.spatial import ConvexHull
-        hull = ConvexHull(corners)
-        boundary_points = corners[hull.vertices]
-        
-        # Close the polygon
-        boundary_points = np.vstack([boundary_points, boundary_points[0]])
-        
-        ax.plot(
-            boundary_points[:, 0],
-            boundary_points[:, 1],
-            color='white',
-            linewidth=2.0,
-            linestyle='-',
-            alpha=0.8,
-            zorder=20
-        )
-    except Exception:
-        # Fallback: just draw a hexagon or rectangle based on k1, k2
-        # For hexagonal BZ (like honeycomb):
-        # vertices are at ±k1/2, ±k2/2, ±(k1-k2)/2, etc.
-        pass
-
-def _label_high_symmetry_points(ax, lattice: "Lattice"):
-    """
-    Add markers and labels for high-symmetry points (Gamma, K, M, etc.).
-    """
-    try:
-        hs_points = lattice.high_symmetry_points()
-        if hs_points is None:
-            return
-        
-        # Get reciprocal basis to convert fractional to Cartesian
-        k1_vec = None
-        k2_vec = None
-        
-        for attr1 in ['k1', 'b1', 'avec']:
-            if hasattr(lattice, attr1):
-                k1_vec = np.asarray(getattr(lattice, attr1), float).ravel()
-                if len(k1_vec) < 3:
-                    k1_vec = np.pad(k1_vec, (0, 3 - len(k1_vec)))
-                break
-        
-        for attr2 in ['k2', 'b2', 'bvec']:
-            if hasattr(lattice, attr2):
-                k2_vec = np.asarray(getattr(lattice, attr2), float).ravel()
-                if len(k2_vec) < 3:
-                    k2_vec = np.pad(k2_vec, (0, 3 - len(k2_vec)))
-                break
-        
-        if k1_vec is None or k2_vec is None:
-            return
-        
-        k3_vec = np.array([0.0, 0.0, 1.0])  # Dummy for 2D
-        
-        for point in hs_points:
-            # Convert fractional to Cartesian
-            k_cart = point.to_cartesian(k1_vec, k2_vec, k3_vec)
-            kx, ky = k_cart[0], k_cart[1]
-            
-            # Draw marker
-            ax.plot(
-                kx, ky,
-                marker='o',
-                markersize=8,
-                markerfacecolor='none',
-                markeredgecolor='white',
-                markeredgewidth=2.0,
-                zorder=25
-            )
-            
-            # Add label with slight offset
-            ax.text(
-                kx, ky,
-                point.latex_label,
-                color='white',
-                fontsize=12,
-                fontweight='bold',
-                ha='center',
-                va='bottom',
-                zorder=26
-            )
-    except Exception:
-        pass
-
-
-def _format_pi_ticks(ax, axis='both'):
-    """
-    Format axis ticks as multiples of π.
-    
-    Parameters
-    ----------
-    ax : Axes
-        Matplotlib axes
-    axis : str
-        Which axis to format: 'x', 'y', or 'both'
-    """
-    import matplotlib.ticker as ticker
-    
-    def pi_formatter(x, pos):
-        """Format tick labels as multiples of π."""
-        if abs(x) < 1e-10:
-            return '0'
-        
-        # Convert to multiples of π
-        multiple = x / np.pi
-        
-        # Handle simple cases
-        if abs(multiple - round(multiple)) < 0.01:
-            m = int(round(multiple))
-            if m == 1:
-                return r'$\pi$'
-            elif m == -1:
-                return r'$-\pi$'
-            elif m == 0:
-                return '0'
-            else:
-                return fr'${m}\pi$'
-        
-        # Handle fractional cases
-        if abs(multiple - 0.5) < 0.01:
-            return r'$\pi/2$'
-        elif abs(multiple + 0.5) < 0.01:
-            return r'$-\pi/2$'
-        elif abs(multiple - 1.5) < 0.01:
-            return r'$3\pi/2$'
-        elif abs(multiple + 1.5) < 0.01:
-            return r'$-3\pi/2$'
-        elif abs(multiple) < 3:
-            # Try to express as simple fraction
-            from fractions import Fraction
-            frac = Fraction(multiple).limit_denominator(6)
-            if abs(float(frac) - multiple) < 0.01:
-                if frac.numerator == 1:
-                    return fr'$\pi/{frac.denominator}$'
-                elif frac.numerator == -1:
-                    return fr'$-\pi/{frac.denominator}$'
-                else:
-                    return fr'${frac.numerator}\pi/{frac.denominator}$'
-        
-        # Fallback to decimal
-        return f'{x:.2f}'
-    
-    if axis in ['x', 'both']:
-        ax.xaxis.set_major_formatter(ticker.FuncFormatter(pi_formatter))
-    if axis in ['y', 'both']:
-        ax.yaxis.set_major_formatter(ticker.FuncFormatter(pi_formatter))
-
-def _label_high_symmetry_points_extended(ax, lattice: "Lattice", bz_copies: int = 2, show_labels: bool = True):
-    """
-    Add markers and labels for high-symmetry points in all BZ copies.
-    
-    Parameters
-    ----------
-    ax : Axes
-        Matplotlib axes
-    lattice : Lattice
-        Lattice object with high_symmetry_points() method
-    bz_copies : int
-        Number of BZ copies in each direction (0 = first BZ only)
-    show_labels : bool
-        If True, show text labels for high-symmetry points
-    """
-    try:
-        hs_points = lattice.high_symmetry_points()
-        if hs_points is None:
-            return
-        
-        # Get reciprocal basis
-        k1_vec = None
-        k2_vec = None
-        
-        for attr1 in ['k1', 'b1', 'avec']:
-            if hasattr(lattice, attr1):
-                k1_vec = np.asarray(getattr(lattice, attr1), float).ravel()
-                if len(k1_vec) < 3:
-                    k1_vec = np.pad(k1_vec, (0, 3 - len(k1_vec)))
-                break
-        
-        for attr2 in ['k2', 'b2', 'bvec']:
-            if hasattr(lattice, attr2):
-                k2_vec = np.asarray(getattr(lattice, attr2), float).ravel()
-                if len(k2_vec) < 3:
-                    k2_vec = np.pad(k2_vec, (0, 3 - len(k2_vec)))
-                break
-        
-        if k1_vec is None or k2_vec is None:
-            return
-        
-        k3_vec = np.array([0.0, 0.0, 1.0])  # Dummy for 2D
-        k1_2d = k1_vec[:2]
-        k2_2d = k2_vec[:2]
-        
-        # Plot high-symmetry points - ONLY in center BZ to avoid clutter
-        # When showing extended zones, only mark center (m=0, n=0)
-        m_range = range(0, 1) if bz_copies > 0 else range(0, 1)
-        n_range = range(0, 1) if bz_copies > 0 else range(0, 1)
-        
-        for m in m_range:
-            for n in n_range:
-                G = m * k1_2d + n * k2_2d
-                
-                for point in hs_points:
-                    # Convert fractional to Cartesian
-                    k_cart = point.to_cartesian(k1_vec, k2_vec, k3_vec)
-                    kx, ky = k_cart[0] + G[0], k_cart[1] + G[1]
-                    
-                    # Draw marker
-                    ax.plot(
-                        kx, ky,
-                        marker='o',
-                        markersize=8,
-                        markerfacecolor='yellow',
-                        markeredgecolor='black',
-                        markeredgewidth=1.5,
-                        zorder=25
-                    )
-                    
-                    # Add label - always show for center BZ
-                    if show_labels:
-                        ax.text(
-                            kx, ky + 0.15,  # Small offset above point
-                            point.latex_label,
-                            color='black',
-                            fontsize=11,
-                            fontweight='bold',
-                            ha='center',
-                            va='bottom',
-                            bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8, edgecolor='none'),
-                            zorder=26
-                        )
-    except Exception:
-        pass
-
-# ==============================================================================
-# HIGH-LEVEL SPECTRAL PLOTTERS
-# ==============================================================================
+# a) Spectral function plotter
 
 def plot_spectral_function(
         directory: str,
@@ -1071,7 +101,11 @@ def plot_spectral_function(
         y_param: str = 'hx',
         filters=None,
         state_idx: int = 0,
-        k_selector: Union[str, int, dict] = "sum",
+        mode: Literal['sum', 'kpath', 'grid', 'single'] = "sum",
+        path_labels: Optional[List[str]] = None,
+        k_indices: Optional[List[int]] = None,
+        use_extend: bool = False,
+        extend_copies: int = 2,
         spectral_config: Optional[SpectralConfig] = None,
         style: Optional[PlotStyle] = None,
         figsize_per_panel: tuple = (4, 3.5),
@@ -1079,37 +113,62 @@ def plot_spectral_function(
         **kwargs
     ):
     """
-    Plot spectral function A(k,ω) or S(k,ω) from ED results.
+    Plot spectral function A(k,w) or S(k,w) from ED results.
+    
+    Universal plotter supporting multiple visualization modes:
+    - 'sum'   : Sum over all k-points -> A(w) line plot
+    - 'kpath' : A(k_path, w) heatmap along high-symmetry path
+    - 'grid'  : Full k-space grid with optional BZ extension
+    - 'single': A(k_i, w) line plots for specific k-points
     
     Parameters
     ----------
-    k_selector :
-        - "sum": sum _k A(k,ω)
-        - "path": A(k_path, ω) heatmap along high-symmetry path
-        - int: A(k_i, ω) line plot for single k
-        - list[int]: multiple k-point line cuts
-        
+    directory : str
+        Data directory
+    param_name : str
+        Spectral data key (e.g., '/spectral/akw', '/spectral/skw')
+    lattice : Lattice
+        Lattice object
+    x_parameters, y_parameters : list
+        Parameter grid values
+    x_param, y_param : str
+        Parameter names
+    mode : str
+        Visualization mode
+    path_labels : list of str, optional
+        High-symmetry path for mode='kpath' (e.g., ['Gamma', 'K', 'M', 'Gamma'])
+    k_indices : list of int, optional
+        K-point indices for mode='single'
+    use_extend : bool
+        Extend k-space to show multiple BZ copies (for kpath/grid modes)
+    extend_copies : int
+        Number of BZ copies in each direction
+    spectral_config : SpectralConfig, optional
+        Spectral function configuration
+    style : PlotStyle, optional
+        Styling configuration
+    
+    Returns
+    -------
+    fig, axes_grid : Figure and axes array
+    
     Examples
     --------
-    # Summed spectral function
-    fig, axes = plot_spectral_function(
-        directory='./ed_data',
-        param_name='/spectral/akw',
-        lattice=lattice,
-        k_selector="sum",
-        x_parameters=[1.0],
-        y_parameters=[0.0, 0.5, 1.0]
-    )
+    # Sum over k
+    >>> fig, axes = plot_spectral_function(
+    ...     directory='./data', param_name='/akw', lattice=lat,
+    ...     x_parameters=[1.0], y_parameters=[0.0, 0.5],
+    ...     mode='sum'
+    ... )
     
-    # Spectral function along k-path
-    fig, axes = plot_spectral_function(
-        directory='./ed_data',
-        param_name='/spectral/akw',
-        lattice=lattice,
-        k_selector={'path': ['Gamma', 'K', 'M', 'Gamma']},
-        x_parameters=[1.0],
-        y_parameters=[0.0]
-    )
+    # K-path with extended BZ
+    >>> fig, axes = plot_spectral_function(
+    ...     directory='./data', param_name='/akw', lattice=lat,
+    ...     x_parameters=[1.0], y_parameters=[0.0],
+    ...     mode='kpath',
+    ...     path_labels=['Gamma', 'K', 'M', 'Gamma'],
+    ...     use_extend=True, extend_copies=2
+    ... )
     """
     if spectral_config is None:
         spectral_config = SpectralConfig()
@@ -1169,69 +228,82 @@ def plot_spectral_function(
                 ax.axis('off')
                 continue
             
-            # Handle k-selection
-            if k_selector == "sum":
+            # Handle different modes
+            if mode == "sum":
                 # Sum over all k
                 intensity_omega = np.sum(akw, axis=0)
                 ax.plot(omega, intensity_omega, lw=style.linewidth, 
                        color='C0', alpha=style.alpha)
-                ax.set_ylabel(spectral_config.intensity_label)
-                ax.set_xlabel(spectral_config.omega_label)
+                ax.set_ylabel(spectral_config.intensity_label, fontsize=style.fontsize_label)
+                ax.set_xlabel(spectral_config.omega_label, fontsize=style.fontsize_label)
                 ax.grid(alpha=0.3)
                 
-            elif isinstance(k_selector, int):
-                # Single k-point
-                if k_selector < len(k_vectors):
-                    intensity_omega = akw[k_selector, :]
-                    ax.plot(omega, intensity_omega, lw=style.linewidth,
-                           color='C0', alpha=style.alpha, marker=style.marker,
-                           ms=style.markersize)
-                    ax.set_ylabel(spectral_config.intensity_label)
-                    ax.set_xlabel(spectral_config.omega_label)
-                    ax.grid(alpha=0.3)
+            elif mode == 'single':
+                # Single k-point(s)
+                if k_indices is None:
+                    k_indices = [0]
+                
+                for idx in k_indices:
+                    if idx < len(k_vectors):
+                        intensity_omega = akw[idx, :]
+                        ax.plot(omega, intensity_omega, lw=style.linewidth,
+                               marker=style.marker, ms=style.markersize,
+                               alpha=style.alpha, label=f'k{idx}')
+                
+                ax.set_ylabel(spectral_config.intensity_label, fontsize=style.fontsize_label)
+                ax.set_xlabel(spectral_config.omega_label, fontsize=style.fontsize_label)
+                ax.grid(alpha=0.3)
+                if len(k_indices) > 1:
+                    ax.legend(fontsize=8)
             
-            elif isinstance(k_selector, dict) and 'path' in k_selector:
-                # k-path heatmap
+            elif mode == 'kpath':
+                # K-path mode
                 try:
-                    kpath_cfg = KPathConfig(**k_selector) if isinstance(k_selector, dict) else KPathConfig()
-                    
-                    # Extract path data
-                    k_frac = lattice.kvectors_frac if hasattr(lattice, 'kvectors_frac') else None
-                    if k_frac is None:
-                        k_frac = np.zeros_like(k_vectors)
-                    
-                    # Get path result
-                    path_result = lattice.extract_bz_path_data(
+                    path_result = select_kpoints_along_path(
+                        lattice=lattice,
                         k_vectors=k_vectors,
-                        k_vectors_frac=k_frac,
-                        values=akw,
-                        path=kpath_cfg.path,
-                        points_per_seg=kpath_cfg.points_per_seg or 50,
-                        return_result=True
+                        path_labels=path_labels,
+                        use_extend=use_extend,
+                        extend_copies=extend_copies
                     )
                     
-                    k_dist = np.asarray(path_result.k_dist)
-                    intensity_kw = np.asarray(path_result.values)  # (Npath, Nω)
+                    # Extract data at selected k-points
+                    selected_indices = path_result['indices']
+                    k_distances = path_result['distances']
+                    intensity_kw = akw[selected_indices, :]  # (Npath, Nw)
                     
-                    plot_komega_heatmap(
-                        ax, k_dist, omega, intensity_kw,
+                    # Use new modular plotter
+                    im = plot_spectral_function_2d(
+                        ax, k_distances, omega, intensity_kw,
+                        mode='kpath',
+                        path_info=path_result,
                         style=style,
-                        spectral_config=spectral_config
+                        spectral_config=spectral_config,
+                        lattice=lattice,
+                        use_extend=False,  # Already extended in select_kpoints_along_path
+                        colorbar=False
                     )
-                    
-                    # Add high-symmetry ticks
-                    try:
-                        xs = np.asarray(path_result.label_positions)
-                        ls = list(path_result.label_texts)
-                        ax.set_xticks(xs)
-                        ax.set_xticklabels(ls)
-                        for xv in xs:
-                            ax.axvline(xv, **kpath_cfg.separator_style)
-                    except:
-                        pass
                         
                 except Exception as e:
                     ax.text(0.5, 0.5, f'Path Error', ha='center', va='center',
+                           transform=ax.transAxes)
+                    ax.axis('off')
+            
+            elif mode == 'grid':
+                # Full k-space grid mode
+                try:
+                    im = plot_spectral_function_2d(
+                        ax, k_vectors, omega, akw,
+                        mode='grid',
+                        style=style,
+                        spectral_config=spectral_config,
+                        lattice=lattice,
+                        use_extend=use_extend,
+                        extend_copies=extend_copies,
+                        colorbar=False
+                    )
+                except Exception as e:
+                    ax.text(0.5, 0.5, f'Grid Error', ha='center', va='center',
                            transform=ax.transAxes)
                     ax.axis('off')
             
@@ -1240,70 +312,12 @@ def plot_spectral_function(
                 ax, iter=0, x=0.05, y=0.9, boxaround=False,
                 addit=f'{x_param}={x_val:.2g}, {y_param}={y_val:.2g}'
             )
+            ax.tick_params(labelsize=style.fontsize_tick)
     
     if title:
         fig.suptitle(title, fontsize=style.fontsize_title)
     
     return fig, axes_grid
-
-def plot_spectral_slice_at_omega(
-        ax,
-        lattice: "Lattice",
-        k_vectors: np.ndarray,
-        omega_grid: np.ndarray,
-        akw: np.ndarray,
-        omega0: float,
-        omega_window: float = 0.0,
-        *,
-        style: Optional[PlotStyle] = None,
-        ks_config: Optional[KSpaceConfig] = None
-    ):
-    """
-    Plot spectral intensity in k-space at fixed energy.
-    
-    I(k) = A(k, ω0) or ∫_{ω0-Δ}^{ω0+Δ} A(k,ω) dω
-    
-    Parameters
-    ----------
-    omega0 : float
-        Central energy
-    omega_window : float
-        Integration window (if > 0)
-    """
-    if style is None:
-        style = PlotStyle()
-    if ks_config is None:
-        ks_config = KSpaceConfig()
-    
-    # Find omega indices
-    if omega_window > 0:
-        mask = np.abs(omega_grid - omega0) <= omega_window
-        if not np.any(mask):
-            # Fallback to nearest
-            idx = np.argmin(np.abs(omega_grid - omega0))
-            intensity_k = akw[:, idx]
-        else:
-            intensity_k = np.trapz(akw[:, mask], omega_grid[mask], axis=1)
-    else:
-        idx = np.argmin(np.abs(omega_grid - omega0))
-        intensity_k = akw[:, idx]
-    
-    k2 = k_vectors[:, :2]
-    plot_kspace_intensity(
-        ax, k2, intensity_k,
-        style=style,
-        ks_config=ks_config,
-        lattice=lattice
-    )
-    
-    title = f'ω = {omega0:.3f}'
-    if omega_window > 0:
-        title += f' ± {omega_window:.3f}'
-    ax.set_title(title, fontsize=style.fontsize_title)
-
-# ==============================================================================
-# Plotting functions
-# ==============================================================================
 
 # a) Phase diagram plotter
 
@@ -1507,22 +521,11 @@ def plot_bz_path_from_corr(
     ):
     r"""
     Plot correlation-derived structure factor along high-symmetry path.
-    
-    **TOLERANCE-BASED VERSION** using actual k-points only:
-    - compute_structure_factor_from_corr() for S(k) calculation
-    - NO interpolation: uses only discrete k-points from lattice.kvectors
-    - Selects k-points within tolerance of path segments
-    - Configurable via KPathConfig and PlotStyle dataclasses
-    
+        
     Computes (site-based) structure factor:
         S(k) = (1/Ns) sum_{i,j} C_{ij} exp[-i k . (r_i - r_j)]
     
-    Algorithm:
-    1. Compute S(k) at ALL discrete k-points
-    2. Build path segments from high-symmetry points
-    3. For each segment, find k-points within tolerance
-    4. Sort by distance along path
-    5. Plot S(k) at exact k-point values (no interpolation)
+    Uses modular helper select_kpoints_along_path for path extraction.
     
     Parameters
     ----------
@@ -1540,19 +543,8 @@ def plot_bz_path_from_corr(
     
     Returns
     -------
-    result : KPathResult
+    result : dict
         Path data with k_dist, values, label_positions, label_texts
-        
-    Notes
-    -----
-    Uses ONLY discrete k-points (no interpolation). Tolerance-based selection:
-    1. Computes S(k) at ALL discrete k-points
-    2. Builds path segments from high-symmetry points
-    3. For each segment, finds k-points within tolerance of segment
-    4. Sorts selected k-points by distance along path
-    5. Plots S(k) at exact k-point values
-    
-    Tolerance is auto-determined from k-grid spacing if not specified in KPathConfig.
     """
     
     # Setup configuration
@@ -1593,150 +585,50 @@ def plot_bz_path_from_corr(
 
     r_cart          = np.asarray(lattice.rvectors, float)
     k_cart          = np.asarray(lattice.kvectors, float)
+    Ns              = C.shape[0]
     
-    # Auto-determine points_per_seg based on k-grid density
-    if kpath_config.points_per_seg is None:
-        Nk                          = k_cart.shape[0]
-        kpath_config.points_per_seg = max(int(np.sqrt(Nk) * kpath_config.auto_pps_factor), kpath_config.auto_pps_min)
-    
-    if print_vectors:
-        print("\n=== DEBUG: BZ path correlation plotting ===")
-        try:
-            k1_vec = np.asarray(lattice.k1, float).reshape(3)
-            k2_vec = np.asarray(lattice.k2, float).reshape(3)
-            print(f"Reciprocal vectors:")
-            print(f"  k1 = {k1_vec}")
-            print(f"  k2 = {k2_vec}")
-        except:
-            print("  (Could not retrieve k1/k2)")
-        print(f"Lattice dimensions: lx={getattr(lattice, 'lx', '?')}, "
-              f"ly={getattr(lattice, 'ly', '?')}")
-        print(f"Number of sites: {r_cart.shape[0]}")
-        print(f"Number of k-points: {k_cart.shape[0]}")
-        print(f"Path: {kpath_config.path}")
-        print(f"Tolerance: {kpath_config.tolerance if kpath_config.tolerance else 'auto'}")
-        print("NOTE: Using TOLERANCE-BASED selection - actual k-points only, NO interpolation")
-        print("=" * 40 + "\n")
-
-    Ns  = C.shape[0]
     if r_cart.shape[0] != Ns:
         raise ValueError(f"Ns mismatch: corr {Ns}, lattice {r_cart.shape[0]}")
 
-    # MODULAR HELPER: Compute S(k) at all k-points
-    Sk  = compute_structure_factor_from_corr(C, r_cart, k_cart, normalize=True)
+    # Compute S(k) at all k-points
+    Sk              = compute_structure_factor_from_corr(C, r_cart, k_cart, normalize=True)
 
-    # Fractional k coords for robust path extraction
-    if hasattr(lattice, "kvectors_frac") and lattice.kvectors_frac is not None:
-        k_frac              = np.asarray(lattice.kvectors_frac, float)
-    else:
-        # Fallback: approximate fractional coordinates
-        try:
-            k1_vec          = np.asarray(lattice.k1, float).reshape(3)
-            k2_vec          = np.asarray(lattice.k2, float).reshape(3)
-            B               = np.vstack([k1_vec[:2], k2_vec[:2]])
-            k2              = k_cart[:, :2]
-            k_frac          = np.zeros((k_cart.shape[0], 3), float)
-            k_frac[:, :2]   = (k2 @ np.linalg.inv(B).T)
-        except Exception as e:
-            raise ValueError(f"Cannot determine fractional k-coords: {e}")
-
-    # Get high-symmetry points for path construction
-    hs_points_obj = lattice.high_symmetry_points()
-    if hs_points_obj is None:
-        raise ValueError("Lattice does not define high_symmetry_points")
+    # Use modular path selection helper
+    k_spacing       = np.median(np.diff(np.sort(k_cart[:, 0])))
+    tolerance       = kpath_config.tolerance if kpath_config.tolerance else k_spacing * 0.5
+    path_labels     = kpath_config.path
     
-    # Build path from labels
-    path_labels = kpath_config.path if kpath_config.path is not None else hs_points_obj.default_path
-    if path_labels is None:
-        raise ValueError("No path specified and lattice has no default path")
+    path_result = select_kpoints_along_path(
+        lattice         =   lattice,
+        k_vectors       =   k_cart,
+        path_labels     =   path_labels,
+        tolerance       =   tolerance,
+        use_extend      =   False
+    )
     
-    # Get Cartesian coordinates of high-symmetry points (2D)
-    k2 = k_cart[:, :2]  # Use only x,y components
+    if print_vectors:
+        print("\n=== DEBUG: BZ path correlation plotting ===")
+        print(f"Number of sites: {r_cart.shape[0]}")
+        print(f"Number of k-points: {k_cart.shape[0]}")
+        print(f"Path: {path_labels}")
+        print(f"Selected k-points: {len(path_result['indices'])}")
+        print("=" * 40 + "\n")
     
-    path_points_cart = []
-    for label in path_labels:
-        if label not in hs_points_obj.points:
-            raise ValueError(f"High-symmetry point '{label}' not defined for this lattice")
-        pt_frac = np.array(hs_points_obj.points[label], dtype=float)
-        # Convert fractional to Cartesian
-        try:
-            k1_vec = np.asarray(lattice.k1, float).reshape(3)
-            k2_vec = np.asarray(lattice.k2, float).reshape(3)
-            pt_cart = pt_frac[0] * k1_vec[:2] + pt_frac[1] * k2_vec[:2]
-        except:
-            raise ValueError(f"Cannot convert fractional to Cartesian for point '{label}'")
-        path_points_cart.append(pt_cart)
+    # Extract values at selected k-points
+    selected_indices    = path_result['indices']
+    k_distances         = path_result['distances']
+    label_positions     = path_result['label_positions']
+    label_texts         = path_result['label_texts']
     
-    # Tolerance for k-point selection (in k-space units)
-    # Auto-determine from k-grid spacing
-    k_spacing = np.median(np.diff(np.sort(k2[:, 0])))  # Approximate k-spacing
-    tolerance = kpath_config.tolerance if hasattr(kpath_config, 'tolerance') else k_spacing * 0.5
-    
-    # Select k-points close to path segments
-    selected_k_indices = []
-    cumulative_dist = 0.0
-    k_distances = []
-    label_positions = [0.0]
-    label_texts = [path_labels[0]]
-    
-    for i in range(len(path_points_cart) - 1):
-        p1 = path_points_cart[i]
-        p2 = path_points_cart[i + 1]
-        
-        # Find k-points close to this segment
-        distances = point_to_segment_distance_2d(k2, p1, p2)
-        close_mask = distances < tolerance
-        segment_k_indices = np.where(close_mask)[0]
-        
-        if len(segment_k_indices) > 0:
-            # Compute distance along path for each k-point
-            segment_k_points = k2[segment_k_indices]
-            
-            # Project onto path direction
-            path_vec = p2 - p1
-            path_length = np.linalg.norm(path_vec)
-            if path_length > 1e-14:
-                path_dir = path_vec / path_length
-                proj = np.dot(segment_k_points - p1[None, :], path_dir)
-                
-                # Sort by projection (distance along segment)
-                sort_idx = np.argsort(proj)
-                segment_k_indices = segment_k_indices[sort_idx]
-                proj = proj[sort_idx]
-                
-                # Add to total distance
-                segment_distances = cumulative_dist + proj
-                k_distances.extend(segment_distances.tolist())
-                selected_k_indices.extend(segment_k_indices.tolist())
-            
-        # Update cumulative distance for next segment
-        cumulative_dist += np.linalg.norm(p2 - p1)
-        label_positions.append(cumulative_dist)
-        label_texts.append(path_labels[i + 1])
-    
-    # Remove duplicates (keep first occurrence)
-    unique_indices = []
-    seen = set()
-    unique_distances = []
-    for idx, dist in zip(selected_k_indices, k_distances):
-        if idx not in seen:
-            unique_indices.append(idx)
-            unique_distances.append(dist)
-            seen.add(idx)
-    
-    selected_k_indices = np.array(unique_indices, dtype=int)
-    k_distances = np.array(unique_distances, dtype=float)
-    
-    # Extract S(k) values at selected k-points
-    if len(selected_k_indices) == 0:
+    if len(selected_indices) == 0:
         raise ValueError("No k-points found along path. Try increasing tolerance or checking path definition.")
     
-    y = Sk[selected_k_indices]
+    y = Sk[selected_indices]
     x = k_distances
 
     # Plot discrete k-points with markers
     ax.plot(x, y, **line_kw)
-    ax.set_ylabel(value_label)
+    ax.set_ylabel(value_label, fontsize=style.fontsize_label)
     ax.set_xlim(x.min(), x.max())
 
     # Add high-symmetry separators + ticks
@@ -1747,22 +639,15 @@ def plot_bz_path_from_corr(
         ax.set_xticklabels(label_texts)
 
     ax.grid(alpha=0.25)
+    ax.tick_params(labelsize=style.fontsize_tick)
     
-    # Create result object (compatibility)
-    from dataclasses import dataclass
-    @dataclass
-    class KPathResult:
-        k_dist: np.ndarray
-        values: np.ndarray
-        label_positions: np.ndarray
-        label_texts: list
-    
-    result = KPathResult(
-        k_dist=x,
-        values=y,
-        label_positions=np.array(label_positions),
-        label_texts=label_texts
-    )
+    # Return result with compatibility
+    result = {
+        'k_dist'            : x,
+        'values'            : y,
+        'label_positions'   : label_positions,
+        'label_texts'       : label_texts
+    }
     
     return result
 
@@ -1775,19 +660,23 @@ def plot_correlation_grid(
                         y_parameters        : list,
                         x_param             : str       = 'J',
                         y_param             : str       = 'hx',
+                        # plotting mode
                         mode                : str       = 'lattice',
-                        filters             = None,
+                        filters                         = None,
+                        # reference
                         state_idx           : int       = 0,
                         ref_site_idx        : int       = 0,
+                        # figure
                         figsize_per_panel   : tuple     = (4, 3.5),
                         cmap                : str       = 'RdBu_r',
-                        vmin                = None,
-                        vmax                = None,
+                        vmin                            = None,
+                        vmax                            = None,
                         title               : str       = '',
                         # data extraction
                         param_fun           : callable  = lambda r, param_name: r.get(param_name, []),
                         param_labels        : dict      = {},
-                        post_process_func   = None,
+                        post_process_func               = None,
+                        point_closeness     : float     = 1e-5,
                         **kwargs):
     r"""
     Plot correlation matrices from ED results in a parameter grid with multiple visualization modes.
@@ -1974,7 +863,10 @@ def plot_correlation_grid(
     results             = load_results(
                             data_dir            =   directory,
                             filters             =   filters,
-                            lx=lx, ly=ly, lz=lz, Ns=Ns,
+                            lx                  =   lx, 
+                            ly                  =   ly, 
+                            lz                  =   lz, 
+                            Ns                  =   Ns,
                             logger              =   kwargs.get('logger', None),
                             post_process_func   =   post_process_func
                         )
@@ -1983,24 +875,24 @@ def plot_correlation_grid(
 
     _, _, unique_x, unique_y = PlotDataHelpers.extract_parameter_arrays(results, x_param, y_param)
 
-    unique_x        = np.array([v for v in unique_x if any(abs(v - p) < 1e-5 for p in x_parameters)])
-    unique_y        = np.array([v for v in unique_y if any(abs(v - p) < 1e-5 for p in y_parameters)])
-    unique_x        = np.sort(unique_x)
-    unique_y        = np.sort(unique_y)
-    unique_y_plot   = unique_y[::-1]
+    unique_x            = np.array([v for v in unique_x if any(abs(v - p) < 1e-5 for p in x_parameters)])
+    unique_y            = np.array([v for v in unique_y if any(abs(v - p) < 1e-5 for p in y_parameters)])
+    unique_x            = np.sort(unique_x)
+    unique_y            = np.sort(unique_y)
+    unique_y_plot       = unique_y[::-1]
 
-    n_rows, n_cols  = len(unique_y_plot), len(unique_x)
+    n_rows, n_cols      = len(unique_y_plot), len(unique_x)
     if n_rows == 0 or n_cols == 0:
         return None, None
 
-    fig, axes, _, _ = PlotDataHelpers.create_subplot_grid(
-                        n_panels            = n_rows * n_cols,
-                        max_cols            = n_cols,
-                        figsize_per_panel   = figsize_per_panel,
-                        sharex              = True,
-                        sharey              = True
-                    )
-    axes_grid       = np.array(axes).reshape((n_rows, n_cols))
+    fig, axes, _, _     = PlotDataHelpers.create_subplot_grid(
+                            n_panels            = n_rows * n_cols,
+                            max_cols            = n_cols,
+                            figsize_per_panel   = figsize_per_panel,
+                            sharex              = True,
+                            sharey              = True
+                        )
+    axes_grid           = np.array(axes).reshape((n_rows, n_cols))
 
     # --------------------------------------------------------------
     # resolve plot_mode
@@ -2041,9 +933,10 @@ def plot_correlation_grid(
     phase_conj          = None          # (Nk,Ns)
     Ns_lat              = None          # number of sites in lattice, if needed
     Nk                  = None          # number of k-points
+    
+    interpolation       = kwargs.get('interpolation', 'linear')             # interpolation method
 
-    ks_grid_n           = int(kwargs.get('ks_grid_n',           Ns))        # interpolation grid resolution
-    ks_interp           = kwargs.get('ks_interp',               'linear')   # interpolation method
+    ks_grid_n           = int(kwargs.get('ks_grid_n',           500))       # interpolation grid resolution
     ks_show_points      = bool(kwargs.get('ks_show_points',     True))      # show discrete k-points
     ks_point_size       = float(kwargs.get('ks_point_size',     10))        # k-point marker size
     ks_alpha_points     = float(kwargs.get('ks_alpha_points',   0.35))      # k-point alpha - transparency
@@ -2051,19 +944,6 @@ def plot_correlation_grid(
     ks_label_hs         = bool(kwargs.get('ks_label_hs',        True))      # label high-symmetry points
     ks_mask_outside_bz  = bool(kwargs.get('ks_mask_outside_bz', True))      # mask outside BZ
     auto_vlim_kspace    = bool(kwargs.get('auto_vlim_kspace',   True))      # auto vmin/vmax
-
-    # Helpers for BZ    : use the new modular helper functions
-    def _try_draw_bz(ax):
-        """Try to draw BZ boundary using modular helper."""
-        if not ks_draw_bz or lattice is None:
-            return
-        _draw_bz_boundary(ax, lattice)
-
-    def _try_label_hs(ax):
-        """Try to label high-symmetry points using modular helper."""
-        if not ks_label_hs or lattice is None:
-            return
-        _label_high_symmetry_points(ax, lattice)
 
     # If kspace: build phase once.
     if plot_mode == 'kspace' and lattice is not None:
@@ -2186,66 +1066,9 @@ def plot_correlation_grid(
             return
 
     # --------------------------------------------------------------
-    # k-space interpolation grid (for smooth imshow-like maps)
-    # --------------------------------------------------------------
-    
-    def _kspace_grid_and_mask():
-        if k2 is None:
-            return None
-
-        kx_min, kx_max = float(np.min(k2[:, 0])), float(np.max(k2[:, 0]))
-        ky_min, ky_max = float(np.min(k2[:, 1])), float(np.max(k2[:, 1]))
-
-        pad_x = 0.05 * (kx_max - kx_min + 1e-12)
-        pad_y = 0.05 * (ky_max - ky_min + 1e-12)
-
-        kx = np.linspace(kx_min - pad_x, kx_max + pad_x, ks_grid_n)
-        ky = np.linspace(ky_min - pad_y, ky_max + pad_y, ks_grid_n)
-        KX, KY = np.meshgrid(kx, ky)
-
-        # Wigner-Seitz BZ mask if requested and lattice supports it
-        mask = None
-        if ks_mask_outside_bz and lattice is not None:
-            try:
-                from general_python.lattices.tools.lattice_kspace import ws_bz_mask
-                
-                # Try multiple attribute names for reciprocal vectors
-                k1_vec = None
-                k2_vec = None
-                
-                for attr1 in ['k1', 'b1', 'avec']:
-                    if hasattr(lattice, attr1):
-                        k1_vec = np.asarray(getattr(lattice, attr1), float).ravel()[:2]
-                        break
-                
-                for attr2 in ['k2', 'b2', 'bvec']:
-                    if hasattr(lattice, attr2):
-                        k2_vec = np.asarray(getattr(lattice, attr2), float).ravel()[:2]
-                        break
-                
-                if k1_vec is not None and k2_vec is not None:
-                    inside  = ws_bz_mask(KX, KY, k1_vec, k2_vec, shells=kwargs.get('bz_shells', 1))
-                    mask    = ~inside  # invert: True where we want to mask out
-            except Exception:
-                # Fallback: mask points far from discrete k-cloud
-                try:
-                    from scipy.spatial import cKDTree
-                    tree    = cKDTree(k2)
-                    d, _    = tree.query(np.column_stack([KX.ravel(), KY.ravel()]), k=1)
-                    d       = d.reshape(KX.shape)
-                    d0      = np.median(d[np.isfinite(d)])
-                    dmax    = float(kwargs.get('ks_blob_radius', 2.5 * d0))
-                    mask    = (d > dmax)
-                except Exception:
-                    mask = None
-
-        return (kx, ky, KX, KY, mask)
-
-    k_grid_pack = _kspace_grid_and_mask() if plot_mode == 'kspace' else None
-
-    # --------------------------------------------------------------
     # plotting loop
     # --------------------------------------------------------------
+    
     for ii, y_val in enumerate(unique_y_plot):
         for jj, x_val in enumerate(unique_x):
 
@@ -2255,9 +1078,10 @@ def plot_correlation_grid(
             for r in results:
                 rx = r.params.get(x_param, np.nan)
                 ry = r.params.get(y_param, np.nan)
-                if abs(rx - x_val) < 1e-5 and abs(ry - y_val) < 1e-5:
+                if abs(rx - x_val) < point_closeness and abs(ry - y_val) < point_closeness:
                     subset.append(r)
-
+                    
+            # if no result, skip
             if not subset:
                 ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes)
                 ax.axis('off')
@@ -2279,7 +1103,7 @@ def plot_correlation_grid(
                     cmap            = cmap,
                     vmin            = vmin,
                     vmax            = vmax,
-                    interpolation   = 'nearest',
+                    interpolation   = interpolation,
                     origin          = 'lower'
                 )
 
@@ -2290,24 +1114,25 @@ def plot_correlation_grid(
                         cmap            = cmap,
                         vmin            = vmin,
                         vmax            = vmax,
-                        interpolation   = 'nearest',
+                        interpolation   = interpolation,
                         origin          = 'lower'
                     )
+                    
                 else:
                     ref_site_idx_use = ref_site_idx if (0 <= ref_site_idx < positions.shape[0]) else 0
                     site_vals        = corr_matrix[ref_site_idx_use, :]
 
                     # 1D: correlation vs displacement coordinate
                     if d_dim == 1 or (positions.shape[1] == 1):
-                        x   = positions[:, 0] - positions[ref_site_idx_use, 0]
-                        idx = np.argsort(x)
+                        x               = positions[:, 0] - positions[ref_site_idx_use, 0]
+                        idx             = np.argsort(x)
                         Plotter.plot(ax, x[idx], site_vals[idx], marker='o', lw=1.5)
                         Plotter.vline(ax, 0.0, ls='--', lw=1, color='k', alpha=0.4)
                         Plotter.grid(ax, alpha=0.3)
 
-                    # 2D: smooth “blob” field + point overlay
+                    # 2D: smooth "blob" field + point overlay
                     else:
-                        pos = positions[:, :2] - positions[ref_site_idx_use, :2]
+                        pos             = positions[:, :2] - positions[ref_site_idx_use, :2]
 
                         x_min, x_max    = pos[:, 0].min(), pos[:, 0].max()
                         y_min, y_max    = pos[:, 1].min(), pos[:, 1].max()
@@ -2319,38 +1144,36 @@ def plot_correlation_grid(
                         X, Y            = np.meshgrid(xx, yy)
 
                         # Interpolate but keep it local (avoid filling big empty regions)
-                        Z = None
+                        Z               = None
                         try:
-                            from scipy.interpolate import griddata
-                            Z = griddata(pos, site_vals, (X, Y), method=kwargs.get('rs_interp', 'linear'))
+                            Z           = griddata(pos, site_vals, (X, Y), method=kwargs.get('rs_interp', 'linear'))
                         except Exception:
-                            Z = None
+                            Z           = None
 
                         if Z is None:
-                            d2  = (X[..., None] - pos[:, 0])**2 + (Y[..., None] - pos[:, 1])**2
-                            Z   = site_vals[np.argmin(d2, axis=2)]
+                            d2          = (X[..., None] - pos[:, 0])**2 + (Y[..., None] - pos[:, 1])**2
+                            Z           = site_vals[np.argmin(d2, axis=2)]
 
                         # Local-support mask so you get blobs, not a filled convex hull
                         try:
-                            from scipy.spatial import cKDTree
-                            tree = cKDTree(pos)
-                            d, _ = tree.query(np.column_stack([X.ravel(), Y.ravel()]), k=1)
-                            d    = d.reshape(X.shape)
-                            d0   = np.median(d[np.isfinite(d)])
-                            dmax = float(kwargs.get('rs_blob_radius', 2.5 * d0))
-                            Z    = np.where(d <= dmax, Z, np.nan)
+                            tree        = cKDTree(pos)
+                            d, _        = tree.query(np.column_stack([X.ravel(), Y.ravel()]), k=1)
+                            d           = d.reshape(X.shape)
+                            d0          = np.median(d[np.isfinite(d)])
+                            dmax        = float(kwargs.get('rs_blob_radius', 2.5 * d0))
+                            Z           = np.where(d <= dmax, Z, np.nan)
                         except Exception:
                             pass
 
                         ax.imshow(
-                            Z,
-                            extent  = (xx[0], xx[-1], yy[0], yy[-1]),
-                            origin  = 'lower',
-                            cmap    = cmap,
-                            vmin    = vmin,
-                            vmax    = vmax,
-                            alpha   = 0.95,
-                        )
+                                Z,
+                                extent  = (xx[0], xx[-1], yy[0], yy[-1]),
+                                origin  = 'lower',
+                                cmap    = cmap,
+                                vmin    = vmin,
+                                vmax    = vmax,
+                                alpha   = 0.95,
+                            )
 
                         Plotter.scatter(
                             ax,
@@ -2378,50 +1201,50 @@ def plot_correlation_grid(
                         ax.text(0.5, 0.5, 'Ns mismatch', ha='center', va='center', transform=ax.transAxes)
                         ax.axis('off')
                     else:
-                        C   = np.asarray(corr_matrix, float)
-                        Ns0 = C.shape[0]
+                        C       = np.asarray(corr_matrix, float)
+                        Ns0     = C.shape[0]
 
-                        tmp = phase @ C
-                        Sk  = np.real((tmp * phase_conj).sum(axis=1) / Ns0)  # (Nk,)
+                        tmp     = phase @ C
+                        Sk      = np.real((tmp * phase_conj).sum(axis=1) / Ns0) # (Nk,)
 
                         # Use the new modular k-space plotter
                         # Create configuration objects
-                        style = PlotStyle(
-                            cmap=cmap,
-                            vmin=vmin,
-                            vmax=vmax,
-                            fontsize_label=kwargs.get('fontsize_label', 10),
-                            fontsize_tick=kwargs.get('fontsize_tick', 8),
-                            linewidth=1.5,
-                            markersize=3,
-                            marker='o',
-                            alpha=ks_alpha_points
-                        )
+                        style   = PlotStyle(
+                                    cmap                    =   cmap,
+                                    vmin                    =   vmin,
+                                    vmax                    =   vmax,
+                                    fontsize_label          =   kwargs.get('fontsize_label', 10),
+                                    fontsize_tick           =   kwargs.get('fontsize_tick', 8),
+                                    linewidth               =   1.5,
+                                    markersize              =   3,
+                                    marker                  =   'o',
+                                    alpha                   =   ks_alpha_points
+                                )
                         
                         ks_config = KSpaceConfig(
-                            grid_n=ks_grid_n,
-                            interp_method=ks_interp,
-                            show_discrete_points=ks_show_points,
-                            point_size=ks_point_size,
-                            point_alpha=ks_alpha_points,
-                            draw_bz_outline=ks_draw_bz,
-                            label_high_symmetry=ks_label_hs,
-                            mask_outside_bz=ks_mask_outside_bz,
-                            imshow_interp=kwargs.get('ks_im_interp', 'bilinear'),
-                            ws_shells=kwargs.get('bz_shells', 1)
-                        )
+                                    grid_n                  =   ks_grid_n,
+                                    interp_method           =   interpolation,
+                                    show_discrete_points    =   ks_show_points,
+                                    point_size              =   ks_point_size,
+                                    point_alpha             =   ks_alpha_points,
+                                    draw_bz_outline         =   ks_draw_bz,
+                                    label_high_symmetry     =   ks_label_hs,
+                                    mask_outside_bz         =   ks_mask_outside_bz,
+                                    imshow_interp           =   kwargs.get('ks_im_interp', 'bilinear'),
+                                    ws_shells               =   kwargs.get('bz_shells', 1)
+                                )
                         
-                        # Use new plot_kspace_intensity with extended BZ and π labels
+                        # Use new plot_kspace_intensity with extended BZ and Pi labels
                         plot_kspace_intensity(
-                            ax=ax,
-                            k2=k2,
-                            intensity=Sk,
-                            style=style,
-                            ks_config=ks_config,
-                            lattice=lattice,
-                            show_extended_bz=kwargs.get('show_extended_bz', True),
-                            bz_copies=kwargs.get('bz_copies', 2)
-                        )
+                                    ax                      =   ax,
+                                    k2                      =   k2,
+                                    intensity               =   Sk,
+                                    style                   =   style,
+                                    ks_config               =   ks_config,
+                                    lattice                 =   lattice,
+                                    show_extended_bz        =   kwargs.get('show_extended_bz', True),
+                                    bz_copies               =   kwargs.get('bz_copies', 2)
+                                )
 
             elif plot_mode == 'kpath':
                 # k-path mode: plot S(k) along high-symmetry path using EXACT k-points
@@ -2444,10 +1267,11 @@ def plot_correlation_grid(
             # ----------------------------------------------------------
             # per-panel annotations
             # ----------------------------------------------------------
+            
             if kwargs.get('show_panel_labels', True):
                 ann_color = kwargs.get('text_color', 'black')
                 if plot_mode == 'kspace' and ks_mask_outside_bz:
-                    ann_color = kwargs.get('text_color', 'white')  # better contrast on BZ maps
+                    ann_color   = kwargs.get('text_color', 'white')  # better contrast on BZ maps
                 Plotter.set_annotate_letter(
                     ax,
                     iter        = 0,
@@ -2464,17 +1288,17 @@ def plot_correlation_grid(
             elif plot_mode == 'lattice' and (positions is None or d_dim == 1):
                 Plotter.grid(ax, alpha=0.25)
 
-            Plotter.set_tickparams(ax)
             _set_axis_labels(ax, ii, jj)
+            Plotter.set_tickparams(ax)
 
     # --------------------------------------------------------------
     # colorbar + title
     # --------------------------------------------------------------
-    cbar_scale  = kwargs.pop('cbar_scale', 'linear')
-    vmin_cb     = vmin if cbar_scale != 'linear' else None
+    cbar_scale              = kwargs.pop('cbar_scale', 'linear')
+    vmin_cb                 = vmin if cbar_scale != 'linear' else None
     
     # For kpath mode, use fewer ticks (discrete k-points)
-    cbar_format = '%.2f'
+    cbar_format             = '%.2f'
     if plot_mode == 'kpath':
         cbar_format = '%.3f'  # more precision for discrete values
 
@@ -2490,6 +1314,11 @@ def plot_correlation_grid(
         scale               = cbar_scale,
         remove_pdf_lines    = True
     )
+
+    # adjust the ticks
+    if plot_mode == 'kspace' or plot_mode == 'kpath':
+        # Format tick labels as multiples of Pi
+        format_pi_ticks(ax, axis=kwargs.get('pi_tick_axis', 'both' if plot_mode == 'kspace' else 'x'))
 
     fig.suptitle(title, fontsize=kwargs.get('suptitle_fontsize', 14))
     plt.show()

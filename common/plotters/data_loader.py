@@ -252,7 +252,7 @@ class PlotDataHelpers:
         if not all_values:
             return np.nan, np.nan
         
-        all_values  = np.array(all_values, dtype=float).flatten()
+        all_values  = np.array(np.real(all_values), dtype=float).flatten()
         vmin        = np.nanmin(all_values)
         vmax        = np.nanmax(all_values)
         return vmin, vmax
