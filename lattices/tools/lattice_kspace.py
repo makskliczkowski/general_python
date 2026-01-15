@@ -1,9 +1,16 @@
 '''
-A module for handling lattice k-space lattice tools and methods.
+K-space utilities for lattice systems.
+
+Provides:
+- Brillouin zone path generation and high-symmetry points
+- Bloch transformation caching for efficient k-space transforms
+- K-point grid generation and path extraction
+- Wigner-Seitz cell masking and BZ extension utilities
 
 --------------------------------
 File            : lattices/tools/lattice_kspace.py
 Author          : Maksymilian Kliczkowski
+Date            : 2025-01-15 (Updated)
 --------------------------------
 '''
 
@@ -19,7 +26,7 @@ if TYPE_CHECKING:
     from QES.Algebra.hamil_quadratic    import QuadraticBlockDiagonalInfo
 
 # -----------------------------------------------------------------------------------------------------------
-# HIGH-SYMMETRY POINTS DEFINITIONS
+# BRILLOUIN ZONE UTILITIES
 # -----------------------------------------------------------------------------------------------------------
 
 def ws_bz_mask(KX, KY, b1, b2, shells=1):
@@ -76,6 +83,73 @@ def ws_bz_mask(KX, KY, b1, b2, shells=1):
     # Add small tolerance to handle numerical precision at boundaries
     inside      = np.all(2 * k_dot_G <= G_squared + 1e-12, axis=-1)
     return inside
+
+def extend_kspace_data(
+        k_points    : np.ndarray,
+        data        : np.ndarray,
+        b1          : np.ndarray,
+        b2          : np.ndarray,
+        b3          : np.ndarray    = None,
+        nx          : int           = 2,
+        ny          : int           = 2,
+        nz          : int           = 0,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+    r"""
+    Extend k-space data by replicating it across multiple Brillouin zones.
+
+    Parameters
+    ----------
+    k_points : np.ndarray, shape (Nk, 3)
+        Original k-points in Cartesian coordinates.
+    data : np.ndarray, shape (Nk, ...)
+        Data associated with each k-point (e.g., intensity).
+    b1, b2 : np.ndarray
+        Reciprocal lattice vectors (2D or 3D, only first 2 components used).
+    copies : int
+        Number of BZ copies to generate in each direction.
+
+    Returns
+    -------
+    extended_k_points : np.ndarray
+        Extended k-points covering multiple BZs.
+    extended_data : np.ndarray
+        Corresponding data for the extended k-points.
+        
+    Example
+    -------
+    >>> k_points    = np.array([[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]])
+    >>> data        = np.array([1.0, 0.5])
+    >>> b1          = np.array([1.0, 0.0, 0.0])
+    >>> b2          = np.array([0.0, 1.0, 0.0])
+    >>> extended_k, extended_data = extend_kspace_data(k_points, data, b1, b2, nx=1, ny=1)
+    >>> print("Extended k-points:\n", extended_k)
+    ... repeated values
+    """
+
+    extended_k_points   = []
+    extended_data       = []
+    kdim                = k_points.shape[1]
+    b1                  = np.asarray(b1, float).ravel()[:kdim] if b1 is not None else None
+    b2                  = np.asarray(b2, float).ravel()[:kdim] if b2 is not None else None
+    b3                  = np.asarray(b3, float).ravel()[:kdim] if b3 is not None else None
+    # Generate shifted k-points
+    
+    nx                  = nx if b1 is not None else 0
+    ny                  = ny if b2 is not None else 0
+    nz                  = nz if b3 is not None else 0
+    shift_vec           = lambda v, m: m * v if v is not None else 0
+    for m in range(-nx, nx + 1):
+        for n in range(-ny, ny + 1):
+            for p in range(-nz, nz + 1):
+                shift           = shift_vec(b1, m) + shift_vec(b2, n) + shift_vec(b3, p)    # Shifted grid...
+                shifted_k       = k_points + shift                                          # Shift x,y,z components
+                extended_k_points.extend(shifted_k)
+                extended_data.extend(data)
+
+    extended_k_points = np.asarray(extended_k_points)
+    extended_data     = np.asarray(extended_data)
+
+    return extended_k_points, extended_data
 
 # -----------------------------------------------------------------------------------------------------------
 #! HIGH-SYMMETRY POINTS AND PATHS
@@ -164,9 +238,10 @@ class HighSymmetryPoints:
         """Get a point by name, returns None if not found."""
         return self.points.get(name)
     
+    @property
     def default_path(self) -> List[str]:
         """Return the default path through high-symmetry points."""
-        return self._default_path.copy()
+        return self._default_path
     
     def get_path_points(self, path_labels: List[str]) -> List[Tuple[str, List[float]]]:
         """
@@ -204,9 +279,9 @@ class HighSymmetryPoints:
         pts = cls(
             _default_path=['Gamma', 'X', 'Gamma2']
         )
-        pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$0$', '1D BZ center'))
-        pts.add(HighSymmetryPoint('X',      (0.5, 0.0, 0.0), r'$\pi$', 'Zone boundary'))
-        pts.add(HighSymmetryPoint('Gamma2', (1.0, 0.0, 0.0), r'$2\pi$', 'Wrapped Gamma'))
+        pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$0$',        '1D BZ center'))
+        pts.add(HighSymmetryPoint('X',      (0.5, 0.0, 0.0), r'$\pi$',      'Zone boundary'))
+        pts.add(HighSymmetryPoint('Gamma2', (1.0, 0.0, 0.0), r'$2\pi$',     'Wrapped Gamma'))
         return pts
     
     @classmethod
@@ -245,18 +320,15 @@ class HighSymmetryPoints:
         pts.add(HighSymmetryPoint('Kp',     (2/3, 1/3, 0.0), r"$K'$",       'Other Dirac point'))
         return pts
     
-    @staticmethod
-    def honeycomb_2d():
+    @classmethod
+    def honeycomb_2d(cls) -> 'HighSymmetryPoints':
         """High-symmetry points for honeycomb/graphene lattice."""
-        return HighSymmetryPoints(
-            points = {
-                'Gamma': HighSymmetryPoint(name='Gamma', label=r'$\Gamma$', frac_coords=[0.0, 0.0, 0.0]         , latex_label=r'$\Gamma$'),
-                'K':     HighSymmetryPoint(name='K',     label=r'$K$',      frac_coords=[2.0/3.0, 1.0/3.0, 0.0] , latex_label=r'$K$'),
-                'Kp':    HighSymmetryPoint(name='Kp',    label=r"$K'$",     frac_coords=[1.0/3.0, 2.0/3.0, 0.0] , latex_label=r"$K'$"),
-                'M':     HighSymmetryPoint(name='M',     label=r'$M$',      frac_coords=[0.5, 0.0, 0.0]         , latex_label=r'$M$'),
-            },
-            _default_path = ['Gamma', 'K', 'M', 'Gamma']
-        )
+        pts = cls(_default_path=['Gamma', 'K', 'M', 'Gamma'])
+        pts.add(HighSymmetryPoint('Gamma', 'Gamma', (0.0, 0.0, 0.0),            r'$\Gamma$',    'BZ center'))
+        pts.add(HighSymmetryPoint('K', 'K',         (2.0/3.0, 1.0/3.0, 0.0),    r'$K$',         'Dirac point'))
+        pts.add(HighSymmetryPoint('Kp', "K'",       (1.0/3.0, 2.0/3.0, 0.0),    r"$K'$",        'Other Dirac point'))
+        pts.add(HighSymmetryPoint('M', 'M',         (0.5, 0.0, 0.0),            r'$M$',         'Edge midpoint'))
+        return pts
         
     @classmethod
     def hexagonal_2d(cls) -> 'HighSymmetryPoints':
@@ -454,34 +526,7 @@ class StandardBZPath(Enum):
         (r"$M$",        [0.5, 0.0, 0.0]),
         (r"$\Gamma$",   [0.0, 0.0, 0.0])
     ]
-    
-    def from_str(name: str) -> StandardBZPath:
-        """
-        Get StandardBZPath enum from string name.
 
-        Parameters
-        ----------
-        name : str
-            Name of the standard path (e.g., 'CHAIN_1D', 'SQUARE_2D').
-
-        Returns
-        -------
-        StandardBZPath
-            Corresponding enum value.
-
-        Raises
-        ------
-        ValueError
-            If the name does not correspond to any StandardBZPath.
-        """
-        
-        # handle case-insensitivity
-        name = name.upper()
-        
-        try:
-            return StandardBZPath[name]
-        except KeyError:
-            raise ValueError(f"Unknown StandardBZPath name: {name}")
 
 PathTypes = Literal['CHAIN_1D', 'SQUARE_2D', 'TRIANGULAR_2D', 'CUBIC_3D', 'HONEYCOMB_2D']
     
@@ -521,14 +566,14 @@ def generate_kgrid(lattice: Lattice, n_k: Iterable[int]) -> np.ndarray:
 
 # -----------------------------------------------------------------------------------------------------------
 
-def _resolve_path_input(path: Iterable[tuple[str, Iterable[float]]] | StandardBZPath) -> list[tuple[str, list[float]]]:
+def _resolve_path_input(path: Iterable[tuple[str, Iterable[float]]] | StandardBZPath | str) -> list[tuple[str, list[float]]]:
     """
     Resolve path input to a list of (label, fractional_coord) pairs.
 
     Parameters
     ----------
-    path : list[(label, coords)] or StandardBZPath
-        Path definition (fractional coordinates) or one of the standard enums.
+    path : list[(label, coords)], StandardBZPath, or str
+        Path definition (fractional coordinates), standard enum, or enum name string.
 
     Returns
     -------
@@ -540,24 +585,13 @@ def _resolve_path_input(path: Iterable[tuple[str, Iterable[float]]] | StandardBZ
     >>> path = _resolve_path_input("SQUARE_2D")
     >>> for label, coord in path:
     ...     print(f"{label}: {coord}")
-    G: [0.0, 0.0, 0.0]
-    X: [0.5, 0.0, 0.0]
-    M: [0.5, 0.5, 0.0]
-    G: [0.0, 0.0, 0.0]
     """
     if isinstance(path, str):
-        try:
-            path = StandardBZPath[path].value
-        except KeyError:
-            raise ValueError(f"Unknown BZ path name: {path!r}")
+        path = StandardBZPath[path.upper()].value
     elif isinstance(path, StandardBZPath):
         path = path.value
-
-    resolved_path = []
-    for label, frac in path:
-        resolved_path.append((label, list(map(float, frac))))
     
-    return resolved_path
+    return [(label, list(map(float, frac))) for label, frac in path]
 
 def brillouin_zone_path(
         lattice         : Lattice,
