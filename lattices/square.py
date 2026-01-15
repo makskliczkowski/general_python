@@ -28,8 +28,8 @@ class SquareLattice(Lattice):
     - c* = [0, 0, 2*pi]
     
     High-symmetry points in the Brillouin zone:
-    - 1D: Γ (0) -> X (π) -> Γ (2π)
-    - 2D: Γ (0,0) -> X (π,0) -> M (π,π) -> Γ (0,0)  
+    - 1D: Γ (0) -> X (Pi) -> Γ (2Pi)
+    - 2D: Γ (0,0) -> X (Pi,0) -> M (Pi,Pi) -> Γ (0,0)  
     - 3D: Γ -> X -> M -> Γ -> R -> X
     '''
 
@@ -100,7 +100,7 @@ class SquareLattice(Lattice):
         -------
         HighSymmetryPoints
             High-symmetry points with default path based on dimension:
-            - 1D: Γ -> X -> Γ (zone boundary at π)
+            - 1D: Γ -> X -> Γ (zone boundary at Pi)
             - 2D: Γ -> X -> M -> Γ (standard square BZ path)
             - 3D: Γ -> X -> M -> Γ -> R -> X (standard cubic BZ path)
         """

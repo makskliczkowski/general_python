@@ -457,9 +457,9 @@ class Lattice(ABC):
         Uses azimuthal angles from the origin to define sectors.
         
         The three regions are defined as:
-        - A: angles in [-π, -π/3)
-        - B: angles in [-π/3, π/3)
-        - C: angles in [π/3, π]
+        - A: angles in [-Pi, -Pi/3)
+        - B: angles in [-Pi/3, Pi/3)
+        - C: angles in [Pi/3, Pi]
         
         Parameters
         ----------

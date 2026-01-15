@@ -1309,7 +1309,7 @@ class SpectralModule:
     >>> omega = np.linspace(-5, 5, 100)
     >>> G = spec.greens_function(omega, operator_left, operator_right)
     >>> 
-    >>> # Spectral function A(ω) = -Im[G(ω)]/π
+    >>> # Spectral function A(ω) = -Im[G(ω)]/Pi
     >>> A = spec.spectral_function(omega, operator)
     >>> 
     >>> # Dynamic structure factor (via Lanczos, no full diag needed)
@@ -1428,7 +1428,7 @@ class SpectralModule:
                          use_lanczos: bool = False,
                          max_krylov: int = 200) -> Array:
         """
-        Compute spectral function A(ω) = -Im[G(ω)]/π.
+        Compute spectral function A(ω) = -Im[G(ω)]/Pi.
         
         Parameters
         ----------
@@ -1466,7 +1466,7 @@ class SpectralModule:
         """
         Compute dynamic structure factor S(ω) for an operator.
         
-        S(ω) = -Im[G(ω)]/π where G = <gs|O†(ω-H+E_0+iη)⁻¹O|gs>
+        S(ω) = -Im[G(ω)]/Pi where G = <gs|O†(ω-H+E_0+iη)⁻¹O|gs>
         
         Parameters
         ----------
@@ -1550,7 +1550,7 @@ class SpectralModule:
         Methods:
         --------
         greens_function(omega, A, B)        - G(ω) = <ψ|A†(ω-H+E₀+iη)⁻¹B|ψ>
-        spectral_function(omega, O)         - A(ω) = -Im[G]/π
+        spectral_function(omega, O)         - A(ω) = -Im[G]/Pi
         dynamic_structure_factor(omega, O)  - S(ω) for dynamical correlations
         susceptibility(omega, A, B)         - χ_AB(ω) response function
         

@@ -243,8 +243,8 @@ def compute_spectral_broadening(
         
     Notes
     -----
-    - Lorentzian: L(ω) = (1/π) * (η / ((ω-E)² + η²))
-    - Gaussian: G(ω) = (1/√(2πη²)) * exp(-(ω-E)²/(2η²))
+    - Lorentzian: L(ω) = (1/Pi) * (η / ((ω-E)² + η²))
+    - Gaussian: G(ω) = (1/√(2Piη²)) * exp(-(ω-E)²/(2η²))
     """
     energies    = np.asarray(energies, dtype=float).ravel()
     weights     = np.asarray(weights, dtype=float).ravel()
@@ -271,10 +271,10 @@ def compute_spectral_broadening(
     omega_diff  = omega_grid[:, None] - energies[None, :]
     
     if kind == 'lorentzian':
-        # Lorentzian: L(ω-E) = (1/π) * η / ((ω-E)² + η²)
+        # Lorentzian: L(ω-E) = (1/Pi) * η / ((ω-E)² + η²)
         kernel      = (eta / np.pi) / (omega_diff**2 + eta**2)
     elif kind == 'gaussian':
-        # Gaussian: G(ω-E) = (1/√(2πη²)) * exp(-(ω-E)²/(2η²))
+        # Gaussian: G(ω-E) = (1/√(2Piη²)) * exp(-(ω-E)²/(2η²))
         norm        = 1.0 / (np.sqrt(2 * np.pi) * eta)
         kernel      = norm * np.exp(-omega_diff**2 / (2 * eta**2))
     elif kind == 'none':
@@ -565,9 +565,9 @@ def plot_kspace_intensity(
     lattice : Lattice, optional
         Lattice object for BZ info and high-symmetry points
     show_extended_bz : bool
-        If True, replicate k-points to show multiple BZ copies from -2π to 2π
+        If True, replicate k-points to show multiple BZ copies from -2Pi to 2Pi
     bz_copies : int
-        Number of BZ copies in each direction (default 2 for -2π to 2π)
+        Number of BZ copies in each direction (default 2 for -2Pi to 2Pi)
     """
     if style is None:
         style = PlotStyle()
@@ -770,12 +770,12 @@ def plot_kspace_intensity(
     ax.set_ylabel(r'$k_y$', fontsize=style.fontsize_label)
     ax.tick_params(labelsize=style.fontsize_tick)
     
-    # Set strict limits to -2π to 2π when showing extended BZ
+    # Set strict limits to -2Pi to 2Pi when showing extended BZ
     if show_extended_bz and bz_copies >= 1:
         ax.set_xlim(-bz_copies * np.pi / 2, bz_copies * np.pi / 2)
         ax.set_ylim(-bz_copies * np.pi / 2, bz_copies * np.pi / 2)
     
-    # Format tick labels as multiples of π
+    # Format tick labels as multiples of Pi
     _format_pi_ticks(ax, axis='both')
 
 def _draw_bz_boundary(ax, lattice: "Lattice"):
@@ -910,7 +910,7 @@ def _label_high_symmetry_points(ax, lattice: "Lattice"):
 
 def _format_pi_ticks(ax, axis='both'):
     """
-    Format axis ticks as multiples of π.
+    Format axis ticks as multiples of Pi.
     
     Parameters
     ----------
@@ -922,11 +922,11 @@ def _format_pi_ticks(ax, axis='both'):
     import matplotlib.ticker as ticker
     
     def pi_formatter(x, pos):
-        """Format tick labels as multiples of π."""
+        """Format tick labels as multiples of Pi."""
         if abs(x) < 1e-10:
             return '0'
         
-        # Convert to multiples of π
+        # Convert to multiples of Pi
         multiple = x / np.pi
         
         # Handle simple cases
@@ -2411,7 +2411,7 @@ def plot_correlation_grid(
                             ws_shells=kwargs.get('bz_shells', 1)
                         )
                         
-                        # Use new plot_kspace_intensity with extended BZ and π labels
+                        # Use new plot_kspace_intensity with extended BZ and Pi labels
                         plot_kspace_intensity(
                             ax=ax,
                             k2=k2,

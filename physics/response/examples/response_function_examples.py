@@ -170,7 +170,7 @@ def example_2_optical_conductivity():
     
     # Imaginary part (dissipative)
     ax = axes[0]
-    ax.plot(omegas, -Im_sigma / np.pi, linewidth=2, label='-Im[\sigma]/π (Drude)')
+    ax.plot(omegas, -Im_sigma / np.pi, linewidth=2, label='-Im[\sigma]/Pi (Drude)')
     ax.fill_between(omegas, -Im_sigma / np.pi, alpha=0.2)
     ax.set_xlabel("omega  (energy units)")
     ax.set_ylabel("Dissipative conductivity")
@@ -198,7 +198,7 @@ def example_2_optical_conductivity():
     print(f"  - Drude peak at low omega : intraband (free electron) behavior")
     print(f"  - Real part threshold ≈ 2|E_Fermi|: interband transitions")
     print(f"  - K-K relation checks causality")
-    print(f"  - Integrating -Im[\sigma]/π gives oscillator strength")
+    print(f"  - Integrating -Im[\sigma]/Pi gives oscillator strength")
 
 
 # =============================================================================
