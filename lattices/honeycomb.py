@@ -388,6 +388,25 @@ class HoneycombLattice(Lattice):
         """
         return True
     
+    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
+        """
+        Returns high-symmetry points for the honeycomb lattice Brillouin zone.
+        
+        The honeycomb lattice has a hexagonal BZ with high-symmetry points:
+        - Γ (Gamma): zone center (0, 0, 0)
+        - K: Dirac point at (2/3, 1/3, 0) - hosts linear band crossings
+        - K': other Dirac point at (1/3, 2/3, 0)
+        - M: edge midpoint (1/2, 0, 0)
+        
+        Default path: Γ → K → M → Γ
+        """
+        return HighSymmetryPoints.honeycomb_2d()
+    
+    def default_bz_path(self):
+        """Returns default Brillouin zone path for band structure plots."""
+        hs = self.high_symmetry_points()
+        return hs.get_default_path_points() if hs else None
+    
     def bond_type(self, s1: int, s2: int) -> int:
         if s2 == self._nn[s1][X_BOND_NEI]: return X_BOND_NEI
         if s2 == self._nn[s1][Y_BOND_NEI]: return Y_BOND_NEI

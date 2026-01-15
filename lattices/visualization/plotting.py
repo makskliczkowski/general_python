@@ -334,6 +334,10 @@ def _plot_3d_bz(axis: Axes, points: np.ndarray, *, facecolor: str, edgecolor: st
     axis.set_ylabel(r"$k_y$")
     axis.set_zlabel(r"$k_z$")
 
+# -------------------------------------------------------------------------------
+#! Main Brillouin Zone Plotter
+# -------------------------------------------------------------------------------
+
 def plot_brillouin_zone(
     lattice         : Lattice,
     *,
@@ -346,8 +350,7 @@ def plot_brillouin_zone(
     title_kwargs    : Optional[Dict[str, object]]   = None,
     tight_layout    : bool                          = True,
     elev            : Optional[float]               = None,
-    azim            : Optional[float]               = None,
-) -> Tuple[Figure, Axes]:
+    azim            : Optional[float]               = None) -> Tuple[Figure, Axes]:
     """
     Plot the Brillouin Zone approximation based on sampled k-vectors.
     """

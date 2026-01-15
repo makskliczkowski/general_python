@@ -28,29 +28,53 @@ def ws_bz_mask(KX, KY, b1, b2, shells=1):
 
     Keeps points closer to Gamma than to any other reciprocal lattice point
     in a neighborhood of translations (m,n) with |m|,|n|<=shells.
+    
+    The Wigner-Seitz condition is: |k|² ≤ |k-G|² for all reciprocal lattice vectors G.
+    This simplifies to: 2k·G ≤ G² (mathematically equivalent, computationally faster).
+    
+    Parameters
+    ----------
+    KX, KY : array_like
+        Grid of k-points (kx, ky coordinates)
+    b1, b2 : array_like
+        Reciprocal lattice vectors (2D or 3D, only first 2 components used)
+    shells : int, default=1
+        Number of shells of reciprocal lattice points to consider
+        
+    Returns
+    -------
+    inside : ndarray (bool)
+        True for points inside the first Brillouin zone
     """
-    b1 = np.asarray(b1, float)[:2]
-    b2 = np.asarray(b2, float)[:2]
+    b1      = np.asarray(b1, float).ravel()[:2]
+    b2      = np.asarray(b2, float).ravel()[:2]
 
-    kx = KX[..., None]
-    ky = KY[..., None]
+    kx      = np.asarray(KX, dtype=float)
+    ky      = np.asarray(KY, dtype=float)
+    
+    # Stack k-vectors for vectorized operations: shape (*KX.shape, 2)
+    k_vec   = np.stack([kx, ky], axis=-1)
 
-    # List reciprocal lattice translation vectors around origin
-    G = []
+    # Generate reciprocal lattice translation vectors around origin
+    G       = []
     for m in range(-shells, shells + 1):
         for n in range(-shells, shells + 1):
             if m == 0 and n == 0:
                 continue
             g = m * b1 + n * b2
             G.append(g)
-    G = np.asarray(G, float)  # (Ng,2)
+    
+    # Array of G vectors
+    G           = np.asarray(G, dtype=float)  # (Ng, 2)
 
-    # distances: |k|^2 and |k-G|^2
-    k2      = kx**2 + ky**2
-    dG2     = (kx - G[:, 0])**2 + (ky - G[:, 1])**2  # (Ny,Nx,Ng)
-
-    # inside WS cell iff |k| <= |k-G| for all G
-    inside = np.all(k2 <= dG2 + 1e-14, axis=-1)
+    # Wigner-Seitz condition: 2k*G <= G^2 for all G
+    # Broadcasting: k_vec[..., None, :] @ G.T -> shape (*KX.shape, Ng)
+    k_dot_G     = np.sum(k_vec[..., None, :] * G[None, None, :, :], axis=-1)  # (..., Ng)
+    G_squared   = np.sum(G**2, axis=1)  # (Ng,)
+    
+    # Point is inside WS cell if it satisfies the condition for all G
+    # Add small tolerance to handle numerical precision at boundaries
+    inside      = np.all(2 * k_dot_G <= G_squared + 1e-12, axis=-1)
     return inside
 
 # -----------------------------------------------------------------------------------------------------------
@@ -74,6 +98,7 @@ class HighSymmetryPoint:
     description : str, optional
         Description of the point
     """
+    name        : str
     label       : str
     frac_coords : Tuple[float, float, float]
     latex_label : str = ""
@@ -83,9 +108,10 @@ class HighSymmetryPoint:
         if not self.latex_label:
             # Auto-generate LaTeX label
             special_labels = {
-                'Gamma': r'$\Gamma$', 'G': r'$\Gamma$',
-                'K': r'$K$', 'M': r'$M$', 'X': r'$X$', 'Y': r'$Y$', 'Z': r'$Z$',
-                'R': r'$R$', 'A': r'$A$', 'L': r'$L$', 'H': r'$H$',
+                'Gamma' : r'$\Gamma$', 'G': r'$\Gamma$',
+                'K'     : r'$K$', 
+                'M'     : r'$M$', 'X': r'$X$', 'Y': r'$Y$', 'Z': r'$Z$',
+                'R'     : r'$R$', 'A': r'$A$', 'L': r'$L$', 'H': r'$H$',
             }
             self.latex_label = special_labels.get(self.label, f'${self.label}$')
     
@@ -160,7 +186,7 @@ class HighSymmetryPoints:
         for label in path_labels:
             if label not in self.points:
                 raise ValueError(f"Unknown high-symmetry point: '{label}'. "
-                               f"Available: {list(self.points.keys())}")
+                                f"Available: {list(self.points.keys())}")
             path.append(self.points[label].as_tuple())
         return path
     
@@ -178,8 +204,8 @@ class HighSymmetryPoints:
         pts = cls(
             _default_path=['Gamma', 'X', 'Gamma2']
         )
-        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$0$', '1D BZ center'))
-        pts.add(HighSymmetryPoint('X', (0.5, 0.0, 0.0), r'$\pi$', 'Zone boundary'))
+        pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$0$', '1D BZ center'))
+        pts.add(HighSymmetryPoint('X',      (0.5, 0.0, 0.0), r'$\pi$', 'Zone boundary'))
         pts.add(HighSymmetryPoint('Gamma2', (1.0, 0.0, 0.0), r'$2\pi$', 'Wrapped Gamma'))
         return pts
     
@@ -189,10 +215,10 @@ class HighSymmetryPoints:
         pts = cls(
             _default_path=['Gamma', 'X', 'M', 'Gamma']
         )
-        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
-        pts.add(HighSymmetryPoint('X', (0.5, 0.0, 0.0), r'$X$', 'Zone face center'))
-        pts.add(HighSymmetryPoint('M', (0.5, 0.5, 0.0), r'$M$', 'Zone corner'))
-        pts.add(HighSymmetryPoint('Y', (0.0, 0.5, 0.0), r'$Y$', 'Zone face center (y)'))
+        pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$\Gamma$',   'BZ center'))
+        pts.add(HighSymmetryPoint('X',      (0.5, 0.0, 0.0), r'$X$',        'Zone face center'))
+        pts.add(HighSymmetryPoint('M',      (0.5, 0.5, 0.0), r'$M$',        'Zone corner'))
+        pts.add(HighSymmetryPoint('Y',      (0.0, 0.5, 0.0), r'$Y$',        'Zone face center (y)'))
         return pts
     
     @classmethod
@@ -201,10 +227,10 @@ class HighSymmetryPoints:
         pts = cls(
             _default_path=['Gamma', 'X', 'M', 'Gamma', 'R', 'X']
         )
-        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
-        pts.add(HighSymmetryPoint('X', (0.5, 0.0, 0.0), r'$X$', 'Face center'))
-        pts.add(HighSymmetryPoint('M', (0.5, 0.5, 0.0), r'$M$', 'Edge center'))
-        pts.add(HighSymmetryPoint('R', (0.5, 0.5, 0.5), r'$R$', 'Corner'))
+        pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$\Gamma$',   'BZ center'))
+        pts.add(HighSymmetryPoint('X',      (0.5, 0.0, 0.0), r'$X$',        'Face center'))
+        pts.add(HighSymmetryPoint('M',      (0.5, 0.5, 0.0), r'$M$',        'Edge center'))
+        pts.add(HighSymmetryPoint('R',      (0.5, 0.5, 0.5), r'$R$',        'Corner'))
         return pts
     
     @classmethod
@@ -213,24 +239,25 @@ class HighSymmetryPoints:
         pts = cls(
             _default_path=['Gamma', 'M', 'K', 'Gamma']
         )
-        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0), r'$\Gamma$', 'BZ center'))
-        pts.add(HighSymmetryPoint('M', (0.5, 0.0, 0.0), r'$M$', 'Edge midpoint'))
-        pts.add(HighSymmetryPoint('K', (1/3, 1/3, 0.0), r'$K$', 'Corner (Dirac point)'))
-        pts.add(HighSymmetryPoint('Kp', (2/3, 1/3, 0.0), r"$K'$", 'Other Dirac point'))
-        return pts
-    
-    @classmethod
-    def honeycomb_2d(cls) -> 'HighSymmetryPoints':
-        """High-symmetry points for 2D honeycomb lattice."""
-        pts = cls(
-            _default_path=['Gamma', 'K', 'M', 'Gamma']
-        )
         pts.add(HighSymmetryPoint('Gamma',  (0.0, 0.0, 0.0), r'$\Gamma$',   'BZ center'))
-        pts.add(HighSymmetryPoint('K',      (2/3, 1/3, 0.0), r'$K$',        'Dirac point'))
-        pts.add(HighSymmetryPoint('Kp',     (1/3, 2/3, 0.0), r"$K'$",       'Other Dirac point'))
         pts.add(HighSymmetryPoint('M',      (0.5, 0.0, 0.0), r'$M$',        'Edge midpoint'))
+        pts.add(HighSymmetryPoint('K',      (1/3, 1/3, 0.0), r'$K$',        'Corner (Dirac point)'))
+        pts.add(HighSymmetryPoint('Kp',     (2/3, 1/3, 0.0), r"$K'$",       'Other Dirac point'))
         return pts
     
+    @staticmethod
+    def honeycomb_2d():
+        """High-symmetry points for honeycomb/graphene lattice."""
+        return HighSymmetryPoints(
+            points = {
+                'Gamma': HighSymmetryPoint(name='Gamma', label=r'$\Gamma$', frac_coords=[0.0, 0.0, 0.0]         , latex_label=r'$\Gamma$'),
+                'K':     HighSymmetryPoint(name='K',     label=r'$K$',      frac_coords=[2.0/3.0, 1.0/3.0, 0.0] , latex_label=r'$K$'),
+                'Kp':    HighSymmetryPoint(name='Kp',    label=r"$K'$",     frac_coords=[1.0/3.0, 2.0/3.0, 0.0] , latex_label=r"$K'$"),
+                'M':     HighSymmetryPoint(name='M',     label=r'$M$',      frac_coords=[0.5, 0.0, 0.0]         , latex_label=r'$M$'),
+            },
+            _default_path = ['Gamma', 'K', 'M', 'Gamma']
+        )
+        
     @classmethod
     def hexagonal_2d(cls) -> 'HighSymmetryPoints':
         """High-symmetry points for 2D hexagonal lattice (same as honeycomb)."""
