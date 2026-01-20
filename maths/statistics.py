@@ -862,7 +862,6 @@ class Fraction:
                             target_en: float = 0.0,
                             tol: float = 0.0015,
                             sort: bool = True) -> List[Tuple[float, int, int]]:
-        pass
         """
         Get the off-diagonal Hilbert-space fraction information.
         
@@ -883,13 +882,33 @@ class Fraction:
         Returns:
         A list of tuples (omega, j, i) sorted by omega if sort is True.
         """
-        out = []
-        for i in range(mn, max_val):
-            en_l = energies[i]
-            for j in range(i + 1, max_val):
-                en_r = energies[j]
-                if hs_fraction_close_mean(en_l, en_r, target=target_en, tol=tol):
-                    out.append((abs(en_r - en_l), j, i))
+        # Vectorized implementation
+        subset_energies = energies[mn:max_val]
+        n = len(subset_energies)
+
+        # Get indices for the upper triangle (j > i)
+        idx_i, idx_j = np.triu_indices(n, k=1)
+
+        l_vals = subset_energies[idx_i]
+        r_vals = subset_energies[idx_j]
+
+        # Check condition
+        mask = Fraction.is_close_target(l_vals, r_vals, target=target_en, tol=tol)
+
+        valid_i = idx_i[mask]
+        valid_j = idx_j[mask]
+        valid_l = l_vals[mask]
+        valid_r = r_vals[mask]
+
+        diffs = np.abs(valid_r - valid_l)
+
+        # Offset indices by mn to match original global indices
+        global_i = valid_i + mn
+        global_j = valid_j + mn
+
+        # Create output list: (difference, j, i)
+        out = list(zip(diffs, global_j, global_i))
+
         if sort:
             out.sort(key=lambda tup: tup[0])
         return out
