@@ -853,7 +853,6 @@ class Fraction:
         diff = np.abs(l - r)
         return min_val <= diff <= max_val
 
-    #!TODO: add a function that checks if the difference is between two values
     @staticmethod
     def hs_fraction_offdiag(mn: int,
                             max_val: int, 
@@ -862,7 +861,6 @@ class Fraction:
                             target_en: float = 0.0,
                             tol: float = 0.0015,
                             sort: bool = True) -> List[Tuple[float, int, int]]:
-        pass
         """
         Get the off-diagonal Hilbert-space fraction information.
         
@@ -888,7 +886,7 @@ class Fraction:
             en_l = energies[i]
             for j in range(i + 1, max_val):
                 en_r = energies[j]
-                if hs_fraction_close_mean(en_l, en_r, target=target_en, tol=tol):
+                if Fraction.is_close_target(en_l, en_r, target=target_en, tol=tol):
                     out.append((abs(en_r - en_l), j, i))
         if sort:
             out.sort(key=lambda tup: tup[0])
