@@ -22,6 +22,8 @@ _LAZY_ATTRS = {
     "CNN"                   : "general_python.ml.net_impl.networks.net_cnn",
     "ResNet"                : "general_python.ml.net_impl.networks.net_res",
     "ComplexAR"             : "general_python.ml.net_impl.networks.net_autoregressive",
+    "GCCNN"                 : "general_python.ml.net_impl.networks.net_gcnn",
+    "choose_network"        : "general_python.ml.net_impl.choose_network",
 }
 
 def __getattr__(name):

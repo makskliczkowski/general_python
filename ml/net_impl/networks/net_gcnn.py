@@ -63,6 +63,7 @@ class GraphConv(nn.Module):
     param_dtype : Any
     use_bias    : bool
     kernel_init : Callable
+    normalized  : bool      = True
     
     @nn.compact
     def __call__(self, x, adj_mat):
@@ -81,19 +82,30 @@ class GraphConv(nn.Module):
             name        = "dense_self"
         )(x)
         
+        # 1.5 Degree normalization (optional)
+        if self.normalized:
+            deg             = jnp.sum(adj_mat, axis=1, keepdims=True)  # (N, 1)
+            deg             = jnp.maximum(deg, 1.0)  # Avoid division by zero
+            deg_inv_sqrt    = 1.0 / jnp.sqrt(deg)
+
+            # Normalize adjacency: D^{-1/2} A D^{-1/2}
+            adj_norm        = (deg_inv_sqrt.T * adj_mat) * deg_inv_sqrt
+        else:
+            adj_norm        = adj_mat
+            
         # 2. Neighbor interaction
         # Aggregate neighbors: (Batch, N, In) = (Batch, N, N) @ (Batch, N, In)
         # adj (N, N), x (B, N, C) -> (B, N, C)
-        x_neigh = jnp.einsum('nm,bmc->bnc', adj_mat, x)
+        x_neigh         = jnp.einsum('nm,bmc->bnc', adj_norm, x)
         
-        neigh_feat = nn.Dense(
-            features    = self.features,
-            use_bias    = False,
-            dtype       = self.dtype,
-            param_dtype = self.param_dtype,
-            kernel_init = self.kernel_init,
-            name        = "dense_neigh"
-        )(x_neigh)
+        neigh_feat      = nn.Dense(
+                            features    = self.features,
+                            use_bias    = False,
+                            dtype       = self.dtype,
+                            param_dtype = self.param_dtype,
+                            kernel_init = self.kernel_init,
+                            name        = "dense_neigh"
+                        )(x_neigh)
         
         # 3. Combine
         out = self_feat + neigh_feat
@@ -141,7 +153,7 @@ class _FlaxGCNN(nn.Module):
             k_init = nn.initializers.lecun_normal()
 
         # Build Graph Layers
-        self.gconv_layers = [
+        self.gconv_layers   = [
             GraphConv(
                 features    = feat,
                 use_bias    = self.use_bias,
@@ -151,6 +163,11 @@ class _FlaxGCNN(nn.Module):
                 name        = f"GConv_{i}"
             ) for i, feat in enumerate(self.features)
         ]
+
+        self.layer_norms    = [
+                                nn.LayerNorm(dtype=c_dtype, name=f"LN_{i}") 
+                                for i in range(len(self.features))
+                            ]
 
         # Output Layer
         out_f = self.output_dim * 2 if self.split_complex else self.output_dim
@@ -166,8 +183,18 @@ class _FlaxGCNN(nn.Module):
     @nn.compact
     def __call__(self, x):
         # x shape: (Batch, N_sites) -> needs (Batch, N_sites, 1) or (Batch, N, Channels)
-        if x.ndim == 2:
-            x = x[..., jnp.newaxis] # (B, N, 1)
+
+        if x.ndim == 1:
+            # single sample (N,) -> (1, N, 1)
+            x = x[jnp.newaxis, :, jnp.newaxis]
+        elif x.ndim == 2:
+            # batch (B, N) -> (B, N, 1)
+            x = x[:, :, jnp.newaxis]
+        elif x.ndim == 3:
+            # already (B, N, C)
+            pass
+        else:
+            raise ValueError(f"GCNN expected x ndim in {1,2,3}, got {x.ndim} with shape {x.shape}")
             
         # 1. Preprocessing
         if self.split_complex:
@@ -184,14 +211,15 @@ class _FlaxGCNN(nn.Module):
         # Cast adjacency once to computation dtype
         adj = self.adj_matrix.astype(dtype)
         
-        for layer, act in zip(self.gconv_layers, self.activations):
+        for i, (layer, act) in enumerate(zip(self.gconv_layers, self.activations)):
             x = layer(x, adj)
+            x = self.layer_norms[i](x)
             x = act(x)
 
         # 3. Pooling (Sum over sites)
         # x: (Batch, N, Feat)
         if self.use_sum_pool:
-            x = jnp.sum(x, axis=1) # (Batch, Feat)
+            x = jnp.mean(x, axis=1) # (Batch, Feat)
         else:
             x = x.reshape((x.shape[0], -1))
 
@@ -200,8 +228,8 @@ class _FlaxGCNN(nn.Module):
 
         # 5. Combine
         if self.split_complex:
-            re, im = jnp.split(x, 2, axis=-1)
-            x = re + 1j * im
+            re, im  = jnp.split(x, 2, axis=-1)
+            x       = re + 1j * im
             
         return x
 
@@ -222,20 +250,20 @@ class GCNN(FlaxInterface):
     """
     def __init__(self,
                 input_shape    : tuple,
-                graph_edges    : List[Tuple[int, int]],
                 *,
-                adj_matrix     : Optional[np.ndarray]   = None,
-                features       : Sequence[int]          = (16, 32),
-                activations    : Union[str, Sequence]   = 'log_cosh',
-                output_shape   : tuple                  = (1,),
-                use_bias       : bool                   = True,
-                use_sum_pool   : bool                   = True,
-                split_complex  : bool                   = False,
-                transform_input: bool                   = True,
-                dtype          : Any                    = jnp.complex128,
-                param_dtype    : Optional[Any]          = None,
-                seed           : int                    = 0,
-                backend        : str                    = 'jax',
+                graph_edges    : Optional[List[Tuple[int, int]]]    = None,
+                adj_matrix     : Optional[np.ndarray]               = None,
+                features       : Sequence[int]                      = (16, 32),
+                activations    : Union[str, Sequence]               = 'elu',
+                output_shape   : tuple                              = (1,),
+                use_bias       : bool                               = True,
+                use_sum_pool   : bool                               = True,
+                split_complex  : bool                               = False,
+                transform_input: bool                               = False,
+                dtype          : Any                                = jnp.complex128,
+                param_dtype    : Optional[Any]                      = None,
+                seed           : int                                = 0,
+                backend        : str                                = 'jax',
                 **kwargs):
 
         if not JAX_AVAILABLE: raise ImportError("GCNN requires JAX.")

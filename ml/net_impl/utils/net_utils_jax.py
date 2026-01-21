@@ -753,7 +753,7 @@ if JAX_AVAILABLE:
             raise ValueError("Input states must have at least one sample.")
 
         # get full info from the first state
-        gradients, shapes, sizes, is_cpx = single_sample_flat_grad_fun(net_apply, params, states[0])
+        gradients, shapes, sizes, is_cpx = single_sample_flat_grad_fun(net_apply, params, states[0:1])
         
         # New mode: Return BatchedJacobian object to avoid OOM
         if return_jacobian_obj:
@@ -766,7 +766,7 @@ if JAX_AVAILABLE:
             return single_sample_flat_grad_fun(net_apply, p, s)[0]
 
         # Create batches of states
-        batches = create_batches_jax(states, batch_size)
+        batches         = create_batches_jax(states, batch_size)
 
         # vmap this function.
         # - `in_axes=(None, 0)` means:

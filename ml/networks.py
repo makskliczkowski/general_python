@@ -55,7 +55,7 @@ except ImportError as e:
 if TYPE_CHECKING:
     from .net_impl.interface_net_flax   import FlaxInterface
     from .net_impl.net_simple           import SimpleNet
-    from flax import linen as nn
+    from flax                           import linen as nn
 
 ######################################################################
 
@@ -92,7 +92,7 @@ _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
     'jastrow'           : ('.net_impl.networks.net_jastrow',            'Jastrow'),
     'mps'               : ('.net_impl.networks.net_mps',                'MPS'),
     'transformer'       : ('.net_impl.networks.net_transformer',        'Transformer'),
-    'amplitude_phase    : ('.net_impl.networks.net_amplitude_phase',    'AmplitudePhase'),
+    'amplitude_phase'   : ('.net_impl.networks.net_amplitude_phase',    'AmplitudePhase'),
     # Add future networks here without importing them!
 }
 

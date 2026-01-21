@@ -2073,63 +2073,180 @@ class Lattice(ABC):
     #! Saving the lattice
     # -----------------------------------------------------------------------------
     
-    def adjacency_matrix(self, sparse: bool = False, save: bool = True) -> np.ndarray:
+    def adjacency_matrix(self, 
+                        sparse              : bool  = False, 
+                        save                : bool  = True, 
+                        *,
+                        mode                : str   = 'binary',
+                        include_self        : bool  = False,
+                        include_nnn         : bool  = False,
+                        typed_self_separate : bool  = True, 
+                        n_types             : int   = 3
+                        ) -> np.ndarray:
         r"""
         Construct adjacency matrix A_ij = 1 if i and j are neighbors.
 
-        Args:
+        Parameters:
+            save        (bool):
+                save the adjacency matrix in the lattice object for future use.
+            mode        (str):
+                'binary' : 
+                    A_ij = 1 if i and j are neighbors, 0 otherwise.
+                'typed' : 
+                    A_ij = weight of the bond between i and  
+                    j (1 for nn, 2 for nnn, etc.), 0 otherwise.
+            include_self   (bool):
+                include self-connections (diagonal elements) if True.
+            include_nnn    (bool):
+                include next-nearest neighbors if True.
+            typed_self_separate (bool):
+                if True, self-connections are given a unique weight (n_types) 
+                to distinguish them from other types of connections.
+            n_types     (int):
+                number of different neighbor types (nn, nnn, etc.) to consider.
             sparse      (bool):
                 return a scipy.sparse CSR matrix if True.
 
         Returns:
             A (ndarray or sparse CSR): adjacency matrix of size (Ns, Ns).
         """
-        if self._adj_mat is None:
-            # fallback to binary from lists
-            Ns      = self.ns
-            rows    = []
-            cols    = []
-            data    = []
-            
-            for i in range(Ns):
-                if self._nn and self._nn[i]:
-                    for jj, j in enumerate(self._nn[i]):
-                        if self._nn[i][jj] and not np.isnan(self._nn[i][jj]) and self._nn[i][jj] > 0:
-                            rows.append(i)
-                            cols.append(j)
-                            data.append(3)
-                if self._nnn and self._nnn[i]:
-                    for jj, j in enumerate(self._nnn[i]):
-                        if self._nnn[i][jj] and not np.isnan(self._nnn[i][jj]) and self._nnn[i][jj] > 0:
-                            rows.append(i)
-                            cols.append(j)
-                            data.append(2)
-                # diagonal
-                rows.append(i)
-                cols.append(i)
-                data.append(1)
-                
-            # remove duplicates
-            rows, cols, data    = np.unique((rows, cols, data), axis=1)
-            # # remove nans
-            # rows, cols, data    = rows[~np.isnan(data)], cols[~np.isnan(data)], data[~np.isnan(data)]
-            # as integers
-            rows, cols, data    = rows.astype(int), cols.astype(int), data
-            
+        mode    = str(mode).lower()
+        
+        if mode not in ("binary", "typed"):
+            raise ValueError("mode must be 'binary' or 'typed'")
+
+        Ns      = int(self.ns)
+
+        # caching: keep separate caches per mode (so you don't collide)
+        if not hasattr(self, "_adj_cache"):
+            self._adj_cache = {}
+        
+        cache_key = (mode, include_self, include_nnn, typed_self_separate, n_types, sparse)
+        if save and cache_key in self._adj_cache:
+            return self._adj_cache[cache_key]
+
+        # =====================================================================
+        # Binary adjacency
+        # =====================================================================
+        if mode == "binary":
+            A = np.zeros((Ns, Ns), dtype=np.float32)
+
+            # Nearest neighbors from _nn lists
+            if getattr(self, "_nn", None):
+                for i in range(Ns):
+                    nbrs    = self._nn[i] if self._nn[i] else []
+                    for j in nbrs:
+                        if self.wrong_nei(j):
+                            continue
+                        
+                        j   = int(j)
+                        if 0 <= j < Ns and j != i:
+                            A[i, j] = 1.0
+                            A[j, i] = 1.0
+
+            # Optional NNN
+            if include_nnn and getattr(self, "_nnn", None):
+                for i in range(Ns):
+                    nbrs = self._nnn[i] if self._nnn[i] else []
+                    for j in nbrs:
+                        if self.wrong_nei(j):
+                            continue
+                        j = int(j)
+                        if 0 <= j < Ns and j != i:
+                            A[i, j] = 1.0
+                            A[j, i] = 1.0
+
+            if include_self:
+                np.fill_diagonal(A, 1.0)
+
             if sparse:
-                A = sp.csr_matrix((data, (rows, cols)), shape=(Ns, Ns))
+                import scipy.sparse as sp
+                A = sp.csr_matrix(A)
+
+            if save:
+                self._adj_cache[cache_key] = A
+            return A
+
+        # =====================================================================
+        # Typed adjacency (e.g., Kitaev x/y/z bonds)
+        # =====================================================================
+        # We need a way to get bond types. We support multiple lattice APIs:
+        #   1) self.bonds_by_type()             -> list/tuple length n_types, each a list of (i,j)
+        #   2) self.edge_types dict {(i,j): t}  or {(min(i,j),max(i,j)): t}
+        #   3) self._bond_types list of (i,j,t)
+        # Otherwise: we raise with a clear message.
+        A_types = np.zeros((n_types, Ns, Ns), dtype=np.float32)
+
+        def add_typed_edge(i, j, t):
+            i = int(i); j = int(j); t = int(t)
+            
+            if not (0 <= i < Ns and 0 <= j < Ns):
+                return
+            if i == j:
+                return
+            if not (0 <= t < n_types):
+                raise ValueError(f"Bond type t={t} outside [0,{n_types})")
+            
+            A_types[t, i, j] = 1.0
+            A_types[t, j, i] = 1.0
+
+        used = False
+
+        # (1) bonds_by_type()
+        if hasattr(self, "bonds_by_type") and callable(self.bonds_by_type):
+            by_t = self.bonds_by_type()
+            if by_t is not None and len(by_t) >= n_types:
+                for t in range(n_types):
+                    for (i, j) in by_t[t]:
+                        add_typed_edge(i, j, t)
+                used = True
+
+        # (2) edge_types mapping
+        if not used and hasattr(self, "edge_types"):
+            et = getattr(self, "edge_types")
+            if isinstance(et, dict) and len(et) > 0:
+                for (i, j), t in et.items():
+                    add_typed_edge(i, j, t)
+                used = True
+
+        # (3) internal list of typed bonds
+        if not used and hasattr(self, "_bond_types"):
+            bt = getattr(self, "_bond_types")
+            if bt is not None and len(bt) > 0:
+                for (i, j, t) in bt:
+                    add_typed_edge(i, j, t)
+                used = True
+
+        # Fallback: if lattice has only _nn but no type info, you *cannot* make Kitaev-typed adjacency
+        if not used:
+            raise ValueError(
+                "typed adjacency requested, but no bond-type information found on this Lattice.\n"
+                "Add one of:\n"
+                "  - Lattice.bonds_by_type() -> list length 3 of (i,j) bonds for x,y,z\n"
+                "  - Lattice.edge_types dict {(i,j): t}\n"
+                "  - Lattice._bond_types list of (i,j,t)\n"
+                "Otherwise use mode='binary'."
+            )
+
+        A_self = None
+        if include_self:
+            if typed_self_separate:
+                A_self = np.eye(Ns, dtype=np.float32)
             else:
-                A               = np.zeros((Ns, Ns))
-                A[rows, cols]   = data
-                A[cols, rows]   = data
-        else:
-            if sparse:
-                A = self._adj_mat if isinstance(self._adj_mat, sp.csr_matrix) else sp.csr_matrix(self._adj_mat)
-            else:
-                A = self._adj_mat.toarray() if isinstance(self._adj_mat, sp.csr_matrix) else self._adj_mat
+                # add self-loops into every type channel (rarely what you want)
+                for t in range(n_types):
+                    np.fill_diagonal(A_types[t], 1.0)
+
+        if sparse:
+            import scipy.sparse as sp
+            A_types = np.array([sp.csr_matrix(A_types[t]) for t in range(n_types)], dtype=object)
+            if A_self is not None:
+                A_self = sp.csr_matrix(A_self)
+
+        out = (A_types, A_self)
         if save:
-            self._adj_mat = A
-        return A
+            self._adj_cache[cache_key] = out
+        return out
     
     def print_neighbors(self, logger : 'Logger'):
         """

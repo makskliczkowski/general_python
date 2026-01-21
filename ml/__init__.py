@@ -55,9 +55,7 @@ from . import net_impl
 # Define what's available when importing with "from general_python.ml import *"
 __all__ = [
     'networks',
-    'schedulers', 
-    '__general__',
-    '__loss__',
+    'schedulers',
     'net_impl'
 ]
 
