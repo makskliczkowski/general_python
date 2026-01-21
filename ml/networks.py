@@ -87,6 +87,10 @@ _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
     'resnet' : ('.net_impl.networks.net_res',               'ResNet'),
     'pp'     : ('.net_impl.networks.net_pp',                'PairProduct'),
     'rbmpp'  : ('.net_impl.networks.net_pp',                'PairProduct'),
+    'mlp'    : ('.net_impl.networks.net_mlp',               'MLP'),
+    'gcnn'   : ('.net_impl.networks.net_gcnn',              'GCNN'),
+    'jastrow': ('.net_impl.networks.net_jastrow',           'Jastrow'),
+    'mps'    : ('.net_impl.networks.net_mps',               'MPS'),
     # Add future networks here without importing them!
 }
 
@@ -98,8 +102,8 @@ def _lazy_load_class(key: str) -> Type[GeneralNet]:
     mod_path, cls_name  = _NETWORK_REGISTRY[key]
     try:
         # Relative import requires the package context
-        # We assume this file is in general_python.ml
-        module          = importlib.import_module(mod_path, package='general_python.ml')
+        # We use __package__ to support importing as QES.general_python.ml or general_python.ml
+        module          = importlib.import_module(mod_path, package=__package__)
         return getattr(module, cls_name)
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Failed to lazy load '{cls_name}' from '{mod_path}'.\nError: {e}")

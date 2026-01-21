@@ -72,11 +72,12 @@ except ImportError as e:
 try:
     from ...ml.net_impl.net_general             import GeneralNet
     from ...ml.net_impl.activation_functions    import get_activation
+    from ...algebra.utils                       import DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 except ImportError as e:
     raise ImportError("Required modules from general_python package are missing.") from e
 
 if TYPE_CHECKING:
-    from ...algebra.utils                       import Array, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    from ...algebra.utils                       import Array
 
 ########################################################################
 #! GENERIC FLAX NETWORK INTERFACE
