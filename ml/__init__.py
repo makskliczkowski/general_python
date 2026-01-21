@@ -11,14 +11,16 @@ License         : MIT
 ---------------------------------
 """
 
+import importlib
+
 # Import main ML modules
-from . import networks
-from . import schedulers
-from . import __general__
-from . import __loss__
+try:
+    from . import networks
+    from . import schedulers
+except ImportError as e:
+    raise Exception(f"Could not import {e}")
 
 # Lazy import aliases for common submodules
-import importlib
 
 _LAZY_MODULES = {
     'activation_functions'      : 'general_python.ml.net_impl.activation_functions',

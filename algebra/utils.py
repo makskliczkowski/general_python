@@ -1139,7 +1139,7 @@ def _qes_initialize_utils():
     # 1. Setup Logger
     try:
         # Centralized singleton access (avoids duplicate banner prints)
-        from general_python.qes_globals import get_logger
+        from general_python.common.flog import get_logger
         log = get_logger()
     except Exception:
         logging.basicConfig(level=logging.INFO)
