@@ -689,10 +689,9 @@ class LanczosEigensolver(EigenSolver):
                                 ])
         
         # Compute residual norms
-        residual_norms      = jnp.array([
-                                            jnp.linalg.norm(matvec(eigenvectors[:, i]) - selected_evals[i] * eigenvectors[:, i])
-                                            for i in range(len(selected_evals))
-                                        ])
+        av_products = jnp.stack([matvec(eigenvectors[:, i]) for i in range(eigenvectors.shape[1])], axis=1)
+        residuals = av_products - eigenvectors * selected_evals
+        residual_norms = jnp.linalg.norm(residuals, axis=0)
 
         converged           = jnp.all(residual_norms < reorth_tol)
         
