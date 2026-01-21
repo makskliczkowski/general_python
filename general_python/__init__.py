@@ -43,7 +43,7 @@ __author__          = "Maksymilian Kliczkowski"
 __email__           = "maksymilian.kliczkowski@pwr.edu.pl"
 __license__         = "MIT"
 
-# Description used by QES.registry
+# Description used by general_python.registry
 MODULE_DESCRIPTION  = "Shared scientific utilities: algebra backends, logging, lattices, maths, ML, physics."
 
 # -----------------------------------------------------------------------------------------------

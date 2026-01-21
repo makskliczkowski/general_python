@@ -21,7 +21,7 @@ try:
         CgSolver, MinresSolverScipy, DirectSolver
     )
 except ImportError:
-    raise ImportError("QES package is required to run this example.")
+    raise ImportError("general_python package is required to run this example.")
 
 # ----------------------------------------------------------------------------------------
 #! SolverForm Enum

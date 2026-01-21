@@ -3,7 +3,7 @@ general_python.algebra.utils
 ===========================
 
 This module provides utilities for importing and managing the linear algebra backend (NumPy/JAX),
-random number generation, JIT compilation, and backend configuration for the QES package.
+random number generation, JIT compilation, and backend configuration for the general_python package.
 
 Features
 --------
@@ -28,7 +28,7 @@ Import the backend manager and utilities:
 
 Testing
 -------
-To run tests for this module and the QES package:
+To run tests for this module and the general_python package:
 
 .. code-block:: bash
 
@@ -330,7 +330,7 @@ def maybe_jit(func):
     Maybe apply JAX JIT compilation to the function.
     """
     
-    if not JAX_AVAILABLE or os.getenv("QES_JIT", "1") in ("0", "false", "False"):
+    if not JAX_AVAILABLE or os.getenv("general_python_JIT", "1") in ("0", "false", "False"):
         return func
     from jax import jit as _jit
 
@@ -1139,7 +1139,7 @@ def _qes_initialize_utils():
     # 1. Setup Logger
     try:
         # Centralized singleton access (avoids duplicate banner prints)
-        from QES.qes_globals import get_logger
+        from general_python.qes_globals import get_logger
         log = get_logger()
     except Exception:
         logging.basicConfig(level=logging.INFO)

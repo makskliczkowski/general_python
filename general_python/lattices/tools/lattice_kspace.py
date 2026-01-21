@@ -23,7 +23,7 @@ import  scipy.sparse    as sp
 
 if TYPE_CHECKING:
     from ..lattice                      import Lattice
-    from QES.Algebra.hamil_quadratic    import QuadraticBlockDiagonalInfo
+    from general_python.Algebra.hamil_quadratic    import QuadraticBlockDiagonalInfo
 
 # -----------------------------------------------------------------------------------------------------------
 # BRILLOUIN ZONE UTILITIES

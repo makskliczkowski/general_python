@@ -3,7 +3,7 @@ Mathematics utilities for the `general_python` toolkit.
 
 The package aggregates mathematical helpers, high-quality random number
 generators, and statistical analysis routines.  Submodules are imported lazily
-to keep top-level imports lightweight and consistent with the modular QES
+to keep top-level imports lightweight and consistent with the modular general_python
 design.
 
 Available submodule aliases
@@ -16,7 +16,7 @@ Available submodule aliases
 File        : general_python/maths/__init__.py
 Author      : Maksymilian Kliczkowski
 License     : MIT
-Copyright   : (c) 2021-2024 QES Group
+Copyright   : (c) 2021-2024 general_python Group
 ---------------------------------------------------------------------------
 """
 
@@ -24,7 +24,7 @@ import  sys
 import  importlib
 from    typing import TYPE_CHECKING, List
 
-# Description used by QES.registry
+# Description used by general_python.registry
 MODULE_DESCRIPTION = (
     "Mathematical utilities, random number generators, and statistical analysis tools."
 )

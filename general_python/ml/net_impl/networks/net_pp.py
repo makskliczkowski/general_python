@@ -61,7 +61,7 @@ try:
         Pfaffian = None
         
 except ImportError as e:
-    raise ImportError("QES core modules required.") from e
+    raise ImportError("general_python core modules required.") from e
 
 # ----------------------------------------------------------------------
 # Logic for Log-Pfaffian

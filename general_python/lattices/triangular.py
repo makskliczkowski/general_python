@@ -1,6 +1,6 @@
 """
 Triangular Lattice Class
-Implements a 2D triangular lattice for QES.
+Implements a 2D triangular lattice for general_python.
 
 -----------------------
 File        : general_python/lattices/triangular.py

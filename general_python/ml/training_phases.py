@@ -71,7 +71,7 @@ import numpy as np
 try:
     from .schedulers import choose_scheduler, Parameters, SchedulerType
 except ImportError as e:
-    raise ImportError("Failed to import schedulers module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import schedulers module. Ensure general_python package is correctly installed.") from e
 
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List, Dict, Any, Union, Tuple

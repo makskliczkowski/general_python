@@ -1,5 +1,5 @@
 '''
-Memory-related utilities for general Python QES modules.
+Memory-related utilities for general Python general_python modules.
 
 ----------------------------------------------------------------------------
 File        : common/memory.py

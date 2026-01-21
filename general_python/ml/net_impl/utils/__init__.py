@@ -18,7 +18,7 @@ try:
     from . import net_init_jax as jaxpy
     from . import net_init_np as numpy
 except ImportError as e:
-    raise ImportError("Failed to import net_init, net_init_jax, or net_init_np modules. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import net_init, net_init_jax, or net_init_np modules. Ensure general_python package is correctly installed.") from e
 
 __all__ = [
     'net_init',

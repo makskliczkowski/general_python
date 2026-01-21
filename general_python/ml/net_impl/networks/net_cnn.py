@@ -31,7 +31,7 @@ The factory will correctly instantiate the `CNN` class from this module.
     complex_cnn_net = choose_network('cnn', dtype='complex64', **cnn_params)
 
 The implementation is wrapped in the `FlaxInterface` for seamless integration
-with the QES framework.
+with the general_python framework.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
@@ -57,7 +57,7 @@ try:
         from ....algebra.utils                  import Array
     JAX_AVAILABLE                               = True
 except ImportError as e:
-    raise ImportError("Could not import QES modules. Ensure QES is properly installed.") from e
+    raise ImportError("Could not import general_python modules. Ensure general_python is properly installed.") from e
 
 ##########################################################
 #! INNER FLAX CNN MODULE DEFINITION

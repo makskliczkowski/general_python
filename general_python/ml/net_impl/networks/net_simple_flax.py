@@ -14,13 +14,13 @@ from typing import Optional, Tuple, Callable, Any
 try:
     from .. import net_general as _net_general
 except ImportError as e:
-    raise ImportError("Failed to import net_general module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import net_general module. Ensure general_python package is correctly installed.") from e
 
 # import from general python module
 try:
     from ....algebra.utils import JAX_AVAILABLE
 except ImportError as e:
-    raise ImportError("Failed to import algebra.utils module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import algebra.utils module. Ensure general_python package is correctly installed.") from e
 
 if not JAX_AVAILABLE:
     raise ImportError("JAX is not available. Please install JAX to use this module.")
@@ -36,7 +36,7 @@ try:
     from ....ml.net_impl.utils.net_init_jax import complex_he_init, real_he_init
     from ....ml.net_impl.interface_net_flax import FlaxInterface
 except ImportError as e:
-    raise ImportError("Failed to import net_init_jax or interface_net_flax module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import net_init_jax or interface_net_flax module. Ensure general_python package is correctly installed.") from e
 
 ##########################################################
 #! EXAMPLE FLAX MODULE

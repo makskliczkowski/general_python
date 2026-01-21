@@ -18,7 +18,7 @@ from typing import Callable, Tuple
 try:
     from ..algebra.utils import Array
 except ImportError as e:
-    raise ImportError("Problem with importing utilities. Check if QES is installed properly") from e
+    raise ImportError("Problem with importing utilities. Check if general_python is installed properly") from e
 
 ###############################################################################
 #! Helper functions

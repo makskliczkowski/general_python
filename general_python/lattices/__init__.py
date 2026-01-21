@@ -3,7 +3,7 @@ Factory utilities and registry for lattice classes.
 
 This module exposes the core lattice classes and a registry-based factory that
 enables third-party extensions (e.g. custom graph lattices) to integrate with
-the rest of the QES stack.
+the rest of the general_python stack.
 
 --------------------------------
 Author          : Maksymilian Kliczkowski

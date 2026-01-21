@@ -5,7 +5,7 @@ general_python.ml.networks
 Network Factory and Registry.
 
 This module provides a centralized factory function, `choose_network`, for
-instantiating various neural network architectures used in the QES framework.
+instantiating various neural network architectures used in the general_python framework.
 It uses a lazy-loading mechanism to improve startup performance.
 
 Usage
@@ -93,7 +93,7 @@ _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
 def _lazy_load_class(key: str) -> Type[GeneralNet]:
     """Helper to import network classes only when requested."""
     if key not in _NETWORK_REGISTRY:
-        raise ValueError(f"Network '{key}' is not registered in QES.")
+        raise ValueError(f"Network '{key}' is not registered in general_python.")
     
     mod_path, cls_name  = _NETWORK_REGISTRY[key]
     try:
@@ -144,7 +144,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     -------------------------
     You can pass your own `flax.linen.nn.Module` class as the `network_type`.
     The factory will wrap it in a `general_python.ml.net_impl.interface_net_flax.FlaxInterface`
-    to make it compatible with the QES ecosystem.
+    to make it compatible with the general_python ecosystem.
 
     **Requirements for your custom module:**
     1.  It must be a valid `nn.Module`.
@@ -294,7 +294,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     Returns
     -------
     GeneralNet
-        An initialized or wrapped network instance compatible with the QES framework.
+        An initialized or wrapped network instance compatible with the general_python framework.
     """
 
     # 1. Handle Strings and Enums (Lazy Load Path)

@@ -44,7 +44,7 @@ def load_hdf5_data(filepath, keys=None, verbose=False):
     try:
         from general_python.common.hdf5man  import HDF5Manager
     except ImportError as e:
-        raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
+        raise ImportError("Required general_python modules not found. Please ensure general_python is installed and accessible.") from e
     
     data = HDF5Manager.read_hdf5(filepath, keys=keys, verbose=verbose)
     return data
@@ -85,7 +85,7 @@ def load_results(data_dir: str, *,
     try:
         from general_python.common.hdf5man  import LazyHDF5Entry
     except ImportError as e:
-        raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
+        raise ImportError("Required general_python modules not found. Please ensure general_python is installed and accessible.") from e
     
     results     = []
     data_path   = Path(data_dir)
@@ -140,7 +140,7 @@ def load_results(data_dir: str, *,
         try:
             from general_python.common.plot import Plotter
         except ImportError as e:
-            raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
+            raise ImportError("Required general_python modules not found. Please ensure general_python is installed and accessible.") from e
         
         results = Plotter.filter_results(results, filters, get_params_fun=get_params_func, **kwargs)
         if not results and logger:
@@ -209,7 +209,7 @@ class PlotDataHelpers:
         try:
             from general_python.common.plot import Plotter
         except ImportError as e:
-            raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
+            raise ImportError("Required general_python modules not found. Please ensure general_python is installed and accessible.") from e
         
         if y_param:
             filename = f"{param_name}_vs_{x_param}_{y_param}{suffix}"
@@ -285,7 +285,7 @@ class PlotDataHelpers:
         try:
             from general_python.common.plot import Plotter
         except ImportError as e:
-            raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
+            raise ImportError("Required general_python modules not found. Please ensure general_python is installed and accessible.") from e
         
         n_cols      = min(max_cols, n_panels) if n_panels > 0 else 1
         n_rows      = (n_panels + n_cols - 1) // n_cols if n_panels > 0 else 1

@@ -35,7 +35,7 @@ try:
     from ..preconditioners import Preconditioner, PreconitionerApplyFun
     from .backend_ops import BackendOps, get_backend_ops
 except ImportError as e:
-    raise ImportError("Failed to import necessary modules from the solver package. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import necessary modules from the solver package. Ensure general_python package is correctly installed.") from e
 
 # -----------------------------------------------------------------------------
 #! Backend imports

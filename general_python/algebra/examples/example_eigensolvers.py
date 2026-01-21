@@ -29,7 +29,7 @@ try:
         decide_method
     )
 except ImportError as e:
-    print("Error importing QES eigenvalue solvers:", e)
+    print("Error importing general_python eigenvalue solvers:", e)
     sys.exit(1)
 
 # ----------------------------------------------------------------------------------------

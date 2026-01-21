@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..
 try:
     from general_python.algebra.eigen import LanczosEigensolver, LanczosEigensolverScipy
 except ImportError:
-    raise ImportError("QES package is required to run these tests.")
+    raise ImportError("general_python package is required to run these tests.")
 
 # Check JAX availability
 try:

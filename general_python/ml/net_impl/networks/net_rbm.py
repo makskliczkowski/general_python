@@ -16,7 +16,7 @@ Import and use the RBM network:
     rbm_net = RBM(input_shape=(10,), n_hidden=20)
 
 The implementation is wrapped in the `FlaxInterface` for seamless integration
-with the QES framework.
+with the general_python framework.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
@@ -37,7 +37,7 @@ try:
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
     from ....algebra.utils                      import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 except ImportError as e:
-    print(f"Error importing QES base modules: {e}")
+    print(f"Error importing general_python base modules: {e}")
     class FlaxInterface:
         pass
     JAX_AVAILABLE = False

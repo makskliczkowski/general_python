@@ -1,7 +1,7 @@
 """
 Contains the general lattice class hierarchy and helpers.
 
-This module defines the base :class:`Lattice` API used across QES, together with
+This module defines the base :class:`Lattice` API used across general_python, together with
 utility routines for boundary handling and symmetry metadata.
 
 Currently, up to 3-spatial dimensions are supported...
