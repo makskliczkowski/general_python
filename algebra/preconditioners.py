@@ -33,10 +33,10 @@ import scipy.sparse as sps
 import scipy.sparse.linalg as spsla
 import scipy.linalg as sla
 
-from ..algebra.utils import JAX_AVAILABLE, get_backend, Array
+from algebra.utils import JAX_AVAILABLE, get_backend, Array
 
 if TYPE_CHECKING:
-    from ..common.flog import Logger
+    from common.flog import Logger
 
 # ---------------------------------------------------------------------
 
@@ -568,8 +568,18 @@ class Preconditioner(ABC):
             self.reset_backend(backend) # Will trigger _update_instance_apply_func
 
         # Ensure backend consistency for inputs
-        a_be        = self._backend.asarray(a)
-        ap_be       = self._backend.asarray(ap) if ap is not None else None
+        # For sparse matrices, np.asarray wraps them in a 0-d array object, which breaks shape checks
+        if sps.issparse(a) and self._backend is np:
+            a_be = a
+        else:
+            a_be = self._backend.asarray(a)
+
+        ap_be = None
+        if ap is not None:
+            if sps.issparse(ap) and self._backend is np:
+                ap_be = ap
+            else:
+                ap_be = self._backend.asarray(ap)
 
         # Use provided sigma or instance sigma, update instance sigma via setter
         self.sigma  = sigma if sigma is not None else self._sigma
@@ -1619,6 +1629,259 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
 # =====================================================================
+#! Incomplete LU Preconditioner
+# =====================================================================
+
+class ILUPreconditioner(Preconditioner):
+    """
+    Incomplete LU Preconditioner (ILU(0)).
+
+    Suitable for large, sparse, non-symmetric matrices A.
+    This implementation uses SciPy's sparse ILU(0) decomposition (`scipy.sparse.linalg.spilu`).
+    ILU(0) computes factors L and U such that L @ U approximates A,
+    maintaining the sparsity pattern of A (zero fill-in).
+
+    Applying the inverse M^{-1}r involves solving L y = P r and U z = y, where P
+    is a permutation matrix handled internally by the ILU object.
+
+    **Note:**
+    - Requires SciPy and the NumPy backend. Not JAX compatible.
+    - Designed for sparse matrices. Dense input matrices will be converted.
+
+    Args for `set`:
+        fill_factor (float): See `scipy.sparse.linalg.spilu`. Default 1.
+        drop_tol (float): See `scipy.sparse.linalg.spilu`. Default None.
+
+    References:
+        - Saad, Y. (2003). Iterative Methods for Sparse Linear Systems (2nd ed.). SIAM. Chapter 10.
+        - SciPy documentation for `scipy.sparse.linalg.spilu`.
+    """
+    _name = "Incomplete LU Preconditioner"
+    _type = PreconditionersTypeNoSym.INCOMPLETE_LU
+
+    def __init__(self,
+                is_positive_semidefinite: bool = False,
+                is_gram                 : bool = False,
+                backend: str = 'default'):
+        """
+        Initialize the Incomplete LU preconditioner.
+
+        Args:
+            is_positive_semidefinite (bool):
+                If A is assumed positive semi-definite (not required for ILU).
+            is_gram (bool):
+                If setting up from Gram matrix factors.
+            backend (str): The computational backend. Must be 'numpy'.
+        """
+
+        super().__init__(is_positive_semidefinite=is_positive_semidefinite, is_gram=is_gram, backend=backend)
+        self._stype = PreconditionersType.NONSYMMETRIC
+
+        # Check for backend compatibility
+        if self._backend != np:
+            raise NotImplementedError(f"{self._name} requires the 'numpy' backend (uses SciPy sparse). "
+                                f"Current backend: '{self.backend_str}'.")
+
+        # Precomputed data storage
+        self._ilu_obj : Optional[spsla.SuperLU] = None # Stores the SuperLU object from spilu
+        self._fill_factor                       = 1.0
+        self._drop_tol                          = None
+
+    # -----------------------------------------------------------------
+    #! Properties
+    # -----------------------------------------------------------------
+
+    @property
+    def fill_factor(self) -> float:
+        ''' The fill factor for ILU(0) (default 1.0). '''
+        return self._fill_factor
+
+    @fill_factor.setter
+    def fill_factor(self, value: float):
+        if value <= 0:
+            raise ValueError("fill_factor must be positive.")
+        self._fill_factor = value
+
+    @property
+    def drop_tol(self) -> Optional[float]:
+        ''' The drop tolerance for ILU(0) (default None). '''
+        return self._drop_tol
+
+    @drop_tol.setter
+    def drop_tol(self, value: Optional[float]):
+        if value is not None and value < 0:
+            raise ValueError("drop_tol must be non-negative.")
+        self._drop_tol = value
+
+    # -----------------------------------------------------------------
+    #! Setup Methods
+    # -----------------------------------------------------------------
+
+    @staticmethod
+    def _setup_standard_kernel(a: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup Kernel: Computes ILU factorization of A + sigma*I.
+        """
+        if backend_mod is not np:
+             # Should be caught earlier, but safe guard
+            raise RuntimeError("ILUPreconditioner requires NumPy backend.")
+
+        # Convert dense input to sparse CSC format (efficient for spilu)
+        if not sps.issparse(a):
+            print(f"({ILUPreconditioner._name}) Warning: Input matrix is dense. Converting to sparse CSC format.")
+            a_sparse = sps.csc_matrix(a)
+        else:
+            # Ensure it's CSC format
+            a_sparse = a.tocsc()
+
+        # Apply regularization (sparse identity needed)
+        if sigma != 0.0:
+            print(f"({ILUPreconditioner._name}) Applying regularization sigma={sigma} to sparse matrix.")
+            eye_sparse      = sps.identity(a.shape[0], dtype=a.dtype, format='csc')
+            a_reg_sparse    = a_sparse + sigma * eye_sparse
+        else:
+            a_reg_sparse    = a_sparse
+
+        # Get ILU parameters from kwargs (defaults defined in class are not accessible in static context directly unless passed)
+        # We assume defaults are passed via kwargs or we rely on spilu defaults if not present
+        fill_factor         = kwargs.get('fill_factor', 1.0)
+        drop_tol            = kwargs.get('drop_tol', None)
+
+        ilu_obj = None
+        try:
+            # Perform ILU decomposition using SuperLU through spilu
+            ilu_obj   = spsla.spilu(a_reg_sparse,
+                                        drop_tol            = drop_tol,
+                                        fill_factor         = fill_factor,
+                                        )
+            print(f"({ILUPreconditioner._name}) ILU decomposition successful.")
+        except RuntimeError as e:
+            print(f"({ILUPreconditioner._name}) ILU decomposition failed: {e}")
+            print(f"({ILUPreconditioner._name}) Matrix might be singular or factorization numerically difficult.")
+
+        return {'ilu_obj': ilu_obj}
+
+    @staticmethod
+    def _setup_gram_kernel(s: Array, sp: Array, sigma: float, backend_mod: Any, **kwargs) -> Dict[str, Any]:
+        """
+        Static Setup Kernel: Computes ILU factorization from Gram factors S, Sp.
+        Forms A = Sp @ S / N.
+        """
+        if backend_mod is not np:
+            raise RuntimeError("ILUPreconditioner requires NumPy backend.")
+
+        # Use shape directly
+        n = s.shape[0] if s.shape[0] > 0 else 1.0
+        if n <= 0.0: n = 1.0
+
+        # Check if s/sp are sparse
+        s_is_sparse     = sps.issparse(s)
+        sp_is_sparse    = sps.issparse(sp)
+
+        if not s_is_sparse or not sp_is_sparse:
+            print(f"({ILUPreconditioner._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for ILU setup (N={n}). "
+                "Input factors should ideally be sparse.")
+            # Convert to sparse if necessary before matmul
+            s_mat   = sps.csc_matrix(s) if not s_is_sparse else s.tocsc()
+            sp_mat  = sps.csc_matrix(sp) if not sp_is_sparse else sp.tocsc()
+            a_gram  = (sp_mat @ s_mat) / n
+        else:
+            # Perform sparse matrix multiplication
+            a_gram  = (sp.tocsc() @ s.tocsc()) / n
+
+        return ILUPreconditioner._setup_standard_kernel(a_gram, sigma, backend_mod, **kwargs)
+
+    def _set_standard(self, a: Array, sigma: float, **kwargs):
+        # Merge instance properties with kwargs to pass to static kernel
+        kwargs.setdefault('fill_factor', self._fill_factor)
+        kwargs.setdefault('drop_tol', self._drop_tol)
+
+        self._precomputed_data_instance = self.__class__._setup_standard_kernel(a, sigma, self._backend, **kwargs)
+        # Update instance properties if they were modified/returned?
+        # Actually _setup_standard_kernel returns data dict, not properties.
+        # But for ILU, ilu_obj is in data dict.
+        self._ilu_obj = self._precomputed_data_instance.get('ilu_obj')
+        self._update_instance_apply_func()
+
+    def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
+        kwargs.setdefault('fill_factor', self._fill_factor)
+        kwargs.setdefault('drop_tol', self._drop_tol)
+
+        self._precomputed_data_instance = self.__class__._setup_gram_kernel(s, sp, sigma, self._backend, **kwargs)
+        self._ilu_obj = self._precomputed_data_instance.get('ilu_obj')
+        self._update_instance_apply_func()
+
+    def _get_precomputed_data(self) -> dict:
+        """ Returns the computed ILU object. """
+        # Let apply handle None case
+        return {'ilu_obj': self._ilu_obj}
+
+    # -----------------------------------------------------------------
+    #! Static Apply Method
+    # -----------------------------------------------------------------
+
+    @staticmethod
+    def apply(r: Array, sigma: float, backend_module: Any, ilu_obj: Optional[spsla.SuperLU]) -> Array:
+        '''
+        Static apply method for ILU: solves Mz = r using the LU factors.
+
+        Args:
+            r (Array):
+                The residual vector.
+            sigma (float):
+                Regularization (used during setup).
+            backend_module (Any):
+                The backend numpy module (must be numpy).
+            ilu_obj (Optional[SuperLU]):
+                The precomputed ILU object from spilu.
+
+        Returns:
+            Array: The preconditioned vector M^{-1}r, or r if ilu_obj is None.
+        '''
+        if backend_module is not np:
+            # This check is important because spsla.SuperLU is SciPy/NumPy specific
+            raise RuntimeError("ILUPreconditioner.apply requires NumPy backend.")
+
+        if ilu_obj is None:
+            # Factorization failed or not performed, return original vector
+            print("Warning: ILU object is None in apply, returning original vector.")
+            return r
+
+        try:
+            # Use the solve method of the SuperLU object
+            # This handles permutations and solves L(U(x)) = Pr
+            return ilu_obj.solve(r) # Input r should be a NumPy array
+        except Exception as e: # Catch specific linalg errors if possible
+            print(f"ILU solve failed during apply: {e}")
+            # Return original vector if solve fails
+            return r
+
+    @staticmethod
+    def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
+        """
+        Static kernel implementation that calls the public static apply.
+        Needed for the base class machinery.
+        """
+        ilu_obj = precomputed_data.get('ilu_obj')
+        return ILUPreconditioner.apply(r, sigma, backend_mod, ilu_obj)
+
+    # -----------------------------------------------------------------
+
+    def __repr__(self) -> str:
+        '''
+        Returns the name and configuration of the Incomplete LU preconditioner.
+        '''
+
+        # Check if the ILU object is None (not factorized) or not
+        status      = "Factorized" if self._ilu_obj is not None else "Not Factorized/Failed"
+        base_repr   = super().__repr__()
+
+        # Add ILU specific params
+        return f"{base_repr[:-1]}, ILU_status='{status}')"
+
+    # -----------------------------------------------------------------
+
+# =====================================================================
 #! Choose wisely
 # =====================================================================
 
@@ -1704,8 +1967,7 @@ def _get_precond_class_and_defaults(precond_type: Union[PreconditionersTypeSym, 
                 target_class            = IdentityPreconditioner
                 defaults['is_positive_semidefinite'] = False
             case PreconditionersTypeNoSym.INCOMPLETE_LU:
-                # TODO: Implement ILUPreconditioner similar to IncompleteCholesky
-                raise NotImplementedError("IncompleteLU preconditioner not implemented yet.")
+                target_class            = ILUPreconditioner
             case _:
                 raise ValueError(f"Non-Symmetric type {precond_type} not handled.")
     elif isinstance(precond_type, (int)):
