@@ -6,7 +6,7 @@ date    : 2025-03-01
 '''
 
 # from general python utils
-from typing                 import Any, Callable, List, Tuple, NamedTuple, Union
+from typing                 import Any, Callable, Optional, Dict, List, Tuple, NamedTuple, Union
 from functools              import partial
 try:
     import jax
@@ -1429,5 +1429,66 @@ if JAX_AVAILABLE:
     def div_tree(p1: Any, divisor: Any) -> Any:
         """JIT-compiled tree division."""
         return tree_map(jax.lax.div, p1, divisor)
+
+    # --------------------------------------------------------------------------
+    #! Gradient Clipping
+    # --------------------------------------------------------------------------
+
+    @jax.jit
+    def clip_gradient_norm(grads: Any, max_norm: float) -> Any:
+        """
+        Clips the global L2 norm of the gradients.
+
+        If the global norm of the gradients exceeds `max_norm`, the gradients
+        are scaled down to have a norm of `max_norm`.
+
+        Parameters
+        ----------
+        grads : Any
+            A PyTree of gradients.
+        max_norm : float
+            The maximum allowed global L2 norm.
+
+        Returns
+        -------
+        Any
+            The clipped gradients (same structure as input).
+        """
+
+        # Calculate global squared norm
+        def sq_norm_leaf(x):
+            return jnp.sum(jnp.abs(x)**2)
+
+        total_sq_norm = sum(tree_leaves(tree_map(sq_norm_leaf, grads)))
+        global_norm = jnp.sqrt(total_sq_norm)
+
+        # Calculate scaling factor
+        scale = jnp.minimum(1.0, max_norm / (global_norm + 1e-6))
+
+        # Apply scaling
+        return tree_map(lambda x: x * scale, grads)
+
+    # --------------------------------------------------------------------------
+    #! Loss Scaling
+    # --------------------------------------------------------------------------
+
+    @jax.jit
+    def scale_loss_gradients(grads: Any, loss_scale: float) -> Any:
+        """
+        Scales gradients by a factor (e.g. for loss scaling).
+
+        Parameters
+        ----------
+        grads : Any
+            A PyTree of gradients.
+        loss_scale : float
+            The scaling factor.
+
+        Returns
+        -------
+        Any
+            The scaled gradients (same structure as input).
+        """
+        return tree_map(lambda x: x * loss_scale, grads)
 
 # -------------------------------------------------------------------------
