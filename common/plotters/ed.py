@@ -12,33 +12,33 @@ Modular architecture for ED plotting with support for:
 Key Features
 ------------
 1. **Spectral Functions**
-   - plot_spectral_function_2d: 
+    - plot_spectral_function_2d: 
         Universal 2D spectral plotter (k,w) or (k,n)
-   - plot_static_structure_factor: 
+    - plot_static_structure_factor: 
         Eigenstate-resolved structure factors
-   - Supports path mode (band structure) or full grid mode
-   - Optional BZ extension to show multiple copies
+    - Supports path mode (band structure) or full grid mode
+    - Optional BZ extension to show multiple copies
 
 2. **K-Space Utilities**
-   - select_kpoints_along_path: 
+    - select_kpoints_along_path: 
         Extract k-points along high-symmetry paths
-   - extend_kspace_data: 
+    - extend_kspace_data: 
         Replicate data across BZ copies for visualization
-   - Tolerance-based path matching for discrete k-grids
+    - Tolerance-based path matching for discrete k-grids
 
 3. **Correlation Functions**
-   - plot_correlation_grid: 
+    - plot_correlation_grid: 
         Multi-mode correlation visualization (matrix, lattice, kspace, kpath)
-   - plot_bz_path_from_corr: 
+    - plot_bz_path_from_corr: 
         Structure factor along paths
-   - Automatic S(k) computation from real-space correlations
+    - Automatic S(k) computation from real-space correlations
 
 4. **Parameter Studies**
-   - plot_phase_diagram_states: 
+    - plot_phase_diagram_states: 
         Eigenstate properties across parameter space
-   - plot_multistate_vs_param: 
+    - plot_multistate_vs_param: 
         Multi-state line plots
-   - plot_scaling_analysis: 
+    - plot_scaling_analysis: 
         System size scaling
 
 Usage Patterns
@@ -52,12 +52,12 @@ All high-level plotters support:
 
 ----------------------------------------------------------------
 Author              : Maksymilian Kliczkowski
-Date                : 2025-01-15 (Updated)
+Date                : 2025-01-15
 License             : MIT
 ----------------------------------------------------------------
 '''
 
-from    typing              import List, TYPE_CHECKING, Optional, Tuple, Union, Literal, Any
+from    typing              import Dict, List, Optional, Tuple, Union, Literal, Any, TYPE_CHECKING
 from    scipy.interpolate   import griddata
 from    scipy.spatial       import cKDTree
 
@@ -65,8 +65,7 @@ import  numpy               as np
 import  matplotlib.pyplot   as plt
 
 try:
-    from general_python.lattices.lattice    import Lattice
-    from .data_loader                       import load_results, PlotDataHelpers
+    from .data_loader                       import load_results, prepare_results_for_plotting, create_result_from_data
     from .config                            import PlotStyle, KSpaceConfig, KPathConfig, SpectralConfig, FigureConfig
     from .kspace_utils                      import (
                                                     point_to_segment_distance_2d,
@@ -76,434 +75,17 @@ try:
                                                     format_pi_ticks
                                                 )
     from .spectral_utils                    import compute_spectral_broadening, extract_spectral_data
-    from .plot_helpers                      import plot_spectral_function_2d, plot_static_structure_factor, plot_kspace_intensity
-    from ..plot                             import Plotter
+    from .plot_helpers                      import plot_static_structure_factor, plot_kspace_intensity
+    from .data_loader                       import PlotData
 except ImportError:
     raise ImportError("Failed to import required modules from the current package.")
 
 if TYPE_CHECKING:
+    from general_python.lattices.lattice    import Lattice
     from general_python.common.flog         import Logger
 
 # ==============================================================================
-# HIGH-LEVEL PLOTTERS
-# ==============================================================================
-
-# a) Spectral function plotter
-
-def plot_spectral_function(
-        directory: str,
-        param_name: str,
-        lattice: "Lattice",
-        *,
-        x_parameters: list,
-        y_parameters: list,
-        x_param: str = 'J',
-        y_param: str = 'hx',
-        filters=None,
-        state_idx: int = 0,
-        mode: Literal['sum', 'kpath', 'grid', 'single'] = "sum",
-        path_labels: Optional[List[str]] = None,
-        k_indices: Optional[List[int]] = None,
-        use_extend: bool = False,
-        extend_copies: int = 2,
-        spectral_config: Optional[SpectralConfig] = None,
-        style: Optional[PlotStyle] = None,
-        figsize_per_panel: tuple = (4, 3.5),
-        title: str = '',
-        **kwargs
-    ):
-    """
-    Plot spectral function A(k,w) or S(k,w) from ED results.
-    
-    Universal plotter supporting multiple visualization modes:
-    - 'sum'   : Sum over all k-points -> A(w) line plot
-    - 'kpath' : A(k_path, w) heatmap along high-symmetry path
-    - 'grid'  : Full k-space grid with optional BZ extension
-    - 'single': A(k_i, w) line plots for specific k-points
-    
-    Parameters
-    ----------
-    directory : str
-        Data directory
-    param_name : str
-        Spectral data key (e.g., '/spectral/akw', '/spectral/skw')
-    lattice : Lattice
-        Lattice object
-    x_parameters, y_parameters : list
-        Parameter grid values
-    x_param, y_param : str
-        Parameter names
-    mode : str
-        Visualization mode
-    path_labels : list of str, optional
-        High-symmetry path for mode='kpath' (e.g., ['Gamma', 'K', 'M', 'Gamma'])
-    k_indices : list of int, optional
-        K-point indices for mode='single'
-    use_extend : bool
-        Extend k-space to show multiple BZ copies (for kpath/grid modes)
-    extend_copies : int
-        Number of BZ copies in each direction
-    spectral_config : SpectralConfig, optional
-        Spectral function configuration
-    style : PlotStyle, optional
-        Styling configuration
-    
-    Returns
-    -------
-    fig, axes_grid : Figure and axes array
-    
-    Examples
-    --------
-    # Sum over k
-    >>> fig, axes = plot_spectral_function(
-    ...     directory='./data', param_name='/akw', lattice=lat,
-    ...     x_parameters=[1.0], y_parameters=[0.0, 0.5],
-    ...     mode='sum'
-    ... )
-    
-    # K-path with extended BZ
-    >>> fig, axes = plot_spectral_function(
-    ...     directory='./data', param_name='/akw', lattice=lat,
-    ...     x_parameters=[1.0], y_parameters=[0.0],
-    ...     mode='kpath',
-    ...     path_labels=['Gamma', 'K', 'M', 'Gamma'],
-    ...     use_extend=True, extend_copies=2
-    ... )
-    """
-    if spectral_config is None:
-        spectral_config = SpectralConfig()
-    if style is None:
-        style = PlotStyle()
-    
-    # Load results
-    lx, ly = lattice.lx, lattice.ly
-    results = load_results(
-        data_dir=directory,
-        filters=filters,
-        lx=lx, ly=ly,
-        logger=kwargs.get('logger', None)
-    )
-    
-    if not results:
-        return None, None
-    
-    # Setup grid
-    unique_x = sorted(set(x_parameters))
-    unique_y = sorted(set(y_parameters))
-    n_rows, n_cols = len(unique_y), len(unique_x)
-    
-    fig, axes, _, _ = PlotDataHelpers.create_subplot_grid(
-        n_panels=n_rows * n_cols,
-        max_cols=n_cols,
-        figsize_per_panel=figsize_per_panel,
-        sharex=True,
-        sharey=True
-    )
-    axes_grid = np.array(axes).reshape((n_rows, n_cols))
-    
-    for ii, y_val in enumerate(unique_y):
-        for jj, x_val in enumerate(unique_x):
-            ax = axes_grid[ii, jj]
-            
-            # Find matching result
-            subset = [r for r in results 
-                     if abs(r.params.get(x_param, np.nan) - x_val) < 1e-5
-                     and abs(r.params.get(y_param, np.nan) - y_val) < 1e-5]
-            
-            if not subset:
-                ax.text(0.5, 0.5, 'N/A', ha='center', va='center', 
-                       transform=ax.transAxes)
-                ax.axis('off')
-                continue
-            
-            result = subset[0]
-            
-            try:
-                omega, k_vectors, akw = extract_spectral_data(
-                    result, param_name, state_idx=state_idx
-                )
-            except:
-                ax.text(0.5, 0.5, 'Data Error', ha='center', va='center',
-                       transform=ax.transAxes)
-                ax.axis('off')
-                continue
-            
-            # Handle different modes
-            if mode == "sum":
-                # Sum over all k
-                intensity_omega = np.sum(akw, axis=0)
-                ax.plot(omega, intensity_omega, lw=style.linewidth, 
-                       color='C0', alpha=style.alpha)
-                ax.set_ylabel(spectral_config.intensity_label, fontsize=style.fontsize_label)
-                ax.set_xlabel(spectral_config.omega_label, fontsize=style.fontsize_label)
-                ax.grid(alpha=0.3)
-                
-            elif mode == 'single':
-                # Single k-point(s)
-                if k_indices is None:
-                    k_indices = [0]
-                
-                for idx in k_indices:
-                    if idx < len(k_vectors):
-                        intensity_omega = akw[idx, :]
-                        ax.plot(omega, intensity_omega, lw=style.linewidth,
-                               marker=style.marker, ms=style.markersize,
-                               alpha=style.alpha, label=f'k{idx}')
-                
-                ax.set_ylabel(spectral_config.intensity_label, fontsize=style.fontsize_label)
-                ax.set_xlabel(spectral_config.omega_label, fontsize=style.fontsize_label)
-                ax.grid(alpha=0.3)
-                if len(k_indices) > 1:
-                    ax.legend(fontsize=8)
-            
-            elif mode == 'kpath':
-                # K-path mode
-                try:
-                    path_result = select_kpoints_along_path(
-                        lattice=lattice,
-                        k_vectors=k_vectors,
-                        path_labels=path_labels,
-                        use_extend=use_extend,
-                        extend_copies=extend_copies
-                    )
-                    
-                    # Extract data at selected k-points
-                    selected_indices = path_result['indices']
-                    k_distances = path_result['distances']
-                    intensity_kw = akw[selected_indices, :]  # (Npath, Nw)
-                    
-                    # Use new modular plotter
-                    im = plot_spectral_function_2d(
-                        ax, k_distances, omega, intensity_kw,
-                        mode='kpath',
-                        path_info=path_result,
-                        style=style,
-                        spectral_config=spectral_config,
-                        lattice=lattice,
-                        use_extend=False,  # Already extended in select_kpoints_along_path
-                        colorbar=False
-                    )
-                        
-                except Exception as e:
-                    ax.text(0.5, 0.5, f'Path Error', ha='center', va='center',
-                           transform=ax.transAxes)
-                    ax.axis('off')
-            
-            elif mode == 'grid':
-                # Full k-space grid mode
-                try:
-                    im = plot_spectral_function_2d(
-                        ax, k_vectors, omega, akw,
-                        mode='grid',
-                        style=style,
-                        spectral_config=spectral_config,
-                        lattice=lattice,
-                        use_extend=use_extend,
-                        extend_copies=extend_copies,
-                        colorbar=False
-                    )
-                except Exception as e:
-                    ax.text(0.5, 0.5, f'Grid Error', ha='center', va='center',
-                           transform=ax.transAxes)
-                    ax.axis('off')
-            
-            # Annotation
-            Plotter.set_annotate_letter(
-                ax, iter=0, x=0.05, y=0.9, boxaround=False,
-                addit=f'{x_param}={x_val:.2g}, {y_param}={y_val:.2g}'
-            )
-            ax.tick_params(labelsize=style.fontsize_tick)
-    
-    if title:
-        fig.suptitle(title, fontsize=style.fontsize_title)
-    
-    return fig, axes_grid
-
-# a) Phase diagram plotter
-
-def plot_phase_diagram_states(
-        directory           : str, 
-        param_name          : str,
-        x_param             : str,
-        y_param             : str, 
-        filters             = None, 
-        *,
-        lx                  = None, 
-        ly                  = None,
-        lz                  = None,
-        Ns                  = None,
-        post_process_func   = None,
-        # other
-        figsize_per_panel   : tuple = (6, 5), 
-        nstates             = 4,
-        # parameter labels
-        param_labels        : dict  = {},
-        param_fun           : callable          = lambda r, param_name: r.get(param_name, []),
-        param_x_fun         : callable          = None,
-        param_lbl           : Optional[str]     = None,
-        # plot limits
-        xlim                : Optional[tuple]   = None,
-        ylim                : Optional[tuple]   = None,
-        # colormap
-        vmin                = None, 
-        vmax                = None, 
-        # plot settings
-        ylabel              : Optional[str]     = None,
-        xlabel              : Optional[str]     = None,
-        cmap                = 'viridis', 
-        logger              : Optional['Logger'] = None,
-        save                : bool = False,
-        **kwargs):
-    
-    """Plot phase diagram from ED results in specified directory."""
-
-    results = load_results(data_dir=directory, filters=filters, lx=lx, ly=ly, lz=lz, Ns=Ns, post_process_func=post_process_func, logger=logger)
-    if len(results) == 0:
-        if logger: logger.warning("No results found for phase diagram.")
-        return None, None
-    
-    # extract unique parameters
-    x_vals, y_vals, unique_x, unique_y  = PlotDataHelpers.extract_parameter_arrays(results, x_param=x_param, y_param=y_param)
-    plot_map                            = len(unique_x) > 1 and len(unique_y) > 1
-    if logger:                          logger.info(f"Plot type: {'Colormap' if plot_map else 'Line plots'}", color='cyan')
-    
-    if nstates <= 1:
-        ncols, nrows, npanels = 1, 1, 1
-    elif nstates <= 3:
-        ncols   = 1 if not plot_map else nstates
-        nrows   = 1
-        npanels = nstates if plot_map else 1
-    else:
-        ncols   = 1 if not plot_map else nstates // 2
-        nrows   = 1 if not plot_map else ((nstates + ncols - 1) // ncols)
-        npanels = nstates if plot_map else 1
-        
-    fig, axes, _, _                     = PlotDataHelpers.create_subplot_grid(n_panels=npanels , max_cols=ncols, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
-    axes                                = axes.flatten()
-    
-    if xlabel is None:
-        xlabel                          = param_labels.get(x_param, x_param) if len(unique_x) > 1 else param_labels.get(y_param, y_param)
-    if ylabel is None:
-        ylabel                          = param_labels.get(y_param, y_param) if len(unique_y) > 1 else param_labels.get(x_param, x_param)
-    
-    if plot_map:
-        labelcond = lambda state_idx: {'x': state_idx // ncols == nrows - 1, 'y': state_idx % ncols == 0}
-    else:
-        labelcond = lambda state_idx: {'x': True, 'y': True}
-    
-    if vmin is None or vmax is None:
-        vmin_n, vmax_n                  = PlotDataHelpers.determine_vmax_vmin(results, param_name, param_fun, nstates) if vmin is None or vmax is None else (vmin, vmax)
-        vmin                            = vmin_n if vmin is None else vmin
-        vmax                            = vmax_n if vmax is None else vmax
-        
-    letter_x, letter_y                  = kwargs.pop('letter_x', 0.05), kwargs.pop('letter_y', 0.85) # annotation position
-
-    # a) Only X Variation (Line Plot)
-    if len(unique_x) > 1 and len(unique_y) == 1 or len(unique_x) == 1 and len(unique_y) > 1:
-        param_plot  = x_param if len(unique_x) > 1 else y_param
-        ax          = axes[0]
-        label       = xlabel if len(unique_x) > 1 else ylabel
-        getcolor    = Plotter.get_colormap(values=np.linspace(0, nstates, nstates), cmap=cmap, elsecolor='black', get_mappable=False)[0]
-        
-        for ii in range(nstates):
-            x_plot, y_plot = [], []
-            for r in results:
-                y   = param_fun(r, param_name)
-                x   = param_x_fun(r, param_plot) if param_x_fun is not None else r.params.get(param_plot, 0.0)
-                if len(y) > ii:
-                    x_plot.append(x)
-                    y_plot.append(y[ii])
-            
-            sort_idx    = np.argsort(x_plot)
-            x_plot      = np.array(x_plot)[sort_idx]
-            y_plot      = np.array(y_plot)[sort_idx]
-            Plotter.plot(ax, x=x_plot, y=y_plot, ls='-', marker='o', ms=4, color=getcolor(ii), label=rf'$|\Psi_{{{ii}}}\rangle$', zorder=100-ii)
-        
-        Plotter.set_ax_params(ax, xlabel=label, ylabel=param_lbl if param_lbl is not None else param_labels.get(param_name, param_name), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'),)
-        Plotter.set_annotate_letter(ax, iter=0, x=letter_x, y=letter_y, boxaround=False)
-        Plotter.set_legend(ax, loc=kwargs.get('legend_loc', 'lower right'), fontsize=kwargs.get('legend_fontsize', 8))
-        Plotter.grid(ax, alpha=0.3)
-
-    # b) Colormap - Both X and Y Variation
-    elif len(unique_x) > 1 and len(unique_y) > 1:
-        xi                          = np.linspace(min(unique_x), max(unique_x), 200)
-        yi                          = np.linspace(min(unique_y), max(unique_y), 200)
-        Xi, Yi                      = np.meshgrid(xi, yi)
-        scale_type                  = kwargs.get('cbar_scale', 'linear')
-        getcolor, _, _, mappable    = Plotter.get_colormap(vmin=vmin, vmax=vmax, cmap=cmap, elsecolor='black', get_mappable=True, scale=scale_type)
-        
-        for ii in range(nstates):
-            ax                              = axes[ii]
-            x_scatter, y_scatter, z_scatter = [], [], []
-            
-            for r in results:
-                val     = param_fun(r, param_name)
-                # X param
-                x_val   = param_x_fun(r, x_param) if param_x_fun is not None else r.params.get(x_param, 0.0)
-                
-                # Y param
-                y_val   = r.params.get(y_param, 0.0)
-
-                if isinstance(val, (list, np.ndarray)) and len(val) > ii:
-                    x_scatter.append(x_val)
-                    y_scatter.append(y_val)
-                    z_scatter.append(val[ii])
-                    
-                elif isinstance(val, (int, float)) and ii == 0:
-                    x_scatter.append(x_val)
-                    y_scatter.append(y_val)
-                    z_scatter.append(val)
-            
-            if len(x_scatter) < 3: # Need at least 3 points for griddata
-                continue
-
-            try:
-                if kwargs.get('gridmethod', 'cubic') is None:
-                    # do not use griddata, just scatter points where they are, color by value
-                    for x, y, z in zip(x_scatter, y_scatter, z_scatter):
-                        ax.scatter(x, y, color=getcolor(z), s=100, edgecolor=None, linewidth=0.5, marker='o')
-                else:
-                    Zi = griddata((x_scatter, y_scatter), z_scatter, (Xi, Yi), method=kwargs.get('gridmethod', 'cubic'), rescale=True)
-                    cf = ax.contourf(Xi, Yi, Zi, cmap=cmap, extend='both', vmin=vmin, vmax=vmax)
-            
-                    if not np.all(np.isnan(Zi)):
-                        cs = ax.contour(Xi, Yi, Zi, levels=kwargs.get('levels', 10), colors=kwargs.get('c_levels', 'white'), linewidths=0.5, alpha=0.3, vmin=vmin, vmax=vmax)
-                        ax.clabel(cs, inline=True, fontsize=8, fmt='%.2e', colors=kwargs.get('c_labels', 'white'))
-            except Exception as e:
-                if logger: logger.error(f"Error interpolating data for state {ii}: {e}")
-
-            text_color      = kwargs.get('text_color', 'white')
-            text_fontsize   = kwargs.get('text_fontsize', 8)
-            Plotter.set_ax_params(ax, xlabel=xlabel, ylabel=ylabel, labelCond=labelcond(ii))
-            Plotter.set_annotate_letter(ax, iter=ii, x=letter_x, y=letter_y, boxaround=False, color=text_color, addit=rf'$|\Psi_{{{ii}}}\rangle$', fontsize=text_fontsize)
-        
-        # Colorbar for all panels
-        cbar_pos    = kwargs.get('cbar_pos', [0.92, 0.15, 0.02, 0.7])
-        cbar_scale  = kwargs.pop('cbar_scale', 'linear')
-        vmin        = vmin if cbar_scale == 'linear' else None
-        Plotter.add_colorbar(fig=fig, pos=cbar_pos, mappable=mappable, cmap=cmap, scale=cbar_scale,
-                    vmin=vmin, vmax=vmax, label=param_labels.get(param_name, param_name) if param_lbl is None else param_lbl,
-                    extend=None, format='%.1e' if cbar_scale == 'log' else '%.2f', remove_pdf_lines=True
-                )
-    else:
-        if logger: logger.warning("Insufficient parameter variation for phase diagram plot.")
-        return None, None
-        
-    for ax in axes:
-        Plotter.set_tickparams(ax)
-        
-    title = kwargs.get('title', '')
-    if title:
-        fig.suptitle(title, fontsize=kwargs.get('title_fontsize', 12))
-
-    Plotter.hide_unused_panels(axes, npanels)
-    
-    if save:
-        PlotDataHelpers.savefig(fig, directory, param_name, x_param, y_param if plot_map else None, **kwargs)
-        
-    return fig, axes
-
-# b) Correlation grid plotter
+# Correlation function plotter along BZ path
 
 def plot_bz_path_from_corr(
         ax,
@@ -650,6 +232,476 @@ def plot_bz_path_from_corr(
     }
     
     return result
+
+# ==============================================================================
+# Spectral function plotter
+# ==============================================================================
+
+def plot_spectral_function(
+        directory               : str,
+        param_name              : str,
+        lattice                 : "Lattice",
+        x_parameters            : list,
+        y_parameters            : list,
+        *,
+        omega_key               : str                                   = '/spectral/omega',
+        kvectors_key            : str                                   = '/spectral/kvectors',
+        data_values             : Optional[np.ndarray | Dict[str, Any]] = None,
+        x_param                 : str                                   = 'J',
+        y_param                 : str                                   = 'hx',
+        # plotting mode
+        filters                 = None,
+        state_idx               : int                                   = 0,
+        mode                    : Literal['sum', 'kpath', 'grid', 'single'] = "sum",
+        param_labels            : dict                                  = {},
+        # k-path specific
+        path_labels             : Optional[List[str]]                   = None,
+        k_indices               : Optional[List[int]]                   = None,
+        use_extend              : bool = False,
+        extend_copies           : int = 2,
+        # other
+        spectral_config         : Optional[SpectralConfig]              = None,
+        style                   : Optional[PlotStyle]                   = None,
+        letter_x                : float                                 = 0.05,
+        letter_y                : float                                 = 0.9,
+        annotate_letter         : bool                                  = True,
+        title                   : str                                   = '',
+        **kwargs
+    ):
+    """
+    Plot spectral function A(k,w) or S(k,w) from ED results.
+    
+    Universal plotter supporting multiple visualization modes:
+    - 'sum'   : Sum over all k-points -> A(w) line plot         - useful for DOS
+        needs the data to be at least (Nk, Nw)
+    - 'kpath' : A(k_path, w) heatmap along high-symmetry path   - band structure style
+        needs the data to be at least (Nk, Nw)
+    - 'grid'  : Full k-space grid with optional BZ extension    - 2D intensity map
+        needs the data to be at least (Nk, Nw)
+    - 'single': A(k_i, w) line plots for specific k-points      - discrete point analysis
+        needs the data to be at least (Nk, Nw)
+    
+    Parameters
+    ----------
+    directory : str
+        Data directory
+    param_name : str
+        Spectral data key (e.g., '/spectral/akw', '/spectral/skw')
+    lattice : Lattice
+        Lattice object
+    x_parameters, y_parameters : list
+        Parameter grid values - will create subplots for each (x,y) pair
+    x_param, y_param : str
+        Parameter names - used to match results
+    mode : str
+        Visualization mode ('sum', 'kpath', 'grid', 'single')
+    path_labels : list of str, optional
+        High-symmetry path for mode='kpath' (e.g., ['Gamma', 'K', 'M', 'Gamma']).
+        Depends on lattice high-symmetry points. See Lattice.high_symmetry_points().
+    k_indices : list of int, optional
+        K-point indices for mode='single'
+    use_extend : bool
+        Extend k-space to show multiple BZ copies (for kpath/grid modes)
+    extend_copies : int
+        Number of BZ copies in each direction
+    spectral_config : SpectralConfig, optional
+        Spectral function configuration
+    style : PlotStyle, optional
+        Styling configuration
+    
+    Returns
+    -------
+    fig, axes_grid : Figure and axes array
+    
+    Examples
+    --------
+    # Sum over k (or discrete points)
+    >>> fig, axes = plot_spectral_function(
+    ...     directory       = './data', 
+    ...     param_name      = '/akw', 
+    ...     lattice         = lat,
+    ...     x_parameters    = [1.0], 
+    ...     y_parameters    = [0.0, 0.5],
+    ...     mode            = 'sum'
+    ... )
+    
+    # K-path with extended BZ
+    >>> fig, axes = plot_spectral_function(
+    ...     directory       = './data', param_name='/akw', lattice=lat,
+    ...     x_parameters    =   [1.0], 
+    ...     y_parameters    =   [0.0],
+    ...     mode            =   'kpath',
+    ...     path_labels     =   ['Gamma', 'K', 'M', 'Gamma'],
+    ...     use_extend      =   True, extend_copies =   2
+    ... )
+    """
+    
+    try:
+        from ..plot     import Plotter
+    except ImportError:
+        raise ImportError("Failed to import Plotter from the current package.")
+    
+    spectral_config     = SpectralConfig()  if spectral_config is None else spectral_config
+    style               = PlotStyle()       if style is None else style
+    data_key            = param_name        if data_values is None else 'default'
+    lx, ly              = lattice.lx, lattice.ly
+    logger              = kwargs.pop('logger', None)
+    
+    try:
+        results             = PlotData.from_input(
+                                directory       =   directory,
+                                data_values     =   data_values,
+                                x_parameters    =   x_parameters,
+                                y_parameters    =   y_parameters,
+                                x_param         =   x_param,
+                                y_param         =   y_param,
+                                data_key        =   data_key,
+                                filters         =   filters,
+                                logger          =   logger,
+                                lx              =   lx,
+                                ly              =   ly,
+                                **kwargs
+                            )
+    except Exception as e:
+        if logger:
+            logger.error(f"Error loading results: {e}")
+        return None, None
+    
+    if not results:
+        return None, None
+    
+    # Setup grid
+    unique_x        = sorted(set(x_parameters))
+    unique_y        = sorted(set(y_parameters))
+    n_rows, n_cols  = len(unique_y), len(unique_x)
+    fig, axes, _, _ = FigureConfig.setup_figure_grid(n_rows=n_rows, n_cols=n_cols, style=style, fig=kwargs.get('fig', None), axes=kwargs.get('axes', None))
+    
+    # ---------------
+    # Plotting loop
+    # ---------------
+    
+    iterator        = 0
+    for ii, y_val in enumerate(unique_y):
+        for jj, x_val in enumerate(unique_x):
+            ax      = axes[ii, jj]
+            subset  = PlotData.from_match(results=results, x_param=x_param, x_val=x_val, y_param=y_param, y_val=y_val)
+            
+            if not subset:
+                ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes)
+                ax.axis('off')
+                continue
+                        
+            try:
+                omega, k_vectors, akw = extract_spectral_data(subset, param_name, 
+                                            state_idx           =   state_idx, 
+                                            component           =   kwargs.get('component', None),
+                                            omega_key           =   omega_key,
+                                            kvectors_key        =   kvectors_key,
+                                            reshape_to_komega   =   True,
+                                        )
+            except Exception as e:
+                ax.text(0.5, 0.5, 'Data Error', ha='center', va='center', transform=ax.transAxes)
+                ax.axis('off')
+                continue
+            
+            # Handle different modes
+            if mode == "sum":
+                # Sum over all k
+                intensity_omega     = np.sum(akw, axis=0)
+                Plotter.plot(ax, omega, intensity_omega, lw=style.linewidth, color='C0', alpha=style.alpha)
+                Plotter.set_ax_params(
+                    ax,
+                    xlabel          =   spectral_config.omega_label,
+                    ylabel          =   spectral_config.intensity_label,
+                    fontsize        =   style.fontsize_label
+                )
+                Plotter.grid(ax, alpha=0.3)
+                
+            elif mode == 'single':
+                # Single k-point(s)
+                if k_indices is None:
+                    k_indices = [0]
+                
+                for idx in k_indices:
+                    if idx < len(k_vectors):
+                        intensity_omega = akw[idx, :]
+                        Plotter.plot(ax, omega, intensity_omega, lw=style.linewidth, marker=style.marker, ms=style.markersize, alpha=style.alpha, label=f'k{idx}')
+                
+                Plotter.set_ax_params(
+                    ax,
+                    xlabel          =   spectral_config.omega_label,
+                    ylabel          =   spectral_config.intensity_label,
+                    fontsize        =   style.fontsize_label
+                )
+                Plotter.grid(ax, alpha=0.3)
+                
+                if len(k_indices) > 1:
+                    Plotter.set_legend(ax, loc='best', fontsize=style.fontsize_legend)
+            
+            elif mode == 'kpath':
+                # K-path mode
+                try:
+                    from .spectral_utils import plot_spectral_function_2d
+                
+                    path_result     = select_kpoints_along_path(
+                                        lattice         =   lattice,
+                                        k_vectors       =   k_vectors,
+                                        path_labels     =   path_labels,
+                                        use_extend      =   use_extend,
+                                        extend_copies   =   extend_copies
+                                    )
+                    
+                    # Extract data at selected k-points
+                    selected_indices    = path_result['indices']        # (Npath,)
+                    k_distances         = path_result['distances']      # (Npath,)
+                    intensity_kw        = akw[selected_indices, :]      # (Npath, Nw)
+                    
+                    # Use new modular plotter
+                    im                  = plot_spectral_function_2d(
+                                            ax, k_distances, omega, intensity_kw,
+                                            mode            =   'kpath',
+                                            path_info       =   path_result,
+                                            style           =   style,
+                                            spectral_config =   spectral_config,
+                                            lattice         =   lattice,
+                                            use_extend      =   False,  # Already extended in select_kpoints_along_path
+                                            colorbar        =   False,
+                                            fig             =   fig
+                                        )
+                        
+                except Exception as e:
+                    if logger:
+                        logger.error(f"Error plotting k-path spectral function: {e}")
+                    ax.text(0.5, 0.5, f'Path Error', ha='center', va='center', transform=ax.transAxes)
+                    ax.axis('off')
+            
+            elif mode == 'grid':
+                # Full k-space grid mode
+                try:
+                    from .spectral_utils import plot_spectral_function_2d
+                    
+                    im              = plot_spectral_function_2d(
+                                            ax, k_vectors, omega, akw,
+                                            mode            =   'grid',
+                                            style           =   style,
+                                            spectral_config =   spectral_config,
+                                            lattice         =   lattice,
+                                            use_extend      =   use_extend,
+                                            extend_copies   =   extend_copies,
+                                            colorbar        =   False,
+                                            fig             =   fig
+                                        )
+                except Exception as e:
+                    ax.text(0.5, 0.5, f'Grid Error', ha='center', va='center', transform=ax.transAxes)
+                    ax.axis('off')
+            
+            # Annotation
+            if annotate_letter:
+                xparam_lbl  =   param_labels.get(x_param, x_param)
+                yparam_lbl  =   param_labels.get(y_param, y_param)
+                addit = '' if not kwargs.get('annotate_params', True) else f'{xparam_lbl}={x_val:.2g}, {yparam_lbl}={y_val:.2g}'
+                Plotter.set_annotate_letter(ax, iter=iterator, x=letter_x, y=letter_y, boxaround=kwargs.get('boxaround', False), addit=addit)
+                ax.tick_params(labelsize=style.fontsize_tick)
+                
+            iterator += 1
+    
+    if title:
+        fig.suptitle(title, fontsize=style.fontsize_title)
+    
+    return fig, axes
+
+# ==============================================================================
+# Phase diagram plotter
+# ==============================================================================
+
+def plot_phase_diagram_states(
+        directory           : str, 
+        param_name          : str,
+        x_param             : str,
+        y_param             : str, 
+        filters             = None, 
+        *,
+        lx                  = None, 
+        ly                  = None,
+        lz                  = None,
+        Ns                  = None,
+        post_process_func   = None,
+        # other
+        figsize_per_panel   : tuple             = (6, 5), 
+        nstates                                 = 4,
+        # parameter labels
+        param_labels        : dict              = {},
+        param_fun           : callable          = lambda r, param_name: r.get(param_name, []),
+        param_x_fun         : callable          = None,
+        param_lbl           : Optional[str]     = None,
+        # plot limits
+        xlim                : Optional[tuple]   = None,
+        ylim                : Optional[tuple]   = None,
+        # colormap
+        vmin                = None, 
+        vmax                = None, 
+        # plot settings
+        ylabel              : Optional[str]     = None,
+        xlabel              : Optional[str]     = None,
+        cmap                = 'viridis', 
+        logger              : Optional['Logger'] = None,
+        save                : bool = False,
+        **kwargs):
+    
+    """Plot phase diagram from ED results in specified directory."""
+    try:
+        from ..plot     import Plotter
+    except ImportError:
+        raise ImportError("Failed to import Plotter from the current package.")
+
+
+    results = load_results(data_dir=directory, filters=filters, lx=lx, ly=ly, lz=lz, Ns=Ns, post_process_func=post_process_func, logger=logger)
+    if len(results) == 0:
+        if logger: logger.warning("No results found for phase diagram.")
+        return None, None
+    
+    # extract unique parameters
+    x_vals, y_vals, unique_x, unique_y  = PlotData.extract_parameter_arrays(results, x_param=x_param, y_param=y_param)
+    plot_map                            = len(unique_x) > 1 and len(unique_y) > 1
+    if logger:                          logger.info(f"Plot type: {'Colormap' if plot_map else 'Line plots'}", color='cyan')
+    
+    if nstates <= 1:
+        ncols, nrows, npanels = 1, 1, 1
+    elif nstates <= 3:
+        ncols   = 1 if not plot_map else nstates
+        nrows   = 1
+        npanels = nstates if plot_map else 1
+    else:
+        ncols   = 1 if not plot_map else nstates // 2
+        nrows   = 1 if not plot_map else ((nstates + ncols - 1) // ncols)
+        npanels = nstates if plot_map else 1
+        
+    fig, axes, _, _                     = FigureConfig.create_subplot_grid(n_panels=npanels , max_cols=ncols, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
+    axes                                = axes.flatten()
+    
+    if xlabel is None:
+        xlabel                          = param_labels.get(x_param, x_param) if len(unique_x) > 1 else param_labels.get(y_param, y_param)
+    if ylabel is None:
+        ylabel                          = param_labels.get(y_param, y_param) if len(unique_y) > 1 else param_labels.get(x_param, x_param)
+    
+    if plot_map:
+        label_cond = lambda state_idx: {'x': state_idx // ncols == nrows - 1, 'y': state_idx % ncols == 0}
+    else:
+        label_cond = lambda state_idx: {'x': True, 'y': True}
+    
+    if vmin is None or vmax is None:
+        vmin_n, vmax_n                  = PlotData.determine_vmax_vmin(results, param_name, param_fun, nstates) if vmin is None or vmax is None else (vmin, vmax)
+        vmin                            = vmin_n if vmin is None else vmin
+        vmax                            = vmax_n if vmax is None else vmax
+        
+    letter_x, letter_y                  = kwargs.pop('letter_x', 0.05), kwargs.pop('letter_y', 0.85) # annotation position
+
+    # a) Only X Variation (Line Plot)
+    if len(unique_x) > 1 and len(unique_y) == 1 or len(unique_x) == 1 and len(unique_y) > 1:
+        param_plot  = x_param if len(unique_x) > 1 else y_param
+        ax          = axes[0]
+        label       = xlabel if len(unique_x) > 1 else ylabel
+        getcolor    = Plotter.get_colormap(values=np.linspace(0, nstates, nstates), cmap=cmap, elsecolor='black', get_mappable=False)[0]
+        
+        for ii in range(nstates):
+            x_plot, y_plot = [], []
+            for r in results:
+                y   = param_fun(r, param_name)
+                x   = param_x_fun(r, param_plot) if param_x_fun is not None else r.params.get(param_plot, 0.0)
+                if len(y) > ii:
+                    x_plot.append(x)
+                    y_plot.append(y[ii])
+            
+            sort_idx    = np.argsort(x_plot)
+            x_plot      = np.array(x_plot)[sort_idx]
+            y_plot      = np.array(y_plot)[sort_idx]
+            Plotter.plot(ax, x=x_plot, y=y_plot, ls='-', marker='o', ms=4, color=getcolor(ii), label=rf'$|\Psi_{{{ii}}}\rangle$', zorder=100-ii)
+        
+        Plotter.set_ax_params(ax, xlabel=label, ylabel=param_lbl if param_lbl is not None else param_labels.get(param_name, param_name), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'),)
+        Plotter.set_annotate_letter(ax, iter=0, x=letter_x, y=letter_y, boxaround=False)
+        Plotter.set_legend(ax, loc=kwargs.get('legend_loc', 'lower right'), fontsize=kwargs.get('legend_fontsize', 8))
+        Plotter.grid(ax, alpha=0.3)
+
+    # b) Colormap - Both X and Y Variation
+    elif len(unique_x) > 1 and len(unique_y) > 1:
+        xi                          = np.linspace(min(unique_x), max(unique_x), 200)
+        yi                          = np.linspace(min(unique_y), max(unique_y), 200)
+        Xi, Yi                      = np.meshgrid(xi, yi)
+        scale_type                  = kwargs.get('cbar_scale', 'linear')
+        getcolor, _, _, mappable    = Plotter.get_colormap(vmin=vmin, vmax=vmax, cmap=cmap, elsecolor='black', get_mappable=True, scale=scale_type)
+        
+        for ii in range(nstates):
+            ax                              = axes[ii]
+            x_scatter, y_scatter, z_scatter = [], [], []
+            
+            for r in results:
+                val     = param_fun(r, param_name)
+                # X param
+                x_val   = param_x_fun(r, x_param) if param_x_fun is not None else r.params.get(x_param, 0.0)
+                
+                # Y param
+                y_val   = r.params.get(y_param, 0.0)
+
+                if isinstance(val, (list, np.ndarray)) and len(val) > ii:
+                    x_scatter.append(x_val)
+                    y_scatter.append(y_val)
+                    z_scatter.append(val[ii])
+                    
+                elif isinstance(val, (int, float)) and ii == 0:
+                    x_scatter.append(x_val)
+                    y_scatter.append(y_val)
+                    z_scatter.append(val)
+            
+            if len(x_scatter) < 3: # Need at least 3 points for griddata
+                continue
+
+            try:
+                if kwargs.get('gridmethod', 'cubic') is None:
+                    # do not use griddata, just scatter points where they are, color by value
+                    for x, y, z in zip(x_scatter, y_scatter, z_scatter):
+                        ax.scatter(x, y, color=getcolor(z), s=100, edgecolor=None, linewidth=0.5, marker='o')
+                else:
+                    Zi = griddata((x_scatter, y_scatter), z_scatter, (Xi, Yi), method=kwargs.get('gridmethod', 'cubic'), rescale=True)
+                    cf = ax.contourf(Xi, Yi, Zi, cmap=cmap, extend='both', vmin=vmin, vmax=vmax)
+            
+                    if not np.all(np.isnan(Zi)):
+                        cs = ax.contour(Xi, Yi, Zi, levels=kwargs.get('levels', 10), colors=kwargs.get('c_levels', 'white'), linewidths=0.5, alpha=0.3, vmin=vmin, vmax=vmax)
+                        ax.clabel(cs, inline=True, fontsize=8, fmt='%.2e', colors=kwargs.get('c_labels', 'white'))
+            except Exception as e:
+                if logger: logger.error(f"Error interpolating data for state {ii}: {e}")
+
+            text_color      = kwargs.get('text_color', 'white')
+            text_fontsize   = kwargs.get('text_fontsize', 8)
+            Plotter.set_ax_params(ax, xlabel=xlabel, ylabel=ylabel, label_cond=label_cond(ii))
+            Plotter.set_annotate_letter(ax, iter=ii, x=letter_x, y=letter_y, boxaround=False, color=text_color, addit=rf'$|\Psi_{{{ii}}}\rangle$', fontsize=text_fontsize)
+        
+        # Colorbar for all panels
+        cbar_pos    = kwargs.get('cbar_pos', [0.92, 0.15, 0.02, 0.7])
+        cbar_scale  = kwargs.pop('cbar_scale', 'linear')
+        vmin        = vmin if cbar_scale == 'linear' else None
+        Plotter.add_colorbar(fig=fig, pos=cbar_pos, mappable=mappable, cmap=cmap, scale=cbar_scale,
+                    vmin=vmin, vmax=vmax, label=param_labels.get(param_name, param_name) if param_lbl is None else param_lbl,
+                    extend=None, format='%.1e' if cbar_scale == 'log' else '%.2f', remove_pdf_lines=True
+                )
+    else:
+        if logger: logger.warning("Insufficient parameter variation for phase diagram plot.")
+        return None, None
+        
+    for ax in axes:
+        Plotter.set_tickparams(ax)
+        
+    title = kwargs.get('title', '')
+    if title:
+        fig.suptitle(title, fontsize=kwargs.get('title_fontsize', 12))
+
+    Plotter.hide_unused_panels(axes, npanels)
+
+        
+    return fig, axes
+
+# ==============================================================================
+# Correlation grid plotter
+# ==============================================================================
 
 def plot_correlation_grid(
                         directory           : str,
@@ -849,7 +901,11 @@ def plot_correlation_grid(
     - For best results with kpath mode, lattice should implement high_symmetry_points()
     - Wigner-Seitz BZ masking uses general_python.lattices.tools.lattice_kspace.ws_bz_mask
     """
-
+    try:
+        from ..plot     import Plotter
+    except ImportError:
+        raise ImportError("Failed to import Plotter from the current package.")
+    
     # Needs lattice
     if lattice is not None:
         lx, ly, lz, Ns  = lattice.lx, lattice.ly, lattice.lz, lattice.Ns
@@ -873,7 +929,7 @@ def plot_correlation_grid(
     if not results:
         return None, None
 
-    _, _, unique_x, unique_y = PlotDataHelpers.extract_parameter_arrays(results, x_param, y_param)
+    _, _, unique_x, unique_y = PlotData.extract_parameter_arrays(results, x_param, y_param)
 
     unique_x            = np.array([v for v in unique_x if any(abs(v - p) < 1e-5 for p in x_parameters)])
     unique_y            = np.array([v for v in unique_y if any(abs(v - p) < 1e-5 for p in y_parameters)])
@@ -885,7 +941,7 @@ def plot_correlation_grid(
     if n_rows == 0 or n_cols == 0:
         return None, None
 
-    fig, axes, _, _     = PlotDataHelpers.create_subplot_grid(
+    fig, axes, _, _     = FigureConfig.create_subplot_grid(
                             n_panels            = n_rows * n_cols,
                             max_cols            = n_cols,
                             figsize_per_panel   = figsize_per_panel,
@@ -1013,7 +1069,7 @@ def plot_correlation_grid(
                 if vmin is None: vmin = -1.0
                 if vmax is None: vmax = +1.0
         else:
-            vmin_n, vmax_n  = PlotDataHelpers.determine_vmax_vmin(results, param_name, param_fun, nstates=1)
+            vmin_n, vmax_n  = PlotData.determine_vmax_vmin(results, param_name, param_fun, nstates=1)
             if vmin is None: vmin = vmin_n
             if vmax is None: vmax = vmax_n
 
@@ -1021,7 +1077,7 @@ def plot_correlation_grid(
     _, _, _, mappable = Plotter.get_colormap(values=[vmin, vmax], cmap=cmap, get_mappable=True)
 
     # axis label logic
-    def _labelcond(i, j):
+    def _label_cond(i, j):
         return {'x': i == n_rows - 1, 'y': j == 0}
 
     def _set_axis_labels(ax, i, j):
@@ -1030,7 +1086,7 @@ def plot_correlation_grid(
                 ax,
                 xlabel      = r'Site $j$',
                 ylabel      = r'Site $i$',
-                labelCond   = _labelcond(i, j),
+                label_cond   = _label_cond(i, j),
                 labelPos    = {'x': 'bottom', 'y': 'left'},
                 tickPos     = {'x': 'bottom', 'y': 'left'},
             )
@@ -1045,7 +1101,7 @@ def plot_correlation_grid(
                     ax,
                     xlabel      = kwargs.get('rs_xlabel', r'$\Delta x$'),
                     ylabel      = kwargs.get('rs_ylabel', r'$C(\Delta x)$'),
-                    labelCond   = _labelcond(i, j),
+                    label_cond   = _label_cond(i, j),
                     labelPos    = {'x': 'bottom', 'y': 'left'},
                     tickPos     = {'x': 'bottom', 'y': 'left'},
                 )
@@ -1055,9 +1111,9 @@ def plot_correlation_grid(
 
         if plot_mode == 'kspace':
             # BZ panels style: only outer labels
-            if _labelcond(i, j).get('x', False):
+            if _label_cond(i, j).get('x', False):
                 ax.set_xlabel(kwargs.get('ks_xlabel', r'$k_x$'))
-            if _labelcond(i, j).get('y', False):
+            if _label_cond(i, j).get('y', False):
                 ax.set_ylabel(kwargs.get('ks_ylabel', r'$k_y$'))
             return
 
@@ -1361,18 +1417,18 @@ def plot_multistate_vs_param(
     if not results: return None, None
 
     if p_values is None:
-        _, _, _, unique_p       = PlotDataHelpers.extract_parameter_arrays(results, x_param, p_param)
+        _, _, _, unique_p       = PlotData.extract_parameter_arrays(results, x_param, p_param)
         p_values                = sorted(unique_p)
         if len(p_values) > 9 and kwargs.get('limit_panels', True):
             p_values = p_values[:9]
 
     n_panels                    = len(p_values)
-    fig, axes, n_rows, n_cols   = PlotDataHelpers.create_subplot_grid(n_panels, max_cols=3, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
+    fig, axes, n_rows, n_cols   = FigureConfig.create_subplot_grid(n_panels, max_cols=3, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
     if hasattr(fig, 'set_constrained_layout'):
         fig.set_constrained_layout(True)
     
     axes                        = axes.flatten()
-    labelcond                   = lambda idx: {'x': idx // n_cols == n_rows - 1, 'y': idx % n_cols == 0}
+    label_cond                   = lambda idx: {'x': idx // n_cols == n_rows - 1, 'y': idx % n_cols == 0}
     xlabel_str                  = param_labels.get(x_param, x_param)
     ylabel_str                  = ylabel if ylabel else param_labels.get(param_name, param_name)
     getcolor, _, _, mappable    = Plotter.get_colormap(values=np.arange(nstates), cmap=cmap, elsecolor='black', get_mappable=True)
@@ -1391,7 +1447,7 @@ def plot_multistate_vs_param(
             ax.text(0.5, 0.5, "No Data", ha='center', va='center', transform=ax.transAxes)
             continue
 
-        x_vals, sort_idx    = PlotDataHelpers.sort_results_by_param(panel_results, x_param)
+        x_vals, sort_idx    = PlotData.sort_results_by_param(panel_results, x_param)
         sorted_res          = [panel_results[i] for i in sort_idx]
 
         for state_i in range(nstates):
@@ -1418,7 +1474,7 @@ def plot_multistate_vs_param(
 
         p_label = param_labels.get(p_param, p_param)
         Plotter.set_annotate_letter(ax, iter=idx, x=kwargs.get('annotate_x', 0.05), y=kwargs.get('annotate_y', 0.9), addit=rf' {p_label}$={p_val:.2g}$', boxaround=False)
-        Plotter.set_ax_params(ax, xlabel=xlabel_str, ylabel=ylabel_str, labelCond=labelcond(idx), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'))
+        Plotter.set_ax_params(ax, xlabel=xlabel_str, ylabel=ylabel_str, label_cond=label_cond(idx), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'))
         Plotter.set_tickparams(ax)
         Plotter.grid(ax, alpha=0.3)
 
@@ -1461,7 +1517,7 @@ def plot_scaling_analysis(
     if not results: return None, None
 
     # Get unique series values
-    _, _, _, unique_series = PlotDataHelpers.extract_parameter_arrays(results, scaling_param, series_param)
+    _, _, _, unique_series = PlotData.extract_parameter_arrays(results, scaling_param, series_param)
     unique_series = sorted(unique_series)
     
     fig, ax = plt.subplots(figsize=figsize)
@@ -1474,7 +1530,7 @@ def plot_scaling_analysis(
         subset = [r for r in results if abs(r.params.get(series_param, -999) - s_val) < 1e-5]
         if not subset: continue
         
-        x_vals, sort_idx = PlotDataHelpers.sort_results_by_param(subset, scaling_param)
+        x_vals, sort_idx = PlotData.sort_results_by_param(subset, scaling_param)
         sorted_subset = [subset[i] for i in sort_idx]
         
         y_vals = []
@@ -1513,7 +1569,7 @@ def plot_scaling_analysis(
         cbar = fig.colorbar(sm, ax=ax)
         cbar.set_label(param_labels.get(series_param, series_param))
 
-    PlotDataHelpers.savefig(fig, directory, param_name, scaling_param, series_param, suffix='_scaling')
+    PlotData.savefig(fig, directory, param_name, scaling_param, series_param, suffix='_scaling')
     return fig, ax
 
 # ------------------------------------------------------------------

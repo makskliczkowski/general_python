@@ -15,7 +15,7 @@ Date            : 2025-01-15 (Updated)
 '''
 
 from    __future__      import annotations
-from    typing          import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict, NamedTuple
+from    typing          import TYPE_CHECKING, Iterable, List, Optional, Literal, Tuple, Dict, NamedTuple, Union
 from    dataclasses     import dataclass, field
 from    enum            import Enum
 import  numpy           as np
@@ -188,6 +188,13 @@ class HighSymmetryPoint:
                 'R'     : r'$R$', 'A': r'$A$', 'L': r'$L$', 'H': r'$H$',
             }
             self.latex_label = special_labels.get(self.label, f'${self.label}$')
+    
+    def __contains__(self, coord: Union[Tuple[float, float, float], str]) -> bool:
+        """Check if given fractional coordinates match this point."""
+        
+        if isinstance(coord, str):
+            return coord == self.label
+        return np.allclose(self.frac_coords, coord)
     
     def to_cartesian(self, b1: np.ndarray, b2: np.ndarray, b3: np.ndarray) -> np.ndarray:
         """Convert fractional coordinates to Cartesian k-vector."""

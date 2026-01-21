@@ -108,43 +108,37 @@ class _FlaxRBM(nn.Module):
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         r"""
-        Calculates log(psi(s)) for the RBM.
-
-        Formula: 
+        Formula: log(psi(s)) = sum_j log(cosh( W_j * v + b_j )) + a * v
         
-        ::math:: `log(psi(s)) = sum_j log(cosh( W_j * v + b_j )) + a * v`
-        
-        where v is the visible layer state (input `s`),
-        W are weights,
-        b is hidden bias,
-        a is visible bias (often omitted or fixed).
-        This implementation includes hidden bias `b` if `self.bias` is True,
-        and omits the visible bias `a` for simplicity (common in VMC).
-
         Args:
-            s (jax.Array): Input configuration(s) with shape (batch, n_visible).
+            s (jax.Array): Input configuration(s) with shape (batch, n_visible) or (n_visible,).
 
         Returns:
-            jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,).
+            jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,) or scalar.
         """
-        # Ensure shape: (batch, n_visible)
-        if s.ndim == 1:
-            s = s[jnp.newaxis, :]
-        elif s.ndim > 2:
-            s = s.reshape(s.shape[0], -1)
-
-        v = s.astype(self.dtype)
+        # Fast path: avoid branching for common case
+        needs_batch = s.ndim == 1
+        v = s[jnp.newaxis, :] if needs_batch else s
+        
+        # Fused transformation: cast + activation in one step
         if self.input_activation is not None:
-            v = self.input_activation(v)
+            v = self.input_activation(jnp.asarray(v, dtype=self.dtype))
+        else:
+            v = jnp.asarray(v, dtype=self.dtype)
 
-        theta   = self.dense(v)
+        # Dense layer (already JIT-compiled by Flax)
+        theta = self.dense(v)
+        
+        # Fast log_cosh + reduction (fused)
         log_psi = jnp.sum(log_cosh_jnp(theta), axis=-1)
 
+        # Visible bias term (if enabled)
         if self.visible_bias:
-            bias        = self.visible_bias_param
-            log_psi    += jnp.sum(v * bias, axis=-1)
+            log_psi    += jnp.sum(v * self.visible_bias_param, axis=-1)
 
-        return log_psi if self.islog else jnp.exp(log_psi)
+        # Return scalar for single sample, array for batch
+        result = log_psi if self.islog else jnp.exp(log_psi)
+        return result[0] if needs_batch else result
 
 ##########################################################
 #! RBM WRAPPER CLASSES USING FlaxInterface

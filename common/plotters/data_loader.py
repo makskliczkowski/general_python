@@ -1,11 +1,12 @@
 ''' 
 Generic data loader for HDF5 results.
 
---------------------------------------------------------------
 This module provides functions to load and filter HDF5 result files
 from a specified directory. It supports parsing parameters from filenames,
 applying manual and generic filters, and returning a list of LazyHDF5Entry objects.
---------------------------------------------------------------
+
+Important: We assume that HDF5 files are used to store results.
+TODO: Add support for other file formats if needed.
 
 --------------------------------------------------------------
 Author          : Maksymilian Kliczkowski
@@ -14,7 +15,7 @@ Date            : 2025-12-10
 '''
 
 from    pathlib import Path
-from    typing  import List, Callable, TYPE_CHECKING
+from    typing  import List, Callable, Union, TYPE_CHECKING
 import  numpy   as np
 import  re
 
@@ -28,9 +29,11 @@ if TYPE_CHECKING:
 
 def parse_filename(filename):
     """Parse parameters from HDF5 filename."""
-    params = {}
-    pattern = r'(\w+)=([\d\.\-]+)'
-    matches = re.findall(pattern, filename)
+    params      = {}
+    pattern     = r'(\w+)=([\d\.\-]+)'
+    matches     = re.findall(pattern, filename)
+    
+    # Convert values to float if possible
     for key, value in matches:
         try:
             params[key] = float(value)
@@ -42,14 +45,19 @@ def load_hdf5_data(filepath, keys=None, verbose=False):
     """Load all data from an HDF5 file."""
     
     try:
-        from QES.general_python.common.hdf5man  import HDF5Manager
+        from QES.general_python.common.hdf5man import HDF5Manager
     except ImportError as e:
         raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
     
     data = HDF5Manager.read_hdf5(filepath, keys=keys, verbose=verbose)
     return data
 
-def load_results(data_dir: str, *, 
+# --------------------------------------------------------------
+# Main data loader
+# --------------------------------------------------------------
+
+def load_results(data_dir                   : str, 
+                *, 
                 filters                     =   None, 
                 lx                          =   None, 
                 ly                          =   None, 
@@ -57,7 +65,8 @@ def load_results(data_dir: str, *,
                 Ns                          =   None,                   # manual size filters
                 post_process_func           =   None,                   # function to modify params dict in-place 
                 get_params_func             =   lambda r: r.params,     # function to extract params from LazyHDF5Entry
-                logger: 'Logger'            =   None,
+                # logging
+                logger                      : 'Logger' =   None,
                 **kwargs
                 ) -> List['LazyHDF5Entry']:
     r"""
@@ -74,7 +83,11 @@ def load_results(data_dir: str, *,
     filters (dict, optional):
         Dictionary of parameter filters to apply.    
     lx, ly, lz, Ns (int, optional):
-        Manual size filters to apply.
+        Manual size filters to apply. These are optional and can be used to restrict
+        results based on lattice dimensions or system size.
+    get_params_func (callable):
+        A function f(result) -> dict that extracts parameters from a LazyHDF5Entry.
+        Defaults to extracting the .params attribute.
     post_process_func (callable): 
         A function f(params) -> None that modifies the params dictionary in-place.
         Use this to inject derived parameters like theta/lambda.
@@ -92,11 +105,13 @@ def load_results(data_dir: str, *,
     
     if not data_path.exists():
         if logger:
-            logger.error(f"Data directory {data_dir} does not exist.")
+            logger.error(f"Data directory {data_dir} does not exist.", color='red')
         return results
 
     h5_files        = list(data_path.glob('**/*.h5'))
-    size_pattern    = re.compile(r'(Ns|Lx|Ly|Lz)=(\d+)')
+    size_pattern    = re.compile(r'(Ns|Lx|Ly|Lz)=(\d+)')    # e.g., Lx=4, Ns=16
+    other_pattern   = re.compile(r'(\w+)=([\d\.\-]+)')      # e.g., J=1.0, hx=0.5
+    
     if logger:
         logger.info(f"Found {len(h5_files)} HDF5 files", color='cyan')
 
@@ -110,6 +125,13 @@ def load_results(data_dir: str, *,
             for part in filepath.parts:
                 for match in size_pattern.finditer(part):
                     size_info[match.group(1)] = int(match.group(2))
+                for match in other_pattern.finditer(part):
+                    key = match.group(1)
+                    try:
+                        value = float(match.group(2))
+                    except ValueError:
+                        value = match.group(2)
+                    params.setdefault(key, value)
                     
             # merge (do not overwrite if already present)
             for k, v in size_info.items():
@@ -133,7 +155,7 @@ def load_results(data_dir: str, *,
         
         except Exception as e:
             if logger:
-                logger.error(f"Error loading {filepath}: {e}")
+                logger.error(f"Error loading {filepath}: {e}", color='red')
 
     # generic filters
     if filters:
@@ -150,9 +172,382 @@ def load_results(data_dir: str, *,
         logger.info(f"Loaded {len(results)} results after filtering", color='green')
     return results
 
-class PlotDataHelpers:
+# --------------------------------------------------------------
+# Data transformation utilities
+# --------------------------------------------------------------
+
+class ResultProxy:
+    """
+    Lightweight proxy object that mimics LazyHDF5Entry interface.
+    
+    Allows direct data arrays to be used with plotting functions
+    that expect LazyHDF5Entry objects.
+    
+    Parameters
+    ----------
+    data : dict or np.ndarray
+        Data payload. If dict, should contain dataset keys.
+        If array, will be stored under 'default' key.
+    params : dict
+        Parameter dictionary (e.g., {'J': 1.0, 'hx': 0.5, 'Lx': 4})
+    filepath : str, optional
+        Mock filepath for compatibility
+        
+    Attributes
+    ----------
+    params : dict
+        Parameter dictionary
+    data : dict
+        Data dictionary
+    filepath : str
+        Mock filepath
+        
+    Examples
+    --------
+    >>> # From numpy array
+    >>> akw     = np.random.rand(100, 50)  # (Nk, Nw)
+    >>> result  = ResultProxy(akw, params={'J': 1.0, 'hx': 0.5})
+    >>> print(result.params['J'])  # 1.0
+    >>> print(result['default'].shape)  # (100, 50)
+    
+    >>> # From dict
+    >>> data    = {'/spectral/akw': akw, '/spectral/omega': omega}
+    >>> result  = ResultProxy(data, params={'J': 1.0})
+    >>> print(result['/spectral/akw'].shape)  # (100, 50)
+    """
+    
+    def __init__(self, data: Union[np.ndarray, dict], params: dict, filepath: str = '<memory>'):
+        self.params     = params
+        self.filepath   = filepath
+        
+        if isinstance(data, dict):
+            self.data   = data
+        elif isinstance(data, np.ndarray):
+            self.data   = {'default': data}
+        else:
+            raise TypeError(f"Data must be dict or ndarray, got {type(data)}")
+    
+    def __getitem__(self, key):
+        """Access data like LazyHDF5Entry: result['/path/to/data']."""
+        return self.data.get(key, None)
+    
+    def keys(self):
+        """Return available data keys."""
+        return self.data.keys()
+    
+    def get(self, key, default=None):
+        """Get data with default fallback."""
+        return self.data.get(key, default)
+    
+    def __repr__(self):
+        return f"ResultProxy(params={self.params}, keys={list(self.data.keys())})"
+        
+def create_result_from_data(
+    data                : Union[np.ndarray, dict],
+    params              : dict,
+    filepath            : str = '<memory>'
+) -> ResultProxy:
+    """
+    Create a result proxy object from raw data.
+    
+    Convenience wrapper around ResultProxy for creating single result objects.
+    
+    Parameters
+    ----------
+    data : np.ndarray or dict
+        Data payload. Can be:
+        - Single array   (e.g., spectral function)
+        - Dict of arrays (e.g., {'/spectral/akw': akw, '/spectral/omega': omega})
+    params : dict
+        Parameter dictionary defining this data point
+    filepath : str, optional
+        Mock filepath for identification
+        
+    Returns
+    -------
+    ResultProxy
+        Result object compatible with plotting functions
+        
+    Examples
+    --------
+    >>> akw = np.random.rand(100, 50)
+    >>> result = create_result_from_data(
+    ...     data=akw,
+    ...     params={'J': 1.0, 'hx': 0.5, 'Lx': 4, 'Ly': 4}
+    ... )
+    >>> # Can now use with plotting functions expecting LazyHDF5Entry
+    """
+    return ResultProxy(data=data, params=params, filepath=filepath)
+
+def prepare_results_for_plotting(
+    data_array          : np.ndarray,
+    x_param_values      : list,
+    y_param_values      : list,
+    *,
+    x_param             : str = 'J',
+    y_param             : str = 'hx',
+    data_key            : str = 'default',
+    fixed_params        : dict = None,
+    post_process_func   : callable = None
+) -> List[ResultProxy]:
+    r"""
+    Transform parameter-swept data arrays into result objects.
+    
+    Converts a grid of data (e.g., from parameter sweeps) into a list
+    of ResultProxy objects that can be used with plotting functions.
+    
+    Parameters
+    ----------
+    data_array : np.ndarray
+        Data array with shape matching parameter grid.
+        Can be:
+        - 2D: (n_x, n_y) for scalar values
+        - 3D: (n_x, n_y, N) for vector/state data  
+        - 4D: (n_x, n_y, Nk, Nw) for things like spectral functions
+    x_param_values : list
+        Values of x parameter (length n_x)
+    y_param_values : list
+        Values of y parameter (length n_y)
+    x_param : str
+        Name of x parameter
+    y_param : str
+        Name of y parameter
+    data_key : str
+        Key under which to store data in ResultProxy
+    fixed_params : dict, optional
+        Additional fixed parameters (e.g., {'Lx': 4, 'Ly': 4})
+    post_process_func : callable, optional
+        Function to modify params dict in-place for each result
+        
+    Returns
+    -------
+    List[ResultProxy]
+        List of result objects, one per (x, y) grid point
+        
+    Examples
+    --------
+    >>> # Spectral function grid: shape (5, 3, 100, 50) = (n_J, n_hx, Nk, Nw)
+    >>> akw_grid = np.random.rand(5, 3, 100, 50)
+    >>> results = prepare_results_for_plotting(
+    ...     data_array=akw_grid,
+    ...     x_param_values=[0.5, 1.0, 1.5, 2.0, 2.5],
+    ...     y_param_values=[0.0, 0.5, 1.0],
+    ...     x_param='J',
+    ...     y_param='hx',
+    ...     data_key='/spectral/akw',
+    ...     fixed_params={'Lx': 4, 'Ly': 4}
+    ... )
+    >>> print(len(results))  # 15 (5 * 3)
+    >>> print(results[0].params)  # {'J': 0.5, 'hx': 0.0, 'Lx': 4, 'Ly': 4}
+    """
+    if fixed_params is None:
+        fixed_params = {}
+    
+    results = []
+    
+    for ii, x_val in enumerate(x_param_values):
+        for jj, y_val in enumerate(y_param_values):
+            
+            # Build params dict
+            params  = {
+                x_param : x_val,
+                y_param : y_val,
+                **fixed_params
+            }
+            
+            # Apply post-processing if provided
+            if post_process_func:
+                post_process_func(params)
+            
+            # Extract data for this parameter point
+            if data_array.ndim == 2:
+                data_slice = data_array[ii, jj]
+            elif data_array.ndim == 3:
+                data_slice = data_array[ii, jj, :]
+            elif data_array.ndim == 4:
+                data_slice = data_array[ii, jj, :, :]
+            else:
+                data_slice = data_array[ii, jj, ...]
+            
+            # Create result object
+            result = ResultProxy(
+                data        =   {data_key: data_slice},
+                params      =   params,
+                filepath    =   f'<memory:{x_param}={x_val}_{y_param}={y_val}>'
+            )
+            results.append(result)
+    
+    return results
+
+# ==============================================================
+# Plotting helper functions
+# ==============================================================
+
+class PlotData:
     """Helper functions for plotting."""
     
+    @staticmethod
+    def from_input(
+        directory       : str,
+        data_values     : Union[np.ndarray, dict]   = None,
+        x_parameters    : List[float]               = None,
+        y_parameters    : List[float]               = None,
+        *,
+        x_param         : str                       = 'x',
+        y_param         : str                       = 'y',
+        data_key        : str                       = None,
+        filters         : dict                      = None,
+        # size
+        logger          : 'Logger'                  = None,
+        **kwargs
+    ) -> List[Union['LazyHDF5Entry', 'ResultProxy']]:
+        """
+        Unified result preparation from directory or direct data.
+        
+        Handles three input modes:
+        1. directory != None: 
+            Load from HDF5 files
+        2. data_values is dict: 
+            Already results
+        3. data_values is array: 
+            Transform to results
+        
+        Parameters
+        ----------
+        directory : str, optional
+            Data directory for loading HDF5 files
+        data_values : array/dict/list, optional
+            Direct data input
+        x_parameters, y_parameters : list
+            Parameter grid values
+        x_param, y_param : str
+            Parameter names
+        data_key : str, optional
+            Key for storing array data in ResultProxy
+        filters : optional
+            Filters for HDF5 loading
+        logger : optional
+            Logger instance
+        **kwargs
+            Additional arguments for loading/processing.
+            Can include Lx, Ly, Lz, Ns, post_process_func, 
+            get_params_func, etc.
+        
+        Returns
+        -------
+        List[ResultProxy or LazyHDF5Entry]
+            Results ready for plotting
+        """
+        
+        # Mode 1: Load from directory
+        if directory is not None and data_values is None:
+            results = load_results(
+                data_dir            =   directory,
+                filters             =   filters,
+                lx                  =   kwargs.pop('Lx', kwargs.pop('lx', None)),
+                ly                  =   kwargs.pop('Ly', kwargs.pop('ly', None)),
+                Ns                  =   kwargs.pop('Ns', kwargs.pop('ns', None)),
+                post_process_func   =   kwargs.get('post_process_func', None),
+                get_params_func     =   kwargs.get('get_params_func', None),
+                logger              =   logger,
+                **kwargs
+            )
+            return results
+        
+        # Mode 2: Data already as results
+        if isinstance(data_values, (list, tuple)):
+            # Assume list of result-like objects
+            return list(data_values)
+        
+        if isinstance(data_values, dict):
+            
+            # Check if it's a single result dict or dict of results
+            if 'params' in data_values or isinstance(next(iter(data_values.values()), None), (ResultProxy, dict)):
+                
+                # It's already results
+                if isinstance(data_values, dict) and 'params' not in data_values:
+                    # Dict mapping to results
+                    return list(data_values.values())
+                else:
+                    # Single result
+                    return [data_values]
+            else:
+                
+                # It's raw data dict, create single result
+                fixed_params = {k: v for k, v in kwargs.items() if k in ['Lx', 'Ly', 'Lz', 'Ns']}
+                
+                if len(x_parameters) == 1 and len(y_parameters) == 1:
+                    params = {
+                        x_param: x_parameters[0],
+                        y_param: y_parameters[0],
+                        **fixed_params
+                    }
+                    return [create_result_from_data(data_values, params)]
+                else:
+                    raise ValueError(
+                        "For multi-parameter grid with dict data, use prepare_results_for_plotting explicitly"
+                    )
+        
+        # Mode 3: Transform numpy array
+        if isinstance(data_values, np.ndarray):
+            if data_key is None:
+                data_key = 'default'
+            
+            fixed_params    = {k: v for k, v in kwargs.items() if k in ['Lx', 'Ly', 'Lz', 'Ns']}
+            results         = prepare_results_for_plotting(
+                                data_array          =   data_values,
+                                x_param_values      =   x_parameters,
+                                y_param_values      =   y_parameters,
+                                x_param             =   x_param,
+                                y_param             =   y_param,
+                                data_key            =   data_key,
+                                fixed_params        =   fixed_params,
+                                post_process_func   =   kwargs.get('post_process_func', None)
+                            )
+            return results
+        
+        raise ValueError(
+            f"Cannot prepare results from data_values of type {type(data_values)}. "
+            "Expected: directory path, list of results, dict, or numpy array."
+        )
+    
+    @staticmethod
+    def from_match(
+        results         : List['LazyHDF5Entry'],
+        x_param         : str,
+        y_param         : str,
+        x_val           : float,
+        y_val           : float,
+        tol             : float = 1e-5
+    ) -> List['LazyHDF5Entry']:
+        """
+        Find result matching parameter values within tolerance.
+        
+        Parameters
+        ----------
+        results : List[ResultProxy or LazyHDF5Entry]
+            List of result objects
+        x_param, y_param : str
+            Parameter names to match
+        x_val, y_val : float
+            Target parameter values
+        tolerance : float
+            Matching tolerance
+            
+        Returns
+        -------
+        result or None
+            First matching result, or None if not found
+        """
+        for r in results:
+            rx = r.params.get(x_param, np.nan)
+            ry = r.params.get(y_param, np.nan)
+            
+            if abs(rx - x_val) < tol and abs(ry - y_val) < tol:
+                return r
+        
+        return None
+
     # --------------------------------------------------------------
     # Parameter extraction
     # --------------------------------------------------------------
@@ -161,7 +556,20 @@ class PlotDataHelpers:
     def extract_parameter_arrays(filtered_results: List['LazyHDF5Entry'], x_param='J', y_param='hx', xlim=None, ylim=None):
         """
         Extract unique parameter values from filtered results. 
-        Relies on load_results having already populated r.params (including derived ones).
+        Relies on load_results having already populated r.params (including derived ones). 
+        This is useful for setting up axes in parameter space plots.
+        
+        Examples
+        --------
+        >>> x_vals, y_vals, unique_x, unique_y = PlotData.extract_parameter_arrays(
+        ...     filtered_results,
+        ...     x_param='J',
+        ...     y_param='hx',
+        ...     xlim=(0.5, 2.5),
+        ...     ylim=(0.0, 1.0)
+        ... )
+        >>> print(unique_x)  # e.g., [0.5, 1.0, 1.5, 2.0, 2.5]
+        >>> print(unique_y)  # e.g., [0.0, 0.5, 1.0]
         """
         x_vals = []
         y_vals = []
@@ -199,25 +607,6 @@ class PlotDataHelpers:
         sort_idx    = np.argsort(vals)
         return vals[sort_idx], sort_idx
 
-    # --------------------------------------------------------------
-    # Figure saving
-    # --------------------------------------------------------------
-
-    @staticmethod
-    def savefig(fig, directory, param_name, x_param, y_param=None, suffix='', **kwargs):
-        """Helper to save figure with consistent naming convention."""
-        try:
-            from QES.general_python.common.plot import Plotter
-        except ImportError as e:
-            raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
-        
-        if y_param:
-            filename = f"{param_name}_vs_{x_param}_{y_param}{suffix}"
-        else:
-            filename = f"{param_name}_vs_{x_param}{suffix}"
-        
-        Plotter.save_fig(directory, filename, **kwargs)
-    
     # --------------------------------------------------------------
     # vmin/vmax determination
     # --------------------------------------------------------------
@@ -261,43 +650,7 @@ class PlotDataHelpers:
     # Grid plot setup
     # --------------------------------------------------------------
     
-    @staticmethod
-    def create_subplot_grid(n_panels, 
-                            max_cols            =   3, 
-                            figsize_per_panel   =   (6, 5), 
-                            **kwargs):
-        """
-        Create a subplot grid with proper axis handling.
-        
-        Parameters:
-        -----------
-        n_panels (int):
-            Total number of panels to create.
-        max_cols (int):
-            Maximum number of columns in the grid.
-        figsize_per_panel (tuple):
-            Figure size per panel (width, height).
-        
-        Returns:
-        --------
-        fig, axes, n_rows, n_cols
-        """
-        try:
-            from QES.general_python.common.plot import Plotter
-        except ImportError as e:
-            raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
-        
-        n_cols      = min(max_cols, n_panels) if n_panels > 0 else 1
-        n_rows      = (n_panels + n_cols - 1) // n_cols if n_panels > 0 else 1
-        figsize     = (figsize_per_panel[0]*n_cols, figsize_per_panel[1]*n_rows)
-        fig, axes   = Plotter.get_subplots(n_rows, n_cols, figsize=figsize, **kwargs)
-        
-        if n_rows > 1 and n_cols > 1:
-            axes    = list(np.array(axes).reshape((n_rows, n_cols)))
-        elif not isinstance(axes, (list, np.ndarray)):
-            axes    = [axes]
-            
-        return fig, np.array(axes), n_rows, n_cols
+
     
     @staticmethod
     def create_parameter_grid(
@@ -344,7 +697,7 @@ class PlotDataHelpers:
         """
         
         # Extract and Sort Parameters
-        _, _, unique_x, unique_y    = PlotDataHelpers.extract_parameter_arrays(results, x_param, y_param)
+        _, _, unique_x, unique_y    = PlotData.extract_parameter_arrays(results, x_param, y_param)
         if x_values: unique_x       = [v for v in unique_x if any(abs(v - val) < 1e-5 for val in x_values)]
         if y_values: unique_y       = [v for v in unique_y if any(abs(v - val) < 1e-5 for val in y_values)]
         
@@ -357,7 +710,7 @@ class PlotDataHelpers:
             return None, None, []
 
         # Create Plot
-        fig, axes, _, _ = PlotDataHelpers.create_subplot_grid(
+        fig, axes, _, _ = FigureConfig.create_subplot_grid(
                             n_panels            =   n_rows * n_cols, 
                             max_cols            =   n_cols, 
                             figsize_per_panel   =   figsize_per_panel, 
@@ -393,6 +746,9 @@ class PlotDataHelpers:
         return fig, axes_grid, grid_iterator()
 
     # --------------------------------------------------------------
+
+
+
 
 # ------------------------------------------------------------------
 #! End of file

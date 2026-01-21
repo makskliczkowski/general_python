@@ -780,7 +780,9 @@ def givens_rotation(
         Rotated matrix/vector.
     """
     be          = get_backend(backend)
-    V_rot       = be.array(V, copy=True)
+    # Create an explicit copy using .copy() method (works for both NumPy and JAX arrays)
+    V_array     = be.array(V)
+    V_rot       = V_array.copy() if hasattr(V_array, 'copy') else V_array
 
     c           = be.cos(theta)
     s           = be.sin(theta)
