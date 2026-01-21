@@ -66,7 +66,7 @@ import  matplotlib.pyplot   as plt
 
 try:
     from general_python.lattices.lattice    import Lattice
-    from .data_loader                       import load_results, PlotDataHelpers
+    from .data_loader                       import load_results, PlotData
     from .config                            import PlotStyle, KSpaceConfig, KPathConfig, SpectralConfig, FigureConfig
     from .kspace_utils                      import (
                                                     point_to_segment_distance_2d,
@@ -192,7 +192,7 @@ def plot_spectral_function(
     unique_y = sorted(set(y_parameters))
     n_rows, n_cols = len(unique_y), len(unique_x)
     
-    fig, axes, _, _ = PlotDataHelpers.create_subplot_grid(
+    fig, axes, _, _ = FigureConfig.create_subplot_grid(
         n_panels=n_rows * n_cols,
         max_cols=n_cols,
         figsize_per_panel=figsize_per_panel,
@@ -285,8 +285,10 @@ def plot_spectral_function(
                     )
                         
                 except Exception as e:
-                    ax.text(0.5, 0.5, f'Path Error', ha='center', va='center',
-                           transform=ax.transAxes)
+                    logger = kwargs.get('logger', None)
+                    if logger:
+                        logger.error(f'Error plotting k-path spectral function: {e}')
+                    ax.text(0.5, 0.5, f'Path Error\n{str(e)[:50]}', ha='center', va='center', transform=ax.transAxes, fontsize=8)
                     ax.axis('off')
             
             elif mode == 'grid':
@@ -303,8 +305,10 @@ def plot_spectral_function(
                         colorbar=False
                     )
                 except Exception as e:
-                    ax.text(0.5, 0.5, f'Grid Error', ha='center', va='center',
-                           transform=ax.transAxes)
+                    logger = kwargs.get('logger', None)
+                    if logger:
+                        logger.error(f'Error plotting grid spectral function: {e}')
+                    ax.text(0.5, 0.5, f'Grid Error\n{str(e)[:50]}', ha='center', va='center', transform=ax.transAxes, fontsize=8)
                     ax.axis('off')
             
             # Annotation
@@ -363,7 +367,7 @@ def plot_phase_diagram_states(
         return None, None
     
     # extract unique parameters
-    x_vals, y_vals, unique_x, unique_y  = PlotDataHelpers.extract_parameter_arrays(results, x_param=x_param, y_param=y_param)
+    x_vals, y_vals, unique_x, unique_y  = PlotData.extract_parameter_arrays(results, x_param=x_param, y_param=y_param)
     plot_map                            = len(unique_x) > 1 and len(unique_y) > 1
     if logger:                          logger.info(f"Plot type: {'Colormap' if plot_map else 'Line plots'}", color='cyan')
     
@@ -378,7 +382,7 @@ def plot_phase_diagram_states(
         nrows   = 1 if not plot_map else ((nstates + ncols - 1) // ncols)
         npanels = nstates if plot_map else 1
         
-    fig, axes, _, _                     = PlotDataHelpers.create_subplot_grid(n_panels=npanels , max_cols=ncols, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
+    fig, axes, _, _                     = FigureConfig.create_subplot_grid(n_panels=npanels , max_cols=ncols, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
     axes                                = axes.flatten()
     
     if xlabel is None:
@@ -387,12 +391,12 @@ def plot_phase_diagram_states(
         ylabel                          = param_labels.get(y_param, y_param) if len(unique_y) > 1 else param_labels.get(x_param, x_param)
     
     if plot_map:
-        labelcond = lambda state_idx: {'x': state_idx // ncols == nrows - 1, 'y': state_idx % ncols == 0}
+        label_cond = lambda state_idx: {'x': state_idx // ncols == nrows - 1, 'y': state_idx % ncols == 0}
     else:
-        labelcond = lambda state_idx: {'x': True, 'y': True}
+        label_cond = lambda state_idx: {'x': True, 'y': True}
     
     if vmin is None or vmax is None:
-        vmin_n, vmax_n                  = PlotDataHelpers.determine_vmax_vmin(results, param_name, param_fun, nstates) if vmin is None or vmax is None else (vmin, vmax)
+        vmin_n, vmax_n                  = PlotData.determine_vmax_vmin(results, param_name, param_fun, nstates) if vmin is None or vmax is None else (vmin, vmax)
         vmin                            = vmin_n if vmin is None else vmin
         vmax                            = vmax_n if vmax is None else vmax
         
@@ -474,7 +478,7 @@ def plot_phase_diagram_states(
 
             text_color      = kwargs.get('text_color', 'white')
             text_fontsize   = kwargs.get('text_fontsize', 8)
-            Plotter.set_ax_params(ax, xlabel=xlabel, ylabel=ylabel, labelCond=labelcond(ii))
+            Plotter.set_ax_params(ax, xlabel=xlabel, ylabel=ylabel, label_cond=label_cond(ii))
             Plotter.set_annotate_letter(ax, iter=ii, x=letter_x, y=letter_y, boxaround=False, color=text_color, addit=rf'$|\Psi_{{{ii}}}\rangle$', fontsize=text_fontsize)
         
         # Colorbar for all panels
@@ -499,7 +503,7 @@ def plot_phase_diagram_states(
     Plotter.hide_unused_panels(axes, npanels)
     
     if save:
-        PlotDataHelpers.savefig(fig, directory, param_name, x_param, y_param if plot_map else None, **kwargs)
+        PlotData.savefig(fig, directory, param_name, x_param, y_param if plot_map else None, **kwargs)
         
     return fig, axes
 
@@ -873,7 +877,7 @@ def plot_correlation_grid(
     if not results:
         return None, None
 
-    _, _, unique_x, unique_y = PlotDataHelpers.extract_parameter_arrays(results, x_param, y_param)
+    _, _, unique_x, unique_y = PlotData.extract_parameter_arrays(results, x_param, y_param)
 
     unique_x            = np.array([v for v in unique_x if any(abs(v - p) < 1e-5 for p in x_parameters)])
     unique_y            = np.array([v for v in unique_y if any(abs(v - p) < 1e-5 for p in y_parameters)])
@@ -885,7 +889,7 @@ def plot_correlation_grid(
     if n_rows == 0 or n_cols == 0:
         return None, None
 
-    fig, axes, _, _     = PlotDataHelpers.create_subplot_grid(
+    fig, axes, _, _     = FigureConfig.create_subplot_grid(
                             n_panels            = n_rows * n_cols,
                             max_cols            = n_cols,
                             figsize_per_panel   = figsize_per_panel,
@@ -1013,7 +1017,7 @@ def plot_correlation_grid(
                 if vmin is None: vmin = -1.0
                 if vmax is None: vmax = +1.0
         else:
-            vmin_n, vmax_n  = PlotDataHelpers.determine_vmax_vmin(results, param_name, param_fun, nstates=1)
+            vmin_n, vmax_n  = PlotData.determine_vmax_vmin(results, param_name, param_fun, nstates=1)
             if vmin is None: vmin = vmin_n
             if vmax is None: vmax = vmax_n
 
@@ -1021,7 +1025,7 @@ def plot_correlation_grid(
     _, _, _, mappable = Plotter.get_colormap(values=[vmin, vmax], cmap=cmap, get_mappable=True)
 
     # axis label logic
-    def _labelcond(i, j):
+    def _label_cond(i, j):
         return {'x': i == n_rows - 1, 'y': j == 0}
 
     def _set_axis_labels(ax, i, j):
@@ -1030,7 +1034,7 @@ def plot_correlation_grid(
                 ax,
                 xlabel      = r'Site $j$',
                 ylabel      = r'Site $i$',
-                labelCond   = _labelcond(i, j),
+                label_cond   = _label_cond(i, j),
                 labelPos    = {'x': 'bottom', 'y': 'left'},
                 tickPos     = {'x': 'bottom', 'y': 'left'},
             )
@@ -1045,7 +1049,7 @@ def plot_correlation_grid(
                     ax,
                     xlabel      = kwargs.get('rs_xlabel', r'$\Delta x$'),
                     ylabel      = kwargs.get('rs_ylabel', r'$C(\Delta x)$'),
-                    labelCond   = _labelcond(i, j),
+                    label_cond   = _label_cond(i, j),
                     labelPos    = {'x': 'bottom', 'y': 'left'},
                     tickPos     = {'x': 'bottom', 'y': 'left'},
                 )
@@ -1055,9 +1059,9 @@ def plot_correlation_grid(
 
         if plot_mode == 'kspace':
             # BZ panels style: only outer labels
-            if _labelcond(i, j).get('x', False):
+            if _label_cond(i, j).get('x', False):
                 ax.set_xlabel(kwargs.get('ks_xlabel', r'$k_x$'))
-            if _labelcond(i, j).get('y', False):
+            if _label_cond(i, j).get('y', False):
                 ax.set_ylabel(kwargs.get('ks_ylabel', r'$k_y$'))
             return
 
@@ -1361,18 +1365,18 @@ def plot_multistate_vs_param(
     if not results: return None, None
 
     if p_values is None:
-        _, _, _, unique_p       = PlotDataHelpers.extract_parameter_arrays(results, x_param, p_param)
+        _, _, _, unique_p       = PlotData.extract_parameter_arrays(results, x_param, p_param)
         p_values                = sorted(unique_p)
         if len(p_values) > 9 and kwargs.get('limit_panels', True):
             p_values = p_values[:9]
 
     n_panels                    = len(p_values)
-    fig, axes, n_rows, n_cols   = PlotDataHelpers.create_subplot_grid(n_panels, max_cols=3, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
+    fig, axes, n_rows, n_cols   = FigureConfig.create_subplot_grid(n_panels, max_cols=3, figsize_per_panel=figsize_per_panel, sharex=True, sharey=True)
     if hasattr(fig, 'set_constrained_layout'):
         fig.set_constrained_layout(True)
     
     axes                        = axes.flatten()
-    labelcond                   = lambda idx: {'x': idx // n_cols == n_rows - 1, 'y': idx % n_cols == 0}
+    label_cond                   = lambda idx: {'x': idx // n_cols == n_rows - 1, 'y': idx % n_cols == 0}
     xlabel_str                  = param_labels.get(x_param, x_param)
     ylabel_str                  = ylabel if ylabel else param_labels.get(param_name, param_name)
     getcolor, _, _, mappable    = Plotter.get_colormap(values=np.arange(nstates), cmap=cmap, elsecolor='black', get_mappable=True)
@@ -1391,7 +1395,7 @@ def plot_multistate_vs_param(
             ax.text(0.5, 0.5, "No Data", ha='center', va='center', transform=ax.transAxes)
             continue
 
-        x_vals, sort_idx    = PlotDataHelpers.sort_results_by_param(panel_results, x_param)
+        x_vals, sort_idx    = PlotData.sort_results_by_param(panel_results, x_param)
         sorted_res          = [panel_results[i] for i in sort_idx]
 
         for state_i in range(nstates):
@@ -1418,7 +1422,7 @@ def plot_multistate_vs_param(
 
         p_label = param_labels.get(p_param, p_param)
         Plotter.set_annotate_letter(ax, iter=idx, x=kwargs.get('annotate_x', 0.05), y=kwargs.get('annotate_y', 0.9), addit=rf' {p_label}$={p_val:.2g}$', boxaround=False)
-        Plotter.set_ax_params(ax, xlabel=xlabel_str, ylabel=ylabel_str, labelCond=labelcond(idx), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'))
+        Plotter.set_ax_params(ax, xlabel=xlabel_str, ylabel=ylabel_str, label_cond=label_cond(idx), xlim=xlim, ylim=ylim, yscale=kwargs.get('yscale', 'linear'), xscale=kwargs.get('xscale', 'linear'))
         Plotter.set_tickparams(ax)
         Plotter.grid(ax, alpha=0.3)
 
@@ -1461,7 +1465,7 @@ def plot_scaling_analysis(
     if not results: return None, None
 
     # Get unique series values
-    _, _, _, unique_series = PlotDataHelpers.extract_parameter_arrays(results, scaling_param, series_param)
+    _, _, _, unique_series = PlotData.extract_parameter_arrays(results, scaling_param, series_param)
     unique_series = sorted(unique_series)
     
     fig, ax = plt.subplots(figsize=figsize)
@@ -1474,7 +1478,7 @@ def plot_scaling_analysis(
         subset = [r for r in results if abs(r.params.get(series_param, -999) - s_val) < 1e-5]
         if not subset: continue
         
-        x_vals, sort_idx = PlotDataHelpers.sort_results_by_param(subset, scaling_param)
+        x_vals, sort_idx = PlotData.sort_results_by_param(subset, scaling_param)
         sorted_subset = [subset[i] for i in sort_idx]
         
         y_vals = []
@@ -1513,7 +1517,7 @@ def plot_scaling_analysis(
         cbar = fig.colorbar(sm, ax=ax)
         cbar.set_label(param_labels.get(series_param, series_param))
 
-    PlotDataHelpers.savefig(fig, directory, param_name, scaling_param, series_param, suffix='_scaling')
+    PlotData.savefig(fig, directory, param_name, scaling_param, series_param, suffix='_scaling')
     return fig, ax
 
 # ------------------------------------------------------------------

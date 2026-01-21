@@ -26,16 +26,16 @@ Description     : Flax implementation of Restricted Boltzmann Machines (RBMs).
 ----------------------------------------------------------
 """
 
-import numpy as np
-from typing import Tuple, Callable, Optional, Any
-from functools import partial
+import  numpy           as np
+from    typing          import Tuple, Callable, Optional, Any
+from    functools       import partial
 
 try:
     # Base Interface (essential)
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.activation_functions   import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
-    from ....algebra.utils                      import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
+    JAX_AVAILABLE                               = True
 except ImportError as e:
     print(f"Error importing QES base modules: {e}")
     class FlaxInterface:
@@ -82,8 +82,8 @@ class _FlaxRBM(nn.Module):
     bias            : bool                  = True                  # Bias for hidden units is common in RBMs
     input_activation: Optional[Callable]    = None                  # e.g., lambda x: 2*x-1
     visible_bias    : Optional[bool]        = True
-    param_dtype     : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
-    dtype           : jnp.dtype             = DEFAULT_JP_CPX_TYPE   # Default to complex
+    param_dtype     : jnp.dtype             = jnp.complex64         # Default to complex
+    dtype           : jnp.dtype             = jnp.complex64         # Default to complex
     islog           : bool                  = True                  # Logarithmic form of the wavefunction
     
     def setup(self):
@@ -179,8 +179,8 @@ class RBM(FlaxInterface):
                 n_hidden       : int            = 2,
                 bias           : bool           = True,
                 visible_bias   : bool           = True,
-                in_activation  : bool           = False,                   # Flag to map {0,1} -> {-1,1}
-                dtype          : Any            = DEFAULT_JP_FLOAT_TYPE,   # Default float for real RBM
+                in_activation  : bool           = False,        # Flag to map {0,1} -> {-1,1}
+                dtype          : Any            = jnp.float32,  # Default float for real RBM
                 param_dtype    : Optional[Any]  = None,
                 seed           : int            = 0,
                 **kwargs):

@@ -145,17 +145,22 @@ class _FlaxCNN(nn.Module):
                         )
                         for i, (feat, k_size, stride, bias) in enumerate(iter_specs)
                     ]
+        
+        self.layer_norms    = [
+                                nn.LayerNorm(dtype=self.dtype, name=f"LN_{i}") 
+                                for i in range(len(self.features))
+                            ]
 
-        self.dense_out  = nn.Dense(
-                        features    = self.output_feats,
-                        use_bias    = True,
-                        param_dtype = self.param_dtype,
-                        dtype       = self.dtype,
-                        kernel_init = cplx_variance_scaling(
-                                        1.0, 'fan_avg', 'truncated_normal', self.param_dtype
-                                    ),
-                        name        = "dense_out",
-                    )
+        self.dense_out      = nn.Dense(
+                                features    = self.output_feats,
+                                use_bias    = False,
+                                param_dtype = self.param_dtype,
+                                dtype       = self.dtype,
+                                kernel_init = cplx_variance_scaling(
+                                                1.0, 'fan_avg', 'truncated_normal', self.param_dtype
+                                            ),
+                                name        = "dense_out",
+                            )
 
     def __call__(self, s: jax.Array) -> jax.Array:
         """ Forward pass of the CNN. """
@@ -184,6 +189,7 @@ class _FlaxCNN(nn.Module):
                 if self.periodic:
                     h = circular_pad(h, self.kernel_sizes[i])
                 h   = conv(h)
+                # h   = self.layer_norms[i](h)
                 act = self.activations[i][0]
                 h   = act(h)
             return h
@@ -199,27 +205,20 @@ class _FlaxCNN(nn.Module):
             # sum over all spatial dims (keep batch and channels)
             spatial_axes = tuple(range(1, x.ndim - 1))
             n_sum        = jnp.prod(jnp.array([x.shape[a] for a in spatial_axes]))
-            x            = jnp.sum(x, axis=spatial_axes)            # (B, C_last)
+            spatial_and_feature_axes = tuple(range(1, x.ndim))
+            x            = jnp.sum(x, axis=spatial_and_feature_axes)   # (B, C_last)
         else:
             # flatten everything except batch
             n_sum       = jnp.prod(jnp.array(x.shape[1:]))
-            x           = x.reshape((batch_size, -1))               # (B, L_flat)
-
-        # Dense to desired output dimension 
-        x = self.dense_out(x)                                       # (B, output_feats)
+            x           = x.reshape((batch_size, -1))                   # (B, L_flat)
+            x           = self.dense_out(x)                             # (B, output_feats)
 
         # Optional final activation
         if self.out_act is not None:
             act = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
             x   = act(x)
-        
-        # Normalization
-        n_spatial   = math.prod(self.reshape_dims)
-        n_channels  = x.shape[-1]  # after dense maybe 1, but before dense check conv output
-        scale       = jnp.sqrt(n_spatial * n_channels)
-        # divide by sqrt(#summed units)
-        x           = x / scale
-        return x.reshape(-1) # (B, output_feats)
+        return jnp.log(x)
+        # return x.reshape(-1) # (B, output_feats)
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -304,7 +303,7 @@ class CNN(FlaxInterface):
                 output_shape        : Tuple[int, ...]                                       = (1,),
                 in_activation       : Optional[Callable]                                    = None,
                 final_activation    : Union[str, Callable, None]                            = None,
-                transform_input     : bool                                                  = True,
+                transform_input     : bool                                                  = False,
                 *,
                 dtype               : Any                                                   = jnp.float32,
                 param_dtype         : Optional[Any]                                         = None,

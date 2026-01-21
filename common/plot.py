@@ -1854,7 +1854,7 @@ Custom Adjustments:
                 color   = 'black',
                 label   = None,
                 zorder  = 10,
-                labelcond = True,
+                label_cond = True,
                 **kwargs):
         '''
         horizontal line plotting
@@ -1867,10 +1867,10 @@ Custom Adjustments:
             color = colorsList[color % len(colorsList)]
         
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
 
         ax.axhline(val, ls = ls,  lw = lw,
-                label = label if (label is not None and len(label) != 0 and labelcond) else None,
+                label = label if (label is not None and len(label) != 0 and label_cond) else None,
                 color = color,
                 zorder = zorder,
                 **kwargs)
@@ -1883,7 +1883,7 @@ Custom Adjustments:
                 color       = 'black',
                 label       = None,
                 zorder      = 10,
-                labelcond   = True,
+                label_cond   = True,
                 **kwargs):
         '''
         vertical line plotting
@@ -1895,12 +1895,12 @@ Custom Adjustments:
             color = colorsList[color % len(colorsList)]
 
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
 
         ax.axvline(val, 
                 ls      = ls,  
                 lw      = lw, 
-                label   = label if (label is not None and len(label) != 0 and labelcond) else None, 
+                label   = label if (label is not None and len(label) != 0 and label_cond) else None, 
                 color   = color,
                 zorder  = zorder,
                 **kwargs)
@@ -1916,7 +1916,7 @@ Custom Adjustments:
         label       =   None,
         edgecolor   =   None,
         zorder      =   5,
-        labelcond   =   True,
+        label_cond   =   True,
         linewidths  =   1.0,
         **kwargs):
         """
@@ -1957,11 +1957,11 @@ Custom Adjustments:
             marker = markersList[marker % len(markersList)]
 
         if label is None or label == '':
-            labelcond = False    
+            label_cond = False    
         
         ax.scatter(x, y, linewidths = linewidths,
                 s=s, c=c, marker=marker, 
-                alpha=alpha, label=label if labelcond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
+                alpha=alpha, label=label if label_cond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
     
     #################### P L O T S ####################
     
@@ -1974,7 +1974,7 @@ Custom Adjustments:
                 color       = 'black',
                 # label 
                 label       = None,
-                labelcond   = True,
+                label_cond   = True,
                 # marker
                 marker      = None,
                 ms          = None,
@@ -2001,7 +2001,7 @@ Custom Adjustments:
             kwargs.pop('c')
         
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
         
         # use the defaults
         if isinstance(color, int):
@@ -2017,7 +2017,7 @@ Custom Adjustments:
                 ls      = ls, 
                 lw      = lw, 
                 color   = color, 
-                label   = label if labelcond else '', zorder = zorder, marker = marker, ms = ms, **kwargs)
+                label   = label if label_cond else '', zorder = zorder, marker = marker, ms = ms, **kwargs)
 
     @staticmethod
     def fill_between(
@@ -2048,7 +2048,7 @@ Custom Adjustments:
     # ################ LOG SCALE PLOTS ################
     
     @staticmethod
-    def semilogy(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, labelcond=True, zorder=5, **kwargs):
+    def semilogy(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, label_cond=True, zorder=5, **kwargs):
         """
         Plot with logarithmic y-axis.
         
@@ -2090,12 +2090,12 @@ Custom Adjustments:
         if isinstance(marker, int):
             marker  = markersList[marker % len(markersList)]
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
             
-        ax.semilogy(x, y, ls=ls, lw=lw, color=color, label=label if labelcond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
+        ax.semilogy(x, y, ls=ls, lw=lw, color=color, label=label if label_cond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
     
     @staticmethod
-    def semilogx(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, labelcond=True, zorder=5, **kwargs):
+    def semilogx(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, label_cond=True, zorder=5, **kwargs):
         """
         Plot with logarithmic x-axis.
         
@@ -2131,12 +2131,12 @@ Custom Adjustments:
         if isinstance(marker, int):
             marker = markersList[marker % len(markersList)]
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
             
-        ax.semilogx(x, y, ls=ls, lw=lw, color=color, label=label if labelcond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
+        ax.semilogx(x, y, ls=ls, lw=lw, color=color, label=label if label_cond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
     
     @staticmethod
-    def loglog(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, labelcond=True, zorder=5, **kwargs):
+    def loglog(ax, x, y, ls='-', lw=1.5, color='black', label=None, marker=None, ms=None, label_cond=True, zorder=5, **kwargs):
         """
         Plot with logarithmic x and y axes.
         
@@ -2174,14 +2174,14 @@ Custom Adjustments:
         if isinstance(marker, int):
             marker = markersList[marker % len(markersList)]
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
             
-        ax.loglog(x, y, ls=ls, lw=lw, color=color, label=label if labelcond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
+        ax.loglog(x, y, ls=ls, lw=lw, color=color, label=label if label_cond else '', marker=marker, ms=ms, zorder=zorder, **kwargs)
     
     # -------------------- ERROR BARS --------------------
     
     @staticmethod
-    def errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', color='black', capsize=2, capthick=1.0, elinewidth=1.0, markersize=5, label=None, labelcond=True, alpha=1.0, zorder=5, **kwargs):
+    def errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', color='black', capsize=2, capthick=1.0, elinewidth=1.0, markersize=5, label=None, label_cond=True, alpha=1.0, zorder=5, **kwargs):
         """
         Plot data with error bars.
         
@@ -2231,20 +2231,20 @@ Custom Adjustments:
         if isinstance(color, int):
             color = colorsList[color % len(colorsList)]
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
         
         ax.errorbar(x, y, yerr=yerr, xerr=xerr,
                     fmt=fmt, color=color,
                     capsize=capsize, capthick=capthick,
                     elinewidth=elinewidth, markersize=markersize,
-                    label=label if labelcond else '',
+                    label=label if label_cond else '',
                     alpha=alpha, zorder=zorder, **kwargs)
     
     # -------------------- HISTOGRAM --------------------
     
     @staticmethod
     def histogram(ax, data, bins=50, density=True, histtype='stepfilled', alpha=0.7, color='C0', edgecolor='black',
-                linewidth=1.0, label=None, orientation='vertical', cumulative=False, log=False, labelcond=True, zorder=5, **kwargs):
+                linewidth=1.0, label=None, orientation='vertical', cumulative=False, log=False, label_cond=True, zorder=5, **kwargs):
         """
         Plot a histogram.
         
@@ -2302,13 +2302,13 @@ Custom Adjustments:
         if isinstance(color, int):
             color = colorsList[color % len(colorsList)]
         if label is None or label == '':
-            labelcond = False
+            label_cond = False
         
         return ax.hist(data, bins=bins, density=density,
                     histtype=histtype, alpha=alpha,
                     color=color, edgecolor=edgecolor,
                     linewidth=linewidth, 
-                    label=label if labelcond else '',
+                    label=label if label_cond else '',
                     orientation=orientation,
                     cumulative=cumulative, log=log,
                     zorder=zorder, **kwargs)
@@ -2398,7 +2398,7 @@ Custom Adjustments:
             ylim                            = None,         # specific limits for y-axis
             fontsize        : int           = plt.rcParams['font.size'],
             labelPad        : float         = 0.0,          # padding for axis labels
-            labelCond       : Union[bool, dict]   = True,
+            label_cond       : Union[bool, dict]   = True,
             labelPos        : Union[dict, str, None] = None,     # label positions
             xlabelPos       : Union[str, None]   = None,         # position of the xlabel
             ylabelPos       : Union[str, None]   = None,         # position of the ylabel
@@ -2425,7 +2425,7 @@ Custom Adjustments:
                 xlim, ylim (tuple): Specific limits for x and y axes (overrides `lim`).
                 fontsize (int): Font size for axis labels.
                 labelPad (float): Padding for axis labels.
-                labelCond (bool): Whether to show the label.
+                label_cond (bool): Whether to show the label.
                 labelPos (dict): Label positions (e.g., {"x": "top", "y": "right"}).
                 tickPos (dict): Tick positions (e.g., {"x": "bottom", "y": "left"}).
                 labelCords (dict): Manual label coordinates (e.g., {"x": (0.5, -0.1)}).
@@ -2509,13 +2509,13 @@ Custom Adjustments:
                 if 'y' in ticks and isinstance(ticks['y'], (tuple, list)):
                     ticks['y'] = ticks['y']
 
-                # labelcond 
-                if labelCond is None:
-                    labelCond = {"x": True, "y": True}
-                elif isinstance(labelCond, bool):
-                    labelCond = {"x": labelCond, "y": labelCond}
-                elif not isinstance(labelCond, dict):
-                    labelCond = {}
+                # label_cond 
+                if label_cond is None:
+                    label_cond = {"x": True, "y": True}
+                elif isinstance(label_cond, bool):
+                    label_cond = {"x": label_cond, "y": label_cond}
+                elif not isinstance(label_cond, dict):
+                    label_cond = {}
                 
                 # labels
                 if labels is None:
@@ -2542,11 +2542,11 @@ Custom Adjustments:
                 
                 if xlabel is not None and isinstance(xlabel, str):
                     if xlabel == "":
-                        labelCond["x"] = False
+                        label_cond["x"] = False
                     label['x'] = xlabel
                 if ylabel is not None and isinstance(ylabel, str):
                     if ylabel == "":
-                        labelCond["y"] = False
+                        label_cond["y"] = False
                     label['y'] = ylabel
 
             # Default tick parameters
@@ -2562,7 +2562,7 @@ Custom Adjustments:
 
             # Update x-axis parameters
             if "x" in which or "both" in which:
-                ax.set_xlabel(label['x'] if labelCond['x'] else "", fontsize=fontsize, labelpad=labelPad)
+                ax.set_xlabel(label['x'] if label_cond['x'] else "", fontsize=fontsize, labelpad=labelPad)
                 if lim and "x" in lim:
                     ax.set_xlim(lim["x"])
                     
@@ -2590,7 +2590,7 @@ Custom Adjustments:
 
             # Update y-axis parameters
             if "y" in which or "both" in which:
-                ax.set_ylabel(label['y'] if labelCond['y'] else "", fontsize=fontsize, labelpad=labelPad)
+                ax.set_ylabel(label['y'] if label_cond['y'] else "", fontsize=fontsize, labelpad=labelPad)
                 if lim and "y" in lim:
                     ax.set_ylim(lim["y"])
                     

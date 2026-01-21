@@ -18,7 +18,7 @@ from .config import (
 
 from .data_loader import (
     load_results,
-    PlotDataHelpers,
+    PlotData,
 )
 
 from .kspace_utils import (
@@ -50,7 +50,7 @@ __all__ = [
     'StylePresets',
     # Data loading
     'load_results',
-    'PlotDataHelpers',
+    'PlotData',
     # K-space utilities
     'point_to_segment_distance_2d',
     'select_kpoints_along_path',

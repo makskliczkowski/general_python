@@ -150,7 +150,7 @@ def load_results(data_dir: str, *,
         logger.info(f"Loaded {len(results)} results after filtering", color='green')
     return results
 
-class PlotDataHelpers:
+class PlotData:
     """Helper functions for plotting."""
     
     # --------------------------------------------------------------
@@ -344,7 +344,7 @@ class PlotDataHelpers:
         """
         
         # Extract and Sort Parameters
-        _, _, unique_x, unique_y    = PlotDataHelpers.extract_parameter_arrays(results, x_param, y_param)
+        _, _, unique_x, unique_y    = PlotData.extract_parameter_arrays(results, x_param, y_param)
         if x_values: unique_x       = [v for v in unique_x if any(abs(v - val) < 1e-5 for val in x_values)]
         if y_values: unique_y       = [v for v in unique_y if any(abs(v - val) < 1e-5 for val in y_values)]
         
@@ -357,7 +357,7 @@ class PlotDataHelpers:
             return None, None, []
 
         # Create Plot
-        fig, axes, _, _ = PlotDataHelpers.create_subplot_grid(
+        fig, axes, _, _ = FigureConfig.create_subplot_grid(
                             n_panels            =   n_rows * n_cols, 
                             max_cols            =   n_cols, 
                             figsize_per_panel   =   figsize_per_panel, 
