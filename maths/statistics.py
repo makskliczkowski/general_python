@@ -964,7 +964,6 @@ class Fraction:
         diff = np.abs(l - r)
         return min_val <= diff <= max_val
 
-    #!TODO: add a function that checks if the difference is between two values
     @staticmethod
     def hs_fraction_offdiag(mn: int,
                             max_val: int, 
