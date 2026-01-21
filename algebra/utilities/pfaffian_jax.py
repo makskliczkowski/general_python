@@ -300,7 +300,7 @@ if JAX_AVAILABLE:
             dot_k = dots[updIdx]
             
             # Clipping avoids NaN/Inf from exact zero, but might mask issues.
-            dotProductInv = 1.0 / jnp.clip(dot_k, a_min=_ZERO_TOL, a_max=1e10)
+            dotProductInv = 1.0 / jnp.clip(dot_k, min=_ZERO_TOL, max=1e10)
 
             # Vectorized update
 
