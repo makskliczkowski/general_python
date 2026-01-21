@@ -1186,12 +1186,7 @@ class SSORPreconditioner(Preconditioner):
 
         self._omega             = omega
         self._TOLERANCE_SMALL         = tol_small
-        self._zero              = zero_replacement  
-
-        # Precomputed data storage
-        self._inv_diag_scaled : Optional[Array] = None # Stores omega / (diag(A) + sigma)
-        self._L_scaled        : Optional[Array] = None # Stores omega * L
-        self._U_scaled        : Optional[Array] = None # Stores omega * U
+        self._zero              = zero_replacement
 
     # -----------------------------------------------------------------
     #! Properties
@@ -1238,86 +1233,24 @@ class SSORPreconditioner(Preconditioner):
         a_gram      = (sp @ s) / n
         return SSORPreconditioner._setup_standard_kernel(a_gram, sigma, be, **kwargs)
     
-    def _set_standard(self, a: Array, sigma: float):
-        """ 
-        Sets up SSOR from matrix A = D + L + U.
-        Computes the lower and upper triangular parts of A + sigma*I.
-        Parameters:
-            a (Array):
-                The matrix A.
-            sigma (float):
-                Regularization parameter.
-        Raises:
-            ValueError: If the matrix is not square or not positive definite.
-        """
+    def _set_standard(self, a: Array, sigma: float, **kwargs):
+        """ Instance: Calls static setup kernel and stores result. """
         
-        print(f"({self._name}) Setting up SSOR factors...")
-        be          = self._backend
-        a_reg       = a + sigma * be.eye(a.shape[0], dtype=a.dtype)
+        # Pass instance omega to static kernel via kwargs
+        kwargs.setdefault('omega', self._omega)
+        self._precomputed_data_instance = self.__class__._setup_standard_kernel(
+            a, sigma, self._backend, **kwargs
+        )
+        self._update_instance_apply_func() # Recompile apply(r) if data changes
 
-        # Extract parts
-        diag_a_reg  = be.diag(a_reg)
-        # Use backend's tril/triu. Ensure k=-1/+1 for strict parts.
-        L           = be.tril(a_reg, k=-1)
-        U           = be.triu(a_reg, k=1)
-
-        # Compute scaled inverse diagonal safely
-        diag_scaled             = diag_a_reg / self._omega # Use original omega
-        is_small                = be.abs(diag_scaled) < self._TOLERANCE_SMALL
-        safe_diag_scaled        = be.where(is_small, be.sign(diag_scaled) * self._zero, diag_scaled)
-        safe_diag_scaled        = be.where(safe_diag_scaled == 0.0, self._zero, safe_diag_scaled)
+    def _set_gram(self, s: Array, sp: Array, sigma: float, **kwargs):
+        """ Instance: Calls static setup kernel and stores result. """
         
-        self._inv_diag_scaled   = 1.0 / safe_diag_scaled
-        self._inv_diag_scaled   = be.where(is_small, 0.0, self._inv_diag_scaled)
-        
-        # Store D_inv_scaled, L and U (or scaled versions if preferred for apply)
-        # Let's store the original L and U, apply will use omega
-        self._L                 = L
-        self._U                 = U 
-        
-        # We need D for the backward step, store its inverse
-        is_small_d              = be.abs(diag_a_reg) < self._TOLERANCE_SMALL
-        safe_d                  = be.where(is_small_d, be.sign(diag_a_reg) * self._zero, diag_a_reg)
-        safe_d                  = be.where(safe_d == 0.0, self._zero, safe_d)
-        self._inv_diag_unscaled = 1.0 / safe_d
-        self._inv_diag_unscaled = be.where(is_small_d, 0.0, self._inv_diag_unscaled)
-        
-        print(f"({self._name}) SSOR setup complete.")
-
-    def _set_gram(self, s: Array, sp: Array, sigma: float):
-        """
-        Set up SSOR by forming A = Sp @ S / n first.
-        This is less common for SSOR, but can be useful in some cases.
-        """
-        
-        # Similar warning as Cholesky
-        be      = self._backend
-        # Use shape directly - avoid float() which breaks JAX tracing
-        n       = s.shape[0] if s.shape[0] > 0 else 1
-        if n <= 0.0:
-            n = 1.0
-
-        print(f"({self._name}) Warning: Forming explicit Gram matrix A = Sp @ S / N for SSOR setup (N={n}).")
-        a_gram  = (sp @ s) / n
-        self._set_standard(a_gram, sigma)
-
-    def _get_precomputed_data(self) -> dict:
-        """ Returns the computed factors needed for SSOR apply. """
-        
-        # Ensure D_inv_scaled is computed and stored during set if using the alternative form below
-        # For the direct solve form, we need L, U, and D/w. Let's store D and use it.
-        
-        if self._L is None or self._U is None or self._inv_diag_unscaled is None:
-            raise RuntimeError(f"({self._name}) Preconditioner not set up. Call set() first.")
-
-        # Return D itself (or its diagonal) instead of its inverse if computing D/w directly in apply
-        diag_a_reg = 1.0 / self._inv_diag_unscaled  # Reconstruct the regularized diagonal
-        return {
-            'd_diag': diag_a_reg,                   # Pass the diagonal D = diag(A_reg)
-            'L': self._L,
-            'U': self._U,
-            'omega': self._omega
-        }
+        kwargs.setdefault('omega', self._omega)
+        self._precomputed_data_instance = self.__class__._setup_gram_kernel(
+            s, sp, sigma, self._backend, **kwargs
+        )
+        self._update_instance_apply_func() # Recompile apply(r) if data changes
 
     # --- Static Apply ---
     @staticmethod

@@ -1,6 +1,6 @@
 import sys
 from numpy.lib.stride_tricks import sliding_window_view
-from numba import int64, float64
+from numba import int64, float64, njit
 from numba.experimental import jitclass
 from .math_utils import *
 
@@ -20,6 +20,97 @@ from typing import List, Tuple, Union, Optional, Callable, Sequence
 import numpy as np
 import pandas as pd
 
+@njit
+def _bin_avg_numba(data, x, centers, delta, cutoffNum, typical):
+    n_centers = len(centers)
+    n_realizations = data.shape[0]
+    n_points = data.shape[1]
+
+    # We need to return averages, but we need to know which ones are valid
+    # to mimic the original behavior of skipping invalid centers.
+    # However, Numba can't easily return variable length lists.
+    # So we return the averages array AND a boolean mask of validity.
+
+    averages = np.zeros(n_centers, dtype=np.float64)
+    valid = np.zeros(n_centers, dtype=np.int64) # Boolean mask
+
+    # We iterate over centers and realizations
+    for i in range(n_centers):
+        c = centers[i]
+        sum_agg = 0.0
+        count_agg = 0
+
+        for r in range(n_realizations):
+             # Logic to find elements and compute mean for this realization
+
+             # Pass 1: find indices and compute count/sum simultaneously
+             # We need to find all points x[r, k] in [c-delta, c+delta]
+
+             current_sum = 0.0
+             current_count = 0
+
+             # Also track best index for fallback
+             best_dist = np.inf
+             best_idx = -1
+
+             for k in range(n_points):
+                 val = x[r, k]
+                 # Compute abs dist
+                 dist = val - c
+                 if dist < 0:
+                     dist = -dist
+
+                 if dist < delta:
+                     current_sum += data[r, k]
+                     current_count += 1
+
+                 if dist < best_dist:
+                     best_dist = dist
+                     best_idx = k
+
+             # Check cutoff
+             if current_count < cutoffNum:
+                 # Sparse case: use window around best_idx
+                 # Note: in Python code: start_idx = max(c_arg - cutoffNum // 2, 0)
+                 # end_idx = min(c_arg + cutoffNum // 2, len)
+
+                 # best_idx is c_arg
+                 start = best_idx - cutoffNum // 2
+                 if start < 0:
+                     start = 0
+
+                 end = best_idx + cutoffNum // 2
+                 if end > n_points:
+                     end = n_points
+
+                 # Re-compute sum for window
+                 current_sum = 0.0
+                 current_count = 0
+
+                 # Slicing is data[r, start:end]. In loop:
+                 for k in range(start, end):
+                     current_sum += data[r, k]
+                     current_count += 1
+
+             if current_count > 0:
+                 mean_val = current_sum / current_count
+                 if typical:
+                     mean_val = np.exp(mean_val)
+                 sum_agg += mean_val
+                 count_agg += 1
+
+        if count_agg > 0:
+            averages[i] = sum_agg / count_agg
+            valid[i] = 1
+        else:
+            averages[i] = 0.0
+            valid[i] = 0
+
+    return averages, valid
+
+# Define default function outside to allow robust identity check
+_DEFAULT_BIN_AVG_FUNC = lambda x: np.mean(x, axis = 0)
+
 ##############################################################
 
 class Statistics:
@@ -29,7 +120,7 @@ class Statistics:
     
     ##########################################################
     @staticmethod 
-    def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = lambda x: np.mean(x, axis = 0), verbose = False):
+    def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = _DEFAULT_BIN_AVG_FUNC, verbose = False):
         '''
         Bin average of the data
         - data      : data to average - first axis is realizations!
@@ -41,6 +132,26 @@ class Statistics:
         - func      : function to apply to bin values (default: np.mean)
         - verbose   : if True, print additional information
         '''
+        # Check for fast path eligibility
+        # 1. func is default
+        is_default_func = func is _DEFAULT_BIN_AVG_FUNC
+
+        if is_default_func:
+            # Check data dimensions
+            if isinstance(data, np.ndarray) and isinstance(x, np.ndarray) and data.ndim == 2 and x.ndim == 2:
+                # Prepare data
+                if typical:
+                    data_processed = np.log(data)
+                else:
+                    data_processed = data
+
+                # Numba function call
+                averages, valid = _bin_avg_numba(data_processed, x, centers, delta, cutoffNum, typical)
+
+                # Filter out invalid (to match original behavior of skipping empty bins)
+                valid_averages = averages[valid == 1]
+                return np.nan_to_num(valid_averages, nan = 0.0)
+
         averages = []
         if typical:
             data = np.log(data)
@@ -853,7 +964,6 @@ class Fraction:
         diff = np.abs(l - r)
         return min_val <= diff <= max_val
 
-    #!TODO: add a function that checks if the difference is between two values
     @staticmethod
     def hs_fraction_offdiag(mn: int,
                             max_val: int, 
@@ -862,7 +972,6 @@ class Fraction:
                             target_en: float = 0.0,
                             tol: float = 0.0015,
                             sort: bool = True) -> List[Tuple[float, int, int]]:
-        pass
         """
         Get the off-diagonal Hilbert-space fraction information.
         
@@ -883,13 +992,33 @@ class Fraction:
         Returns:
         A list of tuples (omega, j, i) sorted by omega if sort is True.
         """
-        out = []
-        for i in range(mn, max_val):
-            en_l = energies[i]
-            for j in range(i + 1, max_val):
-                en_r = energies[j]
-                if hs_fraction_close_mean(en_l, en_r, target=target_en, tol=tol):
-                    out.append((abs(en_r - en_l), j, i))
+        # Vectorized implementation
+        subset_energies = energies[mn:max_val]
+        n = len(subset_energies)
+
+        # Get indices for the upper triangle (j > i)
+        idx_i, idx_j = np.triu_indices(n, k=1)
+
+        l_vals = subset_energies[idx_i]
+        r_vals = subset_energies[idx_j]
+
+        # Check condition
+        mask = Fraction.is_close_target(l_vals, r_vals, target=target_en, tol=tol)
+
+        valid_i = idx_i[mask]
+        valid_j = idx_j[mask]
+        valid_l = l_vals[mask]
+        valid_r = r_vals[mask]
+
+        diffs = np.abs(valid_r - valid_l)
+
+        # Offset indices by mn to match original global indices
+        global_i = valid_i + mn
+        global_j = valid_j + mn
+
+        # Create output list: (difference, j, i)
+        out = list(zip(diffs, global_j, global_i))
+
         if sort:
             out.sort(key=lambda tup: tup[0])
         return out
