@@ -117,7 +117,8 @@ if JAX_AVAILABLE:
         """
         Flip a single bit in a representation of a state (Spin representation).
         """
-        return n.at[k].set(-n[k])
+        val = -n[k]
+        return n.at[k].set(val.astype(n.dtype))
 
     @partial(jax.jit, static_argnames=('spin_value',))
     def flip_array_jax_nspin(n : 'Array', k : int, spin_value: float = 1.0):
@@ -126,7 +127,8 @@ if JAX_AVAILABLE:
         Uses arithmetic flip: new_val = spin_value - old_val.
         Assumes values are exactly 0 or spin_value.
         """
-        return n.at[k].set(spin_value - n[k])
+        val = spin_value - n[k]
+        return n.at[k].set(val.astype(n.dtype))
     
     def flip_array_jax(n : 'Array', k : int, spin : bool = BACKEND_DEF_SPIN, spin_value: float = BACKEND_REPR):
         """
@@ -143,14 +145,16 @@ if JAX_AVAILABLE:
         """
         Flip multiple spins in a JAX array (spin representation).
         """
-        return n.at[ks].set(-n[ks])
+        val = -n[ks]
+        return n.at[ks].set(val.astype(n.dtype))
 
     @partial(jax.jit, static_argnames=('spin_value',))
     def flip_array_jax_nspin_multi(n: 'Array', ks: 'Array', spin_value: float = 1.0):
         """
         Flip multiple bits in a JAX array (binary representation).
         """
-        return n.at[ks].set(spin_value - n[ks])
+        val = spin_value - n[ks]
+        return n.at[ks].set(val.astype(n.dtype))
     
     def flip_array_jax_multi(n: 'Array', ks: 'Array', spin: bool = BACKEND_DEF_SPIN, spin_value: float = BACKEND_REPR):
         """

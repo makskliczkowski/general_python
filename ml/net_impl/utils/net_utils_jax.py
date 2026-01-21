@@ -6,38 +6,37 @@ date    : 2025-03-01
 '''
 
 # from general python utils
-from typing                 import Any, Callable, List, Tuple, NamedTuple, Union
-from functools              import partial
+from typing                     import Any, Callable, List, Tuple, NamedTuple, Union
+from functools                  import partial
 try:
     import jax
-    JAX_AVAILABLE           = True
-    DEFAULT_JP_FLOAT_TYPE   = jax.numpy.float64
-    DEFAULT_JP_CPX_TYPE     = jax.numpy.complex128
+    JAX_AVAILABLE               = True
+    DEFAULT_JP_FLOAT_TYPE       = jax.numpy.float64
+    DEFAULT_JP_CPX_TYPE         = jax.numpy.complex128
 except ImportError:
-    jax                     = None
-    JAX_AVAILABLE           = False
+    jax                         = None
+    JAX_AVAILABLE               = False
 
 if JAX_AVAILABLE:
-    from jax                import lax
-    from jax                import numpy as jnp
-    from jax.tree_util      import tree_flatten, tree_unflatten, tree_map, tree_leaves
+    from jax                    import lax
+    from jax                    import numpy as jnp
+    from jax.tree_util          import tree_flatten, tree_unflatten, tree_map, tree_leaves
 
     # use flax
-    import flax
-    import flax.linen as nn
-    from flax.core.frozen_dict import freeze, unfreeze
+    import  flax.linen          as nn
+    from flax.core.frozen_dict  import freeze, unfreeze
 else:
-    jax             = None
-    jnp             = None
-    tree_flatten    = None
-    tree_unflatten  = None
-    tree_map        = None
-    tree_leaves     = None
-    freeze          = None
-    unfreeze        = None
-    nn              = None
-    flax            = None
-    lax             = None
+    jax                         = None
+    jnp                         = None
+    tree_flatten                = None
+    tree_unflatten              = None
+    tree_map                    = None
+    tree_leaves                 = None
+    freeze                      = None
+    unfreeze                    = None
+    nn                          = None
+    flax                        = None
+    lax                         = None
     
 #########################################################################
 #! BATCHES
@@ -45,9 +44,8 @@ else:
 
 if JAX_AVAILABLE:
     
-    @partial(jax.jit, static_argnums=(1,))
-    def create_batches_jax( data        : jnp.ndarray,
-                            batch_size  : int):
+    # @partial(jax.jit, static_argnums=(1,))
+    def create_batches_jax( data: jnp.ndarray, batch_size  : int):
         """
         JAX version of create_batches.
         
@@ -72,6 +70,18 @@ if JAX_AVAILABLE:
         # if batch_size < 2:
         #     return data
         
+        # Check for abstract input (eval_shape support)
+        if hasattr(data, 'shape') and hasattr(data, 'dtype') and isinstance(data, jax.ShapeDtypeStruct):
+            n           = data.shape[0]
+            append_data = batch_size * ((n + batch_size - 1) // batch_size) - n
+            # New shape: total samples (padded) -> reshaped
+            # Padded length: n + append_data
+            # Reshaped: (num_batches, batch_size, ...)
+            total_len   = n + append_data
+            num_batches = total_len // batch_size
+            new_shape   = (num_batches, batch_size) + data.shape[1:]
+            return jax.ShapeDtypeStruct(new_shape, data.dtype)
+
         # For example, if data.shape[0] is 5 and batch_size is 3, then:
         #   ((5 + 3 - 1) // 3) =  (7 // 3) = 2 batches needed, so 2*3 = 6 samples in total.
         #   Then append_data = 6 - 5 = 1 extra sample needed.
@@ -646,9 +656,9 @@ if JAX_AVAILABLE:
             weights: (N_samples,) or (N_samples, 1)
             Returns: (N_params,)
             """
-            weights = weights.reshape(-1)
+            weights                 = weights.reshape(-1)
             # Pad weights to match batches
-            w_batches = create_batches_jax(weights, self.batch_size)
+            w_batches               = create_batches_jax(weights, self.batch_size)
             
             # Define scan body properly
             def body_fun(carry, batch_input):
@@ -658,10 +668,10 @@ if JAX_AVAILABLE:
                 return carry + jnp.sum(weighted, axis=0), None
 
             # init_val = jnp.zeros(self._n_params, dtype=jnp.complex128 if self.is_cpx[0] else jnp.float32) 
-            init_val = jnp.zeros(self._n_params, dtype=DEFAULT_JP_CPX_TYPE)
+            init_val                = jnp.zeros(self._n_params, dtype=DEFAULT_JP_CPX_TYPE)
 
             # Run scan
-            final_sum, _ = jax.lax.scan(body_fun, init_val, (self._batches, w_batches))
+            final_sum, _            = jax.lax.scan(body_fun, init_val, (self._batches, w_batches))
             return final_sum
 
         def mv(self, v):
@@ -674,8 +684,8 @@ if JAX_AVAILABLE:
             tree_def = jax.tree_util.tree_structure(self.params)
             
             def unflatten_v(flat_v):
-                leaves = []
-                idx = 0
+                leaves  = []
+                idx     = 0
                 for shape, size, cpx in zip(self.shapes, self.sizes, self.is_cpx):
                     part = flat_v[idx : idx + size]
                     part = part.reshape(shape)
@@ -683,18 +693,23 @@ if JAX_AVAILABLE:
                     idx += size
                 return jax.tree_util.tree_unflatten(tree_def, leaves)
 
-            v_tree = unflatten_v(v)
+            v_tree      = unflatten_v(v)
             
             def jvp_fun(s):
+                
                 # Split strategy for complex JVP support
                 def compute_jvp(tangents):
-                     return jax.jvp(lambda p: self.net_apply(p, s), (self.params,), (tangents,))[1]
+                    return jax.jvp(lambda p: self.net_apply(p, s), (self.params,), (tangents,))[1]
 
-                v_real = jax.tree_util.tree_map(jnp.real, v_tree)
-                v_imag = jax.tree_util.tree_map(jnp.imag, v_tree)
+                v_real      = jax.tree_util.tree_map(jnp.real, v_tree)
+                v_imag      = jax.tree_util.tree_map(jnp.imag, v_tree)
                 
-                out_real = compute_jvp(v_real)
-                out_imag = compute_jvp(v_imag)
+                # Cast to ensure dtype matches primal (e.g. complex128)
+                v_real      = jax.tree_util.tree_map(lambda x: x.astype(DEFAULT_JP_CPX_TYPE), v_real)
+                v_imag      = jax.tree_util.tree_map(lambda x: x.astype(DEFAULT_JP_CPX_TYPE), v_imag)
+                
+                out_real    = compute_jvp(v_real)
+                out_imag    = compute_jvp(v_imag)
                 
                 return out_real + 1j * out_imag
 
@@ -728,8 +743,8 @@ if JAX_AVAILABLE:
             params                      : Any,                                          # Network parameters `p` (PyTree).
             states                      : jnp.ndarray,                                  # Expects shape (n_samples, ...)
             single_sample_flat_grad_fun : Callable[[Callable, Any, Any], jnp.ndarray],
-            batch_size                  : int = 1,                                      # Batch size for gradient computation.
-            return_jacobian_obj         : bool = True,                                  # Whether to return BatchedJacobian object
+            batch_size                  : int   = 1,                                      # Batch size for gradient computation.
+            return_jacobian_obj         : bool  = False,                                 # Whether to return BatchedJacobian object
         ) -> Union[jnp.ndarray, BatchedJacobian]:
         """
         Compute flattened gradients per sample over a batch of states using jax.vmap.
@@ -756,7 +771,7 @@ if JAX_AVAILABLE:
             Batch size for gradient computation. Default is 1 (no batching).
         return_jacobian_obj : bool, optional
             If True, returns a BatchedJacobian object instead of materializing the full Jacobian.
-            Defaults to True to avoid OOM on large samples.
+            Defaults to False to prioritize speed over memory. Set to True to avoid OOM on large samples.
 
         Returns
         -------
@@ -808,36 +823,20 @@ if JAX_AVAILABLE:
     # ----------------------------------------------------------------------------
     
     @partial(jax.jit, static_argnames=('force_complex',))
-    def _to_real_repr_single(vector: jnp.ndarray, force_complex: bool) -> jnp.ndarray:
-        if jnp.iscomplexobj(vector):
-            real_parts      = jnp.real(vector)
-            imag_parts      = jnp.imag(vector)
-            # # jax.debug.print("jax to real repr complex: {}", vector)
-            # # jax.debug.print("jax to real repr real: {}", real_parts)
-            # # jax.debug.print("jax to real repr imag: {}", imag_parts)
-            out             = jnp.concatenate([real_parts, imag_parts])
-            # # jax.debug.print("jax to real repr out: {}", out)
-            return out
-        elif force_complex:
-            complex_vector  = vector.astype(DEFAULT_JP_CPX_TYPE)
-            real_parts      = jnp.real(complex_vector)
-            imag_parts      = jnp.imag(complex_vector)
-            return jnp.concatenate([real_parts, imag_parts]).astype(DEFAULT_JP_FLOAT_TYPE)
-        else:
-            return vector.astype(DEFAULT_JP_FLOAT_TYPE)
-    
-    # map the single-vector function over the first axis (vectors), keep template fixed (None)
-    _to_real_repr_batch = jax.vmap(_to_real_repr_single, in_axes=(0, None), out_axes=0)
-    
-    @partial(jax.jit, static_argnames=('force_complex',))
     def to_real_representation(vectors: jnp.ndarray, force_complex: bool = False) -> jnp.ndarray:
         # Keep ndim check for safety
-        if vectors.ndim == 1:
-            return _to_real_repr_single(vectors, force_complex)
-        if vectors.ndim == 2:
-            return _to_real_repr_batch(vectors, force_complex)
-        raise ValueError(f"Input must be 1D or 2D, got ndim={vectors.ndim}")
-
+        if jnp.iscomplexobj(vectors):
+            real_parts = jnp.real(vectors)
+            imag_parts = jnp.imag(vectors)
+            return jnp.concatenate([real_parts, imag_parts])
+        elif force_complex:
+            complex_vector = vectors.astype(DEFAULT_JP_CPX_TYPE)
+            real_parts = jnp.real(complex_vector)
+            imag_parts = jnp.imag(complex_vector)
+            return jnp.concatenate([real_parts, imag_parts]).astype(DEFAULT_JP_FLOAT_TYPE)
+        else:
+            return vectors.astype(DEFAULT_JP_FLOAT_TYPE)
+    
     # ----------------------------------------------------------------------------
     #! Transform the vector from the real representation [Re..., Im...] to the original representation
     # ----------------------------------------------------------------------------
@@ -1389,24 +1388,23 @@ if JAX_AVAILABLE:
             ValueError:
                 If the input vector does not have the correct shape/size.
         """
-        if d_par.ndim != 1:
+        # if d_par.ndim != 1:
             # Note: In a pure jitted function, raising exceptions is possible
             # but may cause compilation if the condition is ever True.
-            raise ValueError(f"Flat parameter update `d_par` must be 1D, got shape {d_par.shape}.")
+            # raise ValueError(f"Flat parameter update `d_par` must be 1D, got shape {d_par.shape}.")
 
         # Convert to the real representation vector.
         # The call to to_real_representation should be pure.
         flat_real_update_vector = to_real_representation(d_par)
 
-        if flat_real_update_vector.size != params_total_size:
-            raise ValueError(f"Flat update vector size ({flat_real_update_vector.size}) "
-                            f"does not match expected size ({params_total_size}) "
-                            f"based on model parameters.")
+        # if flat_real_update_vector.size != params_total_size:
+        #     raise ValueError(f"Flat update vector size ({flat_real_update_vector.size}) "
+        #                     f"does not match expected size ({params_total_size}) "
+        #                     f"based on model parameters.")
 
-        leaves      = fast_unflatten(flat_real_update_vector, params_slice_metadata)
-        update_tree = tree_unflatten(params_tree_def, leaves)
+        leaves                  = fast_unflatten(flat_real_update_vector, params_slice_metadata)
+        update_tree             = tree_unflatten(params_tree_def, leaves)
         return update_tree
-        # return leaves
     
     # --------------------------------------------------------------------------
     
