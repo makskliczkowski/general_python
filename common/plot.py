@@ -17,7 +17,7 @@ Features
 
 Quick Start
 -----------
->>> from QES.general_python.common.plot import Plotter
+>>> from general_python.common.plot import Plotter
 >>> fig, axes = Plotter.get_subplots(nrows=2, ncols=2, sizex=8, sizey=6)
 >>> Plotter.plot(axes[0], x, y, color='C0', label='Data')
 >>> Plotter.semilogy(axes[1], x, y_log, color='C1')
@@ -54,7 +54,7 @@ import  json
 import  itertools
 import  numpy as np
 from    math import fsum
-from    typing import Tuple, Union, Optional, List, TYPE_CHECKING
+from    typing import Tuple, Union, Optional, List, Literal, TYPE_CHECKING
 
 try:
     import scienceplots
@@ -139,7 +139,7 @@ def configure_style(style       : str = 'publication',
             if use_latex:
                 plt.style.use(['science', 'nature'])
             else:
-                plt.style.use(['science', 'no-latex', 'colors5-light'])
+                plt.style.use(['science', 'no-latex'])
         except Exception:
             pass  # Fall back to manual configuration
     
@@ -352,7 +352,7 @@ ADDITIONAL_LINESTYLES       =   {
 try:
     plt.style.use(['science', 'no-latex', 'colors5-light'])
 except Exception as e:
-    print("Error applying style:", e)
+    plt.style.use(['science', 'no-latex'])
     
 # Safely set additional rcParams (for compatibility with documentation build systems)
 try:
@@ -463,8 +463,6 @@ def get_linestyle_cycle(which=None):
     if which is None or which == 'Extended':
         return linestylesCycleExtended
 
-#####################################
-
 ############################ latex ############################
 colorMean                           =   'PuBu'
 colorTypical                        =   'BrBG'
@@ -473,6 +471,7 @@ colorDiverging                      =   'coolwarm'
 colorSequential                     =   'viridis'
 colorCategorical                    =   'tab20'
 colorQualitative                    =   'tab20'
+
 ########################## functions ##########################
 
 class CustomFormatter(mticker.Formatter):
@@ -637,6 +636,20 @@ class Plotter:
         self.dpi            = dpi
     
     @staticmethod
+    def ax(ax: Union[plt.Axes, List[plt.Axes]], *args, **kwargs):
+        """
+        Alias for ax method to allow direct calls.
+        """
+        if isinstance(ax, (list, tuple)):
+            return ax[kwargs.get('index', 0)]
+        elif isinstance(ax, plt.Axes):
+            return ax
+        elif is_callable(ax):
+            return ax(*args, **kwargs)
+        else:
+            return ax
+    
+    @staticmethod
     def help(topic: str = None):
         """
         Print help information about available plotting methods.
@@ -658,447 +671,12 @@ class Plotter:
         >>> Plotter.help('plot')     # Plotting methods
         >>> Plotter.help('axis')     # Axis configuration
         """
-        help_text = {
-            'overview': '''
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                     PLOTTER - Scientific Plotting Utilities                  ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-Topics (use Plotter.help('topic_name') for details):
-
-'plot'    - Basic plotting: plot, scatter, semilogy, semilogx, loglog,
-            errorbar, fill_between, histogram, contourf
-
-'axis'    - Axis setup: set_ax_params, set_tickparams, setup_log_x,
-            setup_log_y, set_smart_lim, unset_spines, unset_ticks, unset_all
-
-'color'   - Colors: add_colorbar, get_colormap, discrete_colormap,
-            Color cycles: colorsCycle, colorsCyclePlastic, etc.
-
-'layout'  - Subplots: get_subplots, make_grid, GridBuilder, get_inset
-
-'grid'    - Advanced grids: make_grid (full control), GridBuilder (nested)
-            width_ratios, height_ratios, wspace, hspace, margins
-
-'legend'  - Legends: set_legend (with style='publication'), set_legend_custom
-
-'annotate'- Annotations: set_annotate, set_annotate_letter, set_arrow
-
-'style'   - configure_style('nature'), configure_style('science'), 'prl', 'aps'
-
-'save'    - Saving: save_fig(directory, filename, format='pdf', dpi=300)
-
-──────────────────────────────────────────────────────────────────────────────
-Quick Example:
-
-    fig, axes = Plotter.get_subplots(1, 2, sizex=8, sizey=3)
-    Plotter.plot(axes[0], x, y, label='Data', color='C0')
-    Plotter.semilogy(axes[1], x, y_log, color='C1')
-    Plotter.set_ax_params(axes[0], xlabel='x', ylabel='y', title='Linear')
-    Plotter.set_legend(axes[0], style='publication')
-    Plotter.save_fig('.', 'my_figure', format='pdf')
-──────────────────────────────────────────────────────────────────────────────
-''',
-            
-            'plot': '''
-================
-PLOTTING METHODS
-================
-
-Basic Plots:
-    Plotter.plot(ax, x, y, ls='-', lw=2, color='black', label=None, marker=None)
-    Plotter.scatter(ax, x, y, s=10, c='blue', marker='o', alpha=1.0, label=None)
-
-Logarithmic Scales:
-    Plotter.semilogy(ax, x, y, **kwargs)    # log y-axis
-    Plotter.semilogx(ax, x, y, **kwargs)    # log x-axis  
-    Plotter.loglog(ax, x, y, **kwargs)      # log both axes
-
-Error Bars:
-    Plotter.errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', capsize=2, **kwargs)
-
-Histogram:
-    Plotter.histogram(ax, data, bins=50, density=True, alpha=0.7, **kwargs)
-
-Filled Regions:
-    Plotter.fill_between(ax, x, y1, y2, color='blue', alpha=0.5)
-
-Reference Lines:
-    Plotter.hline(ax, val, ls='--', lw=2, color='black', label=None)
-    Plotter.vline(ax, val, ls='--', lw=2, color='black', label=None)
-
-Contour:
-    cs = Plotter.contourf(ax, x, y, z, levels=20, cmap='viridis')
-''',
-            
-            'axis': '''
-==================
-AXIS CONFIGURATION
-==================
-
-Comprehensive Setup:
-    Plotter.set_ax_params(
-        ax,
-        xlabel='x', ylabel='y',          # Axis labels
-        xlim=(0, 10), ylim=(0, 1),        # Axis limits
-        xscale='linear', yscale='log',   # Scale ('linear', 'log')
-        fontsize=12,                      # Label font size
-        title='My Plot',                  # Plot title
-    )
-
-Log-Scale Setup (with proper tick formatting):
-    Plotter.setup_log_y(ax, ylims=(1e-6, 1e0), decade_step=2)
-    Plotter.setup_log_x(ax, xlims=(1e-3, 1e3), decade_step=2)
-
-Tick Parameters:
-    Plotter.set_tickparams(ax, labelsize=10, maj_tick_l=6, min_tick_l=3)
-
-Smart Limits (auto-compute from data):
-    Plotter.set_smart_lim(ax, which='y', data=my_data, margin_p=0.1)
-
-──────────────────────────────────────────────────────────────────────────────
-REMOVING SPINES & TICKS (Publication Style)
-──────────────────────────────────────────────────────────────────────────────
-
-Remove Spines:
-    # Remove specific spines (True = REMOVE, False = KEEP)
-    Plotter.unset_spines(ax, top=True, right=True, bottom=False, left=False)
-    
-    # Nature-style (only left and bottom spines)
-    Plotter.unset_spines(ax, top=True, right=True)
-    
-    # Remove all spines (frameless plot)
-    Plotter.unset_spines(ax, top=True, right=True, bottom=True, left=True)
-
-Remove Tick Labels (keep spines):
-    # Hide x-tick labels (useful for stacked plots)
-    Plotter.unset_ticks(ax, xticks=True, yticks=False)
-    
-    # Hide all tick labels
-    Plotter.unset_ticks(ax, xticks=True, yticks=True)
-    
-    # Also remove axis labels
-    Plotter.unset_ticks(ax, xticks=True, xlabel=True)
-
-Scientific Notation:
-    set_formatter(ax, formatter_type='sci', fmt='%1.1e', axis='y')
-
-──────────────────────────────────────────────────────────────────────────────
-QUICK REFERENCE - Common Axis Operations
-──────────────────────────────────────────────────────────────────────────────
-
-# Shared x-axis in stacked plots (hide middle ticks)
-for ax in axes[:-1]:
-    Plotter.unset_ticks(ax, xticks=True, xlabel=True)
-
-# Clean Nature-style axes
-for ax in axes:
-    Plotter.unset_spines(ax, top=True, right=True)
-
-# Log scale with nice decade ticks
-Plotter.setup_log_y(ax, ylims=(1e-6, 1e0), decade_step=1)
-''',
-            
-            'color': r'''
-==================
-COLORS & COLORBARS
-==================
-
-Add Colorbar:
-    cbar, cax = Plotter.add_colorbar(
-        fig, pos=[0.92, 0.15, 0.02, 0.7],  # [left, bottom, width, height]
-        mappable=data,                      # or ScalarMappable
-        cmap='viridis',
-        scale='log',                        # 'linear', 'log', 'symlog'
-        label=r'$|\psi|^2$',
-        orientation='vertical',
-    )
-
-Get Colormap Function:
-    getcolor, cmap, norm = Plotter.get_colormap(values, cmap='coolwarm')
-    color = getcolor(value)  # Returns RGBA for value
-
-Discrete Colormap:
-    cmap = Plotter.discrete_colormap(N=5, base_cmap='viridis')
-
-Available Color Cycles (use next(cycle) to get colors):
-    colorsCycle         - Tableau colors (default)
-    colorsCyclePlastic  - Colorblind-safe palette
-    colorsCycleBright   - CSS4 colors
-    colorsCyclePastel   - XKCD colors
-
-Reset Cycles:
-    reset_color_cycles()  # Reset all
-    reset_color_cycles('Plastic')  # Reset specific
-''',
-            
-            'layout': r'''
-=================
-LAYOUT & SUBPLOTS
-=================
-
-Simple Subplots (recommended for quick plots):
-    fig, axes = Plotter.get_subplots(
-        nrows=2, ncols=3,
-        sizex=10, sizey=6,                # Total figure size in inches
-        panel_labels=True,                # Add (a), (b), (c) labels
-        despine=True,                     # Remove top/right spines
-        constrained_layout=True,          # Auto-adjust spacing
-    )
-    # axes is always a flat list: [ax0, ax1, ax2, ...]
-
-──────────────────────────────────────────────────────────────────────────────
-ADVANCED GRIDS - Full Control Over Layout
-──────────────────────────────────────────────────────────────────────────────
-
-Plotter.make_grid() - Static Method for Complex Layouts:
-    fig, axes = Plotter.make_grid(
-        nrows=2, ncols=3,
-        figsize=(10, 6),
-        
-        # Column/Row Sizing
-        width_ratios=[1, 2, 1],           # Column width proportions
-        height_ratios=[1, 3],              # Row height proportions
-        
-        # Spacing Control
-        wspace=0.3,                        # Horizontal gap (0-1)
-        hspace=0.2,                        # Vertical gap (0-1)
-        left=0.1, right=0.95,              # Figure margins
-        top=0.95, bottom=0.1,
-        
-        # Per-Axis Options
-        sharex='col',                      # 'row', 'col', 'all', False
-        sharey='row',
-        
-        # Publication Options
-        panel_labels=True,                 # Add (a), (b), (c)
-        panel_label_style='parenthesis',   # 'parenthesis', 'plain', 'bold'
-        despine=True,
-    )
-
-──────────────────────────────────────────────────────────────────────────────
-GridBuilder - Class for Maximum Flexibility
-──────────────────────────────────────────────────────────────────────────────
-
-For nested/complex layouts, use the GridBuilder class:
-
-    builder = Plotter.GridBuilder(figsize=(12, 8))
-    
-    # Add a full-width row at top
-    builder.add_row(ncols=1, height_ratio=1)
-    
-    # Add 3-column row with custom width ratios
-    builder.add_row(ncols=3, height_ratio=2, width_ratios=[2, 1, 1])
-    
-    # Add 2-column row
-    builder.add_row(ncols=2, height_ratio=1.5)
-    
-    # Build the figure
-    fig, axes = builder.build()
-    # axes is a list of lists: [[ax00], [ax10, ax11, ax12], [ax20, ax21]]
-
-GridBuilder supports:
-    .add_row(ncols, height_ratio=1, width_ratios=None)  # Add horizontal row
-    .add_column(nrows, width_ratio=1, height_ratios=None)  # Add vertical column
-    .add_subplot(rows=1, cols=1)  # Add to current position (call multiple times)
-    .build(wspace=0.2, hspace=0.2, **margins)  # Finalize
-
-──────────────────────────────────────────────────────────────────────────────
-COMMON LAYOUT RECIPES
-──────────────────────────────────────────────────────────────────────────────
-
-# Recipe 1: Two-column figure with shared x-axis
-fig, axes = Plotter.make_grid(2, 1, figsize=(4, 6), height_ratios=[2, 1], 
-                               sharex='col', hspace=0.05)
-
-# Recipe 2: Main plot with colorbar column
-fig, axes = Plotter.make_grid(1, 2, figsize=(6, 4), width_ratios=[20, 1])
-ax_main, ax_cbar = axes
-
-# Recipe 3: 2x2 grid with panel labels for publication
-fig, axes = Plotter.make_grid(2, 2, figsize=(8, 8), panel_labels=True, despine=True)
-
-# Recipe 4: Asymmetric layout using GridBuilder
-builder = Plotter.GridBuilder(figsize=(12, 6))
-builder.add_row(ncols=1, height_ratio=1)     # Wide plot at top
-builder.add_row(ncols=3, height_ratio=2)     # 3 panels below
-fig, axes = builder.build(hspace=0.3)
-
-──────────────────────────────────────────────────────────────────────────────
-INSETS & OVERLAYS
-──────────────────────────────────────────────────────────────────────────────
-
-Inset Axes:
-    inset = Plotter.get_inset(
-        ax,
-        position=[0.6, 0.6, 0.35, 0.35],  # [x, y, width, height] relative to ax
-        add_box=True,                      # Semi-transparent background
-    )
-
-Twin Axes (secondary y-axis):
-    ax2 = Plotter.twin_axis(ax, which='y', label='Secondary Y', color='C1')
-    ax2.plot(x, secondary_data, color='C1')
-
-Unify Axis Limits Across Panels:
-    Plotter.unify_limits(axes, which='y')  # Same y-limits for all
-''',
-            
-            'legend': r'''
-=======
-LEGENDS
-=======
-
-Publication-Style Legend:
-    Plotter.set_legend(
-        ax,
-        style='publication',    # 'minimal', 'boxed', 'publication'
-        loc='best',
-        ncol=1,
-        frameon=True,
-        fontsize=10,
-    )
-
-Custom Legend (filter by condition):
-    Plotter.set_legend_custom(
-        ax,
-        conditions=[lambda lbl: 'exp' in lbl],  # Only labels containing 'exp'
-    )
-
-Available Styles:
-    'minimal'     - No frame, small font
-    'boxed'       - Semi-transparent frame
-    'publication' - Solid frame, Nature-style formatting
-''',
-            
-            'save': r'''
-==============
-SAVING FIGURES
-==============
-
-Save Figure:
-    Plotter.save_fig(
-        directory='./figures',
-        filename='my_plot',
-        format='pdf',           # 'pdf', 'png', 'svg', 'eps', 'tiff'
-        dpi=300,                # For rasterized formats
-        adjust=True,            # Tight bounding box
-    )
-
-Recommended Formats:
-    - PDF/EPS: Vector format for journals (scalable, small file)
-    - PNG: Rasterized for presentations (transparent background)
-    - TIFF: High-resolution for print (300+ dpi)
-    - SVG: Web/interactive (editable in Inkscape/Illustrator)
-
-Tip: Use constrained_layout=True in get_subplots() to avoid clipping.
-''',
-            
-            'grid': r'''
-=====================
-ADVANCED GRID CONTROL
-=====================
-
-For complex layouts with precise control over spacing, sizing, and alignment.
-
-──────────────────────────────────────────────────────────────────────────────
-Plotter.make_grid() - Recommended for Most Cases
-──────────────────────────────────────────────────────────────────────────────
-
-    fig, axes = Plotter.make_grid(
-        nrows=2, ncols=3,
-        figsize=(10, 6),
-        
-        # Size Ratios (list matching number of rows/cols)
-        width_ratios=[1, 2, 1],     # Columns: narrow, wide, narrow
-        height_ratios=[1, 3],        # Rows: short header, tall main
-        
-        # Spacing (0-1, fraction of average subplot size)
-        wspace=0.3,                  # Horizontal gap between columns
-        hspace=0.2,                  # Vertical gap between rows
-        
-        # Figure Margins (0-1, fraction of figure size)
-        left=0.1, right=0.95,
-        top=0.95, bottom=0.1,
-        
-        # Axis Sharing
-        sharex='col',                # 'row', 'col', 'all', or False
-        sharey='row',
-    )
-
-──────────────────────────────────────────────────────────────────────────────
-Plotter.GridBuilder - For Nested/Complex Layouts
-──────────────────────────────────────────────────────────────────────────────
-
-    builder = Plotter.GridBuilder(figsize=(12, 8))
-    
-    # Add rows with different column configurations
-    builder.add_row(ncols=1, height_ratio=1)           # Single wide panel
-    builder.add_row(ncols=3, height_ratio=2,           # 3 columns
-                    width_ratios=[2, 1, 1])            # with custom widths
-    builder.add_row(ncols=2, height_ratio=1.5)         # 2 columns
-    
-    fig, axes = builder.build(wspace=0.2, hspace=0.3)
-    # axes = [[ax00], [ax10, ax11, ax12], [ax20, ax21]]
-
-──────────────────────────────────────────────────────────────────────────────
-Example Recipes
-──────────────────────────────────────────────────────────────────────────────
-
-# Stacked panels with shared x-axis (no gap)
-fig, axes = Plotter.make_grid(3, 1, figsize=(6, 8), hspace=0.05, sharex='col')
-for ax in axes[:-1]:
-    Plotter.unset_ticks(ax, xticks=True, xlabel=True)
-
-# Main plot + colorbar
-fig, axes = Plotter.make_grid(1, 2, figsize=(7, 5), width_ratios=[20, 1])
-
-# 2x2 for publication with panels (a)-(d)
-fig, axes = Plotter.make_grid(2, 2, figsize=(8, 8), panel_labels=True)
-''',
-            
-            'style': r'''
-==================
-PUBLICATION STYLES
-==================
-
-Configure global Matplotlib style for different journals.
-
-    configure_style('nature')    # Nature, Science, Cell
-    configure_style('science')   # Science-family journals
-    configure_style('prl')       # Physical Review Letters
-    configure_style('aps')       # APS journals (PRB, PRX, etc.)
-    configure_style('default')   # Matplotlib defaults
-
-What it Sets:
-    - Font family (STIX/serif for publication)
-    - Font sizes (labels, ticks, legend)
-    - Line widths
-    - Figure DPI
-    - Axes styling
-    - Color cycle
-
-Example:
-    from QES.general_python.common.plot import configure_style, Plotter
-    
-    configure_style('nature')  # Apply once at start
-    
-    fig, ax = Plotter.get_subplots(1, 1)
-    Plotter.plot(ax, x, y)
-    Plotter.save_fig('.', 'figure1', format='pdf')
-
-Custom Adjustments:
-    After configure_style(), you can fine-tune with:
-    
-    import matplotlib.pyplot as plt
-    plt.rcParams['font.size'] = 11
-    plt.rcParams['axes.linewidth'] = 0.8
-''',
-        }
+        from .plotters.help import PLOTTER_HELP
         
         if topic is None:
-            print(help_text['overview'])
-        elif topic.lower() in help_text:
-            print(help_text[topic.lower()])
+            print(PLOTTER_HELP['overview'])
+        elif topic.lower() in PLOTTER_HELP:
+            print(PLOTTER_HELP[topic.lower()])
         else:
             print(f"Unknown topic: '{topic}'. Available: plot, axis, color, layout, grid, legend, annotate, style, save")
     
@@ -1735,7 +1313,7 @@ Custom Adjustments:
     
     @staticmethod
     def set_annotate_letter(
-        ax, 
+        ax          : plt.Axes,
         iter        : int,
         x           : float = 0,
         y           : float = 0,
@@ -1745,7 +1323,7 @@ Custom Adjustments:
         condition   = True,
         zorder      = 50,
         boxaround   = True,
-        fontweight  = 'bold',
+        fontweight  = 'normal',
         color       = 'black',
         **kwargs        
         ):
@@ -1754,7 +1332,7 @@ Custom Adjustments:
         
         Params:
         -----------
-        ax: 
+        ax: matplotlib.axes.Axes
             axis to annotate on
         iter: 
             iteration number
@@ -1774,6 +1352,8 @@ Custom Adjustments:
             zorder of the annotation
         boxaround: 
             whether to put a box around the annotation
+        fontweight: 
+            weight of the text ('bold', 'normal', etc.)
         kwargs: 
             additional arguments for annotation
             - color : color of the text
@@ -1783,6 +1363,7 @@ Custom Adjustments:
         --------
         >>> Plotter.set_annotate_letter(ax, 0, x=0.1, y=0.9, fontsize=14, addit=' Test', color='red')
         """
+        ax = Plotter.ax(ax)
         Plotter.set_annotate(ax, elem = f'({chr(97 + iter)})' + addit, x = x, y = y, color = color, fontweight = fontweight,
                 fontsize = fontsize, cond = condition, xycoords = xycoords, zorder = zorder, boxaround = boxaround, **kwargs)
     
@@ -1984,6 +1565,8 @@ Custom Adjustments:
         '''
         plot the data
         '''
+        ax  = Plotter.ax(ax)
+        
         if 'linestyle' in kwargs:
             ls = kwargs['linestyle']
             kwargs.pop('linestyle')
@@ -2043,6 +1626,7 @@ Custom Adjustments:
         Example:
             fill_between(ax, x_data, y1_data, y2_data, color='red', alpha=0.3)
         """
+        ax = Plotter.ax(ax)
         ax.fill_between(x, y1, y2, color=color, alpha=alpha, **kwargs)
     
     # ################ LOG SCALE PLOTS ################
@@ -2077,6 +1661,7 @@ Custom Adjustments:
         --------
         >>> Plotter.semilogy(ax, x, np.exp(-x), color='C0', label=r'$e^{-x}$')
         """
+        ax      = Plotter.ax(ax)
         color   = color     or kwargs.pop('c', 'black')
         ls      = ls        or kwargs.pop('linestyle', '-')
         lw      = lw        or kwargs.pop('linewidth', 1.5)
@@ -2124,6 +1709,7 @@ Custom Adjustments:
         --------
         >>> Plotter.semilogx(ax, np.logspace(-3, 3, 100), y, color='C1')
         """
+        ax = Plotter.ax(ax)
         if isinstance(color, int):
             color = colorsList[color % len(colorsList)]
         if isinstance(ls, int):
@@ -2348,15 +1934,17 @@ Custom Adjustments:
     
     @staticmethod
     def set_tickparams( ax,
-                        labelsize   =   None,
-                        left        =   True,
-                        right       =   True,
-                        top         =   True,
-                        bottom      =   True,
-                        xticks      =   None,
-                        yticks      =   None,
-                        maj_tick_l  =   6,
-                        min_tick_l  =   3,
+                        labelsize       =   None,
+                        left            =   True,
+                        right           =   True,
+                        top             =   True,
+                        bottom          =   True,
+                        xticks          =   None,
+                        yticks          =   None,
+                        xticklabels     =   None,
+                        yticklabels     =   None,
+                        maj_tick_l      =   4,
+                        min_tick_l      =   2,
                         **kwargs
                         ):
         '''
@@ -2370,255 +1958,496 @@ Custom Adjustments:
         - xticks    :   list of xticks
         - yticks    :   list of yticks
         '''
+        ax = Plotter.ax(ax)
+        
         ax.tick_params(axis='both', which='major', left=left, right=right, 
-                       top=top, bottom=bottom, labelsize=labelsize)
+                        top=top, bottom=bottom, labelsize=labelsize)
         ax.tick_params(axis="both", which='major', left=left, right=right, 
-                       top=top, bottom=bottom, direction="in",length=maj_tick_l, **kwargs)
+                        top=top, bottom=bottom, direction="in",length=maj_tick_l, **kwargs)
         ax.tick_params(axis="both", which='minor', left=left, right=right, 
-                       top=top, bottom=bottom, direction="in",length=min_tick_l, **kwargs)
+                        top=top, bottom=bottom, direction="in",length=min_tick_l, **kwargs)
 
         if xticks is not None:
             ax.set_xticks(xticks)
         if yticks is not None:
             ax.set_yticks(yticks)
+            
+        if xticklabels is not None:
+            ax.set_xticklabels(xticklabels)
+        if yticklabels is not None:
+            ax.set_yticklabels(yticklabels)
 
     @staticmethod
     def set_ax_params(
             ax,
-            which           : str           = 'both',       # which axis to update
-            label           : Union[dict, str]    = "",           # general label
-            xlabel          : Union[dict, str]    = "",           # x label - works when which is 'x' or 'both'
-            ylabel          : str           = "",           # y label - works when which is 'y' or 'both'
-            title           : str           = "",           # title of the axis
-            scale           : Union[str, dict]   = "linear",     # scale of the axis
-            xscale                          = None,         # scale of the x-axis
-            yscale                          = None,         # scale of the y-axis
-            lim             : Union[dict, tuple, None] = None,   # fallback for axis limits
-            xlim                            = None,         # specific limits for x-axis
-            ylim                            = None,         # specific limits for y-axis
-            fontsize        : int           = plt.rcParams['font.size'],
-            labelPad        : float         = 0.0,          # padding for axis labels
-            label_cond       : Union[bool, dict]   = True,
-            labelPos        : Union[dict, str, None] = None,     # label positions
-            xlabelPos       : Union[str, None]   = None,         # position of the xlabel
-            ylabelPos       : Union[str, None]   = None,         # position of the ylabel
-            tickPos         : Union[dict, str, None] = None,     # tick positions
-            labelCords      : Union[dict, str, None] = None,     # manual label coordinates
-            ticks           : Union[dict, str, None] = None,     # custom ticks
-            labels          : Union[dict, str, None] = None,     # custom tick labels
-            maj_tick_l      : float         = 2,
-            min_tick_l      : float         = 1,
-            tick_params     : Union[dict, str, None] = None,
-            title_fontsize  : int           = 14,
+            # Axis specification
+            which                   : str                                   = 'both',
+            # Labels    
+            xlabel                  : Optional[str]                         = None,
+            ylabel                  : Optional[str]                         = None,
+            title                   : Optional[str]                         = None,
+            # Label styling 
+            fontsize                : Optional[int]                         = None,
+            labelsize_title         : Optional[int]                         = None,
+            labelsize_tick          : Optional[int]                         = None,
+            labelpad                : Union[float, dict]                    = 0.0,
+            title_pad               : float                                 = 10.0,
+            # Label positions
+            xlabel_position         : Literal['top', 'bottom']              = 'bottom',
+            ylabel_position         : Literal['left', 'right']              = 'left',
+            # Axis limits and scales
+            xlim                    : Optional[tuple]                       = None,
+            ylim                    : Optional[tuple]                       = None,
+            xscale                  : Literal['linear', 'log', 'symlog']    = 'linear',
+            yscale                  : Literal['linear', 'log', 'symlog']    = 'linear',
+            # Ticks and tick labels
+            xticks                  : Optional[Union[list, np.ndarray]]     = None,
+            yticks                  : Optional[Union[list, np.ndarray]]     = None,
+            xticklabels             : Optional[list]                        = None,
+            yticklabels             : Optional[list]                        = None,
+            xtickpos                : Literal['top', 'bottom', 'both']      = None,
+            ytickpos                : Literal['left', 'right', 'both']      = None,
+            tick_length_major       : float                                 = 4.0,
+            tick_length_minor       : float                                 = 2.0,
+            tick_width              : float                                 = 0.8,
+            tick_direction          : Literal['in', 'out', 'inout']         = 'in',
+            # Minor ticks
+            show_minor_ticks        : bool                              = True,
+            minor_tick_locator      : Optional[str]                     = 'auto',  # 'auto' or 'log' for log scale
+            # Grid
+            grid                    : bool                              = False,
+            grid_axis               : Literal['both', 'x', 'y']         = 'both',
+            grid_which              : Literal['major', 'minor', 'both']  = 'major',
+            grid_style              : str                               = '--',
+            grid_color              : Optional[str]                     = None,
+            grid_alpha              : float                             = 0.3,
+            grid_linewidth          : float                             = 0.8,
+            # Spines
+            show_spines             : Union[bool, dict]                 = True,
+            spine_width             : float                             = 1.0,
+            spine_color             : str                               = 'black',
+            # Aspect ratio
+            aspect                  : Optional[Union[str, float]]       = None,
+            # Tight layout
+            tight_layout            : bool                              = False,
+            # Legend
+            legend                  : bool                              = False,
+            legend_kwargs           : Optional[dict]                    = None,
+            # Advanced options
+            invert_xaxis            : bool                              = False,
+            invert_yaxis            : bool                              = False,
+            auto_formatter          : bool                              = True,
+            # label condition
+            label_cond              : bool                              = True,
+            label_pos               : dict                              = None,
+            tick_pos                : dict                              = None,
+            **kwargs
         ):
-            """
-            Sets various axis parameters for publication-ready plots.
-
-            Parameters:
-                ax (matplotlib.axes.Axes): The axis to modify.
-                which (str): Specifies which axes to update ('x', 'y', 'both').
-                label (str): Label for the axis (fallback for `xlabel` and `ylabel`).
-                xlabel, ylabel (str): Labels for x and y axes (overrides `label`).
-                title (str): Title for the axis.
-                scale (str): Scale of the axis ('linear', 'log').
-                lim (tuple): Fallback for axis limits.
-                xlim, ylim (tuple): Specific limits for x and y axes (overrides `lim`).
-                fontsize (int): Font size for axis labels.
-                labelPad (float): Padding for axis labels.
-                label_cond (bool): Whether to show the label.
-                labelPos (dict): Label positions (e.g., {"x": "top", "y": "right"}).
-                tickPos (dict): Tick positions (e.g., {"x": "bottom", "y": "left"}).
-                labelCords (dict): Manual label coordinates (e.g., {"x": (0.5, -0.1)}).
-                ticks (dict): Custom ticks (e.g., {"x": [1, 2, 3], "y": [0.1, 0.2]}).
-                labels (dict): Custom tick labels (e.g., {"x": ["A", "B", "C"]}).
-                maj_tick_l (float): Length of major ticks.
-                min_tick_l (float): Length of minor ticks.
-                tick_params (dict): Additional tick parameters.
-                title_fontsize (int): Font size for the title.
-            """
-            # Resolve limits
-            if True:
-                # limits
-                if isinstance(lim, (tuple, list)):
-                    lim = {"x": lim, "y": lim}
-                elif not isinstance(lim, dict):
-                    lim = {}
-                if xlim is not None and isinstance(xlim, (tuple, list)):
-                    lim['x'] = xlim
-                if ylim is not None and isinstance(ylim, (tuple, list)):
-                    lim['y'] = ylim
-
-                # label positions
-                if labelPos is None:
-                    labelPos = {'x':'left', 'y':'bottom'}
-                elif isinstance(labelPos, str):
-                    labelPos = {"x": labelPos, "y": labelPos}
-                elif not isinstance(labelPos, dict):
-                    labelPos = {}
-                if xlabelPos is not None:
-                    labelPos['x'] = xlabelPos
-                if ylabelPos is not None:
-                    labelPos['y'] = ylabelPos
-
-                # tick positions
-                if tickPos is None:
-                    tickPos = {'x':'bottom', 'y':'left'}
-                elif isinstance(tickPos, str):
-                    tickPos = {"x": tickPos, "y": tickPos}
-                elif not isinstance(tickPos, dict):
-                    tickPos = {}
-                if xlabelPos is not None:
-                    tickPos['x'] = xlabelPos
-                if ylabelPos is not None:
-                    tickPos['y'] = ylabelPos
-
-                # label coordinates
-                if labelCords is None:
-                    labelCords = {}
-                elif isinstance(labelCords, str):
-                    labelCords = {"x": labelCords, "y": labelCords}
-                elif not isinstance(labelCords, dict):
-                    labelCords = {}
-                if 'x' in labelCords and isinstance(labelCords['x'], (tuple, list)):
-                    labelCords['x'] = labelCords['x']
-                if 'y' in labelCords and isinstance(labelCords['y'], (tuple, list)):
-                    labelCords['y'] = labelCords['y']
-
-                # scale
-                if scale is None:
-                    scale = {"x": "linear", "y": "linear"}
-                elif isinstance(scale, str):
-                    scale = {"x": scale, "y": scale}
-                elif not isinstance(scale, dict):
-                    scale = {}
-                if xscale is not None and isinstance(xscale, str) and xscale != "":
-                    scale['x'] = xscale
-                if yscale is not None and isinstance(yscale, str) and yscale != "":
-                    scale['y'] = yscale
-                    
-                
-                # ticks
-                if ticks is None:
-                    ticks = {}
-                elif isinstance(ticks, str):
-                    ticks = {"x": ticks, "y": ticks}
-                elif not isinstance(ticks, dict):
-                    ticks = {}
-                if 'x' in ticks and isinstance(ticks['x'], (tuple, list)):
-                    ticks['x'] = ticks['x']
-                if 'y' in ticks and isinstance(ticks['y'], (tuple, list)):
-                    ticks['y'] = ticks['y']
-
-                # label_cond 
-                if label_cond is None:
-                    label_cond = {"x": True, "y": True}
-                elif isinstance(label_cond, bool):
-                    label_cond = {"x": label_cond, "y": label_cond}
-                elif not isinstance(label_cond, dict):
-                    label_cond = {}
-                
-                # labels
-                if labels is None:
-                    labels = {}
-                elif isinstance(labels, str):
-                    labels = {"x": labels, "y": labels}
-                elif not isinstance(labels, dict):
-                    labels = {}
-                if 'x' in labels and isinstance(labels['x'], (tuple, list)):
-                    labels['x'] = labels['x']
-                if 'y' in labels and isinstance(labels['y'], (tuple, list)):
-                    labels['y'] = labels['y']
-
-                # label 
-                if label == "":
-                    label       = {"x": "", "y": ""}
-                elif label is None:
-                    label       = {"x": "", "y": ""}
-                    
-                if isinstance(label, str):
-                    label = {"x": label, "y": label}
-                elif not isinstance(label, dict):
-                    label = {}
-                
-                if xlabel is not None and isinstance(xlabel, str):
-                    if xlabel == "":
-                        label_cond["x"] = False
-                    label['x'] = xlabel
-                if ylabel is not None and isinstance(ylabel, str):
-                    if ylabel == "":
-                        label_cond["y"] = False
-                    label['y'] = ylabel
-
-            # Default tick parameters
-            default_tick_params = {
-                "length"    : maj_tick_l,
-                "width"     : 0.8,
-                "direction" : "in",
-                "labelsize" : fontsize - 2 if fontsize else 10,
+        r"""
+        Comprehensive axis configuration method for publication-quality plots.
+        
+        This method provides centralized control over all major axis properties
+        with sensible defaults and advanced options for fine-tuning. It integrates
+        with other Plotter methods for a cohesive styling experience.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            The axis object to modify.
+        which : {'both', 'x', 'y'}, default='both'
+            Specifies which axes to update. Allows independent configuration
+            of x and y axes.
+        
+        **Labels and Titles**
+        
+        xlabel, ylabel : str, optional
+            Axis labels. Set to '' to hide labels while maintaining formatting.
+        title : str, optional
+            Axis title.
+        fontsize : int, optional
+            Default font size for labels (overridable per-element).
+        labelsize_title : int, optional
+            Font size for title. If None, uses `fontsize` + 2.
+        labelsize_tick : int, optional
+            Font size for tick labels. If None, uses `fontsize` - 2.
+        labelpad : float or dict, default=0.0
+            Padding between label and axis. Can be {'x': val, 'y': val}.
+        title_pad : float, default=10.0
+            Vertical padding between title and plot area.
+        
+        **Label Positioning**
+        
+        xlabel_position : {'top', 'bottom'}, default='bottom'
+            Position of x-axis label.
+        ylabel_position : {'left', 'right'}, default='left'
+            Position of y-axis label.
+        
+        **Axis Limits and Scales**
+        
+        xlim, ylim : tuple, optional
+            Axis limits as (min, max). Use None for auto limits.
+        xscale, yscale : {'linear', 'log', 'symlog'}, default='linear'
+            Axis scale type. 'symlog' uses symmetric log scaling.
+        
+        **Tick Configuration**
+        
+        xticks, yticks : list or np.ndarray, optional
+            Explicit tick positions. Leave None for matplotlib auto-ticks.
+        xticklabels, yticklabels : list, optional
+            Custom tick labels. Must match length of ticks if provided.
+        tick_length_major : float, default=4.0
+            Length of major ticks in points.
+        tick_length_minor : float, default=2.0
+            Length of minor ticks in points.
+        tick_width : float, default=0.8
+            Width of ticks in points.
+        tick_direction : {'in', 'out', 'inout'}, default='in'
+            Direction ticks point ('in' recommended for publication).
+        show_minor_ticks : bool, default=True
+            Whether to show minor ticks.
+        minor_tick_locator : {'auto', 'log'}, default='auto'
+            How to locate minor ticks. 'log' uses LogLocator for log scales.
+        
+        **Grid Configuration**
+        
+        grid : bool, default=False
+            Enable gridlines.
+        grid_axis : {'both', 'x', 'y'}, default='both'
+            Which axes to show grid on.
+        grid_which : {'major', 'minor', 'both'}, default='major'
+            Which ticks to grid on.
+        grid_style : str, default='--'
+            Line style ('-', '--', '-.', ':').
+        grid_color : str, optional
+            Grid color. If None, uses current axes color scheme.
+        grid_alpha : float, default=0.3
+            Transparency of gridlines (0=transparent, 1=opaque).
+        grid_linewidth : float, default=0.8
+            Width of gridlines in points.
+        
+        **Spine Configuration**
+        
+        show_spines : bool or dict, default=True
+            Visibility of spines. 
+            - True: show all spines
+            - False: hide all spines
+            - dict: {'top': bool, 'bottom': bool, 'left': bool, 'right': bool}
+        spine_width : float, default=1.0
+            Width of spines in points.
+        spine_color : str, default='black'
+            Color of spines.
+        
+        **Appearance**
+        
+        aspect : str or float, optional
+            Aspect ratio ('equal', 'auto') or numeric value.
+        tight_layout : bool, default=False
+            Apply tight layout after configuration.
+        
+        **Legend**
+        
+        legend : bool, default=False
+            Whether to display legend using set_legend().
+        legend_kwargs : dict, optional
+            Arguments to pass to set_legend() if legend=True.
+        
+        **Advanced Options**
+        
+        invert_xaxis, invert_yaxis : bool, default=False
+            Invert the direction of the axes.
+        auto_formatter : bool, default=True
+            Automatically apply scientific notation formatter for large/small numbers.
+        **kwargs
+            Additional keyword arguments passed to matplotlib functions.
+        
+        Examples
+        --------
+        **Example 1: Basic publication-ready plot**
+        
+        >>> ax = plt.gca()
+        >>> Plotter.set_ax_params(
+        ...     ax,
+        ...     xlabel=r'$x$ (nm)',
+        ...     ylabel=r'Energy (eV)',
+        ...     title='Band Structure',
+        ...     xlim=(0, 10),
+        ...     ylim=(-5, 5),
+        ...     grid=True
+        ... )
+        
+        **Example 2: Log-scale with custom ticks**
+        
+        >>> Plotter.set_ax_params(
+        ...     ax,
+        ...     xlabel='Frequency (Hz)',
+        ...     ylabel='Magnitude',
+        ...     yscale='log',
+        ...     yticks=[1, 10, 100, 1000],
+        ...     yticklabels=['1', '10', '100', '1 k'],
+        ...     grid=True,
+        ...     grid_which='both',
+        ...     minor_tick_locator='log'
+        ... )
+        
+        **Example 3: Detailed styling**
+        
+        >>> Plotter.set_ax_params(
+        ...     ax,
+        ...     xlabel='Temperature (K)',
+        ...     ylabel=r'$\rho$ (Ω·cm)',
+        ...     title='Resistivity vs Temperature',
+        ...     fontsize=12,
+        ...     labelsize_title=14,
+        ...     labelsize_tick=10,
+        ...     xlim=(0, 300),
+        ...     ylim=(0, None),  # auto max
+        ...     grid=True,
+        ...     grid_style='--',
+        ...     grid_alpha=0.4,
+        ...     show_spines={'top': False, 'right': False},
+        ...     spine_width=1.5,
+        ...     tick_length_major=6,
+        ...     legend=True,
+        ...     tight_layout=True
+        ... )
+        
+        **Example 4: Custom tick labels and positions**
+        
+        >>> import numpy as np
+        >>> Plotter.set_ax_params(
+        ...     ax,
+        ...     xticks=np.linspace(0, 2*np.pi, 5),
+        ...     xticklabels=['0', 'π/2', 'π', '3π/2', '2π'],
+        ...     xlabel=r'Phase',
+        ...     ylabel=r'$\sin(\phi)$'
+        ... )
+        
+        **Example 5: Asymmetric spines (Nature style)**
+        
+        >>> Plotter.set_ax_params(
+        ...     ax,
+        ...     xlabel='Parameter',
+        ...     ylabel='Value',
+        ...     show_spines={'left': True, 'bottom': True, 'top': False, 'right': False},
+        ...     grid=False,
+        ...     tick_direction='out'
+        ... )
+        
+        Notes
+        -----
+        - Set `labelsize_*` to None to auto-scale relative to `fontsize`
+        - Grid is best used with light colors and low alpha (0.2-0.4)
+        - For log scales, minor_tick_locator='log' is recommended
+        - Use `which='x'` or `which='y'` for independent axis control
+        - Integrates with Plotter.set_legend() for unified styling
+        
+        See Also
+        --------
+        set_legend : Configure legend appearance
+        set_tickparams : Alternative tick configuration method
+        grid : Add gridlines to axis
+        """
+        ax = Plotter.ax(ax)
+        
+        if isinstance(label_cond, (bool, int)):
+            label_cond_x            = label_cond
+            label_cond_y            = label_cond
+        elif isinstance(label_cond, dict):
+            label_cond_x            = label_cond.get('x', label_cond.get('X', label_cond.get('both', True)))
+            label_cond_y            = label_cond.get('y', label_cond.get('Y', label_cond.get('both', True)))
+        else:
+            label_cond_x            = True
+            label_cond_y            = True
+        
+        # Label position dictionary
+        if label_pos is not None and isinstance(label_pos, dict):
+            xlabel_position        = label_pos.get('x', label_pos.get('X', xlabel_position))
+            ylabel_position        = label_pos.get('y', label_pos.get('Y', ylabel_position))
+        
+        # Tick positions
+        if tick_pos is not None and isinstance(tick_pos, dict):
+            xtickpos               = tick_pos.get('x', tick_pos.get('X', xtickpos))
+            ytickpos               = tick_pos.get('y', tick_pos.get('Y', ytickpos))
+            if xtickpos is not None:
+                ax.xaxis.set_ticks_position(xtickpos)
+            if ytickpos is not None:
+                ax.yaxis.set_ticks_position(ytickpos)
+        
+        # Resolve font sizes
+        if fontsize is None:
+            fontsize        = plt.rcParams.get('font.size', 10)
+        if labelsize_title is None:
+            labelsize_title = fontsize + 2
+        if labelsize_tick is None:
+            labelsize_tick  = max(fontsize - 2, 8)
+        
+        # Resolve labelpad
+        if isinstance(labelpad, (int, float)):
+            labelpad = {'x': labelpad, 'y': labelpad}
+        elif not isinstance(labelpad, dict):
+            labelpad = {'x': 0.0, 'y': 0.0}
+        
+        # ===== X-AXIS CONFIGURATION =====
+        if 'x' in which or 'both' in which:
+            # Label
+            if xlabel is not None and label_cond_x and xlabel != '':
+                ax.set_xlabel(
+                    xlabel,
+                    fontsize=fontsize,
+                    labelpad=labelpad.get('x', 0.0)
+                )
+            
+            # Label position
+            if xlabel_position in ['top', 'bottom']:
+                ax.xaxis.set_label_position(xlabel_position)
+            
+            # Limits
+            if xlim is not None:
+                ax.set_xlim(xlim)
+            
+            # Scale
+            ax.set_xscale(xscale)
+            
+            # Ticks
+            if xticks is not None:
+                ax.set_xticks(xticks)
+            if xticklabels is not None:
+                ax.set_xticklabels(xticklabels)
+            
+            # Minor ticks
+            if show_minor_ticks and xscale == 'log' and minor_tick_locator == 'auto':
+                ax.xaxis.set_minor_locator(plt.LogLocator(base=10.0, subs='all', numticks=100))
+            
+            # Inversion
+            if invert_xaxis:
+                ax.invert_xaxis()
+        
+        # ===== Y-AXIS CONFIGURATION =====
+        if 'y' in which or 'both' in which:
+            # Label
+            if ylabel is not None and label_cond_y and ylabel != '':
+                ax.set_ylabel(
+                    ylabel,
+                    fontsize=fontsize,
+                    labelpad=labelpad.get('y', 0.0)
+                )
+            
+            # Label position
+            if ylabel_position in ['left', 'right']:
+                ax.yaxis.set_label_position(ylabel_position)
+            
+            # Limits
+            if ylim is not None:
+                ax.set_ylim(ylim)
+            
+            # Scale
+            ax.set_yscale(yscale)
+            
+            # Ticks
+            if yticks is not None:
+                ax.set_yticks(yticks)
+            if yticklabels is not None:
+                ax.set_yticklabels(yticklabels)
+            
+            # Minor ticks
+            if show_minor_ticks and yscale == 'log' and minor_tick_locator == 'auto':
+                ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs='all', numticks=100))
+            
+            # Inversion
+            if invert_yaxis:
+                ax.invert_yaxis()
+        
+        # ===== TITLE CONFIGURATION =====
+        if title is not None and title != '':
+            ax.set_title(
+                title,
+                fontsize=labelsize_title,
+                pad=title_pad
+            )
+        
+        # ===== TICK CONFIGURATION =====
+        ax.tick_params(
+            axis='both',
+            which='major',
+            length=tick_length_major,
+            width=tick_width,
+            direction=tick_direction,
+            labelsize=labelsize_tick,
+            **kwargs
+        )
+        if show_minor_ticks:
+            ax.tick_params(
+                axis='both',
+                which='minor',
+                length=tick_length_minor,
+                width=tick_width,
+                direction=tick_direction
+            )
+        
+        # ===== GRID CONFIGURATION =====
+        if grid:
+            ax.grid(
+                True,
+                axis=grid_axis,
+                which=grid_which,
+                linestyle=grid_style,
+                color=grid_color or ax.grid.__defaults__[0] if hasattr(ax.grid, '__defaults__') else 'gray',
+                alpha=grid_alpha,
+                linewidth=grid_linewidth
+            )
+        else:
+            ax.grid(False)
+        
+        # ===== SPINE CONFIGURATION =====
+        if isinstance(show_spines, bool):
+            # Show or hide all spines
+            for spine in ax.spines.values():
+                spine.set_visible(show_spines)
+                if show_spines:
+                    spine.set_linewidth(spine_width)
+                    spine.set_color(spine_color)
+        else:
+            # Selective spine configuration
+            spine_config = {
+                'left': True, 'bottom': True, 'top': True, 'right': True
             }
-            if tick_params:
-                if isinstance(tick_params, dict):
-                    default_tick_params.update(tick_params)
+            spine_config.update(show_spines)
+            
+            for spine_name, visible in spine_config.items():
+                if spine_name in ax.spines:
+                    ax.spines[spine_name].set_visible(visible)
+                    if visible:
+                        ax.spines[spine_name].set_linewidth(spine_width)
+                        ax.spines[spine_name].set_color(spine_color)
+        
+        # ===== ASPECT RATIO =====
+        if aspect is not None:
+            ax.set_aspect(aspect)
+        
+        # ===== AUTO-FORMATTER =====
+        if auto_formatter:
+            try:
+                from matplotlib.ticker import FuncFormatter, LogFormatterSciNotation
+                # Apply scientific notation for very large/small numbers
+                if xscale == 'log':
+                    ax.xaxis.set_major_formatter(LogFormatterSciNotation())
+                if yscale == 'log':
+                    ax.yaxis.set_major_formatter(LogFormatterSciNotation())
+            except Exception:
+                pass  # Graceful fallback if formatter not available
+        
+        # ===== LEGEND =====
+        if legend:
+            legend_kw = legend_kwargs or {}
+            Plotter.set_legend(ax, **legend_kw)
+        
+        # ===== TIGHT LAYOUT =====
+        if tight_layout:
+            try:
+                ax.figure.tight_layout()
+            except Exception:
+                pass  # Some backends don't support tight_layout
 
-            # Update x-axis parameters
-            if "x" in which or "both" in which:
-                ax.set_xlabel(label['x'] if label_cond['x'] else "", fontsize=fontsize, labelpad=labelPad)
-                if lim and "x" in lim:
-                    ax.set_xlim(lim["x"])
-                    
-                # scale 
-                if True:
-                    if scale and "x" in scale and scale["x"] is not None:
-                        ax.set_xscale(scale["x"])
-                    if scale and "x" in scale and scale["x"] == "log":
-                        ax.xaxis.set_minor_locator(plt.LogLocator(base=10.0, subs='all', numticks=100))
-                # ax.xaxis.set_tick_params(**default_tick_params)
-                    
-                if labelPos and "x" in labelPos and labelPos["x"] in ['top', 'bottom']:
-                    ax.xaxis.set_label_position(labelPos["x"])
-                    # add small padding if top
-                    if labelPos["x"] == 'top':
-                        ax.xaxis.set_label_coords(0.5, 1.1)
-                if tickPos and "x" in tickPos:
-                    getattr(ax.xaxis, f"tick_{tickPos['x']}")()
-                if labelCords and "x" in labelCords:
-                    ax.xaxis.set_label_coords(*labelCords["x"])
-                if ticks and "x" in ticks:
-                    ax.set_xticks(ticks["x"])
-                    if labels and "x" in labels:
-                        ax.set_xticklabels(labels["x"])
-
-            # Update y-axis parameters
-            if "y" in which or "both" in which:
-                ax.set_ylabel(label['y'] if label_cond['y'] else "", fontsize=fontsize, labelpad=labelPad)
-                if lim and "y" in lim:
-                    ax.set_ylim(lim["y"])
-                    
-                # scale 
-                if scale and "y" in scale and scale["y"] is not None:
-                    ax.set_yscale(scale["y"])
-                if scale and "y" in scale and scale["y"] == "log":
-                    ax.yaxis.set_minor_locator(plt.LogLocator(base=10.0, subs='all', numticks=100))
-                # ax.yaxis.set_tick_params(**default_tick_params)
-                    
-                if labelPos and "y" in labelPos and labelPos["y"] in ['left', 'right']:
-                    ax.yaxis.set_label_position(labelPos["y"])
-                    # add small padding if right
-                    if labelPos["y"] == 'right':
-                        ax.yaxis.set_label_coords(1.1, 0.5)
-                if tickPos and "y" in tickPos:
-                    getattr(ax.yaxis, f"tick_{tickPos['y']}")()
-                if labelCords and "y" in labelCords:
-                    ax.yaxis.set_label_coords(*labelCords["y"])
-                if ticks and "y" in ticks:
-                    ax.set_yticks(ticks["y"])
-                    if labels and "y" in labels:
-                        ax.set_yticklabels(labels["y"])
-
-            # Set title
-            if title:
-                ax.set_title(title, fontsize=title_fontsize)    
-    
     @staticmethod
     def set_ax_labels(  ax,
                         fontsize    =   None,
@@ -4480,7 +4309,7 @@ class PlotterSave:
         """
         return np.append(arr, y, axis=0)
 
-##############################################################################
+##########################################################################
 
 try:
     from IPython.display import display
@@ -4559,4 +4388,6 @@ except ImportError:
             for vector in vectors:
                 MatrixPrinter.print_vector(vector)
 
-##############################################################################
+##########################################################################
+#! EOF
+##########################################################################

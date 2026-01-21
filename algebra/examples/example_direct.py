@@ -20,7 +20,7 @@ Email       : maxgrom97@gmail.com
 import numpy as np
 
 try:
-    from QES.general_python.algebra import solvers
+    from general_python.algebra import solvers
 except ImportError as e:
     print(f"Failed to import solvers module: {e}")
     raise

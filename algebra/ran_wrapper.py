@@ -6,7 +6,7 @@ allows for the use of different backends and provides a common interface for gen
 random numbers. The module also provides a helper function to generate random test
 matrices and vectors for testing solvers.
 
-File    : QES/general_python/algebra/ran_wrapper.py
+File    : general_python/algebra/ran_wrapper.py
 Version : 0.1.0
 Author  : Maksymilian Kliczkowski
 Email   : maxgrom97@gmail.com

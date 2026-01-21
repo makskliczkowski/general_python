@@ -34,9 +34,9 @@ from    typing import Optional
 try:
     from ..algebra.utils    import DEFAULT_NP_FLOAT_TYPE, Array
     from ..algebra.utils    import get_backend, maybe_jit, is_traced_jax, DEFAULT_NP_INT_TYPE, JAX_AVAILABLE, BACKEND_REPR, BACKEND_DEF_SPIN
-    from ..common.tests     import GeneralAlgebraicTest
+    from ..common.testing   import GeneralAlgebraicTest
 except ImportError:
-    raise ImportError("QES.general_python.common.binary module requires QES.general_python.common.algebra.utils and QES.general_python.common.tests modules.")
+    raise ImportError("general_python.common.binary module requires general_python.common.algebra.utils and general_python.common.testing modules.")
 
 ####################################################################################################
 
@@ -50,7 +50,7 @@ try:
     from ..common.embedded  import bit_extract      as extract
     from ..common.embedded  import binary_search    as bin_search
 except ImportError:
-    raise ImportError("QES.general_python.common.binary module requires QES.general_python.common.embedded.bit_extract and binary_search modules.")
+    raise ImportError("general_python.common.binary module requires general_python.common.embedded.bit_extract and binary_search modules.")
 
 ####################################################################################################
 #! Global functions

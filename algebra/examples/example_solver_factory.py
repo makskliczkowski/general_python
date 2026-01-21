@@ -16,12 +16,12 @@ The factory supports multiple input formats:
 import numpy as np
 from enum import Enum
 try:
-    from QES.general_python.algebra.solvers import (
+    from general_python.algebra.solvers import (
         choose_solver, SolverType,
         CgSolver, MinresSolverScipy, DirectSolver
     )
 except ImportError:
-    raise ImportError("QES package is required to run this example.")
+    raise ImportError("general_python package is required to run this example.")
 
 # ----------------------------------------------------------------------------------------
 #! SolverForm Enum

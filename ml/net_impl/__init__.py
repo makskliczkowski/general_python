@@ -8,20 +8,22 @@ importing JAX/Flax until needed.
 import importlib
 
 _LAZY_MODULES = {
-    "activation_functions"  : "QES.general_python.ml.net_impl.activation_functions",
-    "interface_net_flax"    : "QES.general_python.ml.net_impl.interface_net_flax",
-    "net_general"           : "QES.general_python.ml.net_impl.net_general",
-    "net_simple"            : "QES.general_python.ml.net_impl.net_simple",
-    "networks"              : "QES.general_python.ml.net_impl.networks",
-    "utils"                 : "QES.general_python.ml.net_impl.utils",
+    "activation_functions"  : "general_python.ml.net_impl.activation_functions",
+    "interface_net_flax"    : "general_python.ml.net_impl.interface_net_flax",
+    "net_general"           : "general_python.ml.net_impl.net_general",
+    "net_simple"            : "general_python.ml.net_impl.net_simple",
+    "networks"              : "general_python.ml.net_impl.networks",
+    "utils"                 : "general_python.ml.net_impl.utils",
 }
 
 _LAZY_ATTRS = {
-    "RBM"                   : "QES.general_python.ml.net_impl.networks.net_rbm",
-    "PairProduct"           : "QES.general_python.ml.net_impl.networks.net_pp",
-    "CNN"                   : "QES.general_python.ml.net_impl.networks.net_cnn",
-    "ResNet"                : "QES.general_python.ml.net_impl.networks.net_res",
-    "ComplexAR"             : "QES.general_python.ml.net_impl.networks.net_autoregressive",
+    "RBM"                   : "general_python.ml.net_impl.networks.net_rbm",
+    "PairProduct"           : "general_python.ml.net_impl.networks.net_pp",
+    "CNN"                   : "general_python.ml.net_impl.networks.net_cnn",
+    "ResNet"                : "general_python.ml.net_impl.networks.net_res",
+    "ComplexAR"             : "general_python.ml.net_impl.networks.net_autoregressive",
+    "GCCNN"                 : "general_python.ml.net_impl.networks.net_gcnn",
+    "choose_network"        : "general_python.ml.net_impl.choose_network",
 }
 
 def __getattr__(name):

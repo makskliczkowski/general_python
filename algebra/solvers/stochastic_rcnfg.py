@@ -237,6 +237,15 @@ if JAX_AVAILABLE:
     def gradient_jax(derivatives_c: jnp.ndarray, loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
         """F = (1/N) * O^dag @ E_c"""
         return jnp.matmul(derivatives_c.T.conj(), loss_c) / n_samples
+    
+    # @jax.jit
+    def gradient_jax_batched(batched_jacobian, loss_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
+        """
+        F = (1/N) * O^dag @ E_c using BatchedJacobian.
+        O_c = J - 1 m^T (conceptually).
+        F = <O_c^* E_c> = 1/N * sum(O^* * E_c).
+        """
+        return batched_jacobian.compute_weighted_sum(loss_c.conj()).conj() / n_samples
 
     # @jax.jit
     def covariance_jax(derivatives_c: jnp.ndarray, n_samples: int) -> jnp.ndarray:
@@ -253,12 +262,84 @@ if JAX_AVAILABLE:
     
     # -------------------------------------------------------
     
+    def get_matvec_batched(mat_O, mode, n_samples):
+        """
+        Constructs a matrix-vector product function for BatchedJacobian.
+        
+        Handles centering corrections implicitly:
+        Standard: S v = (1/N) (O - m)^dag (O - m) v
+        MinSR:    T v = (1/N) (O - m) (O - m)^dag v
+        """
+        
+        # Ensure mean is available
+        mean_val = getattr(mat_O, "mean_val", None)
+        if mean_val is None:
+            mean_val = mat_O.mean(axis=0)
+            
+        if mode == 'minsr':
+            # T = (1/N) (J - m) (J - m)^dag
+            # v in Sample space (N_samples)
+            def _matvec(v, sigma):
+                # 1. Apply (J - m)^dag v = J^dag v - m^* (1^T v)
+                sum_v           = jnp.sum(v)
+                J_dag_v         = mat_O.rmv(v)
+                inter           = J_dag_v - jnp.conj(mean_val) * sum_v
+                
+                # 2. Apply (J - m) inter = J inter - m (1 . inter) (Wait, 1.inter is dot?)
+                J_inter         = mat_O.mv(inter)
+                m_dot_inter     = jnp.sum(mean_val * inter)
+                res             = J_inter - m_dot_inter
+                
+                return res / n_samples + sigma * v
+        else:
+            # S = (1/N) (J - m)^dag (J - m)
+            # v in Parameter space
+            def _matvec(v, sigma):
+                # 1. Apply O_c v = J v - 1 (m . v)
+                m_dot_v         = jnp.sum(mean_val * v)
+                J_v             = mat_O.mv(v)
+                inter           = J_v - m_dot_v # Broadcast subtraction
+                
+                # 2. Apply O_c^dag inter = J^dag inter - m^* sum(inter)
+                sum_inter       = jnp.sum(inter)
+                J_dag_inter     = mat_O.rmv(inter)
+                res             = J_dag_inter - jnp.conj(mean_val) * sum_inter
+                
+                return res / n_samples + sigma * v
+                
+        return _matvec
+
+    def get_matvec_dense(mat_O, mode, n_samples):
+        """
+        Constructs a matrix-vector product function for dense matrices.
+        """
+        if mode == 'minsr':
+             def _matvec(v, sigma):
+                 inter = jnp.matmul(mat_O.T.conj(), v)
+                 res   = jnp.matmul(mat_O, inter)
+                 return res / n_samples + sigma * v
+        else:
+             def _matvec(v, sigma):
+                 inter = jnp.matmul(mat_O, v)
+                 res   = jnp.matmul(mat_O.T.conj(), inter)
+                 return res / n_samples + sigma * v
+        return _matvec
+
     @jax.jit
     def solve_jax_prepare(loss: jnp.ndarray, var_deriv: jnp.ndarray):
         """Standard preprocessing."""
         n_samples       = loss.shape[0]
         loss_m          = jnp.mean(loss, axis=0)
         loss_c          = loss_centered_jax(loss, loss_m)
+        
+        if hasattr(var_deriv, "compute_weighted_sum"):
+            # BatchedJacobian
+            full_size           = var_deriv._n_params
+            n_samples           = var_deriv._n_samples
+            var_deriv_m         = var_deriv.mean(axis=0)
+            var_deriv.mean_val  = var_deriv_m
+            var_deriv_c         = var_deriv # Treat the object as the centered derivative carrier
+            return loss_c, var_deriv_c, var_deriv_m, n_samples, full_size
 
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
@@ -275,6 +356,15 @@ if JAX_AVAILABLE:
         
         # Use the modified loss calculator
         loss_c          = loss_centered_jax_modified_ratios(loss, loss_m, betas, r_el, r_le)
+        
+        if hasattr(var_deriv, "compute_weighted_sum"):
+            # BatchedJacobian
+            full_size           = var_deriv._n_params
+            n_samples           = var_deriv._n_samples
+            var_deriv_m         = var_deriv.mean(axis=0)
+            var_deriv.mean_val  = var_deriv_m
+            var_deriv_c         = var_deriv
+            return loss_c, var_deriv_c, var_deriv_m, n_samples, full_size
 
         full_size       = var_deriv.shape[1]
         var_deriv_m     = jnp.mean(var_deriv, axis=0)
@@ -342,6 +432,22 @@ if True:
     def covariance_np_minsr(derivatives_c, num_samples):
         # T = O O^dag = (N_s, N_p) @ (N_p, N_s)
         return np.matmul(derivatives_c, derivatives_c.conj().T) / num_samples
+
+    def get_matvec_dense_np(mat_O, mode, n_samples):
+        """
+        Constructs a matrix-vector product function for dense matrices (NumPy).
+        """
+        if mode == 'minsr':
+             def _matvec(v, sigma):
+                 inter = np.matmul(mat_O.conj().T, v)
+                 res   = np.matmul(mat_O, inter)
+                 return res / n_samples + sigma * v
+        else:
+             def _matvec(v, sigma):
+                 inter = np.matmul(mat_O, v)
+                 res   = np.matmul(mat_O.conj().T, inter)
+                 return res / n_samples + sigma * v
+        return _matvec
 
     @numba.njit
     def solve_numpy_prepare(loss, var_deriv):

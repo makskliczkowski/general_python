@@ -1,5 +1,5 @@
 '''
-file    : QES/general_python/physics/entropy.py
+file    : general_python/physics/entropy.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-05-01

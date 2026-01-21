@@ -11,23 +11,25 @@ License         : MIT
 ---------------------------------
 """
 
-# Import main ML modules
-from . import networks
-from . import schedulers
-from . import __general__
-from . import __loss__
-
-# Lazy import aliases for common submodules
 import importlib
 
+# Import main ML modules
+try:
+    from . import networks
+    from . import schedulers
+except ImportError as e:
+    raise Exception(f"Could not import {e}")
+
+# Lazy import aliases for common submodules
+
 _LAZY_MODULES = {
-    'activation_functions'      : 'QES.general_python.ml.net_impl.activation_functions',
-    'interface_net_flax'        : 'QES.general_python.ml.net_impl.interface_net_flax',
-    'net_general'               : 'QES.general_python.ml.net_impl.net_general',
-    'net_simple'                : 'QES.general_python.ml.net_impl.net_simple',
-    'networks'                  : 'QES.general_python.ml.networks',
-    'schedulers'                : 'QES.general_python.ml.schedulers',
-    'training_phases'           : 'QES.general_python.ml.training_phases',
+    'activation_functions'      : 'general_python.ml.net_impl.activation_functions',
+    'interface_net_flax'        : 'general_python.ml.net_impl.interface_net_flax',
+    'net_general'               : 'general_python.ml.net_impl.net_general',
+    'net_simple'                : 'general_python.ml.net_impl.net_simple',
+    'networks'                  : 'general_python.ml.networks',
+    'schedulers'                : 'general_python.ml.schedulers',
+    'training_phases'           : 'general_python.ml.training_phases',
     # Add more aliases as needed
 }
 
@@ -53,9 +55,7 @@ from . import net_impl
 # Define what's available when importing with "from general_python.ml import *"
 __all__ = [
     'networks',
-    'schedulers', 
-    '__general__',
-    '__loss__',
+    'schedulers',
     'net_impl'
 ]
 

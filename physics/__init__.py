@@ -69,7 +69,7 @@ Examples:
 >>> smooth_data = statistical.moving_average(noisy_data, window_size=10)
 >>> ldos_vals   = statistical.ldos(energies, overlaps)
 
-File    : QES/general_python/physics/__init__.py
+File    : general_python/physics/__init__.py
 Version : 0.1.0
 Author  : Maksymilian Kliczkowski
 Email   : maksymilian.kliczkowski@pwr.edu.pl

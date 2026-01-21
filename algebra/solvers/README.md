@@ -239,7 +239,7 @@ where $\Sigma^+$ has reciprocal of non-zero singular values.
 ### Example 1: CG for SPD System
 
 ```python
-from QES.general_python.algebra.solvers import CgSolver
+from general_python.algebra.solvers import CgSolver
 import numpy as np
 
 # Create SPD matrix
@@ -264,8 +264,8 @@ print(f"Residual: {result.residual_norm}")
 ### Example 2: MINRES with Preconditioner
 
 ```python
-from QES.general_python.algebra.solvers import MinresSolver
-from QES.general_python.algebra.preconditioners import JacobiPreconditioner
+from general_python.algebra.solvers import MinresSolver
+from general_python.algebra.preconditioners import JacobiPreconditioner
 import numpy as np
 
 # Create symmetric indefinite matrix
@@ -287,7 +287,7 @@ result  = solver.solve(b, preconditioner=precond)
 ### Example 2b: SciPy MINRES via the solver factory
 
 ```python
-from QES.general_python.algebra.solvers import choose_solver, SolverType
+from general_python.algebra.solvers import choose_solver, SolverType
 import numpy as np
 
 # Symmetric (possibly indefinite) system
@@ -304,7 +304,7 @@ print(res.converged, res.iterations)
 ### Example 3: Matrix-Free CG
 
 ```python
-from QES.general_python.algebra.solvers import CgSolver
+from general_python.algebra.solvers import CgSolver
 import numpy as np
 
 # Define matrix-vector product (e.g., for Laplacian)
@@ -328,7 +328,7 @@ result = solver.solve(b)
 ### Example 4: Fisher Matrix (Gram Form)
 
 ```python
-from QES.general_python.algebra.solvers import CgSolver
+from general_python.algebra.solvers import CgSolver
 import numpy as np
 
 # Fisher matrix S = delta O\dag delta O
@@ -349,7 +349,7 @@ result = solver.solve(b)
 ### Example 5: Singular System with MINRES-QLP
 
 ```python
-from QES.general_python.algebra.solvers import MinresQLPSolver
+from general_python.algebra.solvers import MinresQLPSolver
 import numpy as np
 
 # Create singular matrix
@@ -370,7 +370,7 @@ print(f"Convergence flag: {result.converged}")
 ### Example 6: JAX Backend with JIT
 
 ```python
-from QES.general_python.algebra.solvers import CgSolver
+from general_python.algebra.solvers import CgSolver
 import jax.numpy as jnp
 import jax
 
@@ -407,14 +407,14 @@ where $M \approx A$ but $M^{-1}r$ is cheap to compute.
 #### Identity (No Preconditioning)
 
 ```python
-from QES.general_python.algebra.preconditioners import IdentityPreconditioner
+from general_python.algebra.preconditioners import IdentityPreconditioner
 precond = IdentityPreconditioner()
 ```
 
 #### Jacobi (Diagonal Scaling)
 
 ```python
-from QES.general_python.algebra.preconditioners import JacobiPreconditioner
+from general_python.algebra.preconditioners import JacobiPreconditioner
 precond = JacobiPreconditioner()
 precond.set_a(A)  # M = diag(A)
 ```
@@ -422,7 +422,7 @@ precond.set_a(A)  # M = diag(A)
 #### Incomplete Cholesky
 
 ```python
-from QES.general_python.algebra.preconditioners import IncompleteCholeskyPreconditioner
+from general_python.algebra.preconditioners import IncompleteCholeskyPreconditioner
 precond = IncompleteCholeskyPreconditioner()
 precond.set_a(A)  # M ≈ LL^T (incomplete)
 ```

@@ -11,7 +11,7 @@ Functions:
 - Fitter
 - FitterParams
 
-File    : QES/general_python/maths/math_utils.py
+File    : general_python/maths/math_utils.py
 Version : 0.1.0
 Author  : Maksymilian Kliczkowski
 License : MIT

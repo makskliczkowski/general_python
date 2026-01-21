@@ -5,7 +5,7 @@ This module provides convenient wrappers for Green's function calculations,
 delegating to the unified spectral_backend.py for all implementations.
 
 -------------------------------------------------------------------------------
-File        : Python/QES/general_python/physics/spectral/greens_function.py
+File        : Python/general_python/physics/spectral/greens_function.py
 Author      : Maksymilian Kliczkowski
 Email       : maksymilian.kliczkowski@pwr.edu.pl
 -------------------------------------------------------------------------------

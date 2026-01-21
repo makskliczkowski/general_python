@@ -17,8 +17,8 @@ A good preconditioner M satisfies:
 """
 
 import numpy as np
-from QES.general_python.algebra import solvers
-from QES.general_python.algebra.preconditioners import (
+from general_python.algebra import solvers
+from general_python.algebra.preconditioners import (
     choose_precond, JacobiPreconditioner, CholeskyPreconditioner,
     SSORPreconditioner
 )
@@ -376,8 +376,7 @@ if __name__ == "__main__":
     example_no_preconditioner()
     example_jacobi_preconditioner()
     example_cholesky_preconditioner()
-    # example_ssor_preconditioner()         # TODO: SSOR needs refactoring to use parent's precomputed_data pattern
-    # example_preconditioner_comparison()   # TODO: Includes SSOR
+    example_preconditioner_comparison()
     example_gram_form_with_preconditioner()
     example_factory_usage()
     

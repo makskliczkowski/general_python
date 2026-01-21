@@ -1,5 +1,5 @@
 """
-QES/general_python/physics/response/unified_response.py
+general_python/physics/response/unified_response.py
 
 Unified entry point for response function calculations.
 
@@ -37,7 +37,7 @@ try:
 except ImportError:
     raise ImportError(
         "Failed to import spectral_backend. "
-        "Ensure QES.general_python.algebra is properly installed."
+        "Ensure general_python.algebra is properly installed."
     )
 
 try:
@@ -45,7 +45,7 @@ try:
 except ImportError:
     raise ImportError(
         "Failed to import susceptibility module. "
-        "Ensure QES.general_python.physics.response is properly installed."
+        "Ensure general_python.physics.response is properly installed."
     )
 
 # =============================================================================

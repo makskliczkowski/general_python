@@ -10,7 +10,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
 
 try:
-    from QES.general_python.algebra.eigen import (
+    from general_python.algebra.eigen import (
         full_diagonalization,
         LanczosEigensolver,
         BlockLanczosEigensolver,
@@ -43,7 +43,7 @@ print(f"   Smallest 5: {result_exact.eigenvalues[:5]}")
 
 # Test 2: Lanczos
 print("\n2. Lanczos Method:")
-solver_lanczos = LanczosEigensolver(k=k, which='smallest', max_iter=100)
+solver_lanczos = LanczosEigensolver(k=k, which='smallest', maxiter=100)
 result_lanczos = solver_lanczos.solve(A=A)
 print(f"   v {k} eigenvalues computed")
 print(f"   Eigenvalues: {result_lanczos.eigenvalues}")

@@ -1,7 +1,7 @@
 # Solver Examples
 
 This directory contains practical examples showing how to use the linear algebra solvers.
-Location: `QES/general_python/algebra/examples/`
+Location: `general_python/algebra/examples/`
 
 ## Available Examples
 

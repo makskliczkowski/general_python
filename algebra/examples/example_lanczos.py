@@ -25,7 +25,7 @@ import os
 # Add parent directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 
-from QES.general_python.algebra.eigen import LanczosEigensolver, LanczosEigensolverScipy
+from general_python.algebra.eigen import LanczosEigensolver, LanczosEigensolverScipy
 
 
 def create_test_hamiltonian(n, kind='harmonic'):

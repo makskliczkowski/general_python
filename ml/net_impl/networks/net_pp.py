@@ -20,11 +20,11 @@ Performance & Precision:
 - **Efficient Gathering**: 
     Uses vectorized indexing to construct the $X$ matrix without explicit loops.
 - **Algebraic Utilities**:
-    Uses shared `Pfaffian` implementation from `QES.general_python.algebra.utilities`.
+    Uses shared `Pfaffian` implementation from `general_python.algebra.utilities`.
 
 Usage
 -----
-    from QES.general_python.ml.networks import choose_network
+    from general_python.ml.networks import choose_network
     
     # Pure Pair Product
     net = choose_network('pp', input_shape=(64,), use_rbm=False)
@@ -33,7 +33,7 @@ Usage
     net = choose_network('pp', input_shape=(64,), use_rbm=True, alpha=2.0)
 
 ----------------------------------------------------------
-File            : QES.general_python.ml.net_impl.networks.net_pp
+File            : general_python.ml.net_impl.networks.net_pp
 Author          : Maksymilian Kliczkowski
 Email           : maxgrom97@gmail.com
 Date            : 2025-11-01
@@ -61,7 +61,7 @@ try:
         Pfaffian = None
         
 except ImportError as e:
-    raise ImportError("QES core modules required.") from e
+    raise ImportError("general_python core modules required.") from e
 
 # ----------------------------------------------------------------------
 # Logic for Log-Pfaffian

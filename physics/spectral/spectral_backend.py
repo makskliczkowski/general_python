@@ -1,5 +1,5 @@
 """
-QES/general_python/algebra/spectral_backend.py
+general_python/algebra/spectral_backend.py
 
 Unified spectral function backend for computing spectral properties
 of quantum systems from eigenvalues, eigenvectors, or Lanczos coefficients.

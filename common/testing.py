@@ -1,5 +1,5 @@
 '''
-file: general_python/common/tests.py
+file: general_python/common/testing.py
 Contains an abstract class for testing the common functions in the general_python/common module.
 '''
 
@@ -141,4 +141,3 @@ class GeneralAlgebraicTest(GeneralTests):
             self.backend = backend
 
     # ---------------------------------------------------------------------------------------------
-    

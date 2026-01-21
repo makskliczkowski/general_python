@@ -12,7 +12,7 @@ It supports various region types including:
 - Topological sectors (Kitaev-Preskill, Levin-Wen)
 
 -------------------------------------------------------------------------------
-File    : QES/general_python/lattices/tools/region_handler.py
+File    : general_python/lattices/tools/region_handler.py
 Author  : Maksymilian Kliczkowski
 Date    : 2025-12-30
 -------------------------------------------------------------------------------
@@ -21,7 +21,7 @@ Date    : 2025-12-30
 import  numpy   as np
 from    typing  import List, Optional, Union, Dict, Any, TYPE_CHECKING
 if TYPE_CHECKING:
-    from QES.general_python.lattices.lattice import Lattice
+    from general_python.lattices.lattice import Lattice
 
 class LatticeRegionHandler:
     r"""

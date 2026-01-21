@@ -19,7 +19,7 @@ Common Use Cases:
 """
 
 import numpy as np
-from QES.general_python.algebra import solvers
+from general_python.algebra import solvers
 
 def example_basic_matvec():
     """Basic matrix-free solve using matvec function."""

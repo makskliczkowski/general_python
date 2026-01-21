@@ -2,7 +2,7 @@
 Generic graph lattice implementation.
 
 Provides a lightweight :class:`GraphLattice` that builds on the base
-:class:`~QES.general_python.lattices.lattice.Lattice` using a user-specified
+:class:`~general_python.lattices.lattice.Lattice` using a user-specified
 adjacency matrix and optional geometric embedding.  This allows leveraging the
 Hilbert-space symmetry machinery on irregular graphs while keeping the public
 API consistent with regular lattices.

@@ -1,5 +1,5 @@
 '''
-file        : QES/Algebra/Linalg/pfaffian.py
+file        : general_python/Algebra/Linalg/pfaffian.py
 author      : Maksymilian Kliczkowski
 email       : maksymilian.kliczkowski@pwr.edu.pl
 date        : 2025-04-29

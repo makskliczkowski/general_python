@@ -1,5 +1,5 @@
 """
-QES.general_python.ml.net_impl.networks.net_resnet
+general_python.ml.net_impl.networks.net_resnet
 ==================================================
 
 Deep Complex-Valued Residual Network (ResNet) for Quantum States.
@@ -10,7 +10,7 @@ and complex-valued weights to capture non-trivial sign structures.
 
 Usage
 -----
-    from QES.general_python.ml.networks import choose_network
+    from general_python.ml.networks import choose_network
     
     # Define parameters for a ResNet on a 64-site lattice
     resnet_params = {
@@ -41,7 +41,7 @@ try:
     from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
     from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
-    raise ImportError("Required modules for ResNet not found. Ensure QES.general_python.ml and QES.general_python.algebra are accessible.") from e
+    raise ImportError("Required modules for ResNet not found. Ensure general_python.ml and general_python.algebra are accessible.") from e
 
 if JAX_AVAILABLE:
     import jax

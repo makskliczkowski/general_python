@@ -15,9 +15,9 @@ License             : MIT
 ----------------------------------------------------------------
 '''
 
-from    typing import Optional, Literal, Tuple, Dict, Any
+from    typing      import List, Optional, Literal, Tuple, Dict, Any
 from    dataclasses import dataclass, field
-import  numpy as np
+import  numpy       as np
 
 # ==============================================================================
 # GENERAL PLOT STYLING
@@ -25,7 +25,7 @@ import  numpy as np
 
 @dataclass
 class PlotStyle:
-    """
+    r"""
     General styling configuration for plots.
     
     Attributes
@@ -52,37 +52,48 @@ class PlotStyle:
         Edge color for markers
     edgewidth : float
         Edge width for markers
+    grid_alpha : float
+        Grid line transparency
+    grid_linestyle : str
+        Grid line style
+    spine_width : float
+        Axis spine line width
+    figsize_per_panel : Tuple[float, float]
+        (width, height) for each subplot panel
     """
     # Color mapping
-    cmap                : str               = 'viridis'
-    vmin                : Optional[float]   = None
-    vmax                : Optional[float]   = None
+    cmap                : str                                       = 'viridis'
+    vmin                : Optional[float]                           = None
+    vmax                : Optional[float]                           = None
     vmin_strategy       : Literal['auto', 'percentile', 'absolute'] = 'auto'
     vmax_strategy       : Literal['auto', 'percentile', 'absolute'] = 'auto'
-    percentile_low      : float             = 2.0
-    percentile_high     : float             = 98.0
+    percentile_low      : float                                     = 2.0
+    percentile_high     : float                                     = 98.0
     
     # Font sizes
-    fontsize_label      : int               = 10
-    fontsize_tick       : int               = 8
-    fontsize_title      : int               = 12
-    fontsize_legend     : int               = 9
-    fontsize_annotation : int               = 8
-    fontsize_colorbar   : int               = 9
+    fontsize_label      : int                                       = 10
+    fontsize_tick       : int                                       = 8
+    fontsize_title      : int                                       = 12
+    fontsize_legend     : int                                       = 9
+    fontsize_annotation : int                                       = 8
+    fontsize_colorbar   : int                                       = 9
     
     # Line and marker styles
-    marker              : str               = 'o'
-    markersize          : float             = 5.0
-    linewidth           : float             = 1.5
-    linestyle           : str               = '-'
-    alpha               : float             = 0.8
-    edgecolor           : Optional[str]     = None
-    edgewidth           : float             = 0.5
+    marker              : str                                       = 'o'
+    markersize          : float                                     = 5.0
+    linewidth           : float                                     = 1.5
+    linestyle           : str                                       = '-'
+    alpha               : float                                     = 0.8
+    edgecolor           : Optional[str]                             = None
+    edgewidth           : float                                     = 0.5
     
     # Grid and axes
-    grid_alpha          : float             = 0.3
-    grid_linestyle      : str               = '--'
-    spine_width         : float             = 1.0
+    grid_alpha          : float                                     = 0.3
+    grid_linestyle      : str                                       = '--'
+    spine_width         : float                                     = 1.0
+    
+    # Figure size per panel
+    figsize_per_panel   : Tuple[float, float]                       = (4.0, 3.5)
     
     def to_scatter_kwargs(self) -> Dict[str, Any]:
         """Return kwargs dict for ax.scatter()."""
@@ -371,38 +382,145 @@ class FigureConfig:
         Draw box around panel labels
     """
     # Subplot sizing
-    figsize_per_panel   : Tuple[float, float] = (4.0, 3.5)
-    max_cols            : int               = 3
+    figsize_per_panel       : Tuple[float, float]   = (4.0, 3.5)
+    max_cols                : int                   = 3
     
     # Axis sharing
-    sharex              : bool              = True
-    sharey              : bool              = True
+    sharex                  : bool                  = True
+    sharey                  : bool                  = True
     
     # Layout engines
-    constrained_layout  : bool              = True
-    tight_layout        : bool              = False
+    constrained_layout      : bool                  = True
+    tight_layout            : bool                  = False
     
     # Spacing
-    wspace              : float             = 0.3
-    hspace              : float             = 0.3
+    wspace                  : float                 = 0.3
+    hspace                  : float                 = 0.3
     
     # Colorbar
-    colorbar_position   : list              = field(default_factory=lambda: [0.92, 0.15, 0.02, 0.7])
-    colorbar_orientation: str               = 'vertical'
-    colorbar_label_pad  : float             = 10.0
+    colorbar_position       : List[float]           = field(default_factory=lambda: [0.92, 0.15, 0.02, 0.7])
+    colorbar_orientation    : str                   = 'vertical'
+    colorbar_label_pad      : float                 = 10.0
     
     # Titles and labels
-    suptitle_fontsize   : int               = 14
-    panel_label_position: Tuple[float, float] = (0.05, 0.9)
-    panel_label_box     : bool              = False
-    panel_label_color   : str               = 'black'
+    suptitle_fontsize       : int                   = 14
+    panel_label_position    : Tuple[float, float]   = (0.05, 0.9)
+    panel_label_box         : bool                  = False
+    panel_label_color       : str                   = 'black'
     
     def get_colorbar_kwargs(self) -> Dict[str, Any]:
         """Get kwargs for colorbar creation."""
         return {
-            'orientation': self.colorbar_orientation,
-            'pad': self.colorbar_label_pad,
+            'orientation'   : self.colorbar_orientation,
+            'pad'           : self.colorbar_label_pad,
         }
+        
+    # -----------------------------------------------------------------------------
+    #! Static methods for figure/axes setup
+    # -----------------------------------------------------------------------------
+    
+    @staticmethod
+    def create_subplot_grid(
+        n_panels, 
+        max_cols            : int = 3, 
+        figsize_per_panel   : Tuple[float, float] = (6, 5), 
+        reshape             : bool  = True,
+        **kwargs
+    ) -> Tuple:
+        """
+        Create a subplot grid with proper axis handling.
+        
+        Parameters:
+        -----------
+        n_panels (int):
+            Total number of panels to create.
+        max_cols (int):
+            Maximum number of columns in the grid.
+        figsize_per_panel (tuple):
+            Figure size per panel (width, height).
+        
+        Returns:
+        --------
+        fig, axes, n_rows, n_cols
+        """
+        try:
+            from QES.general_python.common.plot import Plotter
+        except ImportError as e:
+            raise ImportError("Required QES modules not found. Please ensure QES is installed and accessible.") from e
+        
+        n_cols      = min(max_cols, n_panels) if n_panels > 0 else 1
+        n_rows      = (n_panels + n_cols - 1) // n_cols if n_panels > 0 else 1
+        figsize     = (figsize_per_panel[0]*n_cols, figsize_per_panel[1]*n_rows)
+        fig, axes   = Plotter.get_subplots(n_rows, n_cols, figsize=figsize, **kwargs)
+        
+        if n_rows > 1 and n_cols > 1:
+            axes    = list(np.array(axes).reshape((n_rows, n_cols)))
+        elif not isinstance(axes, (list, np.ndarray)):
+            axes    = [axes]
+            
+        return fig, np.array(axes), n_rows, n_cols
+        
+    @staticmethod
+    def setup_figure_grid(
+        n_rows          : int,
+        n_cols          : int,
+        style           : PlotStyle,
+        *,
+        fig             = None,
+        axes            = None,
+        reshape         : bool = True,
+        **subplot_kwargs
+    ) -> Tuple:
+        """
+        Setup or validate figure and axes grid.
+        
+        If fig and axes are provided, validates their shape.
+        Otherwise, creates new figure with specified grid.
+        
+        Parameters
+        ----------
+        n_rows, n_cols : int
+            Grid dimensions
+        style : PlotStyle
+            Styling configuration
+        fig, axes : optional
+            Existing figure and axes to validate
+        **subplot_kwargs
+            Additional arguments for subplot creation
+            
+        Returns
+        -------
+        fig, axes_grid : Figure and reshaped axes array
+        """
+        if fig is not None and axes is not None:
+            # Validate existing axes
+            axes_array      = np.atleast_1d(np.asarray(axes))
+            expected_size   = n_rows * n_cols
+            
+            if axes_array.size != expected_size:
+                raise ValueError(
+                    f"Provided axes has {axes_array.size} elements, "
+                    f"but expected {expected_size} ({n_rows}x{n_cols})"
+                )
+            
+            if reshape:
+                axes_grid = axes_array.reshape((n_rows, n_cols))
+            else:
+                axes_grid = axes_array
+            return fig, axes_grid, n_rows, n_cols
+        
+        # Create new figure
+        fig, axes, _, _ = FigureConfig.create_subplot_grid(
+                            n_panels            =   n_rows * n_cols,
+                            max_cols            =   n_cols,
+                            figsize_per_panel   =   style.figsize_per_panel,
+                            **subplot_kwargs
+                        )
+        if reshape:
+            axes_grid = np.array(axes).reshape((n_rows, n_cols))
+        else:
+            axes_grid = np.array(axes)
+        return fig, axes_grid, n_rows, n_cols
 
 # ==============================================================================
 # PRESET CONFIGURATIONS
@@ -415,57 +533,57 @@ class StylePresets:
     def publication() -> PlotStyle:
         """High-quality publication-ready style."""
         return PlotStyle(
-            fontsize_label  =12,
-            fontsize_tick   =10,
-            fontsize_title  =14,
-            fontsize_legend =10,
-            linewidth       =2.0,
-            markersize      =6.0,
-            spine_width     =1.5,
+            fontsize_label          =   12,
+            fontsize_tick           =   10,
+            fontsize_title          =   14,
+            fontsize_legend         =   10,
+            linewidth               =   2.0,
+            markersize              =   6.0,
+            spine_width             =   1.5,
         )
     
     @staticmethod
     def presentation() -> PlotStyle:
         """Large fonts for presentations."""
         return PlotStyle(
-            fontsize_label  =16,
-            fontsize_tick   =14,
-            fontsize_title  =18,
-            fontsize_legend =14,
-            linewidth       =2.5,
-            markersize      =8.0,
-            spine_width     =2.0,
+            fontsize_label          =   16,
+            fontsize_tick           =   14,
+            fontsize_title          =   18,
+            fontsize_legend         =   14,
+            linewidth               =   2.5,
+            markersize              =   8.0,
+            spine_width             =   2.0,
         )
     
     @staticmethod
     def notebook() -> PlotStyle:
         """Compact style for notebooks."""
         return PlotStyle(
-            fontsize_label  =9,
-            fontsize_tick   =8,
-            fontsize_title  =10,
-            fontsize_legend =8,
-            linewidth       =1.2,
-            markersize      =4.0,
+            fontsize_label          =   9,
+            fontsize_tick           =   8,
+            fontsize_title          =   10,
+            fontsize_legend         =   8,
+            linewidth               =   1.2,
+            markersize              =   4.0,
         )
     
     @staticmethod
     def kspace_extended() -> KSpaceConfig:
         """K-space config with BZ extension enabled."""
         return KSpaceConfig(
-            extend_bz           =True,
-            bz_copies           =2,
-            show_discrete_points=True,
-            label_high_symmetry =True,
+            extend_bz               =   True,
+            bz_copies               =   2,
+            show_discrete_points    =   True,
+            label_high_symmetry     =   True,
         )
     
     @staticmethod
     def kpath_fine() -> KPathConfig:
         """High-resolution k-path."""
         return KPathConfig(
-            points_per_seg      =100,
-            show_separators     =True,
-            use_extend          =False,
+            points_per_seg          =   100,
+            show_separators         =   True,
+            use_extend              =   False,
         )
 
 # ==============================================================================

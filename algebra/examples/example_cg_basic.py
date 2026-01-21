@@ -18,7 +18,7 @@ API Usage Pattern:
 """
 
 import numpy as np
-from QES.general_python.algebra import solvers
+from general_python.algebra import solvers
 
 def create_spd_matrix(n, condition_number=10.0):
     """

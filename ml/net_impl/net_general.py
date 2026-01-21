@@ -12,10 +12,10 @@ date    : 2025-03-10
 ---------------------------------------------------------------
 """
 
-import numpy as np
 import numba
-from typing import Optional, Tuple, Callable, List, Union, TYPE_CHECKING
-from abc import ABC, abstractmethod
+import numpy    as np
+from typing     import Optional, Tuple, Callable, List, Union, TYPE_CHECKING
+from abc        import ABC, abstractmethod
 
 if TYPE_CHECKING:
     from ...common.flog     import Logger
@@ -87,7 +87,7 @@ class GeneralNet(ABC):
         
         # helper functions
         self._holomorphic	    = None
-        self._has_analytic_grad = True
+        self._has_analytic_grad = False
         
         # initialization
         self._initialized       = False

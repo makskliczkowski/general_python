@@ -2,7 +2,7 @@ r"""
 This file contains the EntanglementModule class.
 
 --------------------------------------------
-file    : QES/general_python/physics/entanglement_module.py
+file    : general_python/physics/entanglement_module.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 --------------------------------------------
@@ -103,7 +103,7 @@ try:
     if JAX_AVAILABLE:
         import jax.numpy as jnp
 except ImportError as e:
-    raise ImportError("Required QES modules not found") from e
+    raise ImportError("Required general_python modules not found") from e
 
 if TYPE_CHECKING:
     from ..algebra.utils        import Array
@@ -850,7 +850,7 @@ class EntanglementModule:
         hilbert : HilbertSpace, optional
             Hilbert space with symmetries. If provided and has symmetries,
             symmetry-based reduced density matrix computation is used.
-            This is only available when QES is installed correctly, as it is not
+            This is only available when general_python is installed correctly, as it is not
             a part of General Python.
         occupied_orbitals : array-like, optional
             Indices of occupied orbitals. Required only if `state` is None.
@@ -881,16 +881,16 @@ class EntanglementModule:
         # Symmetry-based path
         if hilbert is not None and hasattr(hilbert, 'has_sym') and hilbert.has_sym:
             
-            # This path requires QES installation. Check for imports.
+            # This path requires general_python installation. Check for imports.
             try:
-                from QES.Algebra.Symmetries.jit.density_jit     import rho_symmetries
+                from general_python.Algebra.Symmetries.jit.density_jit     import rho_symmetries
             except ImportError:
-                raise ImportError("QES.Algebra.Symmetries.jit.density_jit not found. Check installation.")
+                raise ImportError("general_python.Algebra.Symmetries.jit.density_jit not found. Check installation.")
             
             try:
-                from QES.general_python.physics.density_matrix  import rho_spectrum
+                from general_python.physics.density_matrix  import rho_spectrum
             except ImportError:
-                raise ImportError("QES.general_python.physics.density_matrix not found. Check installation.")
+                raise ImportError("general_python.physics.density_matrix not found. Check installation.")
             
             # Use symmetry-aware reduced density matrix (supports mask)
             rho             = rho_symmetries(state, va=bipartition.mask_a, hilbert=hilbert)
@@ -898,9 +898,9 @@ class EntanglementModule:
             return entropy(schmidt_vals, typek=Entanglement.VN)
 
         try:
-            from QES.general_python.physics.density_matrix      import schmidt_numpy, schmidt_numba_mask, rho_numba_mask
+            from general_python.physics.density_matrix      import schmidt_numpy, schmidt_numba_mask, rho_numba_mask
         except ImportError:
-            raise ImportError("QES.general_python.physics.density_matrix not found. Check installation.")
+            raise ImportError("general_python.physics.density_matrix not found. Check installation.")
         
         # Standard state-vector path
         dimA            = 1 << bipartition.size_a
@@ -1558,7 +1558,7 @@ class EntanglementModule:
         rho_symmetries = None
         if has_sym:
             try:
-                 from QES.Algebra.Symmetries.jit.density_jit import rho_symmetries
+                 from general_python.Algebra.Symmetries.jit.density_jit import rho_symmetries
             except ImportError:
                  has_sym = False
         
@@ -1675,7 +1675,7 @@ class EntanglementModule:
         
         Mask Generation (use MaskGenerator class):
         -----------------------------------------
-        >>> from QES.general_python.physics.entanglement_module import MaskGenerator
+        >>> from general_python.physics.entanglement_module import MaskGenerator
         >>> 
         >>> # Contiguous mask
         >>> mask = MaskGenerator.contiguous(ns=12, size_a=4)  # [0,1,2,3]

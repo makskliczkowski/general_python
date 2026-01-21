@@ -1,11 +1,11 @@
 """
-QES.general_python.ml.networks
+general_python.ml.networks
 ==============================
 
 Network Factory and Registry.
 
 This module provides a centralized factory function, `choose_network`, for
-instantiating various neural network architectures used in the QES framework.
+instantiating various neural network architectures used in the general_python framework.
 It uses a lazy-loading mechanism to improve startup performance.
 
 Usage
@@ -14,7 +14,7 @@ Import and use the factory to create a network. The factory takes the
 network type and common parameters like `input_shape` and `dtype`.
 Network-specific parameters are passed as keyword arguments.
 
-    from QES.general_python.ml.networks import choose_network
+    from general_python.ml.networks import choose_network
     
     # Create an RBM using 'alpha' (hidden unit density)
     rbm_net = choose_network(
@@ -55,7 +55,7 @@ except ImportError as e:
 if TYPE_CHECKING:
     from .net_impl.interface_net_flax   import FlaxInterface
     from .net_impl.net_simple           import SimpleNet
-    from flax import linen as nn
+    from flax                           import linen as nn
 
 ######################################################################
 
@@ -79,27 +79,33 @@ class Networks(str, Enum):
 ######################################################################
 
 _NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
-    'simple' : ('.net_impl.net_simple',                     'SimpleNet'),
-    'rbm'    : ('.net_impl.networks.net_rbm',               'RBM'),
-    'cnn'    : ('.net_impl.networks.net_cnn',               'CNN'),
-    'ar'     : ('.net_impl.networks.net_autoregressive',    'ComplexAR'),
-    'res'    : ('.net_impl.networks.net_res',               'ResNet'),
-    'resnet' : ('.net_impl.networks.net_res',               'ResNet'),
-    'pp'     : ('.net_impl.networks.net_pp',                'PairProduct'),
-    'rbmpp'  : ('.net_impl.networks.net_pp',                'PairProduct'),
+    'simple'            : ('.net_impl.net_simple',                      'SimpleNet'),
+    'rbm'               : ('.net_impl.networks.net_rbm',                'RBM'),
+    'cnn'               : ('.net_impl.networks.net_cnn',                'CNN'),
+    'ar'                : ('.net_impl.networks.net_autoregressive',     'ComplexAR'),
+    'res'               : ('.net_impl.networks.net_res',                'ResNet'),
+    'resnet'            : ('.net_impl.networks.net_res',                'ResNet'),
+    'pp'                : ('.net_impl.networks.net_pp',                 'PairProduct'),
+    'rbmpp'             : ('.net_impl.networks.net_pp',                 'PairProduct'),
+    'mlp'               : ('.net_impl.networks.net_mlp',                'MLP'),
+    'gcnn'              : ('.net_impl.networks.net_gcnn',               'GCNN'),
+    'jastrow'           : ('.net_impl.networks.net_jastrow',            'Jastrow'),
+    'mps'               : ('.net_impl.networks.net_mps',                'MPS'),
+    'transformer'       : ('.net_impl.networks.net_transformer',        'Transformer'),
+    'amplitude_phase'   : ('.net_impl.networks.net_amplitude_phase',    'AmplitudePhase'),
     # Add future networks here without importing them!
 }
 
 def _lazy_load_class(key: str) -> Type[GeneralNet]:
     """Helper to import network classes only when requested."""
     if key not in _NETWORK_REGISTRY:
-        raise ValueError(f"Network '{key}' is not registered in QES.")
+        raise ValueError(f"Network '{key}' is not registered in general_python.")
     
     mod_path, cls_name  = _NETWORK_REGISTRY[key]
     try:
         # Relative import requires the package context
-        # We assume this file is in QES.general_python.ml
-        module          = importlib.import_module(mod_path, package='QES.general_python.ml')
+        # We use __package__ to support importing as QES.general_python.ml or general_python.ml
+        module          = importlib.import_module(mod_path, package=__package__)
         return getattr(module, cls_name)
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Failed to lazy load '{cls_name}' from '{mod_path}'.\nError: {e}")
@@ -143,8 +149,8 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     Using Custom Flax Modules
     -------------------------
     You can pass your own `flax.linen.nn.Module` class as the `network_type`.
-    The factory will wrap it in a `QES.general_python.ml.net_impl.interface_net_flax.FlaxInterface`
-    to make it compatible with the QES ecosystem.
+    The factory will wrap it in a `general_python.ml.net_impl.interface_net_flax.FlaxInterface`
+    to make it compatible with the general_python ecosystem.
 
     **Requirements for your custom module:**
     1.  It must be a valid `nn.Module`.
@@ -183,7 +189,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
 
         Usage
         -----
-            from QES.general_python.ml.networks import choose_network
+            from general_python.ml.networks import choose_network
             
             # 1. Define RBM Parameters
             # ------------------------
@@ -219,7 +225,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
 
         Usage
         -----
-            from QES.general_python.ml.networks import choose_network
+            from general_python.ml.networks import choose_network
             import jax.numpy as jnp
             
             # 1. Define Lattice Geometry
@@ -294,7 +300,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     Returns
     -------
     GeneralNet
-        An initialized or wrapped network instance compatible with the QES framework.
+        An initialized or wrapped network instance compatible with the general_python framework.
     """
 
     # 1. Handle Strings and Enums (Lazy Load Path)
@@ -318,7 +324,8 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
     # 2. Handle Existing Instances (Return as-is)
-    if isinstance(network_type, GeneralNet):
+    # Check isinstance OR duck-typing for objects that look like GeneralNet (prevents wrapping if imports differ)
+    if isinstance(network_type, GeneralNet) or (hasattr(network_type, 'get_params') and hasattr(network_type, 'apply')):
         return network_type
 
     # 3. Handle Types/Classes
@@ -326,45 +333,45 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         
         # It is a subclass of GeneralNet (e.g. user imported RBM manually)
         if issubclass(network_type, GeneralNet):
-            return network_type(input_shape=input_shape, backend=backend, dtype=dtype, seed=seed, **kwargs)
+            return network_type(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
-        # It is a Flax Module (Auto-Wrap Logic)
-        # We check this loosely to avoid importing flax if not needed
-        is_flax = False
-        try:
-            import flax.linen as nn
-            if issubclass(network_type, nn.Module):
-                is_flax = True
-        except ImportError:
-            pass
+    # It is a Flax Module (Auto-Wrap Logic)
+    # We check this loosely to avoid importing flax if not needed
+    is_flax = False
+    try:
+        import flax.linen as nn
+        if isinstance(network_type, type) and issubclass(network_type, nn.Module):
+            is_flax = True
+    except ImportError:
+        pass
 
-        if is_flax:
-            # Lazy import the interface wrapper
-            from .net_impl.interface_net_flax import FlaxInterface
-            
-            # The network_type here IS the Flax Module class
-            # We pass all kwargs to the FlaxInterface, which will pass them to the module
-            all_kwargs = kwargs.copy()
-            all_kwargs.pop('input_shape',   None)  # Remove if present in kwargs
-            all_kwargs.pop('backend',       None)
-            all_kwargs.pop('dtype',         None)
-            all_kwargs.pop('param_dtype',   None)
-            all_kwargs.update({
-                'input_shape'   : input_shape,
-                'backend'       : backend,
-                'dtype'         : dtype,
-                'param_dtype'   : param_dtype,
-            })
-            return FlaxInterface(
-                net_module      =   network_type,
-                net_kwargs      =   all_kwargs,
-                input_shape     =   input_shape,
-                backend         =   backend,
-                dtype           =   dtype,
-                param_dtype     =   param_dtype,
-                seed            =   seed,
-                in_activation   =   kwargs.get('in_activation', None)
-            )
+    if is_flax:
+        # Lazy import the interface wrapper
+        from .net_impl.interface_net_flax import FlaxInterface
+        
+        # The network_type here IS the Flax Module class
+        # We pass all kwargs to the FlaxInterface, which will pass them to the module
+        all_kwargs = kwargs.copy()
+        all_kwargs.pop('input_shape',   None)  # Remove if present in kwargs
+        all_kwargs.pop('backend',       None)
+        all_kwargs.pop('dtype',         None)
+        all_kwargs.pop('param_dtype',   None)
+        all_kwargs.update({
+            'input_shape'   : input_shape,
+            'backend'       : backend,
+            'dtype'         : dtype,
+            'param_dtype'   : param_dtype,
+        })
+        return FlaxInterface(
+            net_module      =   network_type,
+            net_kwargs      =   all_kwargs,
+            input_shape     =   input_shape,
+            backend         =   backend,
+            dtype           =   dtype,
+            param_dtype     =   param_dtype,
+            seed            =   seed,
+            in_activation   =   kwargs.get('in_activation', None)
+        )
 
     # Handle generic Callables (Factories)
     if callable(network_type):

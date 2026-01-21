@@ -291,53 +291,44 @@ if JAX_AVAILABLE:
             Internal JAX JIT implementation for Sherman-Morrison update
             for skew-symmetric matrices.
             """
-            N       = Ainv.shape[0]
+            N = Ainv.shape[0]
 
             # Ensure updRow is treated as column for mat-vec product
-            dots    = jnp.dot(Ainv, updRow)
+            dots = jnp.dot(Ainv, updRow)
 
             # Precompute inverse of the critical dot product with clipping
-            dot_k   = dots[updIdx]
+            dot_k = dots[updIdx]
             
             # Clipping avoids NaN/Inf from exact zero, but might mask issues.
-            dotProductInv = 1.0 / jnp.clip(dot_k, a_min=_ZERO_TOL, a_max=1e10)
+            dotProductInv = 1.0 / jnp.clip(dot_k, min=_ZERO_TOL, max=1e10)
 
-            # Define the body for the nested loops using lax.fori_loop
-            def body_j(j, state_i):
-                i, current_row_vals     = state_i
-                d_i_alpha               = jnp.where(i == updIdx, 1.0, 0.0)
-                d_j_alpha               = jnp.where(j == updIdx, 1.0, 0.0)
-                Ainv_k_i                = Ainv[updIdx, i]
-                Ainv_k_j                = Ainv[updIdx, j]
+            # Vectorized update
 
-                update_term             = dotProductInv * ( (d_i_alpha - dots[i]) * Ainv_k_j +
-                                                            (dots[j] - d_j_alpha) * Ainv_k_i)
-                new_val                 = current_row_vals[j] + update_term
+            # u[i] = delta_{i, updIdx} - dots[i]
+            # Improved optimization: Avoid allocating full zero array for d_alpha
+            u = -dots
+            u = u.at[updIdx].add(1.0)
 
-                # Apply sign flip using jnp.where (Warning: reason unclear)
-                sign_flip_condition     = jnp.logical_or(d_i_alpha > 0.5, d_j_alpha > 0.5)
-                final_val               = jnp.where(sign_flip_condition, -new_val, new_val)
+            v = Ainv[updIdx, :] # This is Ainv_k
 
-                # Return updated row values (will be used by .at[j].set outside loop)
-                return current_row_vals.at[j].set(final_val)
+            # update_term[i, j] = dotProductInv * (u[i] * v[j] - u[j] * v[i])
+            # This is dotProductInv * (outer(u, v) - outer(v, u))
+            # Note that outer(v, u) = outer(u, v).T
 
+            outer_uv = jnp.outer(u, v)
+            update_matrix = dotProductInv * (outer_uv - outer_uv.T)
 
-            def body_i(i, current_out):
-                # Inner loop updates row i
-                # Initial row state for inner loop is current_out[i, :]
-                init_row_state  = (i, current_out[i, :])
-                # The body_j function updates the row values element by element
-                # Fori_loop over j, updating the second element of init_row_state
-                updated_row     = lax.fori_loop(0, N, body_j, init_row_state)[1] # Get updated row
+            new_Ainv = Ainv + update_matrix
 
-                # Update the i-th row of the output matrix
-                return current_out.at[i].set(updated_row)
+            # Sign flip logic:
+            # multiply row updIdx by -1 and col updIdx by -1.
+            # The intersection element is multiplied twice, so we need to correct it.
 
-            # Run the outer loop, starting with a copy (JAX handles copy implicitly)
-            init_out_state  = Ainv
-            final_out       = lax.fori_loop(0, N, body_i, init_out_state)
+            new_Ainv = new_Ainv.at[updIdx, :].multiply(-1.0)
+            new_Ainv = new_Ainv.at[:, updIdx].multiply(-1.0)
+            new_Ainv = new_Ainv.at[updIdx, updIdx].multiply(-1.0)
 
-            return final_out
+            return new_Ainv
 
         ########################################################################
         #! Log-Pfaffian (JAX)

@@ -11,41 +11,39 @@ email       : maxgrom97@gmail.com
 version     : 1.0.0
 '''
 
+import os
+from typing                     import Optional, Union, TYPE_CHECKING
+
 try:
-    import          jax
-    JAX_AVAILABLE   = True
+    import jax
+    import jax.numpy            as jnp
+    from functools              import partial
+    DEFAULT_JP_INT_TYPE         = jnp.int64
+    DEFAULT_JP_FLOAT_TYPE       = jnp.float64
+    BACKEND_REPR                = float(os.environ.get("PY_BACKEND_REPR", "0.5"))
+    BACKEND_DEF_SPIN            = bool(int(os.environ.get("PY_BACKEND_DEF_SPIN", "1")))
+    JAX_AVAILABLE               = True
 except ImportError:
-    jax             = None
-    JAX_AVAILABLE   = False
+    jax                         = None
+    jnp                         = None
+    partial                     = None
+    JAX_AVAILABLE               = False
 
 # --------------------------------------------------------------------------------------------------
 
 if JAX_AVAILABLE:
-    import jax.numpy as jnp
-    import jax
-    try:
-        from ...algebra.utils import DEFAULT_JP_INT_TYPE, DEFAULT_JP_FLOAT_TYPE
-        from ...algebra.utils import JAX_AVAILABLE, Array, BACKEND_REPR, BACKEND_DEF_SPIN
-    except ImportError:
-        raise ImportError("QES.general_python.common.algebra.utils module is required for binary_jax.")
 
     def reverse_byte(b : int):
         """
         Reverse the bits in a single byte (8 bits).
-
-        Args:
-            b (int): The byte to reverse.
-
-        Returns:
-            int: The byte with the bits reversed.
         """
-        result = 0                          # Initialize the result.
-        for i in range(8):                  # Loop over the bits in the byte.
-            if b & (1 << i):                # Check if the i-th bit is set.
-                result |= 1 << (7 - i)      # Set the corresponding bit in the result. 
+        result = 0
+        for i in range(8):
+            if b & (1 << i):
+                result |= 1 << (7 - i)
         return result
 
-    # lookup tables
+    # lookup tables - created once
     lookup_reversal_jax     = jnp.array([(1 << i) for i in range(63)], dtype = DEFAULT_JP_INT_TYPE)
     lookup_binary_power_jax = jnp.array([reverse_byte(i) for i in range(256)], dtype = DEFAULT_JP_INT_TYPE)
 
@@ -57,11 +55,6 @@ if JAX_AVAILABLE:
     def check_int_traced_jax(n, k):
         """
         Check the i-th bit in an integer through JAX tracing.
-        Parameters:
-            n (array-like)  : The state to check.
-            k (int)         : The index of the bit to check.
-        Returns:
-            bool: True if the k-th bit is set, False otherwise.
         """
         return jnp.bitwise_and(n, jnp.left_shift(1, k)) > 0
 
@@ -69,22 +62,10 @@ if JAX_AVAILABLE:
     def check_arr_jax(n, k : int):
         """
         Checks if the k-th element of the input array `n` is greater than 0.
-
-        Args:
-            n (array-like): The input array to check.
-            k (int): The index of the element to check in the array `n`.
-
-        Returns:
-            bool: True if the k-th element of `n` is greater than 0, False otherwise.
         """
         return n[k] > 0
     
-        k           = jnp.asarray(k)
-        start_index = k.reshape(1,)
-        sliced_val  = jax.lax.dynamic_slice(n, start_index, (1,))
-        return sliced_val[0] > 0
-    
-    @jax.jit
+    @partial(jax.jit, static_argnames=('size', 'dtype', 'value_true', 'value_false'))
     def int2base_jax(n              : int,
                     size            : int,
                     dtype                   = DEFAULT_JP_INT_TYPE,
@@ -92,6 +73,8 @@ if JAX_AVAILABLE:
                     value_false     : float = -BACKEND_REPR):
         """
         Convert an integer to a binary (or spin) representation using JAX.
+        Optimized vectorized implementation.
+        
         Args:
             n (int)             : The integer to convert.
             size (int)          : The number of bits in the representation.
@@ -101,30 +84,28 @@ if JAX_AVAILABLE:
         Returns:
             jnp.ndarray: The binary (or spin) representation of the integer.
         """
-        bits = jnp.zeros(size, dtype=dtype)
-        # Iterate from the most significant bit to the least.
-        for pos in range(size - 1, -1, -1):
-            bit     = check_int_traced_jax(n, pos)
-            bits    = bits.at[size - 1 - pos].set(value_true if bit else value_false)
-        return bits
+        # Vectorized bit extraction
+        # idx: [size-1, size-2, ..., 0]
+        idx     = jnp.arange(size - 1, -1, -1)
+        # powers: [2^(size-1), ..., 1]
+        powers  = jnp.left_shift(1, idx)
+        
+        # Check bits: (n & powers) != 0
+        # This broadcasts n against the vector of powers
+        bits    = jnp.bitwise_and(n, powers) != 0
+        
+        # Map to values
+        return jnp.where(bits, value_true, value_false).astype(dtype)
 
     # --------------------------------------------------------------------------------------------------
     #! Flip bits in an integer or a vector
     # --------------------------------------------------------------------------------------------------
 
     @jax.jit
-    def flip_all_array_spin(n : Array):
+    def flip_all_array_spin(n : 'Array'):
         """
-        Flip all bits in a representation of a state.
-        - This is a helper function for flip_all.
-        Parameters:
-            n (array-like)  : The state to flip.
-        Note:
-            The function is implemented for both integers and NumPy arrays (np or jnp).
-        Returns:
-            array-like      : The flipped state.
+        Flip all bits in a representation of a state (Spin representation).
         """
-        # arrays are assumed to be NumPy or JAX arrays
         return -n
 
     # --------------------------------------------------------------------------------------------------
@@ -132,127 +113,87 @@ if JAX_AVAILABLE:
     # --------------------------------------------------------------------------------------------------
 
     @jax.jit
-    def flip_array_jax_spin(n : Array, k : int):
+    def flip_array_jax_spin(n : 'Array', k : int):
         """
-        Flip a single bit in a representation of a state.
-        - This is a helper function for flip.
-        Parameters:
-            n (array-like)  : The state to flip.
-            k (int)         : The index of the bit to flip.
-        Returns:
-            array-like      : The flipped state.
+        Flip a single bit in a representation of a state (Spin representation).
         """
-        return n.at[k].set(-n[k])
+        val = -n[k]
+        return n.at[k].set(val.astype(n.dtype))
 
-    @jax.jit
-    def flip_array_jax_nspin(n : Array, k : int):
+    @partial(jax.jit, static_argnames=('spin_value',))
+    def flip_array_jax_nspin(n : 'Array', k : int, spin_value: float = 1.0):
         """
-        Flip a single bit in a representation of a state.
-        - This is a helper function for flip.
-        Parameters:
-            n (array-like)  : The state to flip.
-            k (int)         : The index of the bit to flip.
-        Returns:
-            array-like      : The flipped state.    
+        Flip a single bit in a representation of a state (Binary 0/1 or 0/v representation).
+        Uses arithmetic flip: new_val = spin_value - old_val.
+        Assumes values are exactly 0 or spin_value.
         """
-        update  =   (n[k] + 1) % 2
-        n       =   n.at[k].set(update)
-        return n
+        val = spin_value - n[k]
+        return n.at[k].set(val.astype(n.dtype))
     
-    def flip_array_jax(n : Array, k : int,
-                    spin : bool = BACKEND_DEF_SPIN):
+    def flip_array_jax(n : 'Array', k : int, spin : bool = BACKEND_DEF_SPIN, spin_value: float = BACKEND_REPR):
         """
         Flip a single bit in a JAX array.
-        Parameters:
-            n (array-like)  : The state to flip.
-            k (int)         : The index of the bit to flip.
-            spin (bool)     : A flag to indicate whether to use spin values.
-        Returns:
-            array-like      : The flipped state.
         """
         if spin:
             return flip_array_jax_spin(n, k)
-        return flip_array_jax_nspin(n, k)
+        return flip_array_jax_nspin(n, k, spin_value=spin_value)
     
     # Multi-index versions using vectorized operations
+    
     @jax.jit
-    def flip_array_jax_spin_multi(n: Array, ks: Array):
+    def flip_array_jax_spin_multi(n: 'Array', ks: 'Array'):
         """
         Flip multiple spins in a JAX array (spin representation).
-        Uses advanced indexing for vectorized updates.
-        Parameters:
-            n (array-like)      : The state to flip.
-            ks (array-like)     : The indices of the bits to flip.
-        Returns:
-            array-like          : The flipped state.
         """
-        return n.at[ks].set(-n[ks])
+        val = -n[ks]
+        return n.at[ks].set(val.astype(n.dtype))
 
-    @jax.jit
-    def flip_array_jax_nspin_multi(n: Array, ks: Array):
+    @partial(jax.jit, static_argnames=('spin_value',))
+    def flip_array_jax_nspin_multi(n: 'Array', ks: 'Array', spin_value: float = 1.0):
         """
         Flip multiple bits in a JAX array (binary representation).
-        Uses advanced indexing for vectorized updates.
-        Parameters:
-            n (array-like)      : The state to flip.
-            ks (array-like)     : The indices of the bits to flip.
-        Returns:
-            array-like          : The flipped state.
         """
-        updates = (n[ks] + 1) % 2
-        return n.at[ks].set(updates)
+        val = spin_value - n[ks]
+        return n.at[ks].set(val.astype(n.dtype))
     
-    def flip_array_jax_multi(n: Array, ks: Array,
-                            spin: bool = BACKEND_DEF_SPIN):
+    def flip_array_jax_multi(n: 'Array', ks: 'Array', spin: bool = BACKEND_DEF_SPIN, spin_value: float = BACKEND_REPR):
         """
         Flip multiple bits in a JAX array.
-        Parameters:
-            n (array-like)      : The state to flip.
-            ks (array-like)     : The indices of the bits to flip.
-            spin (bool)         : A flag to indicate whether to use spin values.
-        Returns:
-            array-like          : The flipped state.
         """
         if spin:
             return flip_array_jax_spin_multi(n, ks)
-        return flip_array_jax_nspin_multi(n, ks)
+        return flip_array_jax_nspin_multi(n, ks, spin_value=spin_value)
     
     @jax.jit
     def flip_int_traced_jax(n : int, k : int) -> jnp.ndarray:
         '''
         Internal helper function for flipping a single bit in an integer through JAX tracing.
-        Parameters:
-            n (array-like) :
-                The state to flip.
-            k (int) :
-                The index of the bit to flip.
-        Returns:
-            array-like :
-                The flipped state.
         '''
-        return jnp.where(check_int_traced_jax(n, k), n - lookup_binary_power_jax[k], n + lookup_binary_power_jax[k])
+        # If bit k is set (1), subtract power to make it 0.
+        # If bit k is unset (0), add power to make it 1.
+        # check_int_traced_jax returns boolean.
+        # We need dynamic behavior for JIT.
+        power = jnp.left_shift(1, k)
+        # return n ^ power # XOR is the canonical flip for integers
+        return jnp.bitwise_xor(n, power)
     
     @jax.jit
-    def flip_int_traced_jax_multi(n: int, ks: Array) -> jnp.ndarray:
+    def flip_int_traced_jax_multi(n: int, ks: 'Array') -> jnp.ndarray:
         """
         Flip multiple bits in an integer representation using JAX.
-        The function uses vectorized operations via vmap.
-        Parameters:
-            n (int) :
-                The integer to flip.
-            ks (array-like) :
-                The indices of the bits to flip.
-        Returns:
-            array-like :
-                The flipped state.
         """
-        ks_arr      = jnp.array(ks)
-        # Vectorized check for each index k.
-        conds       = jax.vmap(lambda k: check_int_traced_jax(n, k))(ks_arr)
-        lookup_vals = lookup_binary_power_jax[ks_arr]
-        # Compute the update (delta) for each bit.
-        deltas      = jnp.where(conds, -lookup_vals, lookup_vals)
-        return n + jnp.sum(deltas)
+        # Calculate mask of all bits to flip
+        # 1 << ks
+        powers  = jnp.left_shift(1, ks)
+        # Safe way: reduce with bitwise_or over the powers
+        mask    = jnp.sum(powers).astype(n.dtype) # sum works if no overlaps. bitwise_or reduction is safer.
+        
+        # Robust way using reduce:
+        def xor_scan(carry, x):
+            return jnp.bitwise_xor(carry, x), None
+        
+        final_n, _ = jax.lax.scan(xor_scan, n, powers)
+        return final_n
 
 else:
     flip_all_array_spin         = None
@@ -264,5 +205,7 @@ else:
     int2base_jax                = None
     check_int_traced_jax        = None
     reverse_byte                = None
-    
+
+# --------------------------------------------------------------------------------------------------
+#! End of binary_jax.py
 # --------------------------------------------------------------------------------------------------

@@ -3,7 +3,7 @@ Eigenvalue Solver Implementation Summary
 =========================================
 
 This document summarizes the complete eigenvalue solver suite implemented for
-QES/general_python/algebra/eigen.
+general_python/algebra/eigen.
 
 ## Overview
 
@@ -18,7 +18,7 @@ We have implemented a comprehensive suite of eigenvalue solvers supporting:
 ## Module Structure
 
 ``` Markdown
-QES/general_python/algebra/eigen/
+general_python/algebra/eigen/
 ├── __init__.py              # Main module exports
 ├── result.py                # EigenResult NamedTuple
 ├── exact.py                 # Exact diagonalization (ExactEigensolver, full_diagonalization)
@@ -60,7 +60,7 @@ QES/general_python/algebra/eigen/
 **Usage**:
 
 ```python
-from QES.general_python.algebra.eigen import full_diagonalization
+from general_python.algebra.eigen import full_diagonalization
 
 # Small to medium matrices (n < 1000)
 result = full_diagonalization(A, hermitian=True, backend='numpy')
@@ -107,7 +107,7 @@ print(f"All {len(result.eigenvalues)} eigenvalues computed")
 **Usage**:
 
 ```python
-from QES.general_python.algebra.eigen import LanczosEigensolver
+from general_python.algebra.eigen import LanczosEigensolver
 
 # Large sparse symmetric matrices
 solver = LanczosEigensolver(k=10, which='smallest', backend='numpy', max_iter=100)
@@ -164,7 +164,7 @@ print(f"Residuals: {result.residual_norms}")
 **Usage**:
 
 ```python
-from QES.general_python.algebra.eigen import ArnoldiEigensolver
+from general_python.algebra.eigen import ArnoldiEigensolver
 
 # Non-symmetric matrices
 solver = ArnoldiEigensolver(k=10, which='LM', backend='numpy')
@@ -239,7 +239,7 @@ k > n/2 or k=None:                   -> 'exact' (if memory permits)
 **Usage**:
 
 ```python
-from QES.general_python.algebra.eigen import choose_eigensolver, decide_method
+from general_python.algebra.eigen import choose_eigensolver, decide_method
 
 # Method 1: Auto-select
 result = choose_eigensolver('auto', A, k=10, hermitian=True)

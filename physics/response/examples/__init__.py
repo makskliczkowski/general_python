@@ -1,5 +1,5 @@
 """
-QES/general_python/physics/response/examples/
+general_python/physics/response/examples/
 
 Example scripts demonstrating the response function stack.
 """

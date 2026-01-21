@@ -11,7 +11,7 @@ This module provides functions to compute dynamical and static susceptibilities
 using the Lehmann representation from Hamiltonian eigenvalues and eigenvectors.
 
 ----------------------------------------------------------------------------
-File    : QES/general_python/physics/response/susceptibility.py
+File    : general_python/physics/response/susceptibility.py
 Author  : Maksymilian Kliczkowski
 Email   : maksymilian.kliczkowski@pwr.edu.pl
 Date    : 2025-11-01

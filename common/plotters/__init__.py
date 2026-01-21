@@ -35,9 +35,8 @@ from .spectral_utils import (
 )
 
 from .plot_helpers import (
-    plot_spectral_function_2d,
     plot_static_structure_factor,
-    plot_kspace_intensity,
+    plot_kspace_intensity
 )
 
 __all__ = [

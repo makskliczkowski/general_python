@@ -1,6 +1,6 @@
 # Algebra Toolkit
 
-The `general_python.algebra` package collects deterministic linear-algebra and random-matrix tools that form the numerical backbone of QES.  Every module is written to admit NumPy or JAX backends and focuses on well-defined mathematical problems.
+The `general_python.algebra` package collects deterministic linear-algebra and random-matrix tools that form the numerical backbone of general_python.  Every module is written to admit NumPy or JAX backends and focuses on well-defined mathematical problems.
 
 ## Core Problem Statements
 

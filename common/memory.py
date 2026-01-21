@@ -1,5 +1,5 @@
 '''
-Memory-related utilities for general Python QES modules.
+Memory-related utilities for general Python general_python modules.
 
 ----------------------------------------------------------------------------
 File        : common/memory.py
@@ -12,7 +12,7 @@ import  gc
 import  numpy as np
 
 if TYPE_CHECKING:
-    from QES.general_python.common.flog import Logger
+    from general_python.common.flog import Logger
 
 # --------------------------------------------------------------------------------
 

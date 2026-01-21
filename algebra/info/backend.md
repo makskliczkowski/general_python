@@ -169,7 +169,7 @@ class CgSolver(Solver):
 
 ```python
 # In your main code, set the backend
-from QES.general_python.algebra.utils import backend_mgr
+from general_python.algebra.utils import backend_mgr
 
 backend_mgr.set_active_backend('jax')
 
@@ -185,7 +185,7 @@ x   = ops.zeros(100)
 
 ```python
 # Global backend is JAX
-from QES.general_python.algebra.utils import backend_mgr
+from general_python.algebra.utils import backend_mgr
 backend_mgr.set_active_backend('jax')
 
 # But use NumPy for a specific solver
@@ -302,8 +302,8 @@ When writing tests:
 
 ```python
 import pytest
-from QES.general_python.algebra.utils import JAX_AVAILABLE, backend_mgr
-from QES.general_python.algebra.solvers.backend_ops import get_backend_ops
+from general_python.algebra.utils import JAX_AVAILABLE, backend_mgr
+from general_python.algebra.solvers.backend_ops import get_backend_ops
 
 @pytest.mark.parametrize("backend", ["numpy"] + (["jax"] if JAX_AVAILABLE else []))
 def test_solver_both_backends(backend):

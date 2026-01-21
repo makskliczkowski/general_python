@@ -55,7 +55,7 @@ try:
     from ....algebra.utils import get_backend
     from . import net_utils_np as numpy
 except ImportError as e:
-    raise ImportError("Failed to import algebra.utils or net_utils_np module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import algebra.utils or net_utils_np module. Ensure general_python package is correctly installed.") from e
 
 if _JAX_AVAILABLE:
     from . import net_utils_jax as jaxpy

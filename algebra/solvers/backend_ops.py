@@ -24,7 +24,7 @@ try:
         is_jax_array
     )
 except ImportError as e:
-    raise ImportError("Failed to import utils from algebra module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import utils from algebra module. Ensure general_python package is correctly installed.") from e
 
 # ---------------------------------------------------------------------------
 # JAX imports if available

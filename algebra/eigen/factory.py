@@ -8,7 +8,7 @@ This module simplifies the selection of eigenvalue solvers by automatically
 choosing the most appropriate method based on user requirements.
 
 ----------------------------------------------
-File        : Python/QES/general_python/algebra/eigen/factory.py
+File        : Python/general_python/algebra/eigen/factory.py
 Author      : Maksymilian Kliczkowski
 Email       : maxgrom97@gmail.com
 Date        : 2025-10-26

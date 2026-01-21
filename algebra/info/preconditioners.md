@@ -92,7 +92,7 @@ $$
 **Example**:
 
 ```python
-from QES.general_python.algebra.preconditioners import IdentityPreconditioner
+from general_python.algebra.preconditioners import IdentityPreconditioner
 precond = IdentityPreconditioner()
 ```
 
@@ -128,7 +128,7 @@ $$
 **Example**:
 
 ```python
-from QES.general_python.algebra.preconditioners import JacobiPreconditioner
+from general_python.algebra.preconditioners import JacobiPreconditioner
 import numpy as np
 
 # Standard matrix
@@ -193,7 +193,7 @@ For k = 1 to n:
 **Example**:
 
 ```python
-from QES.general_python.algebra.preconditioners import IncompleteCholeskyPreconditioner
+from general_python.algebra.preconditioners import IncompleteCholeskyPreconditioner
 import numpy as np
 
 # Create SPD matrix
@@ -247,7 +247,7 @@ where:
 **Example**:
 
 ```python
-from QES.general_python.algebra.preconditioners import SSORPreconditioner
+from general_python.algebra.preconditioners import SSORPreconditioner
 
 precond = SSORPreconditioner(omega=1.0)
 precond.set_a(A)
@@ -260,8 +260,8 @@ precond.set_a(A)
 ### Basic Usage
 
 ```python
-from QES.general_python.algebra.solvers import CgSolver
-from QES.general_python.algebra.preconditioners import JacobiPreconditioner
+from general_python.algebra.solvers import CgSolver
+from general_python.algebra.preconditioners import JacobiPreconditioner
 import numpy as np
 
 # Create matrix and RHS
@@ -300,8 +300,8 @@ precond.set_sigma(sigma)
 For Neural Quantum States with Fisher matrix $S = \Delta O^\dagger \Delta O$:
 
 ```python
-from QES.general_python.algebra.solvers import CgSolver
-from QES.general_python.algebra.preconditioners import JacobiPreconditioner
+from general_python.algebra.solvers import CgSolver
+from general_python.algebra.preconditioners import JacobiPreconditioner
 import numpy as np
 
 # Gradient samples: (n_samples, n_params)
@@ -379,7 +379,7 @@ class Preconditioner(ABC):
 Preconditioners support both paradigms:
 
 ```python
-from QES.general_python.algebra.preconditioners import jacobi_apply_numpy
+from general_python.algebra.preconditioners import jacobi_apply_numpy
 
 # Instance-based (convenient)
 precond = JacobiPreconditioner()

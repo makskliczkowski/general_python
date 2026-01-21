@@ -15,7 +15,7 @@ Classes:
     - LatticePlotter            : Convenience wrapper for lattice plotting.
 
 ----------------------------------------------------------------------
-File    : QES/general_python/lattices/visualization/plotting.py
+File    : general_python/lattices/visualization/plotting.py
 Author  : Maksymilian Kliczkowski
 Date    : 2025-02-01
 ----------------------------------------------------------------------

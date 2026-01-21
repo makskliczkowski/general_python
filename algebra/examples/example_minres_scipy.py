@@ -14,7 +14,7 @@ suitable for saddle-point problems and indefinite systems common in quantum mech
 """
 
 import numpy as np
-from QES.general_python.algebra import solvers
+from general_python.algebra import solvers
 
 # ----------------------------------------------------------------------------
 #! Helper functions for creating test matrices
@@ -120,7 +120,7 @@ def example_cg_vs_minres():
     print("Example 2: Why MINRES for Indefinite Systems?")
     print("=" * 70)
     
-    from QES.general_python.algebra.solvers import CgSolver
+    from general_python.algebra.solvers import CgSolver
     
     n           = 50
     A           = create_symmetric_indefinite_matrix(n, neg_eigenvalue_fraction=0.4)

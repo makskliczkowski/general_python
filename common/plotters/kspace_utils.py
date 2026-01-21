@@ -176,6 +176,7 @@ def select_kpoints_along_path(
             pt_cart_3d  = f1 * k1_vec + f2 * k2_vec + f3 * k3_vec
             pt_cart     = pt_cart_3d[:2]
         else:
+            # Assume it's a tuple of fractional coordinates
             f1, f2      = pt_obj[:2] if len(pt_obj) >= 2 else (pt_obj[0], 0)
             pt_cart     = f1 * k1_vec[:2] + f2 * k2_vec[:2]
         path_points_cart.append(pt_cart)

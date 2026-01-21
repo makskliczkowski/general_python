@@ -14,7 +14,7 @@ For the usage, either create scheduler instances directly or use the
 `choose_scheduler` factory function.
 
 >>> # Example: Create an exponential decay scheduler
->>> from QES.general_python.ml.schedulers import choose_scheduler
+>>> from general_python.ml.schedulers import choose_scheduler
 >>> scheduler = choose_scheduler('exponential', initial_lr=0.01, max_epochs=100, lr_decay=0.1)
 >>> for epoch in range(10):
 >>>     lr = scheduler(epoch)

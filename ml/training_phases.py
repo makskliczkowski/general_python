@@ -18,13 +18,13 @@ Quick Start
 -----------
 **Using Presets:**
 
->>> from QES.general_python.ml.training_phases import create_phase_schedulers
+>>> from general_python.ml.training_phases import create_phase_schedulers
 >>> lr_sched, reg_sched = create_phase_schedulers('default')
 >>> # Pass to NQSTrainer: phases=(lr_sched, reg_sched)
 
 **Creating Custom Phases:**
 
->>> from QES.general_python.ml.training_phases import LearningPhase, PhaseType, PhaseScheduler
+>>> from general_python.ml.training_phases import LearningPhase, PhaseType, PhaseScheduler
 >>> 
 >>> my_phases = [
 ...     LearningPhase(
@@ -71,7 +71,7 @@ import numpy as np
 try:
     from .schedulers import choose_scheduler, Parameters, SchedulerType
 except ImportError as e:
-    raise ImportError("Failed to import schedulers module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import schedulers module. Ensure general_python package is correctly installed.") from e
 
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List, Dict, Any, Union, Tuple
@@ -306,7 +306,7 @@ class PhaseScheduler:
         
     Examples
     --------
-    >>> from QES.general_python.ml.training_phases import LearningPhase, PhaseScheduler
+    >>> from general_python.ml.training_phases import LearningPhase, PhaseScheduler
     >>> 
     >>> phases = [
     ...     LearningPhase(name='warmup', epochs=50, lr=0.1, lr_schedule='exponential',

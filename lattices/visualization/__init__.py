@@ -2,7 +2,7 @@
 Utilities for presenting lattice data in human-friendly forms.
 
 This subpackage groups together text formatters and plotting helpers
-intended to work with :class:`~QES.general_python.lattices.lattice.Lattice`
+intended to work with :class:`~general_python.lattices.lattice.Lattice`
 instances.  The helpers are designed to be lightweight wrappers that:
 
 * avoid mutating the lattice objects,

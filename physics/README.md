@@ -38,20 +38,20 @@ Finite-temperature and dynamical observables for quantum systems with NumPy/JAX 
 
 ```python
 # Thermal properties
-from QES.general_python.physics import thermal
+from general_python.physics import thermal
 Z = thermal.partition_function(energies, beta=1.0)
 C_V = thermal.heat_capacity(energies, beta=1.0)
 
 # Spectral functions
-from QES.general_python.physics.spectral import spectral_function
+from general_python.physics.spectral import spectral_function
 A = spectral_function.spectral_function(omega=0.5, eigenvalues=E, eigenvectors=U, eta=0.01)
 
 # Green's functions
-from QES.general_python.physics.spectral.spectral_backend import greens_function_quadratic
+from general_python.physics.spectral.spectral_backend import greens_function_quadratic
 G = greens_function_quadratic(omega, eigenvalues, eigenvectors, eta=0.01)
 
 # Response functions
-from QES.general_python.physics.response import unified_response
+from general_python.physics.response import unified_response
 chi, method = unified_response.compute_response(E, V, operator, omega_grid)
 ```
 

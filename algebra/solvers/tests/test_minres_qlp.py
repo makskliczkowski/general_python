@@ -12,7 +12,7 @@ import os
 # Add path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
 
-from QES.general_python.algebra.solvers.minres_qlp import MinresQLPSolver
+from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
 
 def test_minres_qlp_basic():
     """Test basic MINRES-QLP solve with symmetric matrix."""

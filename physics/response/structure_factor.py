@@ -6,7 +6,7 @@ The dynamic structure factor measures spin-spin correlations:
 
 where S^z_q = \sum _j S^z_j exp(iq\cdot r_j) is the Fourier-transformed spin operator.
 
-File    : QES/general_python/physics/response/structure_factor.py
+File    : general_python/physics/response/structure_factor.py
 Author  : Maksymilian Kliczkowski
 Email   : maksymilian.kliczkowski@pwr.edu.pl
 """
@@ -361,7 +361,7 @@ def create_spin_q_operator_1d(
     # For a proper implementation, would need to construct S_q in the many-body basis
     raise NotImplementedError(
         "Full implementation requires knowledge of Hilbert space structure. "
-        "See QES.Algebra.Operator module for proper operator construction."
+        "See general_python.Algebra.Operator module for proper operator construction."
     )
 
 

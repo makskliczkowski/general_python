@@ -3,7 +3,7 @@ general_python.algebra.utils
 ===========================
 
 This module provides utilities for importing and managing the linear algebra backend (NumPy/JAX),
-random number generation, JIT compilation, and backend configuration for the QES package.
+random number generation, JIT compilation, and backend configuration for the general_python package.
 
 Features
 --------
@@ -28,7 +28,7 @@ Import the backend manager and utilities:
 
 Testing
 -------
-To run tests for this module and the QES package:
+To run tests for this module and the general_python package:
 
 .. code-block:: bash
 
@@ -93,17 +93,23 @@ PY_GLOBAL_SEED_STR      : str               = "PY_GLOBAL_SEED"
 PY_INFO_VERBOSE         : str               = "PY_BACKEND_INFO"
 PY_SPIN_VALUE_STR       : str               = "PY_SPIN_VALUE"
 PY_UTILS_INIT_DONE_STR  : str               = "PY_UTILS_INIT_DONE"
+PY_BACKEND_REPR         : str               = "PY_BACKEND_REPR"
+PY_BACKEND_SPIN         : str               = "PY_BACKEND_DEF_SPIN"
+
 # ---------------------------------------------------------------------
 
-JIT                     : Callable          = lambda x: x # Default JIT function (identity)
+JIT                     : Callable          = lambda x: x   # Default JIT function (identity)
 DEFAULT_SEED            : int               = 42
 DEFAULT_BACKEND         : str               = "numpy"
 DEFAULT_BACKEND_KEY     : Optional[str]     = None
 DEFAULT_NP_INT_TYPE     : Type              = np.int64
 DEFAULT_NP_FLOAT_TYPE   : Type              = np.float64
 DEFAULT_NP_CPX_TYPE     : Type              = np.complex128
+
 BACKEND_REPR            : float             = 0.5
 BACKEND_DEF_SPIN        : bool              = True
+os.environ[PY_BACKEND_REPR]                 = "0.5"         # default to 0.5
+os.environ[PY_BACKEND_SPIN]                 = "1"           # default to spin systems
 
 DEFAULT_JP_INT_TYPE     : Optional[Type]    = None
 DEFAULT_JP_FLOAT_TYPE   : Optional[Type]    = None
@@ -642,33 +648,52 @@ class BackendManager:
 
         Args:
             name :
-                "numpy, np
+                "numpy", "jax"
         Raises:
             ValueError:
                 If 'jax' is requested but not available, or invalid name.
         """
         name = name.lower()
-        if name == "numpy" or name == "npy" or name == "np":
-            self.name       = "numpy"
+        if name in ("numpy", "npy", "np"):
+            
+            new_name = "numpy"
+            if self.name == new_name:
+                return
+            
+            self.name       = new_name
             self.np         = self._np_module
-            self.random     = self.default_rng # Use the numpy generator instance
+            self.random     = self.default_rng
             self.scipy      = self._sp_module
             self.key        = None
             self.jit        = lambda x: x
-            log.info("Switched active backend to NumPy.", color="green")
+            
+            # Process-wide log guard to prevent duplicates across re-imports
+            if os.environ.get("PY_BACKEND_SWITCH_LOGGED") != "numpy":
+                log.info("Switched active backend to NumPy.", color="green")
+                os.environ["PY_BACKEND_SWITCH_LOGGED"] = "numpy"
+                
         elif name == "jax":
+            
+            new_name = "jax"
+            if self.name == new_name:
+                return
+            
             if not self.is_jax_available or not self._jnp_module or not self._jrn_module or not self._jsp_module or not self._jax_jit:
                 raise ValueError("Cannot set 'jax' backend: JAX components not fully available.")
-            self.name       = "jax"
+            
+            self.name       = new_name
             self.np         = self._jnp_module
-            self.random     = self._jrn_module # Use the jax random module
+            self.random     = self._jrn_module
             self.scipy      = self._jsp_module
-            self.key        = self.default_jax_key # Use the default stored key
+            self.key        = self.default_jax_key
             self.jit        = self._jax_jit
-            log.info("Switched active backend to JAX.", color="green")
+            
+            if os.environ.get("PY_BACKEND_SWITCH_LOGGED") != "jax":
+                log.info("Switched active backend to JAX.", color="green")
+                os.environ["PY_BACKEND_SWITCH_LOGGED"] = "jax"
         else:
             raise ValueError(f"Invalid backend name: {name}. Choose 'numpy' or 'jax'.")
-        self._update_dtypes() # Update dtypes after switching
+        self._update_dtypes()
 
     # ---------------------------------------------------------------------
     #! Random Number Generation Initialization
@@ -1139,14 +1164,14 @@ def _qes_initialize_utils():
     # 1. Setup Logger
     try:
         # Centralized singleton access (avoids duplicate banner prints)
-        from QES.qes_globals import get_logger
+        from general_python.common.flog import get_logger
         log = get_logger()
     except Exception:
         logging.basicConfig(level=logging.INFO)
         log = logging.getLogger(__name__)
         log.info("Fallback standard logger initialized (qes_globals unavailable).")
 
-    _log_message("Initializing QES.general_python.algebra.utils...")
+    _log_message("Initializing general_python.algebra.utils...")
 
     # 2. Environment and Core Settings
     num_cores                       = os.cpu_count() or 1
@@ -1178,9 +1203,13 @@ def _qes_initialize_utils():
         logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
         logging.getLogger('jax').setLevel(logging.WARNING)
 
-        import jax.numpy as jnp
-        import jax.scipy as jsp
-        import jax.random as jrn
+        try:
+            import jax.numpy    as jnp
+            import jax.scipy    as jsp
+            import jax.random   as jrn
+        except ImportError as ie:
+            _log_message(f"JAX submodules could not be imported: {ie}", 0)
+            raise ie
 
         JAX_AVAILABLE = True
         if PREFER_JAX:
@@ -1274,7 +1303,7 @@ if "PY_UTILS_INIT_DONE" not in globals() or (PY_UTILS_INIT_DONE_STR not in os.en
         os._exit(1)
 else:
     # This message is helpful for debugging re-import issues.
-    _log_message("QES.general_python.algebra.utils already initialized; skipping re-initialization.", 0)
+    _log_message("general_python.algebra.utils already initialized; skipping re-initialization.", 0)
     _log_message("---------------------------------------------------------------------------------", 0)
     
 # ---------------------------------------------------------------------

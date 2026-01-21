@@ -19,7 +19,7 @@ from    abc import ABC, abstractmethod
 try:
     from scipy.integrate import solve_ivp
 except ImportError as e:
-    raise ImportError("Failed to import scipy.integrate module. Ensure QES package is correctly installed.") from e
+    raise ImportError("Failed to import scipy.integrate module. Ensure general_python package is correctly installed.") from e
 
 try:
     import          jax

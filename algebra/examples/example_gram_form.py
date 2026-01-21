@@ -18,14 +18,14 @@ Common Use Cases:
     - NQS optimization                  : S = log-derivative (Jacobian), Sp = energy gradient
     - Stochastic reconfiguration (SR)   : Natural gradient descent
     
-File        : QES/general_python/algebra/examples/example_gram_form.py
+File        : general_python/algebra/examples/example_gram_form.py
 Version     : 0.1.0
 Author      : Maksymilian Kliczkowski
 Email       : maxgrom97@gmail.com
 """
 
 import numpy as np
-from QES.general_python.algebra import solvers
+from general_python.algebra import solvers
 
 # ------------------------------------
 #! GRAM Form Example

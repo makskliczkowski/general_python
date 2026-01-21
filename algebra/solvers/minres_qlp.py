@@ -45,7 +45,7 @@ try:
     from ..solver           import Solver, SolverResult, SolverType, Array, MatVecFunc, StaticSolverFunc
     from ..preconditioners  import PreconitionerApplyFun
 except ImportError:
-    raise ImportError("QES package is required to use MINRES-QLP solver.")
+    raise ImportError("general_python package is required to use MINRES-QLP solver.")
 
 # JAX imports
 try:

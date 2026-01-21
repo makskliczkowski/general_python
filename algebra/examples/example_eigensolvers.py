@@ -21,7 +21,7 @@ from enum import Enum
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
 
 try:
-    from QES.general_python.algebra.eigen import (
+    from general_python.algebra.eigen import (
         full_diagonalization,
         LanczosEigensolver,
         BlockLanczosEigensolver,
@@ -29,7 +29,7 @@ try:
         decide_method
     )
 except ImportError as e:
-    print("Error importing QES eigenvalue solvers:", e)
+    print("Error importing general_python eigenvalue solvers:", e)
     sys.exit(1)
 
 # ----------------------------------------------------------------------------------------

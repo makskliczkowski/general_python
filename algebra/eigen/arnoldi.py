@@ -281,10 +281,9 @@ class ArnoldiEigensolver(EigenSolver):
         eigenvectors = eigenvectors / norms
 
         # Compute residual norms: ||A v - \lambda v||
-        residual_norms = np.zeros(len(selected_evals), dtype=float)
-        for i, (lam, vec) in enumerate(zip(selected_evals, eigenvectors.T)):
-            residual = matvec(vec) - lam * vec
-            residual_norms[i] = np.linalg.norm(residual)
+        av_products = np.column_stack([matvec(v) for v in eigenvectors.T])
+        residuals = av_products - eigenvectors * selected_evals
+        residual_norms = np.linalg.norm(residuals, axis=0)
 
         # Check convergence
         converged = np.all(residual_norms < tol)
@@ -390,10 +389,9 @@ class ArnoldiEigensolver(EigenSolver):
         eigenvectors = eigenvectors / col_norms
         
         # Compute residual norms
-        residual_norms = jnp.array([
-            jnp.linalg.norm(matvec(eigenvectors[:, i]) - selected_evals[i] * eigenvectors[:, i])
-            for i in range(len(selected_evals))
-        ])
+        av_products = jnp.stack([matvec(eigenvectors[:, i]) for i in range(eigenvectors.shape[1])], axis=1)
+        residuals = av_products - eigenvectors * selected_evals
+        residual_norms = jnp.linalg.norm(residuals, axis=0)
         
         converged = jnp.all(residual_norms < tol)
         

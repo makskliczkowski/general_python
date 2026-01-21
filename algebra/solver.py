@@ -512,7 +512,7 @@ class Solver(ABC):
         
             # Dense Matrix A (Dynamic A, dynamic sigma)
             if use_matrix:
-                def wrapper_logic(a, b, x0, tol, maxiter, precond_apply=None, sigma=None):
+                def wrapper_logic(a, b, x0, tol, maxiter, precond_apply=None, sigma=None, snr_tol=None):
                     effective_sigma = default_sigma if sigma is None else sigma
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
                     M               = None
@@ -537,7 +537,7 @@ class Solver(ABC):
                 # We always wrap to curry s, s_p since we're in Gram mode.
                 # The wrapping happens inside the traced function to capture dynamic s, s_p.
                 
-                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None):
+                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, snr_tol=None):
                     # Use runtime sigma if provided, otherwise fall back to default
                     effective_sigma = default_sigma if sigma is None else sigma
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
@@ -563,7 +563,7 @@ class Solver(ABC):
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
             
             else: 
-                def wrapper_logic(matvec, b, x0, tol, maxiter, precond_apply=None):
+                def wrapper_logic(matvec, b, x0, tol, maxiter, precond_apply=None, snr_tol=None):
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
                     return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
                 
