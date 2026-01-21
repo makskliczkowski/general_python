@@ -99,6 +99,7 @@ class _FlaxCNN(nn.Module):
     use_sum_pool   : bool               = True
     transform_input: bool               = False
     split_complex  : bool               = False # New optimization flag
+    islog          : bool               = True
 
     def setup(self):
         """
@@ -230,7 +231,10 @@ class _FlaxCNN(nn.Module):
             x_real, x_imag  = jnp.split(x, 2, axis=-1)
             x               = x_real + 1j * x_imag
         
-        return x.reshape(-1) if batch_size == 1 else x.reshape(batch_size, -1)
+        # 6. Log vs Amp
+        out = x if self.islog else jnp.exp(x)
+
+        return out.reshape(-1) if batch_size == 1 else out.reshape(batch_size, -1)
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -267,6 +271,7 @@ class CNN(FlaxInterface):
                 transform_input     : bool                                                  = False,
                 *,
                 split_complex       : bool                                                  = False,
+                islog               : bool                                                  = True,
                 dtype               : Any                                                   = jnp.float32,
                 param_dtype         : Optional[Any]                                         = None,
                 seed                : int                                                   = 0,
@@ -337,7 +342,8 @@ class CNN(FlaxInterface):
             periodic        =   kwargs.get('periodic', True),
             use_sum_pool    =   kwargs.get('sum_pooling', True),
             transform_input =   transform_input,
-            split_complex   =   split_complex
+            split_complex   =   split_complex,
+            islog           =   islog
         )
 
         self._out_shape     = output_shape
@@ -395,4 +401,3 @@ if __name__ == "__main__":
     x   = np.random.randint(0, 2, (2, 64))
     out = cnn(x)
     print("Output:", out.shape, out.dtype)
-
