@@ -54,19 +54,29 @@ date        : 2025-04-02
 ----------------------------------------------------------------
 """
 
-import numpy as np
-from typing import Tuple, Callable, Optional, Any, List, Union
+import numpy    as np
+from typing     import Tuple, Callable, Optional, Any, List, Union, TYPE_CHECKING
 
-import jax
-import jax.numpy as jnp
-from jax import random
-from flax import linen as nn
-from jax.tree_util import tree_flatten, tree_map
+try:
+    import jax
+    import jax.numpy    as jnp
+    from jax            import random
+    from flax           import linen as nn
+    from jax.tree_util  import tree_flatten, tree_map
+    JAX_AVAILABLE       = True
+except ImportError as e:
+    JAX_AVAILABLE       = False
+    raise ImportError("Flax and JAX must be installed to use FlaxInterface.") from e
 
 # from general_python utilities
-from ...ml.net_impl.net_general import GeneralNet
-from ...ml.net_impl.activation_functions import get_activation
-from ...algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, Array
+try:
+    from ...ml.net_impl.net_general             import GeneralNet
+    from ...ml.net_impl.activation_functions    import get_activation
+except ImportError as e:
+    raise ImportError("Required modules from general_python package are missing.") from e
+
+if TYPE_CHECKING:
+    from ...algebra.utils                       import Array, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
 
 ########################################################################
 #! GENERIC FLAX NETWORK INTERFACE
@@ -395,7 +405,7 @@ class FlaxInterface(GeneralNet):
     #! EVALUATION
     ########################################################
     
-    def apply_jax(self, x: Array):
+    def apply_jax(self, x: 'Array'):
         """
         Evaluate the network on input x using Flax (and JAX).
         Params:
@@ -458,7 +468,7 @@ class FlaxInterface(GeneralNet):
     #! CALL ME MAYBE
     #########################################################
     
-    def __call__(self, x: Array):
+    def __call__(self, x: 'Array'):
         """
         Call the network on input x.
         This is a wrapper around the Flax module's apply method.

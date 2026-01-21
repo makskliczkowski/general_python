@@ -171,6 +171,7 @@ class RBM(FlaxInterface):
     def __init__(self,
                 input_shape    : tuple,
                 n_hidden       : int            = 2,
+                alpha          : Optional[float]= None,
                 bias           : bool           = True,
                 visible_bias   : bool           = True,
                 in_activation  : bool           = False,                   # Flag to map {0,1} -> {-1,1}
@@ -181,6 +182,11 @@ class RBM(FlaxInterface):
 
         if not JAX_AVAILABLE:
             raise ImportError("RBM requires JAX.")
+
+        # Handle alpha if provided
+        if alpha is not None:
+            n_visible = np.prod(input_shape)
+            n_hidden  = int(alpha * n_visible)
 
         # Determine dtypes
         final_dtype             = jnp.dtype(dtype)

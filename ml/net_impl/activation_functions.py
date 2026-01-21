@@ -14,16 +14,18 @@ email   : maksymilian.kliczkowski@pwr.edu.pl
 --------------------------------------------------------------
 '''
 
-import numpy as np
-from typing import Optional, Tuple, Callable
-from functools import partial
+import numpy    as np
+from typing     import Optional, Tuple, Callable
 
-from ...algebra.utils import JAX_AVAILABLE, get_backend
-if JAX_AVAILABLE:
-    import jax.numpy as jnp
-    from jax import random
-    import jax.nn as jnn
-    import flax.linen as nn
+try:
+    import  jax
+    import  jax.numpy   as jnp
+    import  jax.nn      as jnn
+    from    jax         import random
+    import flax.linen   as nn
+    JAX_AVAILABLE       = True
+except ImportError:
+    JAX_AVAILABLE       = False
     
 ###################################################################
 #! SET OF ACTIVATION FUNCTIONS

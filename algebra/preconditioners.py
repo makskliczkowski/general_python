@@ -29,11 +29,14 @@ import inspect
 import numpy as np
 
 # Add sparse imports at the top of the file
-import scipy.sparse as sps
-import scipy.sparse.linalg as spsla
-import scipy.linalg as sla
+import  scipy.sparse as sps
+import  scipy.sparse.linalg as spsla
+import  scipy.linalg as sla
 
-from algebra.utils import JAX_AVAILABLE, get_backend, Array
+try:
+    from .utils import JAX_AVAILABLE, get_backend, Array
+except ImportError:
+    raise ImportError("Failed to import from .utils. Ensure the module is in the correct package structure.")
 
 if TYPE_CHECKING:
     from common.flog import Logger

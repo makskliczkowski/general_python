@@ -642,33 +642,52 @@ class BackendManager:
 
         Args:
             name :
-                "numpy, np
+                "numpy", "jax"
         Raises:
             ValueError:
                 If 'jax' is requested but not available, or invalid name.
         """
         name = name.lower()
-        if name == "numpy" or name == "npy" or name == "np":
-            self.name       = "numpy"
+        if name in ("numpy", "npy", "np"):
+            
+            new_name = "numpy"
+            if self.name == new_name:
+                return
+            
+            self.name       = new_name
             self.np         = self._np_module
-            self.random     = self.default_rng # Use the numpy generator instance
+            self.random     = self.default_rng
             self.scipy      = self._sp_module
             self.key        = None
             self.jit        = lambda x: x
-            log.info("Switched active backend to NumPy.", color="green")
+            
+            # Process-wide log guard to prevent duplicates across re-imports
+            if os.environ.get("PY_BACKEND_SWITCH_LOGGED") != "numpy":
+                log.info("Switched active backend to NumPy.", color="green")
+                os.environ["PY_BACKEND_SWITCH_LOGGED"] = "numpy"
+                
         elif name == "jax":
+            
+            new_name = "jax"
+            if self.name == new_name:
+                return
+            
             if not self.is_jax_available or not self._jnp_module or not self._jrn_module or not self._jsp_module or not self._jax_jit:
                 raise ValueError("Cannot set 'jax' backend: JAX components not fully available.")
-            self.name       = "jax"
+            
+            self.name       = new_name
             self.np         = self._jnp_module
-            self.random     = self._jrn_module # Use the jax random module
+            self.random     = self._jrn_module
             self.scipy      = self._jsp_module
-            self.key        = self.default_jax_key # Use the default stored key
+            self.key        = self.default_jax_key
             self.jit        = self._jax_jit
-            log.info("Switched active backend to JAX.", color="green")
+            
+            if os.environ.get("PY_BACKEND_SWITCH_LOGGED") != "jax":
+                log.info("Switched active backend to JAX.", color="green")
+                os.environ["PY_BACKEND_SWITCH_LOGGED"] = "jax"
         else:
             raise ValueError(f"Invalid backend name: {name}. Choose 'numpy' or 'jax'.")
-        self._update_dtypes() # Update dtypes after switching
+        self._update_dtypes()
 
     # ---------------------------------------------------------------------
     #! Random Number Generation Initialization
@@ -1178,9 +1197,13 @@ def _qes_initialize_utils():
         logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
         logging.getLogger('jax').setLevel(logging.WARNING)
 
-        import jax.numpy as jnp
-        import jax.scipy as jsp
-        import jax.random as jrn
+        try:
+            import jax.numpy    as jnp
+            import jax.scipy    as jsp
+            import jax.random   as jrn
+        except ImportError as ie:
+            _log_message(f"JAX submodules could not be imported: {ie}", 0)
+            raise ie
 
         JAX_AVAILABLE = True
         if PREFER_JAX:

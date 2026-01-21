@@ -318,7 +318,8 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
     # 2. Handle Existing Instances (Return as-is)
-    if isinstance(network_type, GeneralNet):
+    # Check isinstance OR duck-typing for objects that look like GeneralNet (prevents wrapping if imports differ)
+    if isinstance(network_type, GeneralNet) or (hasattr(network_type, 'get_params') and hasattr(network_type, 'apply')):
         return network_type
 
     # 3. Handle Types/Classes
@@ -326,45 +327,45 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         
         # It is a subclass of GeneralNet (e.g. user imported RBM manually)
         if issubclass(network_type, GeneralNet):
-            return network_type(input_shape=input_shape, backend=backend, dtype=dtype, seed=seed, **kwargs)
+            return network_type(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
-        # It is a Flax Module (Auto-Wrap Logic)
-        # We check this loosely to avoid importing flax if not needed
-        is_flax = False
-        try:
-            import flax.linen as nn
-            if issubclass(network_type, nn.Module):
-                is_flax = True
-        except ImportError:
-            pass
+    # It is a Flax Module (Auto-Wrap Logic)
+    # We check this loosely to avoid importing flax if not needed
+    is_flax = False
+    try:
+        import flax.linen as nn
+        if isinstance(network_type, type) and issubclass(network_type, nn.Module):
+            is_flax = True
+    except ImportError:
+        pass
 
-        if is_flax:
-            # Lazy import the interface wrapper
-            from .net_impl.interface_net_flax import FlaxInterface
-            
-            # The network_type here IS the Flax Module class
-            # We pass all kwargs to the FlaxInterface, which will pass them to the module
-            all_kwargs = kwargs.copy()
-            all_kwargs.pop('input_shape',   None)  # Remove if present in kwargs
-            all_kwargs.pop('backend',       None)
-            all_kwargs.pop('dtype',         None)
-            all_kwargs.pop('param_dtype',   None)
-            all_kwargs.update({
-                'input_shape'   : input_shape,
-                'backend'       : backend,
-                'dtype'         : dtype,
-                'param_dtype'   : param_dtype,
-            })
-            return FlaxInterface(
-                net_module      =   network_type,
-                net_kwargs      =   all_kwargs,
-                input_shape     =   input_shape,
-                backend         =   backend,
-                dtype           =   dtype,
-                param_dtype     =   param_dtype,
-                seed            =   seed,
-                in_activation   =   kwargs.get('in_activation', None)
-            )
+    if is_flax:
+        # Lazy import the interface wrapper
+        from .net_impl.interface_net_flax import FlaxInterface
+        
+        # The network_type here IS the Flax Module class
+        # We pass all kwargs to the FlaxInterface, which will pass them to the module
+        all_kwargs = kwargs.copy()
+        all_kwargs.pop('input_shape',   None)  # Remove if present in kwargs
+        all_kwargs.pop('backend',       None)
+        all_kwargs.pop('dtype',         None)
+        all_kwargs.pop('param_dtype',   None)
+        all_kwargs.update({
+            'input_shape'   : input_shape,
+            'backend'       : backend,
+            'dtype'         : dtype,
+            'param_dtype'   : param_dtype,
+        })
+        return FlaxInterface(
+            net_module      =   network_type,
+            net_kwargs      =   all_kwargs,
+            input_shape     =   input_shape,
+            backend         =   backend,
+            dtype           =   dtype,
+            param_dtype     =   param_dtype,
+            seed            =   seed,
+            in_activation   =   kwargs.get('in_activation', None)
+        )
 
     # Handle generic Callables (Factories)
     if callable(network_type):

@@ -250,15 +250,15 @@ if JAX_AVAILABLE:
             A 1D array containing all gradient elements concatenated.
         """
         # Flatten the tree; tree_flatten returns leaves in a deterministic (depth-first) order.
-        leaves, tree = jax.tree_util.tree_flatten(grad_pytree)
+        leaves, tree    = jax.tree_util.tree_flatten(grad_pytree)
         if not leaves:
-            return jnp.array([], dtype=jnp.float32)  # or your DEFAULT_JP_FLOAT_TYPE
+            return jnp.array([], dtype=jnp.float32), [], [], []  # or your DEFAULT_JP_FLOAT_TYPE
 
         # For each leaf, reshape to 1D (C order is the default in JAX)
-        shapes      = [leaf.shape for leaf in leaves]
-        sizes       = [leaf.size for leaf in leaves]
-        flat_leaves = [leaf.ravel() for leaf in leaves]
-        complexity  = [jnp.iscomplexobj(leaf) for leaf in leaves]
+        shapes          = [leaf.shape for leaf in leaves]
+        sizes           = [leaf.size for leaf in leaves]
+        flat_leaves     = [leaf.ravel() for leaf in leaves]
+        complexity      = [jnp.iscomplexobj(leaf) for leaf in leaves]
         
         # jax.debug.print("jax flatten gradient pytree: {}", flat_leaves)
         # jax.debug.print("jax flatten gradient pytree shapes: {}", shapes)
