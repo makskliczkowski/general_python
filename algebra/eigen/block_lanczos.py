@@ -461,18 +461,10 @@ class BlockLanczosEigensolver(EigenSolver):
         norms[norms == 0] = 1.0
         eigenvectors = eigenvectors / norms
         
-        # Compute residual norms
-        residual_norms      = np.zeros(len(selected_evals))
-        for i, (lam, vec) in enumerate(zip(selected_evals, eigenvectors.T)):
-            # Compute residual: ||A*v - lambda*v||
-            # matvec might expect 1D or 2D, so handle both
-            try:
-                Av = matvec(vec)
-            except:
-                # If 1D doesn't work, try 2D
-                Av = matvec(vec.reshape(-1, 1)).flatten()
-            residual = Av - lam * vec
-            residual_norms[i] = np.linalg.norm(residual)
+        # Compute residual norms: ||A V - V \Lambda||
+        av_products = matvec(eigenvectors)
+        residuals = av_products - eigenvectors * selected_evals
+        residual_norms = np.linalg.norm(residuals, axis=0)
         
         converged = np.all(residual_norms < tol)
         
