@@ -6,17 +6,21 @@ date    : 2025-03-01
 '''
 
 # from general python utils
-from typing import Any, Callable, Dict, List, Tuple, NamedTuple, Optional, Union
-from ....algebra.utils import JAX_AVAILABLE, get_backend, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE
-from functools import partial
+from typing                 import Any, Callable, Optional, Dict, List, Tuple, NamedTuple, Union
+from functools              import partial
+try:
+    import jax
+    JAX_AVAILABLE           = True
+    DEFAULT_JP_FLOAT_TYPE   = jax.numpy.float64
+    DEFAULT_JP_CPX_TYPE     = jax.numpy.complex128
+except ImportError:
+    jax                     = None
+    JAX_AVAILABLE           = False
 
 if JAX_AVAILABLE:
-    import jax
-    from jax import grad
-    from jax import numpy as jnp
-    from jax.tree_util import tree_flatten, tree_unflatten, tree_map, tree_leaves
-    from jax.flatten_util import ravel_pytree
-    from jax import lax
+    from jax                import lax
+    from jax                import numpy as jnp
+    from jax.tree_util      import tree_flatten, tree_unflatten, tree_map, tree_leaves
 
     # use flax
     import flax
@@ -25,12 +29,10 @@ if JAX_AVAILABLE:
 else:
     jax             = None
     jnp             = None
-    grad            = None
     tree_flatten    = None
     tree_unflatten  = None
     tree_map        = None
     tree_leaves     = None
-    ravel_pytree    = None
     freeze          = None
     unfreeze        = None
     nn              = None
