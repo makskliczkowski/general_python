@@ -1981,34 +1981,36 @@ class Plotter:
     def set_ax_params(
             ax,
             # Axis specification
-            which                   : str                               = 'both',
-            # Labels
-            xlabel                  : Optional[str]                     = None,
-            ylabel                  : Optional[str]                     = None,
-            title                   : Optional[str]                     = None,
-            # Label styling
-            fontsize                : Optional[int]                     = None,
-            labelsize_title         : Optional[int]                     = None,
-            labelsize_tick          : Optional[int]                     = None,
-            labelpad                : Union[float, dict]                = 0.0,
-            title_pad               : float                             = 10.0,
+            which                   : str                                   = 'both',
+            # Labels    
+            xlabel                  : Optional[str]                         = None,
+            ylabel                  : Optional[str]                         = None,
+            title                   : Optional[str]                         = None,
+            # Label styling 
+            fontsize                : Optional[int]                         = None,
+            labelsize_title         : Optional[int]                         = None,
+            labelsize_tick          : Optional[int]                         = None,
+            labelpad                : Union[float, dict]                    = 0.0,
+            title_pad               : float                                 = 10.0,
             # Label positions
-            xlabel_position         : Literal['top', 'bottom']          = 'bottom',
-            ylabel_position         : Literal['left', 'right']          = 'left',
+            xlabel_position         : Literal['top', 'bottom']              = 'bottom',
+            ylabel_position         : Literal['left', 'right']              = 'left',
             # Axis limits and scales
-            xlim                    : Optional[tuple]                   = None,
-            ylim                    : Optional[tuple]                   = None,
-            xscale                  : Literal['linear', 'log', 'symlog'] = 'linear',
-            yscale                  : Literal['linear', 'log', 'symlog'] = 'linear',
+            xlim                    : Optional[tuple]                       = None,
+            ylim                    : Optional[tuple]                       = None,
+            xscale                  : Literal['linear', 'log', 'symlog']    = 'linear',
+            yscale                  : Literal['linear', 'log', 'symlog']    = 'linear',
             # Ticks and tick labels
-            xticks                  : Optional[Union[list, np.ndarray]]  = None,
-            yticks                  : Optional[Union[list, np.ndarray]]  = None,
-            xticklabels             : Optional[list]                    = None,
-            yticklabels             : Optional[list]                    = None,
-            tick_length_major       : float                             = 4.0,
-            tick_length_minor       : float                             = 2.0,
-            tick_width              : float                             = 0.8,
-            tick_direction          : Literal['in', 'out', 'inout']     = 'in',
+            xticks                  : Optional[Union[list, np.ndarray]]     = None,
+            yticks                  : Optional[Union[list, np.ndarray]]     = None,
+            xticklabels             : Optional[list]                        = None,
+            yticklabels             : Optional[list]                        = None,
+            xtickpos                : Literal['top', 'bottom', 'both']      = None,
+            ytickpos                : Literal['left', 'right', 'both']      = None,
+            tick_length_major       : float                                 = 4.0,
+            tick_length_minor       : float                                 = 2.0,
+            tick_width              : float                                 = 0.8,
+            tick_direction          : Literal['in', 'out', 'inout']         = 'in',
             # Minor ticks
             show_minor_ticks        : bool                              = True,
             minor_tick_locator      : Optional[str]                     = 'auto',  # 'auto' or 'log' for log scale
@@ -2037,6 +2039,8 @@ class Plotter:
             auto_formatter          : bool                              = True,
             # label condition
             label_cond              : bool                              = True,
+            label_pos               : dict                              = None,
+            tick_pos                : dict                              = None,
             **kwargs
         ):
         r"""
@@ -2255,13 +2259,27 @@ class Plotter:
             label_cond_x            = True
             label_cond_y            = True
         
+        # Label position dictionary
+        if label_pos is not None and isinstance(label_pos, dict):
+            xlabel_position        = label_pos.get('x', label_pos.get('X', xlabel_position))
+            ylabel_position        = label_pos.get('y', label_pos.get('Y', ylabel_position))
+        
+        # Tick positions
+        if tick_pos is not None and isinstance(tick_pos, dict):
+            xtickpos               = tick_pos.get('x', tick_pos.get('X', xtickpos))
+            ytickpos               = tick_pos.get('y', tick_pos.get('Y', ytickpos))
+            if xtickpos is not None:
+                ax.xaxis.set_ticks_position(xtickpos)
+            if ytickpos is not None:
+                ax.yaxis.set_ticks_position(ytickpos)
+        
         # Resolve font sizes
         if fontsize is None:
-            fontsize = plt.rcParams.get('font.size', 10)
+            fontsize        = plt.rcParams.get('font.size', 10)
         if labelsize_title is None:
             labelsize_title = fontsize + 2
         if labelsize_tick is None:
-            labelsize_tick = max(fontsize - 2, 8)
+            labelsize_tick  = max(fontsize - 2, 8)
         
         # Resolve labelpad
         if isinstance(labelpad, (int, float)):

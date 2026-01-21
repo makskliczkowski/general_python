@@ -93,17 +93,23 @@ PY_GLOBAL_SEED_STR      : str               = "PY_GLOBAL_SEED"
 PY_INFO_VERBOSE         : str               = "PY_BACKEND_INFO"
 PY_SPIN_VALUE_STR       : str               = "PY_SPIN_VALUE"
 PY_UTILS_INIT_DONE_STR  : str               = "PY_UTILS_INIT_DONE"
+PY_BACKEND_REPR         : str               = "PY_BACKEND_REPR"
+PY_BACKEND_SPIN         : str               = "PY_BACKEND_DEF_SPIN"
+
 # ---------------------------------------------------------------------
 
-JIT                     : Callable          = lambda x: x # Default JIT function (identity)
+JIT                     : Callable          = lambda x: x   # Default JIT function (identity)
 DEFAULT_SEED            : int               = 42
 DEFAULT_BACKEND         : str               = "numpy"
 DEFAULT_BACKEND_KEY     : Optional[str]     = None
 DEFAULT_NP_INT_TYPE     : Type              = np.int64
 DEFAULT_NP_FLOAT_TYPE   : Type              = np.float64
 DEFAULT_NP_CPX_TYPE     : Type              = np.complex128
+
 BACKEND_REPR            : float             = 0.5
 BACKEND_DEF_SPIN        : bool              = True
+os.environ[PY_BACKEND_REPR]                 = "0.5"         # default to 0.5
+os.environ[PY_BACKEND_SPIN]                 = "1"           # default to spin systems
 
 DEFAULT_JP_INT_TYPE     : Optional[Type]    = None
 DEFAULT_JP_FLOAT_TYPE   : Optional[Type]    = None

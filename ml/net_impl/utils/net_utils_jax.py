@@ -591,17 +591,144 @@ if JAX_AVAILABLE:
         # return flatten_gradient_pytree_real(grad_pytree)
     
     # ----------------------------------------------------------------------------
+    #! Batched Jacobian
+    # ----------------------------------------------------------------------------
+
+    @jax.tree_util.register_pytree_node_class
+    class BatchedJacobian:
+        def __init__(self, net_apply, params, states, batch_size, grad_fun, shapes, sizes, is_cpx):
+            self.net_apply      = net_apply
+            self.params         = params
+            self.states         = states
+            self.batch_size     = batch_size
+            self.grad_fun       = grad_fun
+            self.shapes         = shapes
+            self.sizes          = sizes
+            self.is_cpx         = is_cpx
+            self._n_samples     = states.shape[0]
+            self._n_params      = sum(sizes)
+            self.shape          = (self._n_samples, self._n_params)
+            
+            # Helper to create batches
+            self._batches       = create_batches_jax(states, batch_size)
+            self._n_batches     = self._batches.shape[0]
+            
+            # Helper: vmapped gradient function for a batch
+            # returns (Batch, Params)
+            def compute_grad_for_one_state(p, s):
+                return self.grad_fun(self.net_apply, p, s)[0]
+            self._batch_grads_fun = jax.vmap(compute_grad_for_one_state, in_axes=(None, 0), out_axes=0)
+
+        def tree_flatten(self):
+            children = (self.params, self.states)
+            aux_data = (self.net_apply, self.batch_size, self.grad_fun, self.shapes, self.sizes, self.is_cpx)
+            return children, aux_data
+
+        @classmethod
+        def tree_unflatten(cls, aux_data, children):
+            return cls(aux_data[0], children[0], children[1], *aux_data[1:])
+
+        def __repr__(self):
+            return f"BatchedJacobian(n_samples={self._n_samples}, n_params={self._n_params}, batch_size={self.batch_size})"
+
+        def mean(self, axis=0):
+            """Computes mean gradient over samples."""
+            if axis != 0: raise ValueError("Only axis=0 supported for BatchedJacobian mean.")
+            
+            # Use compute_weighted_sum with uniform weights 1/N
+            return self.compute_weighted_sum(jnp.ones(self._n_samples) / self._n_samples)
+
+        def compute_weighted_sum(self, weights):
+            """
+            Computes sum_i weights[i] * grad_i.
+            weights: (N_samples,) or (N_samples, 1)
+            Returns: (N_params,)
+            """
+            weights = weights.reshape(-1)
+            # Pad weights to match batches
+            w_batches = create_batches_jax(weights, self.batch_size)
+            
+            # Define scan body properly
+            def body_fun(carry, batch_input):
+                b_states, b_weights = batch_input
+                b_grads             = self._batch_grads_fun(self.params, b_states) # (Batch, Params)
+                weighted            = b_grads * b_weights[:, None]
+                return carry + jnp.sum(weighted, axis=0), None
+
+            # init_val = jnp.zeros(self._n_params, dtype=jnp.complex128 if self.is_cpx[0] else jnp.float32) 
+            init_val = jnp.zeros(self._n_params, dtype=DEFAULT_JP_CPX_TYPE)
+
+            # Run scan
+            final_sum, _ = jax.lax.scan(body_fun, init_val, (self._batches, w_batches))
+            return final_sum
+
+        def mv(self, v):
+            """
+            Matrix-Vector product: O @ v
+            O_i . v = grad_i . v = JVP(net_apply, params, v, at state_i)
+            Returns: (N_samples,)
+            """
+            # Reconstruct Pytree for v
+            tree_def = jax.tree_util.tree_structure(self.params)
+            
+            def unflatten_v(flat_v):
+                leaves = []
+                idx = 0
+                for shape, size, cpx in zip(self.shapes, self.sizes, self.is_cpx):
+                    part = flat_v[idx : idx + size]
+                    part = part.reshape(shape)
+                    leaves.append(part)
+                    idx += size
+                return jax.tree_util.tree_unflatten(tree_def, leaves)
+
+            v_tree = unflatten_v(v)
+            
+            def jvp_fun(s):
+                # Split strategy for complex JVP support
+                def compute_jvp(tangents):
+                     return jax.jvp(lambda p: self.net_apply(p, s), (self.params,), (tangents,))[1]
+
+                v_real = jax.tree_util.tree_map(jnp.real, v_tree)
+                v_imag = jax.tree_util.tree_map(jnp.imag, v_tree)
+                
+                out_real = compute_jvp(v_real)
+                out_imag = compute_jvp(v_imag)
+                
+                return out_real + 1j * out_imag
+
+            # Map over batches
+            def batch_mv(b_states):
+                return jax.vmap(jvp_fun)(b_states)
+            
+            def process_batch(batch):
+                return batch_mv(batch)
+            
+            # Run
+            res = jax.lax.map(process_batch, self._batches)
+            res = res.reshape(-1)
+            return res[:self._n_samples]
+
+        def rmv(self, v):
+            """
+            Reverse Matrix-Vector product: O^dag @ v
+            Sum_i v_i * (grad_i)^dag = Sum_i v_i * grad_i.conj() = (Sum_i v_i.conj() * grad_i).conj()
+            Returns: (N_params,)
+            """
+            return self.compute_weighted_sum(v.conj()).conj()
+            
+    # ----------------------------------------------------------------------------
     #! Compute the gradient
     # ----------------------------------------------------------------------------
     
-    # @partial(jax.jit, static_argnums=(0, 3, 4))                                         # apply_fun and single_sample_flat_grad_fun are static
+    # @partial(jax.jit, static_argnums=(0, 3, 4, 5))                                         # apply_fun and single_sample_flat_grad_fun are static
     def compute_gradients_batched(
             net_apply                   : Callable[[Any, Any], jnp.ndarray],            # Network apply function f(p, s).
             params                      : Any,                                          # Network parameters `p` (PyTree).
             states                      : jnp.ndarray,                                  # Expects shape (n_samples, ...)
             single_sample_flat_grad_fun : Callable[[Callable, Any, Any], jnp.ndarray],
             batch_size                  : int = 1,                                      # Batch size for gradient computation.
-        ) -> jnp.ndarray:
+            return_jacobian_obj         : bool = True,                                  # Whether to return BatchedJacobian object
+        ) -> Union[jnp.ndarray, BatchedJacobian]:
         """
         Compute flattened gradients per sample over a batch of states using jax.vmap.
 
@@ -625,10 +752,13 @@ if JAX_AVAILABLE:
             *Must be static* for JIT.
         batch_size : int, optional
             Batch size for gradient computation. Default is 1 (no batching).
+        return_jacobian_obj : bool, optional
+            If True, returns a BatchedJacobian object instead of materializing the full Jacobian.
+            Defaults to True to avoid OOM on large samples.
 
         Returns
         -------
-        jnp.ndarray
+        jnp.ndarray or BatchedJacobian
             Array of flattened gradients, shape `(num_samples, num_flat_params)`.
             Dtype matches the output of `single_sample_flat_grad_fun`.
         """
@@ -637,6 +767,11 @@ if JAX_AVAILABLE:
 
         # get full info from the first state
         gradients, shapes, sizes, is_cpx = single_sample_flat_grad_fun(net_apply, params, states[0])
+        
+        # New mode: Return BatchedJacobian object to avoid OOM
+        if return_jacobian_obj:
+            bj = BatchedJacobian(net_apply, params, states, batch_size, single_sample_flat_grad_fun, shapes, sizes, is_cpx)
+            return bj, shapes, sizes, is_cpx
 
         # Define the function to be vmapped. It takes params and a single state.
         # net_apply and single_sample_flat_grad_fun are closed over or passed statically.
