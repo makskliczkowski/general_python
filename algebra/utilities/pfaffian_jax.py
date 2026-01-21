@@ -300,15 +300,15 @@ if JAX_AVAILABLE:
             dot_k = dots[updIdx]
             
             # Clipping avoids NaN/Inf from exact zero, but might mask issues.
-            dotProductInv = 1.0 / jnp.clip(dot_k, a_min=_ZERO_TOL, a_max=1e10)
+            dotProductInv = 1.0 / jnp.clip(dot_k, min=_ZERO_TOL, max=1e10)
 
             # Vectorized update
 
             # u[i] = delta_{i, updIdx} - dots[i]
-            d_alpha = jnp.zeros((N,), dtype=Ainv.dtype)
-            d_alpha = d_alpha.at[updIdx].set(1.0)
+            # Improved optimization: Avoid allocating full zero array for d_alpha
+            u = -dots
+            u = u.at[updIdx].add(1.0)
 
-            u = d_alpha - dots
             v = Ainv[updIdx, :] # This is Ainv_k
 
             # update_term[i, j] = dotProductInv * (u[i] * v[j] - u[j] * v[i])
