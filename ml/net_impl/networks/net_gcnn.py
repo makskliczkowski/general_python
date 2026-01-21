@@ -131,6 +131,7 @@ class _FlaxGCNN(nn.Module):
     split_complex   : bool                  = False
     input_trans     : Optional[Callable]    = None
     use_sum_pool    : bool                  = True
+    islog           : bool                  = True
 
     def setup(self):
         # Dtype logic
@@ -230,8 +231,9 @@ class _FlaxGCNN(nn.Module):
         if self.split_complex:
             re, im  = jnp.split(x, 2, axis=-1)
             x       = re + 1j * im
-            
-        return x
+
+        # 6. Log vs Amp
+        return x if self.islog else jnp.exp(x)
 
 # ----------------------------------------------------------------------
 # Wrapper Interface
@@ -254,12 +256,13 @@ class GCNN(FlaxInterface):
                 graph_edges    : Optional[List[Tuple[int, int]]]    = None,
                 adj_matrix     : Optional[np.ndarray]               = None,
                 features       : Sequence[int]                      = (16, 32),
-                activations    : Union[str, Sequence]               = 'elu',
+                activations    : Union[str, Sequence]               = 'log_cosh',
                 output_shape   : tuple                              = (1,),
                 use_bias       : bool                               = True,
                 use_sum_pool   : bool                               = True,
                 split_complex  : bool                               = False,
                 transform_input: bool                               = False,
+                islog          : bool                               = True,
                 dtype          : Any                                = jnp.complex128,
                 param_dtype    : Optional[Any]                      = None,
                 seed           : int                                = 0,
@@ -277,9 +280,10 @@ class GCNN(FlaxInterface):
         else:
             # Build from edges
             adj = np.zeros((n_sites, n_sites), dtype=np.float32)
-            for i, j in graph_edges:
-                adj[i, j] = 1.0
-                adj[j, i] = 1.0 # Undirected
+            if graph_edges is not None:
+                for i, j in graph_edges:
+                    adj[i, j] = 1.0
+                    adj[j, i] = 1.0 # Undirected
         
         # Resolve Activations
         if isinstance(activations, str):
@@ -298,7 +302,8 @@ class GCNN(FlaxInterface):
                             'param_dtype'   : param_dtype if param_dtype else dtype,
                             'split_complex' : split_complex,
                             'input_trans'   : (lambda x: 2*x - 1) if transform_input else None,
-                            'use_sum_pool'  : use_sum_pool
+                            'use_sum_pool'  : use_sum_pool,
+                            'islog'         : islog
                         }
 
         super().__init__(
