@@ -678,6 +678,13 @@ class FlaxInterface(GeneralNet):
         Returns:
             bool: True if the network is holomorphic, False otherwise.
         """
+        if self._holomorphic is None:
+            # Trigger check if not yet performed
+            if self._initialized:
+                self.check_holomorphic()
+            else:
+                # Can't check before initialization
+                return False
         return self._holomorphic
     
     @property

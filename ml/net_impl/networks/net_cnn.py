@@ -89,24 +89,25 @@ class _FlaxCNN(nn.Module):
     strides        : Sequence[Tuple[int, ...]]  # e.g. ((1, 1), (1, 1))
     activations    : Sequence[Callable]         # already resolved callables
     use_bias       : Sequence[bool]
-    output_feats   : int                        # prod(output_shape)
-    in_act         : Optional[Callable] = None
-    out_act        : Optional[Callable] = None
-    param_dtype    : jnp.dtype          = jnp.complex64
-    dtype          : jnp.dtype          = jnp.complex64
-    input_channels : int                = 1
-    periodic       : bool               = True
-    use_sum_pool   : bool               = True
-    transform_input: bool               = False
-    split_complex  : bool               = False # New optimization flag
-    islog          : bool               = True
+    param_dtype    : jnp.dtype                  = jnp.complex64
+    dtype          : jnp.dtype                  = jnp.complex64
+    input_channels : int                        = 1
+    periodic       : bool                       = False
+    use_sum_pool   : bool                       = True
+    transform_input: bool                       = False
+    split_complex  : bool                       = False
+    islog          : bool                       = True
+    in_act         : Optional[Callable]         = None
+    out_act        : Optional[Callable]         = None
 
     def setup(self):
         """
         Setup layers. Handles split-complex logic by converting complex dtypes
         to their float equivalents for the backbone if enabled.
         """
-        iter_specs = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
+        
+        # Iter Specs - used for layer creation
+        iter_specs      = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
         
         #! Dtype Resolution
         # If split_complex is True, we force the backbone to be REAL.
@@ -127,8 +128,8 @@ class _FlaxCNN(nn.Module):
             c_dtype = self.dtype
 
         # Initialization Scaling
-        n_spatial   = math.prod(self.reshape_dims)
-        init_scale  = 1.0 / jnp.sqrt(n_spatial)
+        n_spatial       = math.prod(self.reshape_dims)
+        init_scale      = 1.0 / jnp.sqrt(n_spatial)
         
         # Choose initializer
         if jnp.issubdtype(p_dtype, jnp.complexfloating):
@@ -152,19 +153,6 @@ class _FlaxCNN(nn.Module):
             for i, (feat, k_size, stride, bias) in enumerate(iter_specs)
         ]
 
-        #! Output Layer
-        # If split_complex, we output 2x features (Real, Imag) and combine later.
-        out_features    = self.output_feats * 2 if self.split_complex else self.output_feats
-        
-        self.dense_out  = nn.Dense(
-                            features    = out_features,
-                            use_bias    = True,
-                            param_dtype = p_dtype,
-                            dtype       = c_dtype,
-                            kernel_init = kernel_init,
-                            name        = "dense_out",
-                        )
-
     def __call__(self, s: jax.Array) -> jax.Array:
         """ 
         Forward pass.
@@ -177,21 +165,18 @@ class _FlaxCNN(nn.Module):
         target_shape    = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
         
         # 1. Reshape & Transform
-        x = s.reshape(target_shape)
+        x               = s.reshape(target_shape)
         
         if self.split_complex:
-            # If backbone is real, ensure input is real.
-            # For spins (0,1) or (-1,1), this is trivial.
-            # Usually NQS inputs are real.
-            x = x.real if jnp.iscomplexobj(x) else x
+            x           = x.real if jnp.iscomplexobj(x) else x
             
         # Transform 0/1 -> -1/1 if needed
         if self.transform_input:
-            x = x * 2 - 1
+            x           = x * 2 - 1
             
         # Cast to computation dtype (float if split_complex)
-        comp_dtype  = self.conv_layers[0].dtype     # Get dtype from first layer
-        x           = x.astype(comp_dtype)          # Cast input
+        comp_dtype      = self.conv_layers[0].dtype     # Get dtype from first layer
+        x               = x.astype(comp_dtype)          # Cast input
 
         # Input Activation
         if self.in_act is not None:
@@ -213,28 +198,27 @@ class _FlaxCNN(nn.Module):
         # 3. Pooling
         if self.use_sum_pool:
             # Sum over spatial dimensions (1 ... N-2)
-            spatial_axes    = tuple(range(1, x.ndim - 1))
-            x               = jnp.sum(x, axis=spatial_axes)
+            # Sum over all spatial dimensions AND channels (features)
+            # This implements "Global Sum Pooling across all spatial dimensions and features."
+            # x shape: (Batch, Spatial..., Channels)
+            reduce_axes     = tuple(range(1, x.ndim))
+            x               = jnp.sum(x, axis=reduce_axes)
         else:
             x               = x.reshape((batch_size, -1))
 
         # 4. Output
-        x = self.dense_out(x)
-
         if self.out_act is not None:
             act_fn          = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
             x               = act_fn(x)
-            
-        # 5. Complex Recombination 
-        if self.split_complex:
-            # x shape: (Batch, 2 * output_feats)
-            x_real, x_imag  = jnp.split(x, 2, axis=-1)
-            x               = x_real + 1j * x_imag
         
         # 6. Log vs Amp
-        out = x if self.islog else jnp.exp(x)
-
-        return out.reshape(-1) if batch_size == 1 else out.reshape(batch_size, -1)
+        out                 = x if self.islog else jnp.exp(x)
+        
+        if batch_size == 1 and out.ndim > 0:
+            return out.squeeze() # Return scalar
+        else:
+            # Should already be (batch_size,) after sum pooling
+            return out.squeeze() if out.ndim > 1 else out
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -333,14 +317,13 @@ class CNN(FlaxInterface):
             strides         =   strides_t,
             activations     =   acts,
             use_bias        =   bias_flags,
-            output_feats    =   math.prod(output_shape),
             in_act          =   get_activation_jnp(in_activation) if in_activation else None,
             out_act         =   get_activation_jnp(final_activation) if final_activation else None,
             dtype           =   dtype,
             param_dtype     =   p_dtype,
             input_channels  =   1,
-            periodic        =   kwargs.get('periodic', True),
-            use_sum_pool    =   kwargs.get('sum_pooling', True),
+            periodic        =   kwargs.get('periodic',      False),
+            use_sum_pool    =   kwargs.get('sum_pooling',   True),
             transform_input =   transform_input,
             split_complex   =   split_complex,
             islog           =   islog
@@ -368,10 +351,14 @@ class CNN(FlaxInterface):
 
     def __call__(self, s: 'Array'):
         flat_output = super().__call__(s)
-        if self._out_shape == (1,):
-            return flat_output.reshape(-1)
-        target_output_shape = (-1,) + self._out_shape
-        return flat_output.reshape(target_output_shape)
+        
+        if flat_output.ndim == 0:  # Single scalar
+            return flat_output
+        elif flat_output.ndim == 1:  # Batch of scalars
+            return flat_output
+        else:
+            # Flatten to (batch_size,) or scalar
+            return flat_output.reshape(-1)[:s.shape[0] if s.ndim > 1 else 1]
 
     def __repr__(self) -> str:
         kind    = "SplitComplex" if self._split_complex else ("Complex" if self._iscpx else "Real")

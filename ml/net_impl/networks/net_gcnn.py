@@ -32,7 +32,6 @@ License         : MIT
 """
 
 import  numpy   as np
-import  math
 from    typing  import Sequence, Callable, Optional, Any, Union, List, Tuple
 
 try:
@@ -165,22 +164,6 @@ class _FlaxGCNN(nn.Module):
             ) for i, feat in enumerate(self.features)
         ]
 
-        self.layer_norms    = [
-                                nn.LayerNorm(dtype=c_dtype, name=f"LN_{i}") 
-                                for i in range(len(self.features))
-                            ]
-
-        # Output Layer
-        out_f = self.output_dim * 2 if self.split_complex else self.output_dim
-        self.dense_out = nn.Dense(
-            features    = out_f,
-            use_bias    = True,
-            dtype       = c_dtype,
-            param_dtype = p_dtype,
-            kernel_init = k_init,
-            name        = "Readout"
-        )
-
     @nn.compact
     def __call__(self, x):
         # x shape: (Batch, N_sites) -> needs (Batch, N_sites, 1) or (Batch, N, Channels)
@@ -214,23 +197,14 @@ class _FlaxGCNN(nn.Module):
         
         for i, (layer, act) in enumerate(zip(self.gconv_layers, self.activations)):
             x = layer(x, adj)
-            x = self.layer_norms[i](x)
             x = act(x)
 
         # 3. Pooling (Sum over sites)
         # x: (Batch, N, Feat)
         if self.use_sum_pool:
-            x = jnp.mean(x, axis=1) # (Batch, Feat)
+            x = jnp.sum(x, axis=(1, 2))
         else:
             x = x.reshape((x.shape[0], -1))
-
-        # 4. Readout
-        x = self.dense_out(x)
-
-        # 5. Combine
-        if self.split_complex:
-            re, im  = jnp.split(x, 2, axis=-1)
-            x       = re + 1j * im
 
         # 6. Log vs Amp
         return x if self.islog else jnp.exp(x)
