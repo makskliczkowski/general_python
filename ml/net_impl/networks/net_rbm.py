@@ -246,7 +246,7 @@ class RBM(FlaxInterface):
         r"""
         Computes the analytical gradient of log(psi(s)) for the RBM.
 
-        Calculates the derivatives d log(psi)/dp averaged over the batch,
+        Calculates the derivatives d log(psi)/dp for each sample in the batch (per-sample gradients),
         where p are the parameters (visible_bias, hidden_bias, weights).
 
         Gradient Formulas:
@@ -267,7 +267,7 @@ class RBM(FlaxInterface):
         Returns:
             Any:
                 A PyTree with the same structure as `params`, containing the
-                batch-averaged gradients for each parameter.
+                gradients for each batch element. The leaves have shape (batch, ...).
         """
         
         #! Parameter Extraction
@@ -308,8 +308,8 @@ class RBM(FlaxInterface):
         # visible_state: (b, i), tanh_theta: (b, j) -> grad_W: (b, i, j)
         grad_W_batch = jnp.einsum('bi,bj->bij', visible_state, tanh_theta)
 
-        # --- Averaging over Batch ---
-        # Use tree_map to average only the leaves that correspond to gradients
+        # --- Gradients per Batch ---
+        # Construct the gradient tree matching params structure
         batch_grads = {}
         if a is not None:
             batch_grads['visible_bias'] = visible_state # grad_a_batch
