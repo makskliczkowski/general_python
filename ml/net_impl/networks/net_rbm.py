@@ -217,8 +217,7 @@ class RBM(FlaxInterface):
             'input_activation': input_activation,
             'param_dtype'     : final_param_dtype,
             'dtype'           : final_dtype,
-            **kwargs
-            
+            'islog'           : kwargs.get('islog', True)            
         }
 
         # Initialize using FlaxInterface parent
