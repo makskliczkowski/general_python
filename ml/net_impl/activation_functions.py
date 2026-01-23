@@ -102,7 +102,7 @@ if JAX_AVAILABLE:
         '''
         sgn_x   = -2 * jnp.signbit(x.real) + 1
         x       = x * sgn_x
-        return jnp.tanh(x)
+        return sgn_x * jnp.tanh(x)
     
     # # @jax.jit
     def sigmoid_jnp(x):
@@ -372,7 +372,7 @@ def tanh(x):
     '''
     sgn_x   = -2 * np.signbit(x.real) + 1
     x       = x * sgn_x
-    return np.tanh(x)
+    return sgn_x * np.tanh(x)
 
 def sigmoid(x):
     ''' 
