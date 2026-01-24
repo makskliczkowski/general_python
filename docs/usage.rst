@@ -1,154 +1,181 @@
 Usage
 =====
 
-This section illustrates usage examples for the key components of the *General Python Utilities* library. After installing the package, you can import its modules and use their functions and classes in your Python code.
+This section illustrates usage examples for the key components of the *General Python Utilities* library.
 
-**1. Backend Management and Linear Algebra**
+1. Linear Algebra & Solvers
+---------------------------
 
-The library automatically detects and manages NumPy/JAX backends for optimal performance:
+The library provides a unified interface for linear algebra that works with both NumPy and JAX.
+
+**Backend Management**
+
+You can switch backends or let the library detect the best available one.
 
 .. code-block:: python
 
     import numpy as np
     from general_python.algebra import utils
 
-    # Get the global backend (automatically detects JAX if available)
-    backend = utils.get_global_backend()
-    print(f"Active backend: {utils.backend_mgr.name}")
+    # Check active backend (defaults to 'numpy' or 'jax' if available)
+    print(f"Active backend: {utils.ACTIVE_BACKEND_NAME}")
 
-    # Create a matrix and compute eigenvalues
-    H = backend.array([[1, 0], [0, -1]])  # Pauli-Z matrix
-    eigenvals, eigenvecs = backend.linalg.eigh(H)
-    print("Eigenvalues:", eigenvals)
+    # Explicitly get backend operations
+    xp = utils.get_backend("numpy")
+    arr = xp.array([1, 2, 3])
 
-    # Use advanced solvers
-    from general_python.algebra.solvers import choose_solver, SolverType
-    
-    # Set up a linear system Ax = b
-    A = backend.array([[4, 1], [1, 3]], dtype=backend.float64)
-    b = backend.array([1, 2], dtype=backend.float64)
-    
-    # Choose and use a solver
-    solver = choose_solver(SolverType.CG, A=A)
-    result = solver.solve(b)
-    print("Solution:", result.x)
+**Using Iterative Solvers**
 
-**2. High-Quality Random Number Generation**
-
-Use robust random number generators for reproducible scientific computing:
+Solve :math:`Ax = b` using Krylov subspace methods like CG or MINRES.
 
 .. code-block:: python
 
-    from general_python.maths import __random__ as RandomMod
-    from general_python.algebra.utils import get_global_backend
+    from general_python.algebra.solvers import choose_solver, SolverType
+    import numpy as np
 
-    # Use high-quality Xoshiro256 generator
-    rng = RandomMod.Xoshiro256(seed=42)
-    values = [rng.random() for _ in range(5)]
-    print("Random values:", values)
+    # Define a symmetric positive-definite matrix A and vector b
+    N = 100
+    A = np.diag(np.arange(1, N + 1))
+    b = np.ones(N)
 
-    # Or use backend-specific random generation
-    backend, random_state = get_global_backend(random=True, seed=123)
-    if hasattr(random_state, 'uniform'):  # JAX
-        random_vals = random_state.uniform(random_state[1], shape=(5,))
-    else:  # NumPy
-        random_vals = random_state[0].uniform(size=5)
-    print("Backend random values:", random_vals)
+    # 1. Using Conjugate Gradient (CG)
+    # You can pass the matrix directly
+    solver_cg = choose_solver(SolverType.CG, A=A)
+    res_cg = solver_cg.solve(b)
+    print(f"CG converged: {res_cg.success}, Iterations: {res_cg.info['iter']}")
 
-**3. Lattice Structures and Visualization**
+    # 2. Using MINRES (for symmetric indefinite matrices)
+    # You can also pass a matvec function/LinearOperator
+    def matvec(v):
+        return A @ v
 
-Create and manipulate lattice geometries for condensed matter physics:
+    solver_minres = choose_solver(SolverType.MINRES, matvec=matvec, shape=(N, N))
+    res_minres = solver_minres.solve(b)
+    print(f"MINRES solution norm: {np.linalg.norm(res_minres.x)}")
+
+**Preconditioners**
+
+.. code-block:: python
+
+    from general_python.algebra.preconditioners import choose_precond
+
+    # Create an ILU preconditioner
+    M = choose_precond("ilu", A=A)
+
+    # Use it in a solver
+    solver_precond = choose_solver(SolverType.CG, A=A, M=M)
+    solver_precond.solve(b)
+
+2. Lattice Geometries
+---------------------
+
+Create and navigate lattice structures for physics simulations.
 
 .. code-block:: python
 
     from general_python.lattices import SquareLattice, HexagonalLattice
     
-    # Create a 4x4 square lattice with periodic boundaries
-    square_lat = SquareLattice(4, 4, boundary_conditions="periodic")
-    neighbors = square_lat.get_neighbors((2, 2))
-    print("Neighbors of site (2, 2):", neighbors)
+    # Create a 4x4 square lattice with Periodic Boundary Conditions (PBC)
+    lat = SquareLattice(4, 4, bc='pbc')
+
+    print(f"Total sites: {lat.Ns}")
     
-    # Create a hexagonal lattice
-    hex_lat = HexagonalLattice(3, 3)
-    print(f"Total sites: {hex_lat.get_total_sites()}")
+    # Get neighbors of site index 0
+    neighbors = lat.get_neighbors(0)
+    print(f"Neighbors of site 0: {neighbors}")
     
-    # Visualize the lattice (if plotting is available)
-    try:
-        square_lat.plot_lattice()
-    except ImportError:
-        print("Plotting not available")
+    # Get coordinates of site (2, 2)
+    coord = lat.get_coord((2, 2))
+    print(f"Coordinates of (2,2): {coord}")
 
-**4. Machine Learning with Flexible Backends**
+    # Plot the lattice (requires matplotlib)
+    # lat.plot_lattice(show=True)
 
-Use neural networks with automatic JAX/NumPy backend selection:
+3. Physics & Quantum States
+---------------------------
 
-.. code-block:: python
-
-    from general_python.ml import networks
-    from general_python.ml import __general__ as ml_general
-    
-    # Set up ML parameters
-    params = ml_general.MLParams(
-        epo=100,         # epochs
-        batch=32,        # batch size
-        lr=0.001,        # learning rate
-        reg={},          # regularization
-        loss='mse',      # loss function
-        fNum=10,         # feature number
-        shape=(10,),     # input shape
-        optimizer='adam' # optimizer
-    )
-    
-    # Create a simple neural network
-    # (Implementation depends on the specific network class)
-    print(f"ML Parameters configured for {params.epo} epochs")
-
-**5. Quantum Physics Utilities**
-
-Perform quantum state manipulations and calculations:
+Utilities for quantum mechanics and statistical physics.
 
 .. code-block:: python
 
     from general_python.physics import density_matrix, entropy
-    from general_python.algebra.utils import get_global_backend
-    
-    backend = get_global_backend()
-    
-    # Create a quantum state (example: |+> state)
-    psi = backend.array([1, 1]) / backend.sqrt(2)
-    
-    # Calculate density matrix
-    rho = backend.outer(psi, psi.conj())
-    print("Density matrix shape:", rho.shape)
-    
-    # Calculate von Neumann entropy (if functions are available)
-    try:
-        s_vn = entropy.von_neumann_entropy(rho)
-        print("von Neumann entropy:", s_vn)
-    except AttributeError:
-        print("Entropy calculation functions may need to be implemented")
+    import numpy as np
 
-**6. Data Handling and Visualization**
+    # Create a random quantum state vector
+    psi = np.random.rand(4) + 1j * np.random.rand(4)
+    psi /= np.linalg.norm(psi)
 
-Manage data and create scientific plots:
+    # Compute density matrix rho = |psi><psi|
+    rho = density_matrix.create_density_matrix(psi)
+    
+    # Calculate Von Neumann Entropy
+    # S = -tr(rho ln rho)
+    S = entropy.von_neumann_entropy(rho)
+    print(f"Entropy: {S:.4f}")
+
+    # Calculate Purity
+    # P = tr(rho^2)
+    purity = entropy.purity(rho)
+    print(f"Purity: {purity:.4f}")
+
+4. Random Number Generation
+---------------------------
+
+Reproducible random numbers using high-quality generators.
 
 .. code-block:: python
 
-    from general_python.common import Directories
-    from general_python.common.plot import Plotter
-    import numpy as np
+    from general_python.maths import random as rng_mod
+
+    # Create a generator with a specific seed
+    rng = rng_mod.Xoshiro256(seed=12345)
+
+    # Generate random numbers
+    r = rng.random()
+    print(f"Random float: {r}")
+    
+    # Generate random integers
+    ints = rng.randint(0, 10, size=5)
+    print(f"Random integers: {ints}")
+
+5. Machine Learning (Neural Networks)
+-------------------------------------
+
+Define and use neural networks with backend flexibility.
+
+.. code-block:: python
+
+    from general_python.ml.networks import DenseSymm
+    import jax.numpy as jnp
+    import jax
+
+    # Define a dense symmetric network (RBM-like)
+    # Note: Requires JAX backend for this specific network
+    
+    net = DenseSymm(input_size=16, hidden_size=4, output_size=1)
+    
+    # Initialize parameters
+    key = jax.random.PRNGKey(0)
+    params = net.init(key, jnp.ones((1, 16)))
+    
+    # Forward pass
+    output = net.apply(params, jnp.ones((5, 16)))
+    print(f"Network output shape: {output.shape}")
+
+6. Common Utilities
+-------------------
+
+.. code-block:: python
+
+    from general_python.common import Directories, Timer
     
     # Directory management
-    dir_handler = Directories("./data")
-    dir_handler.create_directory("./data/results")
+    dirs = Directories("experiment_data")
+    dirs.create_if_not_exists()
     
-    # Create scientific plots
-    plotter = Plotter()
-    x = np.linspace(0, 2*np.pi, 100)
-    y = np.sin(x)
+    # Timing code execution
+    with Timer("Heavy Computation"):
+        # simulate work
+        _ = [i**2 for i in range(100000)]
     
-    plotter.plot(x, y, label="sin(x)")
-    plotter.set_labels("x", "y", "Sine Function")
-    plotter.show()
-
-These examples demonstrate the library's flexibility and comprehensive functionality. The automatic backend detection ensures optimal performance whether running on CPU (NumPy) or accelerated hardware (JAX). For detailed API documentation, see the API Reference section.
+    # Timer automatically logs the duration

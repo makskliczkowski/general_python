@@ -3,3 +3,8 @@ sphinx-rtd-theme>=1.0.0
 numpy
 scipy
 matplotlib
+jax
+jaxlib
+flax
+numba
+pandas
