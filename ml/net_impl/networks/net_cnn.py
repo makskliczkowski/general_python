@@ -126,8 +126,9 @@ class _FlaxCNN(nn.Module):
             c_dtype = self.dtype
 
         # Initialization Scaling
-        n_spatial   = math.prod(self.reshape_dims)
-        init_scale  = 1.0 / jnp.sqrt(n_spatial)
+        # n_spatial   = math.prod(self.reshape_dims)
+        # init_scale  = 1.0 / jnp.sqrt(n_spatial) # Non-standard, can cause vanishing variance
+        init_scale    = 1.0 # Standard LeCun Normal / Fan-In
         
         # Choose initializer
         if jnp.issubdtype(p_dtype, jnp.complexfloating):
@@ -230,7 +231,17 @@ class _FlaxCNN(nn.Module):
             x_real, x_imag  = jnp.split(x, 2, axis=-1)
             x               = x_real + 1j * x_imag
         
-        return x.reshape(-1) if batch_size == 1 else x.reshape(batch_size, -1)
+        # Flatten scalar output to (Batch,) to match JAX VMC expectations
+        if self.output_feats == 1 and not self.split_complex:
+             return x.reshape(-1)
+             
+        return x
+
+def stable_log_cosh(x):
+    # log(cosh(x)) = |x| - log(2) for large |x|
+    # Softplus formulation: x + log(1 + exp(-2x)) - log(2) for x > 0
+    # Robust JAX implementation:
+    return jnp.abs(x) + jnp.log1p(jnp.exp(-2.0 * jnp.abs(x))) - jnp.log(2.0)
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -305,10 +316,15 @@ class CNN(FlaxInterface):
         strides_t   = _as_tuple(strides, "stride")
 
         # Activations
+        def _resolve_act(a):
+            if isinstance(a, str) and a.lower() == 'log_cosh':
+                return stable_log_cosh
+            return get_activation_jnp(a)
+
         if isinstance(activations, (str, Callable)):
-            acts = (get_activation_jnp(activations),) * len(features)
+            acts = (_resolve_act(activations),) * len(features)
         elif isinstance(activations, (Sequence, List)):
-            acts = tuple(get_activation_jnp(a) for a in activations[:len(features)])
+            acts = tuple(_resolve_act(a) for a in activations[:len(features)])
         else:
             raise ValueError("Invalid activation spec")
 
