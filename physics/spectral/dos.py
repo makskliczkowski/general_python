@@ -104,12 +104,12 @@ else:
 # =============================================================================
 
 def dos_gaussian(
-        energies: Array,
-        sigma: float = 0.01,
-        energy_grid: Optional[Array] = None,
-        n_points: int = 200
+        energies        : Array,
+        sigma           : float = 0.01,
+        energy_grid     : Optional[Array] = None,
+        n_points        : int = 200
 ) -> Tuple[Array, Array]:
-    """
+    r"""
     Compute density of states with Gaussian broadening.
     
     DOS(E) = \sum _n (1/\sqrt(2\pi\sigma ^2)) exp(-(E - E_n)^2/(2\sigma ^2))
@@ -298,10 +298,10 @@ def idos_curve(
 # =============================================================================
 
 def dos_from_spectral(
-        spectral_function: Array,
-        k_points: int
+        spectral_function   : Array,
+        k_points            : int
 ) -> Array:
-    """
+    r"""
     Compute DOS from spectral function A(k,\Omega) by integrating over k.
     
     DOS(\Omega) = int dk A(k,\Omega) / \Omega_BZ
@@ -351,3 +351,7 @@ __all__ = [
     # From spectral function
     'dos_from_spectral',
 ]
+
+# =============================================================================
+#! EOF
+# =============================================================================
