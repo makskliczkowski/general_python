@@ -1057,14 +1057,17 @@ if JAX_AVAILABLE:
         # Per–state estimator
         # ----------------------------------------------------------------------
         def _estimate_one(state, logp0, p_sample, *args):
-            new_states, new_vals = func(state, *args) if args else func(state)
-            new_states           = jnp.asarray(new_states)
-            new_vals             = jnp.asarray(new_vals)
+            if not args:
+                    new_states, new_vals = func(state)
+            else:
+                new_states, new_vals = func(state, *args)
+            
+            new_states = jnp.asarray(new_states)
+            new_vals   = jnp.asarray(new_vals)
 
-            logp_new             = logproba_fun(parameters, new_states)
-            w                    = jnp.exp(logp_new - logp0)      # same shape as new_vals
+            logp_new   = logproba_fun(parameters, new_states)
+            w          = jnp.exp(logp_new - logp0)
 
-            # scalar for this original state
             return p_sample * jnp.sum(new_vals * w)
 
         in_axes      = (0, 0, 0) + (None,) * len(op_args)
