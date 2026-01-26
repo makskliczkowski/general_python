@@ -79,6 +79,8 @@ def circular_pad(x, kernel_sizes):
     
     return jnp.pad(x, pads, mode='wrap')
 
+##########################################################
+
 class _FlaxCNN(nn.Module):
     """
     Inner Flax module for a Convolutional Neural Network (CNN).
@@ -165,6 +167,7 @@ class _FlaxCNN(nn.Module):
                             name        = "dense_out",
                         )
 
+    @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         """ 
         Forward pass.
@@ -175,66 +178,108 @@ class _FlaxCNN(nn.Module):
 
         batch_size      = s.shape[0]
         target_shape    = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
-        
-        # 1. Reshape & Transform
-        x = s.reshape(target_shape)
-        
+
+        # Resolve Computation Dtypes
         if self.split_complex:
-            # If backbone is real, ensure input is real.
-            # For spins (0,1) or (-1,1), this is trivial.
-            # Usually NQS inputs are real.
-            x = x.real if jnp.iscomplexobj(x) else x
+            # Force Real Arithmetic
+            comp_dtype  = jnp.float32 if jnp.iscomplexobj(self.param_dtype) else jnp.float64
+            # Ensure input is real
+            if jnp.iscomplexobj(x):
+                x = x.real
+        else:
+            comp_dtype  = self.dtype
+
+        # 1. Reshape & Transform
+        x               = s.reshape(target_shape)
+        x               = x.astype(comp_dtype)  # Cast to computation dtype (first)        
             
         # Transform 0/1 -> -1/1 if needed
         if self.transform_input:
-            x = x * 2 - 1
-            
-        # Cast to computation dtype (float if split_complex)
-        comp_dtype  = self.conv_layers[0].dtype     # Get dtype from first layer
-        x           = x.astype(comp_dtype)          # Cast input
+            x           = x * 2 - 1
 
         # Input Activation
         if self.in_act is not None:
-            act_fn  = self.in_act[0] if isinstance(self.in_act, (list, tuple)) else self.in_act
-            x       = act_fn(x)
+            act_fn      = self.in_act[0] if isinstance(self.in_act, (list, tuple)) else self.in_act
+            x           = act_fn(x)
 
-        # 2. Convolutions
-        for i, conv in enumerate(self.conv_layers):
+        # ------------
+        # Convolutions
+        
+        if jnp.issubdtype(comp_dtype, jnp.complexfloating):
+            k_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', comp_dtype)
+        else:
+            k_init = nn.initializers.lecun_normal(dtype=comp_dtype)
+        
+        for i, (feat, k_size, stride, bias, act_fn) in enumerate(zip(
+                    self.features, self.kernel_sizes, self.strides, self.use_bias, self.activations
+                )):
+            # Periodic Padding
             if self.periodic:
-                x = circular_pad(x, self.kernel_sizes[i])
-            
+                x           = circular_pad(x, k_size)
+                pad_type    = 'VALID'
+            else:
+                pad_type    = 'SAME'
+
             # Convolution
-            x   = conv(x)
+            x = nn.Conv(
+                features        =   feat,
+                kernel_size     =   k_size,
+                strides         =   stride,
+                padding         =   pad_type,
+                use_bias        =   bias,
+                dtype           =   comp_dtype,
+                param_dtype     =   comp_dtype,
+                kernel_init     =   k_init,
+                name            =   f'conv_{i}'
+            )(x)
             
             # Activation
-            act = self.activations[i]
-            x   = act[0](x) if isinstance(act, (list, tuple)) else act(x)
+            x = act_fn[0](x)
 
-        # 3. Pooling
+        # Pooling
         if self.use_sum_pool:
-            # Sum over spatial dimensions (1 ... N-2)
             spatial_axes    = tuple(range(1, x.ndim - 1))
             x               = jnp.sum(x, axis=spatial_axes)
         else:
             x               = x.reshape((batch_size, -1))
 
-        # 4. Output
-        x = self.dense_out(x)
+        if self.split_complex:
+            # Output 2 real values: [Real, Imag]
+            out             = nn.Dense(
+                                features    = 2 * self.input_channels,
+                                dtype       = comp_dtype,
+                                param_dtype = comp_dtype,
+                                kernel_init = k_init,
+                                name        = 'head_projection'
+                            )(x)
+            
+            # Reconstruct Complex Number: Re + i*Im
+            out_val         = out[..., 0] + 1j * out[..., 1]
+            
+        else:
+            # Output 1 complex value
+            out             = nn.Dense(
+                                features    = self.input_channels,
+                                dtype       = comp_dtype,
+                                param_dtype = comp_dtype,
+                                kernel_init = k_init,
+                                name        = 'head_projection'
+                            )(x)
+            out_val         = out[..., 0] # Squeeze last dim
 
+        # Output
         if self.out_act is not None:
             act_fn          = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
-            x               = act_fn(x)
-            
-        # 5. Complex Recombination 
-        if self.split_complex:
-            # x shape: (Batch, 2 * output_feats)
-            x_real, x_imag  = jnp.split(x, 2, axis=-1)
-            x               = x_real + 1j * x_imag
+            out_val         = act_fn(out_val)
+
+        # Final Scale
+        if not self.islog:
+            out_val = jnp.exp(out_val)
         
         # Flatten scalar output to (Batch,) to match JAX VMC expectations
         if self.output_feats == 1 and not self.split_complex:
-             return x.reshape(-1)
-             
+            return x.reshape(-1)
+
         return x
 
 def stable_log_cosh(x):
@@ -266,9 +311,9 @@ class CNN(FlaxInterface):
     """
     def __init__(self,
                 input_shape         : tuple,
-                reshape_dims        : Tuple[int, ...],
+                reshape_dims        : Tuple[int, ...]                                       = None,
                 features            : Sequence[int]                                         = (8,),
-                kernel_sizes        : Sequence[Union[int, Tuple[int,...]]]                  = (2,),
+                kernel_sizes        : Sequence[Union[int, Tuple[int,...]]]                  = 3,
                 strides             : Optional[Sequence[Union[int, Tuple[int,...]]]]        = None,
                 activations         : Union[str, Callable, Sequence[Union[str, Callable]]]  = 'log_cosh',
                 use_bias            : Union[bool, Sequence[bool]]                           = True,
@@ -278,6 +323,7 @@ class CNN(FlaxInterface):
                 transform_input     : bool                                                  = False,
                 *,
                 split_complex       : bool                                                  = False,
+                islog               : bool                                                  = True,
                 dtype               : Any                                                   = jnp.float32,
                 param_dtype         : Optional[Any]                                         = None,
                 seed                : int                                                   = 0,
@@ -344,16 +390,16 @@ class CNN(FlaxInterface):
             strides         =   strides_t,
             activations     =   acts,
             use_bias        =   bias_flags,
-            output_feats    =   math.prod(output_shape),
             in_act          =   get_activation_jnp(in_activation) if in_activation else None,
             out_act         =   get_activation_jnp(final_activation) if final_activation else None,
             dtype           =   dtype,
             param_dtype     =   p_dtype,
             input_channels  =   1,
-            periodic        =   kwargs.get('periodic', True),
-            use_sum_pool    =   kwargs.get('sum_pooling', True),
+            periodic        =   kwargs.get('periodic',      True),
+            use_sum_pool    =   kwargs.get('sum_pooling',   True),
             transform_input =   transform_input,
-            split_complex   =   split_complex
+            split_complex   =   split_complex,
+            islog           =   islog
         )
 
         self._out_shape     = output_shape
@@ -378,10 +424,14 @@ class CNN(FlaxInterface):
 
     def __call__(self, s: 'Array'):
         flat_output = super().__call__(s)
-        if self._out_shape == (1,):
-            return flat_output.reshape(-1)
-        target_output_shape = (-1,) + self._out_shape
-        return flat_output.reshape(target_output_shape)
+        
+        if flat_output.ndim == 0:       # Single scalar
+            return flat_output
+        elif flat_output.ndim == 1:     # Batch of scalars
+            return flat_output
+        else:
+            # Flatten to (batch_size,) or scalar
+            return flat_output.reshape(-1)[:s.shape[0] if s.ndim > 1 else 1]
 
     def __repr__(self) -> str:
         kind    = "SplitComplex" if self._split_complex else ("Complex" if self._iscpx else "Real")
@@ -389,7 +439,9 @@ class CNN(FlaxInterface):
                     f"{kind}CNN(reshape={self._flax_module.reshape_dims}, "
                     f"features={self._flax_module.features}, "
                     f"kernels={self._flax_module.kernel_sizes}, "
-                    f"params={self.nparams})"
+                    f"params={self.nparams}), "
+                    f"dtype={self.dtype}, "
+                    f"periodic={self._flax_module.periodic}, "
                 )
 
     def __str__(self) -> str:
@@ -412,3 +464,6 @@ if __name__ == "__main__":
     out = cnn(x)
     print("Output:", out.shape, out.dtype)
 
+###########################################################
+#! EOF
+###########################################################

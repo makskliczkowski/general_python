@@ -787,7 +787,6 @@ if JAX_AVAILABLE:
         gradients = gradients[: states.shape[0]]                    # drop padding
         return gradients, shapes, sizes, is_cpx
 
-    
     # ----------------------------------------------------------------------------
     #! Transform the vector from the original representation to the real representation [Re..., Im...]
     # ----------------------------------------------------------------------------
