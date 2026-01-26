@@ -33,7 +33,6 @@ except ImportError:
 
 if JAX_AVAILABLE:
     
-    @partial(jax.jit, static_argnums=(1,))
     def create_batches_jax(data: jnp.ndarray, batch_size: int):
         """
         JAX version of create_batches.
