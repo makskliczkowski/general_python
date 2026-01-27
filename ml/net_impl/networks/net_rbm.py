@@ -93,7 +93,7 @@ class _FlaxRBM(nn.Module):
         self.dense = nn.Dense(
             features    =   self.n_hidden,
             use_bias    =   self.bias,
-            kernel_init =   cplx_variance_scaling(1.0, "fan_in", "normal", self.param_dtype) if is_complex else nn.initializers.lecun_normal(),
+            kernel_init =   cplx_variance_scaling(0.1, "fan_in", "normal", self.param_dtype) if is_complex else nn.initializers.lecun_normal(),
             bias_init   =   nn.initializers.zeros,
             dtype       =   self.dtype,
             param_dtype =   self.param_dtype,
