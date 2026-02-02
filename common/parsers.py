@@ -1,14 +1,34 @@
-import os
-import sys
-import traceback
-import logging
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Type, Union, TYPE_CHECKING
+'''
+Parsers and string utilities for general use.
 
-import pandas as pd
-from warnings import simplefilter
+-------------------------
+Author : Maksymilian Kliczkowski
+Date   : 2026-01-15
+-------------------------
+'''
+from    __future__  import annotations
+
+from    dataclasses import dataclass
+from    typing      import Callable, Tuple, Optional, Sequence, Any, List, Union, Type, Union, TYPE_CHECKING
+import  math
+import  re
+
+import  os
+import  sys
+import  traceback
+
+import  pandas as pd
+from    warnings import simplefilter
 
 if TYPE_CHECKING:
     from .flog import Logger
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Type aliases
+# ─────────────────────────────────────────────────────────────────────────────
+
+Number  = Union[int, float]
+Context = dict[str, int]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # suppress pandas PerformanceWarning
@@ -167,6 +187,179 @@ class StringParser:
         part = filename.split(_DIV)[section]
         kv   = part.split(_MULT)[param_idx].split("=")
         return kv[0], float(kv[1])
+
+# ─────────────────────────────────────────────────────────────────────────────
+#! Command line argument parsing utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+@dataclass(frozen=True)
+class ParseSpec:
+    """
+    A spec describing how to interpret a token that references a base via a suffix/prefix.
+
+    Supported token forms (examples):
+      - prefix op:    "^0.5"  or "*2.0"   -> base_key op value
+      - suffix op:    "0.5^"  or "2.0*"   -> base_key_suffix op value
+
+    where base_key and base_key_suffix may differ (e.g. ns vs nh).
+    """
+    op_char         : str       # '^' or '*'
+    base_key_prefix : str       # which base to use for prefix form, e.g. "ns"
+    base_key_suffix : str       # which base to use for suffix form, e.g. "nh"
+
+def _to_float(s: str) -> float:
+    try:
+        return float(s)
+    except Exception as e:
+        raise ValueError(f"Cannot parse number from '{s}'.") from e
+    
+
+def parse_int_list(
+    s: str,
+    *,
+    ctx: Context,
+    max_key: str,
+    specs: Sequence[ParseSpec],
+    default_ctx: Optional[dict[str, Callable[[Context], int]]] = None,
+    sep: str = ",",
+    allow_ranges: bool = True,
+    range_step_sep: str = ":",
+    allow_duplicates: bool = False,
+    sort_unique: bool = False,
+    clamp: bool = False,
+) -> List[int]:
+    """
+    General CLI-style parser that produces a list of positive integers in [1, ctx[max_key]].
+
+    Token grammar (comma-separated by default):
+      1) Integer / float >= 1:
+           "32"   -> 32
+           "32.0" -> 32
+
+      2) Base exponentiation:
+           "^p"   -> int(ctx[spec.base_key_prefix] ** p)   for op_char='^'
+           "p^"   -> int(ctx[spec.base_key_suffix] ** p)
+
+      3) Base multiplication:
+           "*a"   -> int(ctx[spec.base_key_prefix] * a)    for op_char='*'
+           "a*"   -> int(ctx[spec.base_key_suffix] * a)
+
+      4) Ranges (optional):
+           "a-b"         -> a, a+1, ..., b
+           "a-b:step"    -> a, a+step, ..., <= b
+
+    Notes:
+      - ctx is a dictionary of named integer bases, e.g. {"ns": ns, "nh": 2**ns}.
+      - max_key names the variable providing the upper bound, typically "nh".
+      - default_ctx optionally computes missing ctx keys from existing ones.
+      - clamp=True clamps out-of-range values into [1, max], otherwise rejects them.
+    """
+    
+    if not isinstance(s, str):
+        raise TypeError(f"Expected a string, got {type(s).__name__}.")
+
+    if default_ctx is not None:
+        for k, fn in default_ctx.items():
+            if k not in ctx:
+                ctx[k] = int(fn(ctx))
+
+    if max_key not in ctx:
+        raise ValueError(f"ctx must contain '{max_key}' for bounds checking.")
+    
+    max_val = int(ctx[max_key])
+    if max_val < 1:
+        raise ValueError(f"ctx['{max_key}'] must be >= 1, got {max_val}.")
+
+    spec_map = {sp.op_char: sp for sp in specs}
+
+    def accept(v: int, out: List[int]) -> None:
+        if clamp:
+            v = max(1, min(max_val, v))
+        if not (1 <= v <= max_val):
+            raise ValueError(f"Value {v} out of bounds [1, {max_val}].")
+        out.append(v)
+
+    out: List[int]  = []
+    tokens          = [t.strip() for t in s.split(sep) if t.strip() != ""]
+    # Range regex
+    range_re        = re.compile(r"^\s*([+-]?\d+)\s*-\s*([+-]?\d+)\s*(?::\s*([+-]?\d+)\s*)?$")
+
+    for tok in tokens:
+        # Ranges: "a-b" or "a-b:step"
+        if allow_ranges:
+            m = range_re.match(tok)
+            if m is not None:
+                a    = int(m.group(1))
+                b    = int(m.group(2))
+                step = int(m.group(3)) if m.group(3) is not None else 1
+                if step == 0:
+                    raise ValueError(f"Invalid range step 0 in '{tok}'.")
+                if (b - a) * step < 0:
+                    raise ValueError(f"Range step sign inconsistent in '{tok}'.")
+                v = a
+                if step > 0:
+                    while v <= b:
+                        accept(v, out)
+                        v += step
+                else:
+                    while v >= b:
+                        accept(v, out)
+                        v += step
+                continue
+
+        # Operator-based forms: '^' or '*'
+        op_used = None
+        for op in spec_map:
+            if op in tok:
+                op_used = op
+                break
+
+        if op_used is not None:
+            sp      = spec_map[op_used]
+            parts   = tok.split(op_used)
+            if len(parts) != 2:
+                raise ValueError(f"Malformed token '{tok}' (too many '{op_used}').")
+
+            left, right = parts[0].strip(), parts[1].strip()
+
+            # prefix form: "^p" or "*a"
+            if left == "" and right != "":
+                x         = _to_float(right)
+                base_key  = sp.base_key_prefix
+                if base_key not in ctx:
+                    raise ValueError(f"Missing ctx['{base_key}'] for token '{tok}'.")
+                base      = float(ctx[base_key])
+                v         = int(base ** x) if op_used == "^" else int(base * x)
+                accept(v, out)
+                continue
+
+            # suffix form: "p^" or "a*"
+            if right == "" and left != "":
+                x         = _to_float(left)
+                base_key  = sp.base_key_suffix
+                if base_key not in ctx:
+                    raise ValueError(f"Missing ctx['{base_key}'] for token '{tok}'.")
+                base      = float(ctx[base_key])
+                v         = int(base ** x) if op_used == "^" else int(base * x)
+                accept(v, out)
+                continue
+
+            raise ValueError(f"Malformed token '{tok}'. Use '{op_used}<x>' or '<x>{op_used}'.")
+
+        # Plain number token
+        x = _to_float(tok)
+        if x < 1:
+            raise ValueError(f"Value must be >= 1, got {x} in '{tok}'.")
+        accept(int(x), out)
+
+    if not allow_duplicates:
+        out = list(dict.fromkeys(out))  # preserves order
+
+    if sort_unique:
+        out = sorted(set(out))
+
+    return out
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 #! END OF FILE
