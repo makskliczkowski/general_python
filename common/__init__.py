@@ -44,7 +44,12 @@ if TYPE_CHECKING:
                             linestylesCycle, linestylesCycleExtended, linestylesList,
                             markersCycle, markersList
                         )
-    from .datah         import DataHandler, complement_indices, indices_from_mask
+    from .datah         import DataHandler
+    from .binary        import (
+                            ctz64, popcount64,
+                            mask_from_indices, indices_from_mask,
+                            complement_mask, complement_indices
+                        )
     from .hdf5man       import HDF5Manager
     from .flog          import Logger, get_global_logger
     from .memory        import log_memory_status, check_memory_for_operation
@@ -69,8 +74,13 @@ _LAZY_IMPORTS = {
     'markersList'               : ('.plot', 'markersList'),
     # datah
     'DataHandler'               : ('.datah', 'DataHandler'),
-    'complement_indices'        : ('.datah', 'complement_indices'),
-    'indices_from_mask'         : ('.datah', 'indices_from_mask'),
+    # binary - Numba-safe bit operations
+    'ctz64'                     : ('.binary', 'ctz64'),
+    'popcount64'                : ('.binary', 'popcount64'),
+    'mask_from_indices'         : ('.binary', 'mask_from_indices'),
+    'indices_from_mask'         : ('.binary', 'indices_from_mask'),
+    'complement_mask'           : ('.binary', 'complement_mask'),
+    'complement_indices'        : ('.binary', 'complement_indices'),  # alias
     # hdf5
     'HDF5Manager'               : ('.hdf5man', 'HDF5Manager'),
     # logging

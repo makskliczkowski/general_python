@@ -200,15 +200,15 @@ def corr_single(
     return G
 
 def corr_full(
-    W                   : Array,            # Slater    : (Ls, L)
+    W                   : 'Array',          # Slater    : (Ls, L)
                                             # BdG       : (U, V) each (Ls, L), or stacked (2*Ls, L) with stacked_uv=True
-    occ                 : Array,            # Slater    : n_q in {0,1};  BdG: f_q in [0,1]
+    occ                 : 'Array',          # Slater    : n_q in {0,1};  BdG: f_q in [0,1]
     *,
     subtract_identity   : bool              = True,
-    W_CT                : Optional[Array]   = None,
+    W_CT                : Optional['Array'] = None,
     raw                 : bool              = True,
     mode                : Literal["slater", "bdg-normal", "bdg-full"] = "slater",
-    stacked_uv          : bool              = False) -> Array:
+    stacked_uv          : bool              = False) -> 'Array':
     r"""
     Full-system correlation matrix (no subsystem restriction).
 

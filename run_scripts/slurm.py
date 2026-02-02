@@ -6,17 +6,20 @@
 import os
 import numpy as np
 import time
-from typing import Dict, List, Optional, Union
-from pathlib import Path
+from typing     import Dict, List, Optional, Union, TYPE_CHECKING
+from pathlib    import Path
+
+if TYPE_CHECKING:
+    from ..common.flog import Logger
 
 #########################################################
 try:
     import psutil
     import argparse
-    def cpu_count(logical: bool = True): return psutil.cpu_count(logical)
+    def _cpu_count_psutil(logical: bool = True): return psutil.cpu_count(logical)
 except ImportError:
     print("Psutil is not available for CPU handling...")
-    def cpu_count(logical: bool = True): return 1
+    def _cpu_count_psutil(logical: bool = True): return 1
 
 import subprocess
 from typing         import Callable
@@ -34,7 +37,7 @@ except ImportError:
 #! Validators
 #############################################################
 
-def calculate_optimal_workers(params, available_memory: int, memory_per_worker: int, max_cores: Optional[int] = None, logger: Optional[Logger] = None):
+def calculate_optimal_workers(params, available_memory: int, memory_per_worker: int, max_cores: Optional[int] = None, logger: Optional['Logger'] = None):
     """
     Calculate optimal number of workers based on available resources
     Parameters
@@ -91,7 +94,7 @@ def calculate_optimal_workers(params, available_memory: int, memory_per_worker: 
 
 def calculate_realisations_per_parameter(parameters     : List[str], 
                                         n_realisations  : str,
-                                        logger          : Optional[Logger] = None) -> Dict[str, int]:
+                                        logger          : Optional['Logger'] = None) -> Dict[str, int]:
     """
     Calculate the number of realizations per parameter.
 
@@ -176,7 +179,7 @@ def validate_realisations_against_time(
     parameters_reals    : Optional[List[str]] = None,
     parameters_multiple : Optional[Dict[str, int]] = None,
     *,
-    logger              : Optional[Logger] = None) -> Dict[str, int]:
+    logger              : Optional['Logger'] = None) -> Dict[str, int]:
     """
     Validate and adjust number of realizations per parameter against total available time.
     If total required time > t_total, scale down realizations proportionally.
@@ -298,7 +301,7 @@ def validate_realisations_against_time(
 
     return adjusted
 
-def initialize_random_seed(args_seed: Optional[int], logger: Optional[Logger] = None):
+def initialize_random_seed(args_seed: Optional[int], logger: Optional['Logger'] = None):
     """
     Initialize a random seed for reproducibility.
 
@@ -422,7 +425,7 @@ class SimulationParams:
             ap.add_argument(
                 '-mc', '--max_cores',
                 type    = int,
-                default = cpu_count(),
+                default = _cpu_count_psutil(),
                 help    = 'Maximum number of CPU cores to use (default: all available cores).'
             )
 
@@ -491,7 +494,7 @@ class SlurmMonitor:
     #####################################################
     
     @staticmethod
-    def get_memory_used(logger: Optional[Logger] = None):
+    def get_memory_used(logger: Optional['Logger'] = None):
         try:
             mem_info = psutil.Process().memory_info()
             if logger: logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')

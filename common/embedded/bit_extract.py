@@ -449,7 +449,7 @@ def test(size           : int   = 12,
         t0              = time.perf_counter()
         packed_B        = extract(state, state_b_mask)
         dt              = (time.perf_counter() - t0) * 1e6
-        logger.info(f"  B scalar-mask : {int2binstr(packed_B, Lb)}   [{dt:.1f} \mus]")
+        logger.info(rf" B scalar-mask : {int2binstr(packed_B, Lb)}   [{dt:.1f} \mus]")
 
         # ---- vector-mask extractor --------------------------------------
         t0              = time.perf_counter()

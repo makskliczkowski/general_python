@@ -41,7 +41,7 @@ except ImportError:
 ####################################################################################################
 
 if JAX_AVAILABLE:
-    from ..common.embedded import binary_jax as jaxpy
+    from ..common.embedded  import binary_jax as jaxpy
 else:
     jaxpy = None
 
@@ -51,6 +51,169 @@ try:
     from ..common.embedded  import binary_search    as bin_search
 except ImportError:
     raise ImportError("general_python.common.binary module requires general_python.common.embedded.bit_extract and binary_search modules.")
+
+__all__                     = [
+                                # Core Numba-safe bit ops
+                                'ctz64', 'popcount64',
+                                'mask_from_indices', 'indices_from_mask',
+                                'complement_mask', 'complement_indices',
+                                # Integer checks
+                                'check_int', 'popcount',
+                                # Conversion
+                                'int2base', 'base2int', 'int2binstr'
+                                # Bit manipulation
+                                'flip', 'flip_all', 'rev', 'rotate_left', 'rotate_right', 'rotate_left_by',
+                            ]
+
+####################################################################################################
+#! Numba-safe bit operations for tight loops (uint64)
+####################################################################################################
+
+@numba.njit(cache=True, inline='always')
+def ctz64(x: np.uint64) -> np.int64:
+    """
+    Count trailing zeros in a 64-bit unsigned integer (Numba-safe).
+    
+    Returns 64 if x == 0 (no bits set). Uses binary search - O(log bits).
+    
+    Args:
+        x: 64-bit unsigned integer
+        
+    Returns:
+        Number of trailing zero bits (0-64)
+        
+    Example:
+        >>> ctz64(np.uint64(8))  # 0b1000 -> 3 trailing zeros
+        3
+    """
+    if x == 0:
+        return np.int64(64)
+    n = np.int64(0)
+    if (x & np.uint64(0xFFFFFFFF)) == 0:
+        n += 32
+        x >>= 32
+    if (x & np.uint64(0xFFFF)) == 0:
+        n += 16
+        x >>= 16
+    if (x & np.uint64(0xFF)) == 0:
+        n += 8
+        x >>= 8
+    if (x & np.uint64(0xF)) == 0:
+        n += 4
+        x >>= 4
+    if (x & np.uint64(0x3)) == 0:
+        n += 2
+        x >>= 2
+    if (x & np.uint64(0x1)) == 0:
+        n += 1
+    return n
+
+@numba.njit(cache=True, inline='always')
+def popcount64(x: np.uint64) -> np.int64:
+    """
+    Count number of set bits in a 64-bit integer (Numba-safe).
+    
+    Uses parallel bit-counting algorithm - O(1).
+    
+    Args:
+        x: 64-bit unsigned integer
+        
+    Returns:
+        Number of set bits (0-64)
+        
+    Example:
+        >>> popcount64(np.uint64(0b1011))
+        3
+    """
+    x = x - ((x >> 1) & np.uint64(0x5555555555555555))
+    x = (x & np.uint64(0x3333333333333333)) + ((x >> 2) & np.uint64(0x3333333333333333))
+    x = (x + (x >> 4)) & np.uint64(0x0F0F0F0F0F0F0F0F)
+    x = (x * np.uint64(0x0101010101010101)) >> 56
+    return np.int64(x)
+
+@numba.njit(cache=True)
+def mask_from_indices(idxs: np.ndarray) -> np.uint64:
+    """
+    Convert array of bit indices to a bitmask (Numba-safe).
+    
+    Args:
+        idxs: Array of indices (int64) indicating which bits to set
+        
+    Returns:
+        64-bit mask with bits set at given indices
+        
+    Example:
+        >>> mask_from_indices(np.array([0, 2, 3], dtype=np.int64))
+        np.uint64(13)  # 0b1101
+    """
+    m = np.uint64(0)
+    for i in range(idxs.shape[0]):
+        m |= np.uint64(1) << np.uint64(idxs[i])
+    return m
+
+@numba.njit(cache=True)
+def indices_from_mask(mask: np.uint64) -> np.ndarray:
+    """
+    Convert bitmask to array of set bit indices (Numba-safe).
+    
+    Returns indices in ascending order. Uses ctz64 for efficiency.
+    
+    Args:
+        mask: 64-bit mask
+        
+    Returns:
+        Array of indices (int64) where bits are set
+        
+    Example:
+        >>> indices_from_mask(np.uint64(13))  # 0b1101
+        array([0, 2, 3], dtype=int64)
+    """
+    count   = popcount64(mask)
+    out     = np.empty(count, dtype=np.int64)
+    m       = mask
+    i       = 0
+    while m != 0:
+        pos     = ctz64(m)
+        out[i]  = pos
+        i      += 1
+        m      &= m - np.uint64(1) # Clear LSB
+    return out
+
+@numba.njit(cache=True)
+def complement_mask(mask: np.uint64, ns: int) -> np.uint64:
+    """
+    Return the complement of a mask within ns bits.
+    
+    Args:
+        mask: Original bitmask
+        ns: Number of bits in the system (1-64)
+        
+    Returns:
+        Complement mask (bits flipped within range [0, ns))
+    """
+    full = np.uint64((1 << ns) - 1)
+    return full ^ mask
+
+def complement_indices(n: int, indices: np.ndarray) -> np.ndarray:
+    """
+    Return indices in [0..n) not in `indices`.
+    
+    O(n) boolean scratch, minimal allocations.
+
+    Args:
+        n: Upper bound of the range (exclusive)
+        indices: Input indices to exclude
+        
+    Returns:
+        Array of complementary indices (sorted)
+        
+    Example:
+        >>> complement_indices(5, np.array([1, 3]))
+        array([0, 2, 4], dtype=int64)
+    """
+    mark            = np.zeros(n, dtype=np.bool_)
+    mark[indices]   = True
+    return np.nonzero(~mark)[0].astype(np.int64, copy=False)
 
 ####################################################################################################
 #! Global functions
