@@ -182,7 +182,6 @@ def check(n, k : int):
 
 # --------------------------------------------------------------------------------------------------
 
-# @numba.njit(fastmath=True)
 def int2base_np(n,
                 size        : int,
                 dtype       = DEFAULT_NP_FLOAT_TYPE,
@@ -200,22 +199,39 @@ def int2base_np(n,
     Returns:
         np.ndarray          : The binary (or spin) representation of the integer.
     """
-    bits = np.zeros(size, dtype=dtype)
-    # Iterate from the most significant bit to the least.
-    for pos in range(size - 1, -1, -1):
-        # For a Python or NumPy integer, we use bit shifting.
-        # if isinstance(n, (int, np.integer)):
-        bit = check_int(n, pos)
-        # else:
-        #     bit = bool(np.bitwise_and(n, (1 << pos)) != 0)
-        bits[size - 1 - pos] = (value_true if bit else value_false)
-    return np.array(bits, dtype=dtype)
+    if not (0 < size <= 63):
+        raise ValueError("size must be in [1, 63].")
+
+    nn          = np.uint64(n)
+    shifts      = np.arange(size - 1, -1, -1, dtype=np.uint64)      # MSB->LSB
+    bits        = ((nn >> shifts) & np.uint64(1)).astype(np.bool_)  # True for 1s
+
+    out         = np.empty(size, dtype=dtype)
+    out[:]      = value_false
+    out[bits]   = value_true
+    return out
+
+
+@numba.njit(inline="always")
+def int2base_numba(n            : int,
+                   size         : int,
+                   value_true   : float,
+                   value_false  : float,
+                   out          : np.ndarray):
+    # out: preallocated 1D array length=size
+    nn = np.uint64(n)
+    for i in range(size):
+        pos     = size - 1 - i                          # shift from MSB->LSB
+        bit     = (nn >> np.uint64(pos)) & 1            # extract bit
+        out[i]  = value_true if bit else value_false    # set value
 
 def int2base(n          : int,
             size        : int,
-            backend             = 'default',
-            spin        : bool  = True,
-            spin_value  : float = BACKEND_REPR):
+            backend                         = 'default',
+            spin        : bool              = True,
+            spin_value  : float             = BACKEND_REPR, 
+            out         : Optional[Array]   = None
+            ):
     '''
     Convert an integer to a base representation (spin: +/- value or binary 0/1).
 
@@ -228,16 +244,42 @@ def int2base(n          : int,
     Returns:
         np.ndarray or jnp.ndarray: The binary representation of the integer.    
     '''
+
     backend     = get_backend(backend)
     val_true    = spin_value
-    val_false   = -spin_value if spin else 0
+    val_false   = (-spin_value if spin else 0)
+
     if backend == np:
-        return int2base_np(n, size, value_true = val_true, value_false = val_false)
-    return jaxpy.int2base_jax(n, size, value_true = val_true, value_false = val_false)
+        
+        if out is not None:
+            int2base_numba(n, size, val_true, val_false, out)
+            return out
+        
+        return int2base_np(n, size,
+                           dtype       = DEFAULT_NP_FLOAT_TYPE,
+                           value_true  = val_true,
+                           value_false = val_false)
+
+    return jaxpy.int2base_jax(n, size, value_true=val_true, value_false=val_false)
 
 # --------------------------------------------------------------------------------------------------
 
-def base2int_spin(vec : Array, spin_value: float = BACKEND_REPR) -> int:
+@numba.njit(inline="always")
+def base2int_binary(vec) -> np.int64:
+    
+    size = vec.shape[0]
+    if size <= 0 or size > 63:
+        raise ValueError("The size of the vector must be between 1 and 63 inclusive.")
+    
+    val = np.int64(0)
+    # Interpret vec[0] as MSB, vec[size-1] as LSB
+    for i in range(size):
+        bit = np.int64(vec[i] != 0)
+        val = (val << 1) | bit
+    return val
+
+@numba.njit(inline = 'always')
+def base2int_spin(vec : Array, spin_value: float = BACKEND_REPR) -> np.int64:
     '''
     Convert a base representation (spin: +/- value or binary 0/1) back to an integer.
     Args:
@@ -247,19 +289,20 @@ def base2int_spin(vec : Array, spin_value: float = BACKEND_REPR) -> int:
     Returns:
         int                             : The integer representation of the binary vector.
     '''
-    size = len(vec)
-    if not (0 < size <= 63):
+    size = vec.shape[0]
+    if size <= 0 or size > 63:
         raise ValueError("The size of the vector must be between 1 and 63 inclusive.")
-    val = 0
-    # Loop over bits from least-significant (index 0) to most-significant.
-    for k in range(size):
-        bit_val     =   int((vec[size - 1 - k] / spin_value + 1.0) / 2.0)
-        val         +=  bit_val * lookup_binary_power[k]
+    # If spin_value > 0 and encoding is +/- spin_value, then sign test is enough.
+    val = np.int64(0)
+    for i in range(size):
+        bit = np.int64(vec[i] > 0.0)
+        val = (val << 1) | bit
     return val
 
+@numba.njit(inline = 'always')
 def base2int(vec        : Array,
             spin        : bool  = BACKEND_DEF_SPIN,
-            spin_value  : float = BACKEND_REPR) -> int:
+            spin_value  : float = BACKEND_REPR) -> np.int64:
     '''
     Convert a base representation back to an integer.
     
@@ -271,21 +314,9 @@ def base2int(vec        : Array,
     Returns:
         int                             : The integer representation of the binary vector.
     '''
-    
     if spin:
-        return base2int_spin(vec, spin_value)
-    
-    size = len(vec)
-    
-    if not (0 < size <= 63):
-        raise ValueError("The size of the vector must be between 1 and 63 inclusive.")
-    val = 0
-    # Loop over bits from least-significant (index 0) to most-significant.
-    for k in range(size):
-        # In the vector the bit order is reversed relative to significance.
-        bit_val =   int(vec[size - 1 - k])
-        val     +=  bit_val * lookup_binary_power[k]
-    return val
+        return base2int_spin_fast(vec, spin_value)
+    return base2int_binary(vec)
 
 # --------------------------------------------------------------------------------------------------
 #! Flip bits in an integer or a vector

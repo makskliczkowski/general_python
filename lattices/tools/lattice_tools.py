@@ -9,8 +9,8 @@ Author          : Maksymilian Kliczkowski
 --------------------------------
 """
 
-from enum import Enum, auto
-from typing import Any
+from enum   import Enum, auto
+from typing import Any, Union
 
 # -----------------------------------------------------------------------------------------------------------
 # LATTICE ENUMERATIONS
@@ -60,7 +60,7 @@ class LatticeType(Enum):
 #! Boundary Conditions, Lattice Types, Directions
 # -----------------------------------------------------------------------------------------------------------
 
-def handle_boundary_conditions(bc: Any):
+def handle_boundary_conditions(bc: Union[LatticeBC, Any]):
     """
     Handles and normalizes the input for boundary conditions.
     Parameters:

@@ -27,27 +27,25 @@ correlation matrix C_A is given by:
 
 References
 ----------
+
+
+----------------
+File            : general_python/physics/sp/correlation_matrix.py
+Author          : Maksymilian Kliczkowski
+----------------
 """
 
 import numpy as np
-from typing import Literal, Sequence, Tuple, Optional, Literal
+from typing import Literal, Sequence, Tuple, Optional, Dict, Literal, TYPE_CHECKING
 
 import numpy as np
 import numba
 
-try:
-    from ...algebra.utils import JAX_AVAILABLE, Array
-except ImportError:
-    raise ImportError("Utilities package is required to use correlation_matrix module.")
-
-__all__ = [
-    "corr_single",
-    "corr_superposition",
-    "corr_state",
-]
+if TYPE_CHECKING:
+    from ...algebra.utils import Array
 
 #################################### 
-#! 1)  Single Slater determinant
+#! 1) Single Slater determinant
 ###################################
 
 # @numba.njit(cache = True)
@@ -318,10 +316,136 @@ def corr_full(
         G[idx, idx] -= 1.0
     return G
 
+#################################### 
+#! 1a) Wick contractions for single Slater determinant
+####################################
+
+def wick_distances(C_wick           : np.ndarray,
+                   C_mb             : np.ndarray,
+                   *,
+                   tmp              : Optional[np.ndarray] = None,
+                   eps              : float = 1e-12,
+                   gate             : Optional[float] = None,
+                   s0               : Optional[float] = None) -> Dict[str, float]:
+    r"""
+    Compute a set of normalized distances between two complex/real matrices
+    (typically: Wick-predicted vs many-body 4-point slice).
+
+    Distances returned
+    ------------------
+    - diff_fro2                 : ||C_wick - C_mb||_F^2
+    - fro2_wick                 : ||C_wick||_F^2
+    - fro2_mb                   : ||C_mb||_F^2
+    - rel_fro2_sym              : ||\Delta||_F^2 / (||C_wick||_F^2 + ||C_mb||_F^2 + eps)
+    - frac_diff_energy          : ||\Delta||_F^2 / (||\Delta||_F^2 + ||C_wick||_F^2 + ||C_mb||_F^2 + eps)
+                                 (always in [0,1])
+    - rel_fro_sym               : ||\Delta||_F / (||C_wick||_F + ||C_mb||_F + eps)
+    - cosine_dist               : 1 - |<C_wick, C_mb>| / (||C_wick||_F ||C_mb||_F + eps)
+                                 (in [0,1])
+    - angle_dist                : arccos( |<.|.>| / (||.|| ||.|| + eps) ) / pi
+                                 (in [0,1])
+
+    Optional gating / weighting
+    ---------------------------
+    - gate: if provided and 0.5*(||C_wick||_F^2+||C_mb||_F^2) < gate, distances are set to 0.0
+            (to ignore near-zero signals).
+    - s0:   if provided, apply smooth weight w = S/(S+s0) with S = 0.5*(||C_wick||_F^2+||C_mb||_F^2)
+            to the main scale-invariant distances (rel_fro2_sym, frac_diff_energy, rel_fro_sym, cosine_dist, angle_dist).
+    """
+    
+    if C_wick.shape != C_mb.shape:
+        raise ValueError("C_wick and C_mb must have the same shape.")
+    if C_wick.ndim != 2:
+        raise ValueError("C_wick and C_mb must be 2D arrays.")
+    if C_wick.dtype != C_mb.dtype:
+        # allow different dtypes but will upcast on subtract; better to keep consistent
+        pass
+
+    if tmp is None or tmp.shape != C_wick.shape:
+        tmp = np.empty_like(C_wick)
+
+    # squared Frobenius norm of the difference
+    np.subtract(C_wick, C_mb, out=tmp)
+    K2 = float(np.vdot(tmp, tmp).real)              # ||C_wick - C_mb||_F^2
+    W2  = float(np.vdot(C_wick, C_wick).real)       # Wick squared Frobenius norm
+    M2  = float(np.vdot(C_mb,   C_mb).real)         # Many-body squared Frobenius norm
+    S   = 0.5 * (W2 + M2)                           # signal measure
+
+    #! Safety gate
+    if gate is not None and S < float(gate):
+        return {
+            "wick/diff_fro2"         : 0.0,
+            "wick/fro2_wick"         : W2,
+            "wick/fro2_mb"           : M2,
+            "wick/rel_fro2_sym"      : 0.0,
+            "wick/frac_diff_energy"  : 0.0,
+            "wick/rel_fro_sym"       : 0.0,
+            "wick/cosine_dist"       : 0.0,
+            "wick/angle_dist"        : 0.0,
+            "wick/signal"            : S,
+            "wick/weight"            : 0.0 if s0 is None else 0.0,
+        }
+
+    # symmetric relative (squared) Frobenius error
+    rel_fro2_sym                = K2 / (W2 + M2 + eps)
+
+    # bounded "fraction of energy in the difference"
+    frac_diff_energy            = K2 / (K2 + W2 + M2 + eps)
+
+    # symmetric relative Frobenius error (non-squared)
+    rel_fro_sym                 = np.sqrt(K2) / (np.sqrt(W2) + np.sqrt(M2) + eps)
+
+    # cosine distance (pattern mismatch)
+    dot                         = np.vdot(C_wick, C_mb)
+    denom                       = (np.sqrt(W2 * M2) + eps)
+    cos_sim                     = float(np.abs(dot) / denom)
+    if cos_sim > 1.0:           cos_sim = 1.0  # numerical clamp
+    cosine_dist                 = 1.0 - cos_sim
+
+    # normalized angle distance in [0,1]
+    angle_dist                  = float(np.arccos(cos_sim) / np.pi)
+    weight                      = 1.0
+    
+    if s0 is not None:
+        s0                      = float(s0)
+        weight                  = float(S / (S + s0))
+        rel_fro2_sym           *= weight
+        frac_diff_energy       *= weight
+        rel_fro_sym            *= weight
+        cosine_dist            *= weight
+        angle_dist             *= weight
+
+    return {
+            "wick/diff_fro2"        : K2,
+            "wick/fro2_wick"        : W2,
+            "wick/fro2_mb"          : M2,
+            "wick/rel_fro2_sym"     : rel_fro2_sym,
+            "wick/frac_diff_energy" : frac_diff_energy,
+            "wick/rel_fro_sym"      : rel_fro_sym,
+            "wick/cosine_dist"      : cosine_dist,
+            "wick/angle_dist"       : angle_dist,
+            "wick/signal"           : S,
+            "wick/weight"           : weight,
+        }
+
+@numba.njit(inline="always")
+def wick_2body_scalar(C: np.ndarray, i: int, j: int, k: int, l: int) -> float:
+    # <c_i^\dag c_j^\dag c_l c_k> = C[i,k]*C[j,l] - C[i,l]*C[j,k]
+    return C[i, k] * C[j, l] - C[i, l] * C[j, k]
+
 @numba.njit
-def corr_single2_slater_wick(corr: np.ndarray, ns: int, j: int = 0, l: int = 0):
-    '''
-    Compute the Wick contraction for a single Slater determinant.
+def wick_2body(C: np.ndarray, j: int, l: int, out: np.ndarray):
+    ns      = C.shape[0]
+    C_jl    = C[j, l]
+    for i in range(ns):
+        C_il = C[i, l]
+        for k in range(ns):
+            out[i, k] = C[i, k] * C_jl - C_il * C[j, k]
+
+def corr_4_from_wick(C: np.ndarray, j: int = 0, l: int = 0, *, C_wick: Optional[np.ndarray] = None) -> np.ndarray:
+    r'''
+    Compute the Wick contraction for a single Slater determinant. This computes 4-point correlation 
+    functions of the form <c_i^\dag c_j^\dag c_l c_k> using Wick's theorem.
     Mathematically:
     
     C_wick[i,k] = -C[i,k] C[j,l] + C[i,l] C[j,k]
@@ -335,15 +459,25 @@ def corr_single2_slater_wick(corr: np.ndarray, ns: int, j: int = 0, l: int = 0):
     for i,k,j,l = 0,...,ns-1. This is useful for computing two-body correlation functions:
     <c_i^\dag c_j^\dag c_l c_k> = C_wick[i,k] = -C[i,k] C[j,l] + C[i,l] C[j,k]
     '''
-    
-    C_wick = np.zeros_like(corr)
-    for k in range(ns):
-        for i in range(ns):
-            C_wick[i, k] += -corr[i, k] * corr[j, l] + corr[i, l] * corr[j, k]
+    if C.ndim != 2 or C.shape[0] != C.shape[1]:
+        raise ValueError("C must be a square 2D array.")
+    ns = C.shape[0]
+    if not (0 <= j < ns and 0 <= l < ns):
+        raise ValueError("j and l must be within [0, ns).")
+
+    if C_wick is None:
+        C_wick = np.empty_like(C)
+    else:
+        if C_wick.shape != C.shape or C_wick.dtype != C.dtype:
+            raise ValueError("C_wick must match C in shape and dtype.")
+        if not C_wick.flags.c_contiguous:
+            C_wick = np.ascontiguousarray(C_wick)
+
+    wick_2body(C, j, l, C_wick)
     return C_wick
 
 #################################### 
-#! 2)  Multiple Slater determinants
+#! 2) Multiple Slater determinants
 ####################################
 
 def _haar_complex_unit_vector(n: int, rng: Optional[np.random.Generator] = None) -> np.ndarray:
@@ -352,28 +486,6 @@ def _haar_complex_unit_vector(n: int, rng: Optional[np.random.Generator] = None)
     z       = rng.normal(size=n) + 1j * rng.normal(size=n)
     z      /= np.linalg.norm(z)
     return z
-
-@numba.njit(parallel=True, fastmath=True)
-def _accumulate(C, occ_list, coeff, W_A, W_A_CT):
-    gamma = len(occ_list)
-    La = W_A.shape[1]
-    for a in range(gamma):
-        occ_a = occ_list[a]
-        for b in range(a+1, gamma):
-            diff = occ_a ^ occ_list[b]
-            if diff.sum() != 2:
-                continue
-            q = np.nonzero(diff)[0]
-            q1, q2 = q[0], q[1]
-            sign = 1.0
-            if occ_a[q2]:
-                sign = -1.0
-            coef = 2.0 * sign * np.conj(coeff[a]) * coeff[b]
-            ua = W_A_CT[:, q1]
-            vb = W_A[q2, :]
-            for i in range(La):
-                for j in range(La):
-                    C[i,j] += coef * ua[i]*vb[j] + np.conj(coef) * W_A_CT[i,q2]*W_A[q1,j]
 
 def corr_superposition(
     W_A                 : np.ndarray,                   # (Ls, La)
@@ -500,12 +612,16 @@ def corr_superposition(
     return C, coeff
 
 # ---------------------------------------------------------------------------
-#! 3)  Generic many-body state
+#! 3) Generic many-body state
 # ---------------------------------------------------------------------------
 
 _MODE_SLATER     = 0
 _MODE_BDG_N      = 1
 _MODE_BDG_FULL   = 2
+
+# -----------------------------------------
+#! Endian conversion utilities
+# -----------------------------------------
 
 @numba.njit(inline="always")
 def _popcount_u64(x: np.uint64) -> int:
@@ -517,148 +633,232 @@ def _popcount_u64(x: np.uint64) -> int:
         x   &= x - np.uint64(1)
         cnt += 1
     return cnt
+ 
+@numba.njit(inline="always")
+def _orb_to_bitpos(ns: int, orb: int) -> int:
+    ''' Convert orbital index to bit position (MSB0).'''
+    # MSB0 convention: orb 0 -> bit ns-1, orb ns-1 -> bit 0
+    return ns - 1 - orb
 
 @numba.njit(inline="always")
-def _apply_annihilation(idx: int, j: int, Ns: int) -> (int, int):
-    """
-    Return (new_idx, sign). If annihilation gives 0, return (0,0).
-    """
-    mask = 1 << (Ns - 1 - j)
-    if idx & mask:  
-        # occupied
-        new_idx     = idx ^ mask
-        # number of fermions to the left of j. The convension 
-        # is to apply the operator to the first position only
-        parity      = _popcount_u64(idx >> (Ns - j))
-        sign        = -1 if parity & 1 else 1
-        return new_idx, sign
-    return 0, 0
+def _bitpos_to_orb(ns: int, bitpos: int) -> int:
+    ''' Convert bit position (MSB0) to orbital index.'''
+    return ns - 1 - bitpos
 
 @numba.njit(inline="always")
-def _apply_creation(idx: int, i: int, Ns: int) -> (int, int):
+def _mask_at(ns: int, orb: int) -> np.uint64:
+    ''' Return mask with 1 at orbital `orb` (MSB0) for `ns` orbitals.'''
+    return np.uint64(1) << np.uint64(_orb_to_bitpos(ns, orb))
+
+# -----------------------------------------
+
+@numba.njit(inline="always")
+def _apply_annihilation(idx: np.uint64, orb: int, ns: int) -> (int, int):
+    r"""
+    Apply c_orb on |idx>. Return (new_idx, sign). If result is 0, return (0,0).
     """
-    Return (new_idx, sign). If creation gives 0, return (0,0).
-    """
-    mask = 1 << (Ns - 1 - i)
-    if not (idx & mask): # empty
-        new_idx = idx ^ mask
-        parity  = _popcount_u64(idx >> (Ns - i))
-        sign    = -1 if parity & 1 else 1
+    m = _mask_at(ns, orb)
+    if idx & m:
+        new_idx = idx ^ m
+        # fermions to the left (more significant bits): shift by (bitpos+1) = ns - orb
+        parity  = _popcount_u64(idx >> np.uint64(ns - orb))
+        sign    = -1 if (parity & 1) else 1
         return new_idx, sign
-    return 0, 0
+    return np.uint64(0), 0
+
+@numba.njit(inline="always")
+def _apply_creation(idx: np.uint64, orb: int, ns: int) -> tuple[np.uint64, int]:
+    r"""
+    Apply c_orb^\dag on |idx>. Return (new_idx, sign). If result is 0, return (0,0).
+    """
+    m = _mask_at(ns, orb)
+    if not (idx & m):
+        new_idx = idx ^ m
+        parity  = _popcount_u64(idx >> np.uint64(ns - orb))
+        sign    = -1 if (parity & 1) else 1
+        return new_idx, sign
+    return np.uint64(0), 0
 
 # -----------------------------------------
 
 @numba.njit
-def _corr_from_statevector_jit(psi                  : np.ndarray,
-                            ns                      : int,
-                            mode_code               : int,
-                            subtract_identity       : bool,
-                            spin_unpolarized_double : bool):
+def corr_from_slater(psi                    : np.ndarray,
+                    ns                      : int,
+                    spin_unpolarized_double : bool,
+                    subtract_identity       : bool,
+                    out                     : Optional[np.ndarray] = None
+                    ) -> np.ndarray:
+    r"""
+    Compute N[i,j] = <c_i^\dag c_j> for a generic many-body state psi (spinless, MSB0 indexing).
     """
-    Compute the correlation matrix from a state vector.
     
-    Para
-    """
+    if psi.ndim != 1:
+        raise ValueError("psi must be 1D")
     
-    dim = psi.size
+    if ns <= 0 or ns > 63:
+        # 2^ns statevector is anyway infeasible for large ns; 63 is a safe bit limit.
+        raise ValueError("ns must be in [1, 63]")
+
+    dim         = psi.size
     if dim != (1 << ns):
-        raise ValueError("Many-body state length not 2^ns")
+        raise ValueError("psi length must be 2^ns")
 
-    # non-zero elements of the many-body state
-    nz      = np.nonzero(psi)[0]
+    full_mask   = (np.uint64(1) << np.uint64(ns)) - np.uint64(1)
 
-    # N_ij = <c_i^\dag  c_j>
-    Nmat    = np.zeros((ns, ns), dtype=psi.dtype)
-    for j in range(ns):
-        for i in range(ns):
-            acc = 0.0
-            for kk in range(nz.size):
-                idx         = int(nz[kk])
-                amp         = psi[idx]
+    nz          = np.nonzero(psi)[0]
+    N           = np.zeros((ns, ns), dtype=psi.dtype) if out is None else out
 
-                # first apply anihilation
-                idx1, s1    = _apply_annihilation(idx, j, ns)
-                if s1 == 0:
-                    continue
+    # loop over non-zero amplitudes
+    for t in range(nz.size):
+        idx0        = np.uint64(nz[t])
+        amp0        = psi[int(idx0)]
 
-                # secondly apply creation
-                idx2, s2    = _apply_creation(idx1, i, ns)
-                if s2 == 0:
-                    continue
-                acc        += (s1 * s2) * np.conj(psi[idx2]) * amp
-            Nmat[i, j] = acc
+        # occupied orbitals in idx0:
+        occ_bits    = idx0 & full_mask
 
-    # optional \times 2 for spin-unpolarized convention to match your Slater path
+        while occ_bits:
+            lsb         = occ_bits & -occ_bits
+            bitpos      = int(np.log2(lsb))
+            j           = _bitpos_to_orb(ns, bitpos)
+
+            # apply annihilation and get new idx1
+            idx1, s1    = _apply_annihilation(idx0, j, ns)
+            if s1 != 0:
+                # empty orbitals in idx1:
+                emp_bits        = (~idx1) & full_mask
+
+                while emp_bits:
+                    lsb2        = emp_bits & -emp_bits
+                    bitpos2     = int(np.log2(lsb2))
+                    i           = _bitpos_to_orb(ns, bitpos2)
+                    
+                    # apply creation
+                    idx2, s2    = _apply_creation(idx1, i, ns)
+                    if s2 != 0:
+                        N[i, j] += (s1 * s2) * np.conj(psi[int(idx2)]) * amp0
+
+                    emp_bits    &= emp_bits - np.uint64(1)
+
+            occ_bits &= occ_bits - np.uint64(1)
+
     if spin_unpolarized_double:
-        for r in range(ns):
-            for c in range(ns):
-                Nmat[r, c] *= 2.0
+        N *= 2.0
 
-    if mode_code == _MODE_BDG_N:
-        if subtract_identity:
-            for k in range(ns):
-                Nmat[k, k] -= 1.0
-        return Nmat
+    if subtract_identity:
+        for k in range(ns):
+            N[k, k] -= 1.0
 
-    if mode_code == _MODE_SLATER:
-        if subtract_identity:
-            for k in range(ns):
-                Nmat[k, k] -= 1.0
-            return Nmat
-        else:
-            return Nmat
+    return N
 
-    # F_ij = <c_i c_j>  (IMPORTANT: two ANNIHILATIONS, not creations)
-    # The rest will follow from conjugation
-    Fmat = np.zeros((ns, ns), dtype=psi.dtype)
-    for j in range(ns):
-        for i in range(ns):
-            acc = 0.0
-            for kk in range(nz.size):
-                idx         = int(nz[kk])
-                amp         = psi[idx]
-
-                # apply first annihilation
-                idx1, s1    = _apply_annihilation(idx, j, ns)
-                if s1 == 0:
-                    continue
-                
-                # apply second annihilation
-                idx2, s2    = _apply_annihilation(idx1, i, ns)
-                if s2 == 0:
-                    continue
-                
-                acc        += (s1 * s2) * np.conj(psi[idx2]) * amp
-            Fmat[i, j] = acc
-
-    # build N_tilde = I - N (note: no extra \times 2 here; already matched above)
-    Ntilde  = np.empty_like(Nmat)
-    for r in range(ns):
-        for c in range(ns):
-            Ntilde[r, c] = (-Nmat[r, c])
+@numba.njit
+def corr_from_bdg(psi                   : np.ndarray,
+                ns                      : int,
+                spin_unpolarized_double : bool,
+                subtract_identity       : bool,
+                out                     : Optional[np.ndarray] = None
+                ) -> np.ndarray:
+    r"""
+    Return G (2ns,2ns) with blocks:
+      TL = N = <c^\dag c>
+      TR = F^\dag
+      BL = F = <c c>
+      BR = I - N  (number-conserving convention)
+    """
     
-    for k in range(ns):
-        Ntilde[k, k] += 1.0
+    if psi.ndim != 1:
+        raise ValueError("psi must be 1D")
+    if ns <= 0 or ns > 63:
+        raise ValueError("ns must be in [1, 63]")
+    if psi.size != (1 << ns):
+        raise ValueError("psi length must be 2^ns")
 
+    full_mask = (np.uint64(1) << np.uint64(ns)) - np.uint64(1)
+    nz        = np.nonzero(psi)[0]
+
+    N = np.zeros((ns, ns), dtype=psi.dtype)
+    F = np.zeros((ns, ns), dtype=psi.dtype)
+
+    # --- N[i,j] = <c_i^\dag c_j>
+    for t in range(nz.size):
+        idx0 = np.uint64(nz[t])
+        amp0 = psi[int(idx0)]
+
+        occ_bits = idx0 & full_mask
+        while occ_bits:
+            lsb     = occ_bits & -occ_bits
+            bitpos  = int(np.log2(lsb))
+            j       = _bitpos_to_orb(ns, bitpos)
+
+            idx1, s1 = _apply_annihilation(idx0, j, ns)
+            if s1 != 0:
+                emp_bits = (~idx1) & full_mask
+                while emp_bits:
+                    lsb2    = emp_bits & -emp_bits
+                    bitpos2 = int(np.log2(lsb2))
+                    i       = _bitpos_to_orb(ns, bitpos2)
+
+                    idx2, s2 = _apply_creation(idx1, i, ns)
+                    if s2 != 0:
+                        N[i, j] += (s1 * s2) * np.conj(psi[int(idx2)]) * amp0
+
+                    emp_bits &= emp_bits - np.uint64(1)
+
+            occ_bits &= occ_bits - np.uint64(1)
+
+    if spin_unpolarized_double:
+        N *= 2.0
+
+    # --- F[i,j] = <c_i c_j> (two annihilations)
+    for t in range(nz.size):
+        idx0 = np.uint64(nz[t])
+        amp0 = psi[int(idx0)]
+
+        occ_bits_j = idx0 & full_mask
+        while occ_bits_j:
+            lsbj    = occ_bits_j & -occ_bits_j
+            bitposj = int(np.log2(lsbj))
+            j       = _bitpos_to_orb(ns, bitposj)
+
+            idx1, s1 = _apply_annihilation(idx0, j, ns)
+            if s1 != 0:
+                occ_bits_i = idx1 & full_mask
+                while occ_bits_i:
+                    lsbi    = occ_bits_i & -occ_bits_i
+                    bitposi = int(np.log2(lsbi))
+                    i       = _bitpos_to_orb(ns, bitposi)
+
+                    idx2, s2 = _apply_annihilation(idx1, i, ns)
+                    if s2 != 0:
+                        F[i, j] += (s1 * s2) * np.conj(psi[int(idx2)]) * amp0
+
+                    occ_bits_i &= occ_bits_i - np.uint64(1)
+
+            occ_bits_j &= occ_bits_j - np.uint64(1)
+
+    # build G
     G = np.empty((2*ns, 2*ns), dtype=psi.dtype)
-    
+
     # TL: N
     for r in range(ns):
         for c in range(ns):
-            G[r, c] = Nmat[r, c]
-    # TR: F\dag 
+            G[r, c] = N[r, c]
+
+    # TR: F^\dag
     for r in range(ns):
         for c in range(ns):
-            G[r, ns + c] = np.conj(Fmat[c, r])
+            G[r, ns + c] = np.conj(F[c, r])
+
     # BL: F
     for r in range(ns):
         for c in range(ns):
-            G[ns + r, c] = Fmat[r, c]
-    # BR: Ntilde
+            G[ns + r, c] = F[r, c]
+
+    # BR: I - N
     for r in range(ns):
         for c in range(ns):
-            G[ns + r, ns + c] = Ntilde[r, c]
+            G[ns + r, ns + c] = -N[r, c]
+    for k in range(ns):
+        G[ns + k, ns + k] += 1.0
 
     if subtract_identity:
         for k in range(2*ns):
@@ -667,10 +867,7 @@ def _corr_from_statevector_jit(psi                  : np.ndarray,
     return G
 
 @numba.njit
-def _corr_from_statevector2_slater_jit(psi  : np.ndarray,
-                                ns          : int,
-                                j           : int = 0,
-                                l           : int = 0):
+def corr_4_from_slater(psi: np.ndarray, ns: int, j: int = 0, l: int = 0, *, out: Optional[np.ndarray] = None) -> np.ndarray:
     r"""
     Compute the correlation matrix from a state vector.
     This is:
@@ -693,58 +890,74 @@ def _corr_from_statevector2_slater_jit(psi  : np.ndarray,
         The correlation matrix.
     """
     
-    dim = psi.size
-    if dim != (1 << ns):
-        raise ValueError("Many-body state length not 2^ns")
+    if psi.ndim != 1:
+        raise ValueError("psi must be 1D")
+    
+    if ns <= 0 or ns > 63:
+        raise ValueError("ns must be in [1, 63] for uint64 bitmasks")
+    
+    if psi.size != (1 << ns):
+        raise ValueError("Many-body state length must be 2^ns")
+    
+    if j < 0 or j >= ns or l < 0 or l >= ns:
+        raise ValueError("j,l out of range")
 
-    if ns > 64:
-        raise ValueError("ns must be <= 64 for many-body states")
+    full_mask   = (np.uint64(1) << np.uint64(ns)) - np.uint64(1)
+    nz          = np.nonzero(psi)[0]
+    out         = np.zeros((ns, ns), dtype=psi.dtype) if out is None else out
 
-    # non-zero elements of the many-body state
-    nz              = np.nonzero(psi)[0]
+    for t in range(nz.size):
+        idx0    = np.uint64(nz[t])
+        amp0    = psi[int(idx0)]
 
-    # N_ij = <c_i^\dag c_j^\dag c_k c_l>
-    Nmat            = np.zeros((ns, ns), dtype=psi.dtype)
-
-    # annihilation
-    for kk in range(nz.size):
-        idx         = np.uint64(nz[kk])
-        amp         = psi[int(idx)]
-        idx1, s1    = _apply_annihilation(idx, l, ns)
+        # apply c_l
+        idx1, s1 = _apply_annihilation(idx0, l, ns)
         if s1 == 0:
             continue
-        
-        # Loop over k that are occupied in idx1 (second annihilation)
-        for k in range(ns):
 
-            # cannot annihilate at l
-            if k == l:
+        # iterate only occupied orbitals k in idx1, excluding l
+        occ_bits = idx1 & full_mask
+        while occ_bits:
+            lsb     = occ_bits & -occ_bits
+            bitpos  = int(np.log2(lsb))
+            k_orb   = ns - 1 - bitpos   # MSB0: bitpos -> orbital
+
+            occ_bits &= occ_bits - np.uint64(1)
+
+            if k_orb == l:
                 continue
-            
-            idx2, s2 = _apply_annihilation(idx1, k, ns)
+
+            idx2, s2    = _apply_annihilation(idx1, k_orb, ns)
             if s2 == 0:
                 continue
 
-            idx3, s3 = _apply_creation(idx2, j, ns)
+            # apply c_j^\dag (fixed)
+            idx3, s3    = _apply_creation(idx2, j, ns)
             if s3 == 0:
                 continue
 
-            # Loop over i that are empty in idx3 (second creation)
-            for i in range(ns):
+            pref = (s1 * s2 * s3) * amp0
 
-                # cannot create twice at j
-                if i == j:
+            # iterate only empty orbitals i in idx3, excluding j
+            emp_bits    = (~idx3) & full_mask
+            while emp_bits:
+                lsb2        = emp_bits & -emp_bits
+                bitpos2     = int(np.log2(lsb2))
+                i_orb       = ns - 1 - bitpos2
+
+                emp_bits   &= emp_bits - np.uint64(1)
+
+                if i_orb == j:
                     continue
 
-                idx4, s4 = _apply_creation(idx3, i, ns)
+                idx4, s4    = _apply_creation(idx3, i_orb, ns)
                 if s4 == 0:
                     continue
 
-                contrib     = (s1 * s2 * s3 * s4) * np.conj(psi[int(idx4)]) * amp
-                Nmat[i,k]  += contrib
+                out[i_orb, k_orb] += (pref * s4) * np.conj(psi[int(idx4)])
 
-    return Nmat
-
+    return out
+    
 # -----------------------------------------
 
 def corr_from_statevector(psi               : np.ndarray,
@@ -753,8 +966,9 @@ def corr_from_statevector(psi               : np.ndarray,
                         subtract_identity   : bool = True,
                         spin_unpolarized    : bool = True,
                         order               : int  = 2,
-                        **kwargs) -> np.ndarray:
-    """
+                        out                 : Optional[np.ndarray] = None,
+                        **kwargs) -> np.ndarray | None:
+    r"""
     \psi -based correlators matching corr_single's conventions.
 
     Parameters
@@ -791,19 +1005,27 @@ def corr_from_statevector(psi               : np.ndarray,
     
     if order == 4 and mode == "slater":
         # special case for 4-point Wick contractions
-        return _corr_from_statevector2_slater_jit(psi, ns, j=kwargs.get("j", 0), l=kwargs.get("l", 0))
+        return corr_4_from_slater(psi, ns, out=out, **kwargs)
+    
+    elif order == 2:
+        if mcode == _MODE_SLATER:
+            return corr_from_slater(psi, ns, spin_unpolarized, subtract_identity, out=out)
+        elif mcode in (_MODE_BDG_N, _MODE_BDG_FULL):
+            return corr_from_bdg(psi, ns, spin_unpolarized, subtract_identity, out=out)
+        
     elif order != 2:
-        raise ValueError("order must be 2 or 4 for corr_from_statevector")
-    return _corr_from_statevector_jit(psi, int(ns), int(mcode), bool(subtract_identity), bool(spin_unpolarized))
+        raise NotImplementedError("Only order=2 and order=4 (slater) are implemented.")
+
+    return out
 
 ###########################################
 #! JAX
 ###########################################
 
-if JAX_AVAILABLE:
-    from functools import partial
-    import jax
-    import jax.numpy as jnp
+try:
+    import  jax
+    import  jax.numpy as jnp
+    from    functools import partial
 
     @partial(jax.jit, static_argnums=(2,))
     def corr_single_jax(
@@ -819,7 +1041,10 @@ if JAX_AVAILABLE:
             C   = C - jnp.eye(W_A.shape[1], dtype=W_A.dtype)
         return C
 
-    #######################################
+except ImportError:
+    # No JAX available
+    pass
 
 ###########################################
 #! End
+###########################################

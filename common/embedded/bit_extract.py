@@ -5,29 +5,42 @@ High-performance helpers for
     * packing selected bits of an integer into a new integer
     * building masks / shift tables
 Back-ends: pure Python, Numba, JAX.
+
+----------------
+File            : general_python/common/embedded/bit_extract.py
+Author          : Maksymilian Kliczkowski
+----------------
 '''
 
-from typing import Iterable, Literal, Callable, Union, Optional
-import math, sys
-import numpy as np
+from    typing import Iterable, Literal, Callable, Union, Optional
+import  math
+import  numpy as np
+
+# numba
 try:
-    import numba
-    from numba import njit as numba_njit
+    import  numba
+    from    numba import njit as numba_njit
 except ImportError as e:
-    numba_njit = lambda x: x
-    
-from general_python.algebra.utils import (
-    DEFAULT_NP_INT_TYPE,
-    DEFAULT_NP_FLOAT_TYPE,
-    DEFAULT_JP_INT_TYPE,
-    DEFAULT_JP_FLOAT_TYPE, 
-    Array, JAX_AVAILABLE,
-)
+    def numba_njit(*args, **kwargs):
+        # Dummy decorator that returns the function unchanged
+        def decorator(func):
+            return func
+        return decorator
+
+# JAX
+try:
+    import jax
+    import jax.numpy as jnp
+    JAX_AVAILABLE   = True
+except ImportError:
+    jax             = None
+    JAX_AVAILABLE   = False
 
 #################################
 #! Pure Python
 #################################
 
+@numba_njit(inline='always')
 def extract(n: int, mask: int) -> int:
     """
     Pure Python, *O(popcount(mask))*.
@@ -56,6 +69,14 @@ def extract(n: int, mask: int) -> int:
         mask     &= mask - 1                  # clear processed bit
     return res
 
+@numba_njit(inline='always')
+def extract_with_shifts(n: int, shifts: np.ndarray) -> int:
+    res = 0
+    # shifts[i] is the input bit position to read for output bit i
+    for out_pos, in_pos in enumerate(shifts.tolist()):
+        res |= ((n >> in_pos) & 1) << out_pos
+    return res
+
 #################################
 #! Helpers for mask / shift-table creation
 #################################
@@ -77,33 +98,33 @@ def to_one_hot(positions    : Iterable[int],
                 size        : int,
                 *,
                 asbool      : bool = True) -> np.ndarray:
-    y               = np.zeros(shape=size, dtype = np.int32)
-    y[positions]    = 1
+    ''' Convert list of bit positions to one-hot array. '''
+    y       = np.zeros(shape=size, dtype=np.int32)
+    idx     = np.array(list(positions), dtype=int)
+    y[idx]  = 1
     if asbool:
         return y.astype(bool)
     return y
 
-def shift_table_from_mask(mask: int, size: int | None = None) -> np.ndarray:
-    
+def shift_table_from_mask(mask: int, *, msb0: bool = True, size: int | None = None) -> np.ndarray:
     if size is None:
         size = mask.bit_length()
-        
+
     shifts  : list[int] = []
-    pos                 = size - 1 # MSB index
-    m                   = mask
+    m = mask
     while m:
-        if m & (1 << pos):
-            shifts.append(size - 1 - pos)
-            m ^= 1 << pos
-        pos -= 1
-    return np.asarray(shifts, dtype=DEFAULT_NP_INT_TYPE)
+        lsb    = m & -m
+        pos    = lsb.bit_length() - 1              # position from LSB=0
+        shifts.append((size - 1 - pos) if msb0 else pos)
+        m     &= m - 1
+    return np.asarray(shifts, dtype=np.int64)
 
 #################################
 #! Numba
 #################################
 
 if numba:
-    @numba.njit(cache=True)
+    @numba_njit(cache=True)
     def extract_nb(n: int, mask: int) -> int:
         """
         Extracts bits from an integer `n` at positions specified by the bitmask `mask` and packs them into a contiguous integer.
@@ -130,7 +151,7 @@ if numba:
             mask     &= mask - 1
         return res
 
-    @numba.njit(cache=True, inline='always')
+    @numba_njit(cache=True, inline='always')
     def extract_vnb(state: int, shifts: np.ndarray) -> int:
         """
         Extracts bits from a given integer state at specified positions and packs them into a new integer.
@@ -149,7 +170,7 @@ if numba:
             res |= ((state >> shifts[k]) & 1) << k
         return res
     
-    @numba.njit(cache=True, inline='always')
+    @numba_njit(cache=True, inline='always')
     def extract_vnb_v(state, mask_idx, ns):
         """
         Extract bits from `state` at positions in `mask_idx` (leftmost = highest bit index)
@@ -180,11 +201,8 @@ else:
 #################################
 #! JAX
 #################################
-
-if JAX_AVAILABLE:
-    import jax
-    import jax.numpy as jnp
     
+if JAX_AVAILABLE:
     def extract_jax(state: int, mask: int) -> int:
         """JIT-compiled after first call; works on scalars or arrays."""
         
@@ -291,8 +309,8 @@ def make_extractor( mask    : Union[int, np.ndarray],
             mask_   = mask
             shifts  = shift_table_from_mask(mask_, size)
         else:
-            shifts  = np.asarray(mask, dtype=DEFAULT_NP_INT_TYPE)
-            shifts  = np.array([size - 1 - p for p in shifts], dtype=DEFAULT_NP_INT_TYPE)
+            shifts  = np.asarray(mask, dtype=np.int64)
+            shifts  = np.array([size - 1 - p for p in shifts], dtype=np.int64)
             
         @numba_njit(cache=True, inline='always')
         def wrapped(state: int) -> int:

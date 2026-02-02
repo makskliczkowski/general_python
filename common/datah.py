@@ -309,49 +309,6 @@ class DataHandler:
     ################################################################################################
 
 ####################################################################################################
-
-IndexLike = Union[int, Sequence[int], np.ndarray]
-
-def indices_from_mask(idx: IndexLike, n: int, dtype: np.dtype = np.int64) -> np.ndarray:
-
-    # check if idx is an integer or a sequence
-    if isinstance(idx, int):
-        if not (0 <= idx <= n):
-            raise ValueError(f"count k={idx} out of bounds for n={n}")
-        return np.arange(idx, dtype=dtype)
-    
-    # fallback to array-like
-    arr = np.asarray(idx)
-    if arr.dtype == np.bool_:
-        if arr.ndim != 1 or arr.size != n:
-            raise ValueError(f"bool mask must have shape ({n},), got {arr.shape}")
-        return np.flatnonzero(arr).astype(dtype, copy=False)
-
-    if arr.ndim != 1 or not np.issubdtype(arr.dtype, np.integer):
-        raise TypeError("indices must be int k, 1D int array/list, or 1D bool mask")
-    
-    if (arr < 0).any() or (arr >= n).any():
-        raise IndexError("index out of bounds for given n")
-
-    # de-duplicate while preserving first appearance
-    _, pos = np.unique(arr, return_index=True)
-    return arr[np.sort(pos)].astype(dtype, copy=False)
-
-def complement_indices(n: int, indices: np.ndarray) -> np.ndarray:
-    """
-    Return indices in [0..n) not in indices. O(n) boolean scratch, minimal & fast.
-
-    Parameters:
-    - n (int):
-        The upper bound of the range (exclusive).
-    - indices (np.ndarray):
-        The input indices to exclude.
-
-    Returns:
-    - np.ndarray: The complementary indices.
-    """
-    m           = np.ones(n, dtype=bool)
-    m[indices]  = False
-    return np.flatnonzero(m)
-
+#! EOF
 ####################################################################################################
+
