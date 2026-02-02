@@ -92,80 +92,19 @@ class _FlaxCNN(nn.Module):
     activations    : Sequence[Callable]         # already resolved callables
     use_bias       : Sequence[bool]
     output_feats   : int                        # prod(output_shape)
-    in_act         : Optional[Callable] = None
-    out_act        : Optional[Callable] = None
-    param_dtype    : jnp.dtype          = jnp.complex64
-    dtype          : jnp.dtype          = jnp.complex64
-    input_channels : int                = 1
-    periodic       : bool               = True
-    use_sum_pool   : bool               = True
-    transform_input: bool               = False
-    split_complex  : bool               = False # New optimization flag
-
-    def setup(self):
-        """
-        Setup layers. Handles split-complex logic by converting complex dtypes
-        to their float equivalents for the backbone if enabled.
-        """
-        iter_specs = zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
-        
-        #! Dtype Resolution
-        # If split_complex is True, we force the backbone to be REAL.
-        # We assume input is real (or projected to real).
-        if self.split_complex:
-            # Map complex64 -> float32, complex128 -> float64
-            if jnp.issubdtype(self.param_dtype, jnp.complexfloating):
-                p_dtype = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
-            else:
-                p_dtype = self.param_dtype
-                
-            if jnp.issubdtype(self.dtype, jnp.complexfloating):
-                c_dtype = jnp.float32 if self.dtype == jnp.complex64 else jnp.float64
-            else:
-                c_dtype = self.dtype
-        else:
-            p_dtype = self.param_dtype
-            c_dtype = self.dtype
-
-        # Initialization Scaling
-        # n_spatial   = math.prod(self.reshape_dims)
-        # init_scale  = 1.0 / jnp.sqrt(n_spatial) # Non-standard, can cause vanishing variance
-        init_scale    = 1.0 # Standard LeCun Normal / Fan-In
-        
-        # Choose initializer
-        if jnp.issubdtype(p_dtype, jnp.complexfloating):
-            kernel_init = cplx_variance_scaling(init_scale, 'fan_in', 'normal', p_dtype)
-        else:
-            kernel_init = nn.initializers.variance_scaling(init_scale, 'fan_in', 'normal', dtype=p_dtype)
-
-        # --- Convolution Layers ---
-        self.conv_layers = [
-            nn.Conv(
-                features    = feat,
-                kernel_size = k_size,
-                strides     = stride,
-                padding     = 'VALID' if self.periodic else 'SAME',
-                use_bias    = bias,
-                param_dtype = p_dtype,
-                kernel_init = kernel_init,
-                dtype       = c_dtype,
-                name        = f"conv_{i}",
-            )
-            for i, (feat, k_size, stride, bias) in enumerate(iter_specs)
-        ]
-
-        #! Output Layer
-        # If split_complex, we output 2x features (Real, Imag) and combine later.
-        out_features    = self.output_feats * 2 if self.split_complex else self.output_feats
-        
-        self.dense_out  = nn.Dense(
-                            features    = out_features,
-                            use_bias    = True,
-                            param_dtype = p_dtype,
-                            dtype       = c_dtype,
-                            kernel_init = kernel_init,
-                            name        = "dense_out",
-                        )
+    
+    # Configs
+    param_dtype    : jnp.dtype                  = jnp.complex64
+    dtype          : jnp.dtype                  = jnp.complex64
+    input_channels : int                        = 1
+    periodic       : bool                       = True
+    use_sum_pool   : bool                       = True
+    transform_input: bool                       = False
+    split_complex  : bool                       = False
+    islog          : bool                       = True
+    
+    in_act         : Optional[Callable]         = None
+    out_act        : Optional[Callable]         = None
 
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
@@ -173,6 +112,7 @@ class _FlaxCNN(nn.Module):
         Forward pass.
         """
         # Ensure batch dimension: (B, N)
+        needs_batch     = s.ndim == 1
         if s.ndim == 1:
             s = s[jnp.newaxis, ...]
 
@@ -184,13 +124,13 @@ class _FlaxCNN(nn.Module):
             # Force Real Arithmetic
             comp_dtype  = jnp.float32 if jnp.iscomplexobj(self.param_dtype) else jnp.float64
             # Ensure input is real
-            if jnp.iscomplexobj(x):
-                x = x.real
+            s_proc      = s.real if jnp.iscomplexobj(s) else s
         else:
             comp_dtype  = self.dtype
+            s_proc      = s
 
         # 1. Reshape & Transform
-        x               = s.reshape(target_shape)
+        x               = s_proc.reshape(target_shape)
         x               = x.astype(comp_dtype)  # Cast to computation dtype (first)        
             
         # Transform 0/1 -> -1/1 if needed
@@ -246,7 +186,7 @@ class _FlaxCNN(nn.Module):
         if self.split_complex:
             # Output 2 real values: [Real, Imag]
             out             = nn.Dense(
-                                features    = 2 * self.input_channels,
+                                features    = 2 * self.output_feats,
                                 dtype       = comp_dtype,
                                 param_dtype = comp_dtype,
                                 kernel_init = k_init,
@@ -254,18 +194,24 @@ class _FlaxCNN(nn.Module):
                             )(x)
             
             # Reconstruct Complex Number: Re + i*Im
+            # Reshape to (batch, output_feats, 2)
+            out             = out.reshape((batch_size, self.output_feats, 2))
             out_val         = out[..., 0] + 1j * out[..., 1]
             
         else:
             # Output 1 complex value
             out             = nn.Dense(
-                                features    = self.input_channels,
+                                features    = self.output_feats,
                                 dtype       = comp_dtype,
                                 param_dtype = comp_dtype,
                                 kernel_init = k_init,
                                 name        = 'head_projection'
                             )(x)
-            out_val         = out[..., 0] # Squeeze last dim
+            out_val         = out # Shape: (batch, output_feats)
+
+        # Squeeze last dim if output_feats is 1
+        if self.output_feats == 1:
+            out_val         = out_val.reshape((batch_size,))
 
         # Output
         if self.out_act is not None:
@@ -276,17 +222,8 @@ class _FlaxCNN(nn.Module):
         if not self.islog:
             out_val = jnp.exp(out_val)
         
-        # Flatten scalar output to (Batch,) to match JAX VMC expectations
-        if self.output_feats == 1 and not self.split_complex:
-            return x.reshape(-1)
-
-        return x
-
-def stable_log_cosh(x):
-    # log(cosh(x)) = |x| - log(2) for large |x|
-    # Softplus formulation: x + log(1 + exp(-2x)) - log(2) for x > 0
-    # Robust JAX implementation:
-    return jnp.abs(x) + jnp.log1p(jnp.exp(-2.0 * jnp.abs(x))) - jnp.log(2.0)
+        # Return scalar for single sample, array for batch
+        return out_val[0] if needs_batch else out_val
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -309,7 +246,7 @@ class CNN(FlaxInterface):
         sum_pooling (bool): 
             Sum over spatial dimensions. Default: True.
     """
-    def __init__(self,
+    def __init__(self, 
                 input_shape         : tuple,
                 reshape_dims        : Tuple[int, ...]                                       = None,
                 features            : Sequence[int]                                         = (8,),
@@ -362,25 +299,21 @@ class CNN(FlaxInterface):
         strides_t   = _as_tuple(strides, "stride")
 
         # Activations
-        def _resolve_act(a):
-            if isinstance(a, str) and a.lower() == 'log_cosh':
-                return stable_log_cosh
-            return get_activation_jnp(a)
-
         if isinstance(activations, (str, Callable)):
-            acts = (_resolve_act(activations),) * len(features)
+            acts = (get_activation_jnp(activations),) * len(features)
         elif isinstance(activations, (Sequence, List)):
-            acts = tuple(_resolve_act(a) for a in activations[:len(features)])
+            acts = tuple(get_activation_jnp(a) for a in activations[:len(features)])
         else:
             raise ValueError("Invalid activation spec")
 
         # Bias
         if isinstance(use_bias, bool):
-            bias_flags = (use_bias,) * len(features)
+            bias_flags  = (use_bias,) * len(features)
         else:
-            bias_flags = tuple(bool(b) for b in use_bias)
+            bias_flags  = tuple(bool(b) for b in use_bias)
 
-        p_dtype = param_dtype if param_dtype is not None else dtype
+        p_dtype         = param_dtype if param_dtype is not None else dtype
+        output_feats    = int(np.prod(output_shape))
 
         # Build Module Config
         net_kwargs = dict(
@@ -390,6 +323,7 @@ class CNN(FlaxInterface):
             strides         =   strides_t,
             activations     =   acts,
             use_bias        =   bias_flags,
+            output_feats    =   output_feats,
             in_act          =   get_activation_jnp(in_activation) if in_activation else None,
             out_act         =   get_activation_jnp(final_activation) if final_activation else None,
             dtype           =   dtype,
@@ -401,7 +335,6 @@ class CNN(FlaxInterface):
             split_complex   =   split_complex,
             islog           =   islog
         )
-
         self._out_shape     = output_shape
         self._split_complex = split_complex
 
