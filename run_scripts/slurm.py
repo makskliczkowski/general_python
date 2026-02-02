@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..common.flog import Logger
 
 #########################################################
+
 try:
     import psutil
     import argparse
@@ -32,10 +33,8 @@ except ImportError:
     raise ImportError("Failed to import set_global_seed from algebra.ran_wrapper")
 
 #########################################################
-
-############################################################
 #! Validators
-#############################################################
+#########################################################
 
 def calculate_optimal_workers(params, available_memory: int, memory_per_worker: int, max_cores: Optional[int] = None, logger: Optional['Logger'] = None):
     """
