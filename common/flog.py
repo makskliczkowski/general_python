@@ -16,7 +16,7 @@ description :   This module provides a logger class for handling console and fil
 '''
 
 __name__        = "flog"
-__version__     = "1.0.0"
+__version__     = "1.1.0"
 __author__      = "Maksymilian Kliczkowski"
 __email__       = "maksymilian.kliczkowski@pwr.edu.pl"
 __date__        = "2025-05-01"
@@ -34,15 +34,15 @@ __all__         = [
     "get_global_logger"
 ]
 
-import os
-import re
-import sys
-import functools
-import logging
-import getpass
-import threading
-from datetime import datetime
-from typing import Optional, Dict, List
+import  os
+import  re
+import  sys
+import  functools
+import  logging
+import  getpass
+import  threading
+from    datetime import datetime
+from    typing import Optional, Dict, List
 
 # set the logging level to WARNING
 logging.getLogger("jax").setLevel(logging.WARNING)
@@ -50,11 +50,11 @@ logging.getLogger("flax").setLevel(logging.WARNING)
 logging.getLogger("tensorflow").setLevel(logging.WARNING)
 
 try:
-    # from colorama import init
-    # init(autoreset=True)
-    __HAS_COLORAMA = False
+    from colorama import init
+    init(autoreset=True)
+    _HAS_COLORAMA = True
 except ImportError:
-    __HAS_COLORAMA = False
+    _HAS_COLORAMA = False
 
 ######################################################
 #! NOTEBOOK / IPYTHON DETECTION
@@ -69,7 +69,7 @@ def _is_interactive_notebook() -> bool:
         bool: True if running in a notebook or IPython shell, False otherwise.
     """
     try:
-        from IPython import get_ipython
+        from IPython.core.getipython import get_ipython
         ipy = get_ipython()
         if ipy is None:
             return False
@@ -79,13 +79,13 @@ def _is_interactive_notebook() -> bool:
         return False
 
 # Track already configured logger names to prevent duplicate handlers
-_CONFIGURED_LOGGERS = set()
+_CONFIGURED_LOGGERS     = set()
 
 # In notebook mode, we use a SINGLE shared console handler for ALL loggers
 # This prevents duplicate output when multiple Logger instances are created
 _SHARED_CONSOLE_HANDLER = None
-_NOTEBOOK_MODE_CHECKED = False
-_IS_NOTEBOOK = False
+_NOTEBOOK_MODE_CHECKED  = False
+_IS_NOTEBOOK            = False
 
 ######################################################
 #! PRINT THE OUTPUT WITH A GIVEN COLOR

@@ -371,7 +371,10 @@ class SimulationParams:
         ap: argparse.ArgumentParser,
         *,
         include_directory: bool     = True,
+        # logging and reproducibility
         include_verbose: bool       = True,
+        include_verbose_every: bool = True,
+        # random seed
         include_seed: bool          = True,
         # hardware constraints
         include_maxcores: bool      = True,
@@ -408,6 +411,14 @@ class SimulationParams:
                 default = 1,
                 choices = [0, 1, 2, 3],
                 help    = 'Verbosity level (0 = silent, 3 = very detailed logging).'
+            )
+            
+        if include_verbose_every:
+            ap.add_argument(
+                '-ve', '--verbose_every',
+                type    = float,
+                default = 0.1,
+                help    = 'Log progress every N realizations (default: 0.1). If >= 1, logs every N realizations. If < 1, logs every fraction of total realizations.'
             )
 
         # Reproducibility
@@ -464,11 +475,50 @@ class SimulationParams:
             )
     
     #########################################################
+    
+    @staticmethod
+    def is_verbose(verbose: bool, verbose_every: float, current_realiz: int, total_realiz: int) -> bool:
+        """
+        Determine if logging should occur based on verbosity settings.
+        
+        Parameters
+        ----------
+        verbose : bool
+            Whether verbose logging is enabled.
+        verbose_every : float
+            Frequency of logging. If >= 1, log every N realizations. If < 1, log every fraction of total realizations.
+        current_realiz : int
+            The current realization index (0-based).
+        total_realiz : int
+            The total number of realizations.
+        Returns
+        -------
+        bool
+            True if logging should occur at the current realization, False otherwise.        
+        """
+        
+        if not verbose:
+            return False
+        
+        if verbose_every is None or verbose_every <= 0:
+            return True
+
+        if verbose_every >= 1:
+            return (current_realiz % int(verbose_every)) == 0
+        
+        if verbose_every and total_realiz > 0:
+            interval = max(1, int(total_realiz * verbose_every))
+            return (current_realiz % interval) == 0
+        
+        return True
+    
+    
+    #########################################################
 
     @staticmethod
     def random_identifier(rng = None, seed = None, max_int = 1000000):
         if rng is None:
-            np.random.default_rng(seed)    
+            rng = np.random.default_rng(seed)    
         return f"{rng.integers(0, max_int)}"
     
     #########################################################
@@ -479,7 +529,7 @@ class SlurmMonitor:
     """SLURM job monitoring utilities"""
     
     try:
-        from ..common.flog  import Logger, get_global_logger
+        from ..common.flog  import get_global_logger
         logger              = get_global_logger()
     except ImportError:
         import logging

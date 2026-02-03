@@ -9,8 +9,7 @@ Date   : 2026-01-15
 from    __future__  import annotations
 
 from    dataclasses import dataclass
-from    typing      import Callable, Tuple, Optional, Sequence, Any, List, Union, Type, Union, TYPE_CHECKING
-import  math
+from    typing      import Callable, Tuple, Optional, Sequence, Any, List, Union, Dict, Type, Union, TYPE_CHECKING
 import  re
 
 import  os
@@ -39,7 +38,7 @@ def filter_dataframe(df     : pd.DataFrame,
                 criteria    : Dict[str, Sequence[Any]],
                 *,
                 copy        : bool = False) -> pd.DataFrame:
-    """
+    r"""
     Return `df` filtered to rows where each column key \in criteria contains one of the allowed values.
 
     Parameters
