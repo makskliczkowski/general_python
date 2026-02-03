@@ -1,22 +1,29 @@
 '''
+This module provides a collection of static methods for predicting entanglement entropy in quantum systems under various physical scenarios.
+It includes analytical and semi-analytical formulas for entanglement entropy, including volume law, chaotic, random Gaussian, and Page values, with and without U(1) conservation.
+
+--------------------------------
 file    : general_python/physics/entropy.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-05-01
-
-This module provides a collection of static methods for predicting entanglement entropy in quantum systems under various physical scenarios.
-It includes analytical and semi-analytical formulas for entanglement entropy, including volume law, chaotic, random Gaussian, and Page values, with and without U(1) conservation.
-
+--------------------------------
 '''
 
 # Adds higher directory to python modules path.
-from enum import Enum, unique
-from scipy.special import digamma, polygamma, binom, psi
-import numpy as np
-import numba
-import math
+from    enum            import Enum, unique
+from    scipy.special   import digamma, polygamma, binom, psi
+import  numpy           as np
+import  numba
+import  math
 
-from ..algebra.utils import JAX_AVAILABLE, Array
+try:
+    import jax
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
+    
+# ----------------------------------
 if JAX_AVAILABLE:
     from ..physics import entropy_jax as entropy_jax
 else:
@@ -25,7 +32,7 @@ else:
 ###################################
 
 class EntropyPredictions:
-    """
+    r"""
     A collection of static methods for predicting entanglement entropy in quantum systems under various physical scenarios.
 
     This class provides analytical and semi-analytical formulas for entanglement entropy, including volume law, chaotic, random Gaussian, and Page values, with and without U(1) conservation. The methods are based on results from quantum statistical mechanics and random matrix theory.
@@ -390,7 +397,7 @@ def purity(dens_or_vals: np.ndarray):
 @numba.njit(cache=True)
 def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
     r"""
-    Calculates the von Neumann entropy for a given probability distribution.
+    Calculates the von Neumann entropy for a given probability distribution.c
 
     Parameters
     ----------

@@ -31,20 +31,27 @@ except ImportError:
 
 # -----------------------------------------------------------------------------
 
-from typing import Union, Tuple, Optional, Callable, Dict
-from functools import partial
-from ..algebra.utils import JAX_AVAILABLE, DEFAULT_BACKEND, get_backend
+from typing             import Union, Tuple, Optional, Callable, Dict
+from functools          import partial
+from ..algebra.utils    import DEFAULT_BACKEND, get_backend
 
 # Initialize JAX_RND_DEFAULT_KEY
 JAX_RND_DEFAULT_KEY = None
 
-if JAX_AVAILABLE:
-    import jax
-    import jax.numpy as jnp
-    from jax import random as random_jp
+try:
+    import  jax
+    import  jax.numpy as jnp
+    from    jax import random as random_jp
     
     # Initialize default JAX PRNG key
-    JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42)  # Default seed
+    try:
+        JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42) # Default seed
+    except Exception as e:
+        JAX_RND_DEFAULT_KEY = None
+        
+    JAX_AVAILABLE = True
+except ImportError:
+    JAX_AVAILABLE = False
 else:
     JAX_RND_DEFAULT_KEY = None
 
@@ -106,6 +113,7 @@ def initialize(backend  : str           = "default",
     Returns:
         A tuple (rnd_module, key) where key is the PRNG key for JAX (or None for NumPy).
     '''
+
     module = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = module if isinstance(module, tuple) else (module, (None, None))
     if key is None and JAX_AVAILABLE:

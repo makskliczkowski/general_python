@@ -73,12 +73,10 @@ _LAZY_IMPORTS = {
 
 # For type checking, import types without runtime overhead
 if TYPE_CHECKING:
-    from .solvers import SolverType, choose_solver
-    from .solvers.backend_ops import get_backend_ops, BackendOps, default_ops
-    from .preconditioners import choose_precond
-    from . import backend_linalg as LinalgModule
-    from ..common.plot import MatrixPrinter
-    from ..common.flog import get_global_logger as get_logger
+    from .solvers               import SolverType, choose_solver
+    from .solvers.backend_ops   import get_backend_ops, BackendOps, default_ops
+    from .preconditioners       import choose_precond
+    from .                      import backend_linalg as LinalgModule
 
 # Initialize LazyImporter
 _importer = LazyImporter(__name__, _LAZY_IMPORTS)
