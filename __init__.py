@@ -17,7 +17,31 @@ Author      : Maksymilian Kliczkowski
 Date        : 2025-02-02
 """
 
+import sys
+import importlib
+
 __version__ = "1.1.0"
 
-# Avoid eager imports to prevent circular dependencies
-# Import submodules only when explicitly needed
+# Submodules that can be lazy-loaded
+_SUBMODULES = {
+    'algebra',
+    'common',
+    'lattices',
+    'maths',
+    'physics',
+    'ml',
+}
+
+def __getattr__(name: str):
+    """Lazy-load submodules on demand."""
+    if name in _SUBMODULES:
+        return importlib.import_module(f'.{name}', package=__name__)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+def __dir__():
+    """Return list of available attributes."""
+    return sorted(list(globals().keys()) + list(_SUBMODULES))
+
+# ----------------------------------------------------------------
+#! EOF
+# ----------------------------------------------------------------
