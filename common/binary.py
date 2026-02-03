@@ -478,7 +478,7 @@ def base2int(vec        : Array,
         int                             : The integer representation of the binary vector.
     '''
     if spin:
-        return base2int_spin_fast(vec, spin_value)
+        return base2int_spin(vec, spin_value)
     return base2int_binary(vec)
 
 # --------------------------------------------------------------------------------------------------

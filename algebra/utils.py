@@ -1227,7 +1227,17 @@ def _qes_initialize_utils():
     if JAX_AVAILABLE:
         # Type aliases for JAX
         PRNGKey     = jrn.PRNGKey
-        JaxDevice   = jax.lib.xla_client.Device if hasattr(jax.lib, 'xla_client') and hasattr(jax.lib.xla_client, 'Device') else Any
+        
+        # Modern JAX (>=0.4.0): Device is at jax.Device
+        if hasattr(jax, 'Device'):
+            JaxDevice = jax.Device
+        # Older JAX: Device is at jax.lib.xla_client.Device
+        elif hasattr(jax, 'lib') and hasattr(jax.lib, 'xla_client') and hasattr(jax.lib.xla_client, 'Device'):
+            JaxDevice = jax.lib.xla_client.Device
+        else:
+            JaxDevice = Any
+            
+        # Type alias for arrays
         Array       = Union[np.ndarray, jnp.ndarray]
         if PREFER_32BIT:
             jcfg.update("jax_enable_x64", False)

@@ -32,6 +32,19 @@ _SUBMODULES = {
     'ml',
 }
 
+# Try to import submodules eagerly for CI compatibility
+# In CI environments, __getattr__ may not work reliably
+try:
+    from . import algebra
+    from . import common
+    from . import lattices
+    from . import maths
+    from . import physics
+    from . import ml
+except ImportError:
+    # Fallback to lazy loading if eager import fails (e.g., missing optional dependencies)
+    pass
+
 def __getattr__(name: str):
     """Lazy-load submodules on demand."""
     if name in _SUBMODULES:
