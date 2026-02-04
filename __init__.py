@@ -55,6 +55,22 @@ def __dir__():
     """Return list of available attributes."""
     return sorted(list(globals().keys()) + list(_SUBMODULES))
 
+def list_available_modules():
+    """Return list of available submodules."""
+    return sorted(list(_SUBMODULES))
+
+def get_module_description(module_name: str) -> str:
+    """Return a brief description of the module."""
+    descriptions = {
+        'algebra': "Algebraic structures, eigensolvers, and backend operations.",
+        'common': "Common utilities (logging, file I/O, plotting).",
+        'lattices': "Lattice definitions and k-space utilities.",
+        'maths': "Mathematical functions and numerical utilities.",
+        'physics': "Physical constants and quantum mechanics tools.",
+        'ml': "Machine learning utilities.",
+    }
+    return descriptions.get(module_name, "No description available.")
+
 # ----------------------------------------------------------------
 #! EOF
 # ----------------------------------------------------------------

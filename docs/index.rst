@@ -8,6 +8,8 @@ General Python Utilities (GenUtils Python) is a collection of modules providing 
    :caption: Contents:
 
    introduction
+   getting_started
+   design_principles
    installation
    usage
    api

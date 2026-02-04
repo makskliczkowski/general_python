@@ -9,7 +9,9 @@ design.
 Available submodule aliases
 ---------------------------
 - ``math_utils``   : General mathematical functions and utilities.
-- ``random``       : High-quality pseudorandom number generators and CUE matrices.
+- ``random``       : Specific Random Matrix Theory (RMT) utilities (e.g., CUE via QR).
+                     **Note**: For general random number generation (uniform, normal, etc.)
+                     compatible with NumPy/JAX, use ``algebra.ran_wrapper``.
 - ``statistics``   : Statistical functions and data analysis utilities.
 
 ---------------------------------------------------------------------------
