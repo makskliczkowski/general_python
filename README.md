@@ -283,7 +283,7 @@ print(f"Lowest eigenvalue: {evals[0]:.6f}")
 
 ### Build Full Docs
 ```bash
-cd ../../docs
+cd docs
 pip install -r requirements.txt
 make html
 # Open _build/html/index.html
@@ -295,10 +295,10 @@ make html
 
 ```bash
 # Run all tests
-pytest ../test/ -v
+pytest tests/ -v
 
 # Test general_python specifically
-pytest ../test/test_imports_lightweight.py -v
+pytest tests/test_imports.py -v
 ```
 
 ---
