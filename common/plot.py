@@ -351,8 +351,11 @@ ADDITIONAL_LINESTYLES       =   {
 # Set the font dictionaries (for plot title and axis titles)
 try:
     plt.style.use(['science', 'no-latex', 'colors5-light'])
-except Exception as e:
-    plt.style.use(['science', 'no-latex'])
+except Exception:
+    try:
+        plt.style.use(['science', 'no-latex'])
+    except Exception:
+        pass
     
 # Safely set additional rcParams (for compatibility with documentation build systems)
 try:

@@ -28,6 +28,7 @@ dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
+    "numba",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,14 @@ ml = [
     "tensorflow",
     "scikit-learn",
     "pandas",
+    "jax",
+    "jaxlib",
+    "flax",
+]
+jax = [
+    "jax",
+    "jaxlib",
+    "flax",
 ]
 docs = [
     "sphinx",
