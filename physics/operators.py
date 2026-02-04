@@ -108,9 +108,33 @@ class Operators:
     
     @staticmethod
     def resolveSite(site : str, _dimension = 1):
-        '''
-        Resolves the site to the proper one
-        '''
+        """
+        Parses and resolves a site identifier string into a numeric index or value.
+
+        This method handles special symbolic representations used in operator strings,
+        such as 'L' (system size), 'pi', and arithmetic operations like division or subtraction.
+
+        Parameters
+        ----------
+        site : str
+            String representation of the site (e.g., "0", "L", "L_2", "L-1").
+        _dimension : int, default=1
+            The dimension or size of the system (L), used to resolve 'L' or 'l'.
+
+        Returns
+        -------
+        int or float
+            The resolved numeric value of the site or parameter.
+
+        Examples
+        --------
+        >>> Operators.resolveSite("0", 10)
+        0
+        >>> Operators.resolveSite("L", 10)  # If OPERATOR_SITE_M_1 is True (default)
+        9
+        >>> Operators.resolveSite("L_2", 10) # L / 2
+        5
+        """
         if len(site) == 0:
             return site 
 
@@ -147,6 +171,24 @@ class Operators:
 
     @staticmethod
     def resolve_operator(f_name, dimension):
+        """
+        Resolves a full operator string by parsing the site component.
+
+        For an operator string like "Sz/L_2", this splits the string by the operator separator ('/'),
+        resolves the site part ("L_2" -> dimension/2), and reconstructs the string.
+
+        Parameters
+        ----------
+        f_name : str
+            Operator name string.
+        dimension : int
+            System dimension/size.
+
+        Returns
+        -------
+        str
+            Resolved operator string (e.g., "Sz/5").
+        """
         if Operators.OPERATOR_SEP in f_name:
             f_name_split = f_name.split(Operators.OPERATOR_SEP)
             elem_part    = f_name_split[-1]

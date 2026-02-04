@@ -4,6 +4,14 @@ Machine Learning Module for General Python Utilities.
 This module provides machine learning utilities with support for both JAX and NumPy backends,
 including neural network implementations, training utilities, optimizers, and loss functions.
 
+Submodules
+----------
+- **networks**: Factory and registry for creating neural networks (RBM, CNN, etc.).
+- **schedulers**: Learning rate schedulers.
+- **net_impl**: Implementation details for networks and interfaces.
+    - **interface_net_flax**: Wrapper for Flax modules.
+    - **networks**: Concrete network architectures (RBM, CNN, GCNN, etc.).
+
 ---------------------------------
 File            : general_python/ml/__init__.py
 Author          : Maksymilian Kliczkowski
@@ -46,9 +54,9 @@ __all__ = list(_LAZY_MODULES.keys()) + [
     'net_impl'
 ]
 
-# --------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # Direct import of net_impl for easier access
-# --------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
 from . import net_impl
 
@@ -63,6 +71,6 @@ __version__     = '0.1.0'
 __author__      = 'Maksymilian Kliczkowski'
 __email__       = 'maksymilian.kliczkowski@pwr.edu.pl'
 
-# --------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # End of File
-# --------------------------------------------------------------
+# ------------------------------------------------------------------------------
