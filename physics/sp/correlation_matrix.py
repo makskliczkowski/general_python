@@ -45,6 +45,141 @@ if TYPE_CHECKING:
     from ...algebra.utils import Array
 
 #################################### 
+#! Numba-optimized kernels for correlation matrix computation
+###################################
+
+@numba.njit(cache=True, fastmath=True)
+def _corr_single_slater_raw_kernel(W_A: np.ndarray, occ_bool: np.ndarray, C: np.ndarray) -> None:
+    """
+    Numba kernel for fast Slater correlation: C = 2 * W_occ^\dag @ W_occ.
+    
+    Parameters
+    ----------
+    W_A : np.ndarray
+        Eigenvector matrix (Ls, La).
+    occ_bool : np.ndarray
+        Boolean occupation mask (Ls,).
+    C : np.ndarray
+        Output correlation matrix (La, La), modified in-place.
+    """
+    Ls, La  = W_A.shape
+    # Extract occupied rows - manual extraction for Numba
+    nocc    = 0
+    for i in range(Ls):
+        if occ_bool[i]:
+            nocc += 1
+    
+    if nocc == 0:
+        # C already zeros
+        return
+    
+    # Build W_occ manually (nocc, La)
+    W_occ   = np.empty((nocc, La), dtype=W_A.dtype)
+    idx     = 0
+    for i in range(Ls):
+        if occ_bool[i]:
+            for j in range(La):
+                W_occ[idx, j] = W_A[i, j]
+            idx += 1
+    
+    # C = 2 * W_occ.conj().T @ W_occ - optimized with explicit loop
+    # Exploit Hermitian symmetry: only compute upper triangle
+    for i in range(La):
+        for j in range(i, La):  # Upper triangle only
+            s = 0.0 + 0.0j
+            for k in range(nocc):
+                s += np.conj(W_occ[k, i]) * W_occ[k, j]
+            C[i, j] = 2.0 * s
+            if i != j:
+                C[j, i] = np.conj(C[i, j])  # Fill lower triangle by Hermitian conjugate
+
+@numba.njit(cache=True, fastmath=True, parallel=True)
+def _corr_superposition_diagonal_kernel(
+    W_A: np.ndarray,
+    occ_list_packed: np.ndarray,    # (gamma, Ls) as uint8
+    coeffs_abs_sq: np.ndarray,      # (gamma,) real
+    C: np.ndarray                   # (La, La) output
+) -> None:
+    """
+    Numba kernel for diagonal contributions to superposition correlation matrix.
+    
+    Computes: C += sum_k |a_k|^2 * 2 * W_occ[k]^\dag @ W_occ[k]
+    """
+    gamma, Ls   = occ_list_packed.shape
+    La          = W_A.shape[1]
+    
+    for k in numba.prange(gamma):
+        # Count occupied
+        nocc = 0
+        for i in range(Ls):
+            if occ_list_packed[k, i] != 0:
+                nocc += 1
+        
+        if nocc == 0:
+            continue
+        
+        # Extract occupied rows
+        W_occ = np.empty((nocc, La), dtype=W_A.dtype)
+        idx = 0
+        for i in range(Ls):
+            if occ_list_packed[k, i] != 0:
+                for j in range(La):
+                    W_occ[idx, j] = W_A[i, j]
+                idx += 1
+        
+        # Compute C_k = W_occ^\dag @ W_occ with Hermitian symmetry
+        weight = 2.0 * coeffs_abs_sq[k]
+        for i in range(La):
+            for j in range(i, La):  # Upper triangle only
+                s = 0.0 + 0.0j
+                for m in range(nocc):
+                    s += np.conj(W_occ[m, i]) * W_occ[m, j]
+                # Atomic add for thread safety
+                val      = weight * s
+                C[i, j] += val
+                if i != j:
+                    C[j, i] += np.conj(val)  # Hermitian symmetry
+
+@numba.njit(cache=True, fastmath=True)
+def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, int, int]:
+    """
+    Find if two occupations differ by exactly one hop.
+    
+    Returns
+    -------
+    Tuple[int, int, int]
+        (status, q_from, q_to) where:
+        - status: 0 if not single hop, 1 if valid single hop
+        - q_from: orbital occupied in a, empty in b
+        - q_to: orbital empty in a, occupied in b
+    """
+    Ls          = occ_a.shape[0]
+    diff_count  = 0
+    q1          = -1
+    q2          = -1
+    
+    for i in range(Ls):
+        if occ_a[i] != occ_b[i]:
+            diff_count += 1
+            if diff_count == 1:
+                q1 = i
+            elif diff_count == 2:
+                q2 = i
+            else:
+                return (0, -1, -1)  # More than 2 differences
+    
+    if diff_count != 2:
+        return (0, -1, -1)
+    
+    # Determine which is q_from (occupied in a) and q_to (occupied in b)
+    if occ_a[q1] != 0 and occ_a[q2] == 0:
+        return (1, q1, q2)
+    elif occ_a[q2] != 0 and occ_a[q1] == 0:
+        return (1, q2, q1)
+    else:
+        return (0, -1, -1)
+
+#################################### 
 #! 1) Single Slater determinant
 ###################################
 
@@ -123,9 +258,9 @@ def corr_single(
         if num_occupied == 0:
             C             = np.zeros((La, La), dtype=W_A.dtype)
         elif raw:
-            W_A_occ       = W_A[occ_bool, :]               # (nocc, La)
-            C             = W_A_occ.conj().T @ W_A_occ     # (La, La)
-            C            *= 2.0                            # spin-unpolarized
+            # Use optimized Numba kernel for raw mode
+            C               = np.zeros((La, La), dtype=W_A.dtype)
+            _corr_single_slater_raw_kernel(W_A, occ_bool, C)
         else:
             pref          = (2.0 * np.asarray(occ) - 1.0).astype(W_A.real.dtype, copy=False)
             # (La, Ls) * (Ls,) -> broadcast weights across columns, then @ (Ls, La)
@@ -251,7 +386,7 @@ def corr_full(
     """
     if mode == "slater":
         if W_CT is None:
-            W_CT = W.conj().T # (N, Ns)
+            W_CT = W.conj().T # (L, Ls)
         
         Ls, L       = W.shape
         occ_bool    = np.asarray(occ, dtype=bool)
@@ -259,9 +394,9 @@ def corr_full(
         if nocc == 0:
             C = np.zeros((L, L), dtype=W.dtype)
         elif raw:
-            W_occ   = W[occ_bool, :]            # (nocc, L)
-            C       = W_occ.conj().T @ W_occ    # (L, L)
-            C      *= 2.0                       # spin-unpolarized doubling
+            # Use optimized Numba kernel
+            C       = np.zeros((L, L), dtype=W.dtype)
+            _corr_single_slater_raw_kernel(W, occ_bool, C)
         else:
             pref    = (2.0 * np.asarray(occ) - 1.0).astype(np.float64, copy=False)  # weights over orbitals
             C       = (W_CT * pref) @ W
@@ -553,57 +688,42 @@ def corr_superposition(
     # --------------------------------------------------------------------------------
     # Diagonal (m = n): sum_k |a_k|^2 * C[occ_k], with the same fast-path as corr_single
     # --------------------------------------------------------------------------------
-    cache = {}
-    for ck, occ in zip(coeff, occ_bool_list):
-        key = occ.tobytes()
-        if key not in cache:
-            # Fast path: C_occ = 2 * (W_occ)\dag (W_occ)
-            if np.any(occ):
-                W_occ = W_A[occ, :] # (nocc, La)
-                C_occ = (W_occ.conj().T @ W_occ) * 2.0
-            else:
-                C_occ = np.zeros((La, La), dtype=W_A.dtype)
-            cache[key] = C_occ
-        C += (abs(ck) ** 2) * cache[key]
+    
+    # Use optimized Numba kernel for diagonal contributions
+    # Pack occupations into uint8 array for Numba compatibility
+    occ_list_packed = np.array([occ.astype(np.uint8) for occ in occ_bool_list], dtype=np.uint8)
+    coeffs_abs_sq   = np.abs(coeff)**2
+    
+    _corr_superposition_diagonal_kernel(W_A, occ_list_packed, coeffs_abs_sq, C)
 
     # --------------------------------------------------------------------------------
     # Off-diagonal (m \neq  n): only when configurations differ by exactly one hop
-    #   i.e., XOR has Hamming weight 2. Let q_from be occupied in m, empty in n,
+    #   i.e., XOR has Hamming weight 2. Let q_from be occupied in m,rmm empty in n,
     #   and q_to be empty in m, occupied in n. Then the contribution is:
     #       2 * a_m* a_n * sgn * |phi_{q_to}><phi_{q_from}|  + h.c.
     #   where sgn = (-1)^(# occupied between q_from and q_to in m).
     # --------------------------------------------------------------------------------
     
-    # go through the occupations
-    for a, occ_a in enumerate(occ_list):
+    # go through the occupations - optimized with Numba helper
+    for a in range(gamma):
+        occ_a = occ_list_packed[a]
         for b in range(a + 1, gamma):
-            occ_b   = occ_list[b]
-            diff    = occ_a ^ occ_b         # XOR: where they differ
-            if diff.sum() != 2:
-                continue                    # only 2-orbital difference contributes
+            # Use Numba helper to check for single-hop
+            occ_b                   = occ_list_packed[b]
+            status, q_from, q_to    = _find_single_hop_pairs(occ_a, occ_b)
+            if status == 0:
+                continue
 
-            # Identify source/destination indices for a -> b
-            # q_from: occupied in a, empty in b
-            # q_to  : empty in a, occupied in b
-            q1, q2 = np.nonzero(diff)[0]    # the two differing orbitals
-            
-            # The +/-  sign from fermionic exchange:
-            #   if |m> has q1 occupied and |n> has q1 empty  -> annihilate at q1
-            #   otherwise the opposite.
-            # We encode this in the prefactor below.
-
-            sign =  1.0
-            if occ_a[q2]: # annihilation order flips sign if starting point occupied
-                sign = -1.0
-
+            # The +/-  sign from fermionic exchange
+            sign = -1.0 if occ_a[q_to] != 0 else 1.0
             coef = 2.0 * sign * np.conjugate(coeff[a]) * coeff[b]
 
             #! Outer product  (La,1)\cdot (1,La) fused by BLAS as gemm
-            C += coef * np.outer(W_A_CT[:, q1], W_A[q2, :])
+            C   += coef * np.outer(W_A_CT[:, q_from], W_A[q_to, :])
 
             # and its Hermitian conjugate (because we skipped the term with indices
             # swapped in the loop)
-            C += np.conjugate(coef) * np.outer(W_A_CT[:, q2], W_A[q1, :])
+            C   += np.conjugate(coef) * np.outer(W_A_CT[:, q_to], W_A[q_from, :])
 
     #! Identity
     if subtract_identity:
