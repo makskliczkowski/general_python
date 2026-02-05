@@ -1,23 +1,57 @@
-# Future Improvements and Structural Proposals
+# Future Structural Improvements
 
-This document outlines observed structural issues and proposals for future refactoring.
+This document outlines potential structural improvements for the `general_python` package.
 
-## Packaging and Structure
+## Package Layout ("Flat" vs `src`)
 
-### Root-level Package
-The current structure uses the repository root as the `general_python` package source. This works but can be confusing and may include unintended files in the package if `MANIFEST.in` is not carefully maintained.
-**Proposal:** Move source code into a `src/general_python` directory or a `general_python` subdirectory to isolate the package from repository configuration files.
+### Current State
+The project currently uses a "flat" layout where the root directory `.` is mapped to the package `general_python`.
+Submodules like `algebra`, `maths`, `ml` are located in the root directory and become subpackages `general_python.algebra`, etc.
 
-## Import Heaviness
+**Implications:**
+*   `pyproject.toml` explicitly lists all subpackages to ensure they are discovered by `setuptools` (since `find_packages(where='.')` would find them as top-level packages, but we want them under `general_python`).
+*   Namespace pollution in the root directory (mixing source code, config files, docs, scripts).
+*   Editable installs require careful configuration (`package-dir = {"general_python": "."}`).
 
-### Heavy Top-level Imports
-Several modules import heavy dependencies (Numba, JAX, TensorFlow) at the top level.
-- `ml/net_impl/net_general.py` imports `numba`.
-- `ml/net_impl/interface_net_flax.py` imports `jax`.
-- `ml/keras/__init__.py` conditionally imports `tensorflow` but does extensive imports if present.
+### Proposal: Move to `src/` Layout
+Refactor the repository to use the standard `src/` layout:
 
-**Proposal:** Use lazy imports or move imports inside functions/classes where possible to reduce startup time for users who only use a subset of features (e.g., only `algebra` with NumPy).
+```text
+general_python/
+├── pyproject.toml
+├── src/
+│   └── general_python/
+│       ├── __init__.py
+│       ├── algebra/
+│       ├── maths/
+│       └── ...
+├── tests/
+├── docs/
+└── ...
+```
 
-### Numba Dependency
-`numba` is a core dependency used in `common`, `maths`, and `physics`. It significantly increases installation size and complexity.
-**Proposal:** Evaluate if Numba usage can be optional or if it can be replaced by NumPy vectorization for lighter-weight installations.
+**Benefits:**
+*   Cleaner root directory.
+*   Standard auto-discovery of packages using `find_packages(where='src')`.
+*   Avoids accidental import of the local folder as a package when running scripts from root (forces testing against installed package).
+*   Simplifies `pyproject.toml` configuration.
+
+## Missing `__init__.py` Files
+
+Some subdirectories were found missing `__init__.py` files, which prevented them from being treated as regular packages:
+*   `general_python.common.embedded`
+*   `general_python.physics.sp`
+
+These have been patched by adding empty `__init__.py` files, but future modules should ensure `__init__.py` is present if they are intended to be importable packages.
+
+## Optional Dependencies
+
+The `maths` module has a hard dependency on `pandas` in `math_utils.py`.
+This has been patched with a runtime guard, but structurally it might be better to:
+1.  Move pandas-dependent functions to a separate submodule (e.g. `maths.statistics.dataframe_utils`).
+2.  Or ensure `pandas` is a hard dependency if it is core to the library's function.
+
+## Circular Imports and Lazy Loading
+The project relies heavily on `LazyImporter` and `lazy_import` helpers in `__init__.py` files.
+While this reduces startup time, it can hide import errors until runtime.
+Regular verification scripts (like `test_documentation.py`) are essential to catch these issues early.
