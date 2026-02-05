@@ -30,6 +30,10 @@ Example:
     >>> plotter = Plotter()
     >>> data_handler = DataHandler()
     >>> dirs = Directories()
+
+Note:
+    This module uses lazy loading. Submodules (like ``plot``, ``hdf5man``) are imported
+    only when their attributes are accessed. This keeps the initial import fast.
 """
 
 import  importlib

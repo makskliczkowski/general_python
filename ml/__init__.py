@@ -1,16 +1,39 @@
 """
 Machine Learning Module for General Python Utilities.
 
-This module provides machine learning utilities with support for both JAX and NumPy backends,
-including neural network implementations, training utilities, optimizers, and loss functions.
+This module provides machine learning utilities tailored for quantum physics applications,
+with support for both JAX and NumPy backends. It includes neural network implementations,
+training utilities, optimizers, and loss functions.
+
+Core Features
+-------------
+*   **Neural Networks**: A unified interface for defining and instantiating networks via
+    ``ml.networks.choose_network``. Supports RBMs, CNNs, Autoregressive models, and more.
+*   **Flax Integration**: Seamlessly wrap Flax modules for use within the framework.
+*   **Physics-Aware**: Networks are designed with quantum physics in mind (complex weights,
+    periodic boundary conditions, symmetry operations).
+*   **Backend Agnosticism**: While heavily leveraging JAX for training, components are
+    designed to interact with the broader ecosystem.
 
 Submodules
 ----------
-- **networks**: Factory and registry for creating neural networks (RBM, CNN, etc.).
-- **schedulers**: Learning rate schedulers.
-- **net_impl**: Implementation details for networks and interfaces.
-    - **interface_net_flax**: Wrapper for Flax modules.
-    - **networks**: Concrete network architectures (RBM, CNN, GCNN, etc.).
+*   **networks**: Factory and registry for creating neural networks.
+*   **schedulers**: Learning rate schedulers (e.g., Step, Plateau).
+*   **net_impl**: Implementation details for networks and interfaces.
+
+Examples
+--------
+.. code-block:: python
+
+    from general_python.ml import networks
+
+    # Create a Restricted Boltzmann Machine
+    net = networks.choose_network(
+        'rbm',
+        input_shape=(100,),
+        alpha=2.0,
+        dtype='complex128'
+    )
 
 ---------------------------------
 File            : general_python/ml/__init__.py

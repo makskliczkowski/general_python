@@ -58,18 +58,29 @@ def _split_dims(state : Array, size_a: int, L: int | None) -> Tuple[int,int]:
 def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
     r"""
     Computes the reduced density matrix \rho from a pure state vector using NumPy.
+
     Given a state vector representing a bipartite quantum system of dimensions (dimA, dimB),
     this function reshapes the state into a matrix of shape (dimA, dimB) using column-major
-    order (Fortran order), and then computes the density matrix \rho = \psi  \psi \dag.
+    order (Fortran order), and then computes the density matrix :math:`\rho = \psi \psi^\dagger`.
+
+    Backend
+    -------
+    **NumPy Only**. This function expects and returns NumPy arrays.
+    For JAX-compatible versions, see ``physics.density_matrix_jax``.
+
     Args:
         state (Array):
             The state vector of the composite quantum system.
+            Shape: ``(dimA * dimB,)``.
         dimA (int):
             Dimension of subsystem A.
         dimB (int):
             Dimension of subsystem B.
+
     Returns:
-        Array: The density matrix \rho of shape (dimA, dimA).
+        Array:
+            The reduced density matrix of subsystem A.
+            Shape: ``(dimA, dimA)``.
     """
     
     # reshape as (dimA, dimB) and call BLAS gemm \rho = \psi  \psi \dag

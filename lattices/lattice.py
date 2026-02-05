@@ -37,72 +37,47 @@ except ImportError:
 Backend = np
 class Lattice(ABC):
     """
-    General Lattice class. This class contains the general lattice model.
-    It is an abstract class and is not meant to be instantiated. It is meant to be inherited by other classes.
+    Abstract Base Class for defining lattice structures.
 
-    The lattice sites, no matter the lattice type, are indexed from 0 to Ns - 1. Importantly,
-    it can include multiple topologies.
+    This class serves as the foundation for all lattice implementations in the `lattices` module.
+    It handles geometry, connectivity, boundary conditions, and k-space properties.
 
-    Key Features:
-    -------------
-    - **Geometry**: Real-space coordinates, reciprocal vectors, neighbor connectivity (NN, NNN).
-    - **Boundaries**: Supports PBC, OBC, MBC, SBC boundary conditions.
-    - **K-Space**: Brillouin zone paths, high-symmetry points, band structure utilities.
-    - **Visualisation**: Built-in plotting helpers for structure and reciprocal space via `.plot`.
+    Indexing Convention
+    -------------------
+    Lattice sites are indexed linearly from ``0`` to ``Ns - 1``.
+    The mapping from spatial coordinates to linear index depends on the concrete implementation,
+    but typically follows a row-major (lexicographic) order:
 
-    Plotting Usage:
-    ---------------
-    Access plotting methods via the `.plot` property:
-    >>> lattice.plot.real_space(show_indices=True)
-    >>> lattice.plot.reciprocal_space()
-    >>> lattice.plot.brillouin_zone()
-    >>> lattice.plot.structure(highlight_boundary=True)
+    *   **1D**: Left to right.
+    *   **2D**: Bottom-left to top-right (x varies fastest).
+    *   **3D**: Front-bottom-left to back-top-right.
 
-    Connectivity Convention:
-    ------------------------
-    Sites are indexed 0 to Ns-1. Neighbors are typically ordered:
-    - 1D: left -> right
-    - 2D: bottom-left -> top-right (snake-like or row-major depending on implementation)
-    
-    Example:
-    1D:
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 and 9 (PBC)
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 (OBC)
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 and 9 (MBC)
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 (SBC)
-    2D:
-        - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3, 8, 6 (PBC)
-        - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3 (OBC)
-        - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3, 8, 6 (MBC)
-    - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3 (SBC)
-    This means that no matter of the lattice types, the sites are counted from the left
-    to the right and from the bottom to the top. The nearest neighbors are calculated like a 
-    snake (reversed in reality, bigger numbers are on the top)
-    - 1D:   
-            0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
-    
-    - 2D:   
-            0 -> 1 -> 2
-            |    |    |
-            3 -> 4 -> 5
-            |    |    |
-            6 -> 7 -> 8
-            
-    - 3D:   
-            0 -> 1 -> 2 ---- 9  -> 10 -> 11
-            |    |    |      |     |     |
-            3 -> 4 -> 5 ---- 12 -> 13 -> 14
-            |    |    |      |     |     |
-            6 -> 7 -> 8 ---- 15 -> 16 -> 17    
-            
-    Example: 
-        1) Square lattice with 3x3 sites and PBC:
-        
-            0 -> 1 -> 2
-            |    |    |
-            3 -> 4 -> 5
-            |    |    |
-            6 -> 7 -> 8
+    Features
+    --------
+    *   **Geometry**: Calculation of real-space coordinates, unit vectors, and basis vectors.
+    *   **Connectivity**: Automatic identification of Nearest Neighbors (NN) and Next-Nearest Neighbors (NNN).
+    *   **Boundaries**: Support for various boundary conditions:
+        *   ``PBC``: Periodic Boundary Conditions (torus topology).
+        *   ``OBC``: Open Boundary Conditions (hard edges).
+        *   ``MBC``: Mixed Boundary Conditions (e.g., cylinder topology).
+        *   ``SBC``: Twisted/Shifted Boundary Conditions.
+    *   **Reciprocal Space**: Automatic calculation of reciprocal lattice vectors and Brillouin Zone paths.
+    *   **Visualization**: Integration with plotting utilities via ``.plot``.
+
+    Attributes
+    ----------
+    Ns : int
+        Total number of sites in the lattice.
+    dim : int
+        Spatial dimension of the lattice (1, 2, or 3).
+    Lx, Ly, Lz : int
+        Linear dimensions of the lattice.
+    bc : LatticeBC
+        Active boundary condition.
+    coordinates : np.ndarray
+        Array of shape ``(Ns, 3)`` containing real-space coordinates of all sites.
+    nn : List[List[int]]
+        Adjacency list for nearest neighbors. ``nn[i]`` is a list of neighbors for site ``i``.
     """
     
     _BAD_LATTICE_SITE   = None

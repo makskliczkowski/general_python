@@ -639,35 +639,41 @@ class Solver(ABC):
 
         Parameters:
         -----------
-            matvec:
+            matvec : Callable[[Array], Array]
                 Function implementing the matrix-vector product A @ x.
-                Must be compatible with `backend_module`.
-            b:
-                Right-hand side vector (as `backend_module` array).
-            x0:
-                Initial guess vector (as `backend_module` array).
-            tol:
+                It must accept a vector of shape (N,) and return a vector of shape (N,).
+                Must be compatible with `backend_module` (NumPy or JAX).
+            b : Array
+                Right-hand side vector of shape (N,). Must be a `backend_module` array.
+            x0 : Array
+                Initial guess vector of shape (N,). Must be a `backend_module` array.
+            tol : float
                 Relative convergence tolerance (||Ax - b|| / ||b||).
-            maxiter:
-                Maximum number of iterations.
-            precond_apply:
-                Function applying the preconditioner M^{-1} (optional).
-                Takes `r` and returns `M^{-1}r`. Must be compatible
-                with `backend_module`.
-            backend_module:
-                The numerical backend module (e.g., `numpy` or `jax.numpy`).
-            **kwargs:
-                Additional solver-specific keyword arguments.
+            maxiter : int
+                Maximum number of iterations allowed.
+            precond_apply : Callable[[Array], Array], optional
+                Function applying the preconditioner M^{-1}.
+                Takes a vector `r` of shape (N,) and returns `M^{-1}r` of shape (N,).
+                Must be compatible with `backend_module`.
+            backend_module : module
+                The numerical backend module to use for array operations (e.g., `numpy` or `jax.numpy`).
+                This allows the solver logic to be backend-agnostic.
+            **kwargs : Any
+                Additional solver-specific keyword arguments (e.g., `restart` for GMRES).
 
         Returns:
             SolverResult:
-                Named tuple with solution, convergence status, iterations, residual norm.
+                A named tuple containing:
+                - `x` (Array): The computed solution vector of shape (N,).
+                - `converged` (bool): True if the solver reached the desired tolerance.
+                - `iterations` (int): The number of iterations performed.
+                - `residual_norm` (float): The norm of the final residual (||b - Ax||).
 
         Raises:
             NotImplementedError:
                 If a subclass hasn't implemented this method.
             SolverError:
-                If convergence fails or inputs are invalid within implementation.
+                If convergence fails catastrophically or inputs are invalid.
         """
         raise NotImplementedError(str(SolverErrorMsg.METHOD_NOT_IMPL))
 
