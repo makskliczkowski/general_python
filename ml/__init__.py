@@ -1,25 +1,32 @@
 """Machine-learning entry points for neural-network workflows.
 
-This package exposes network factories, schedulers, and low-level implementations
-used in variational and supervised experiments.
+The package collects model registries, scheduler utilities, and concrete network
+implementations used in supervised and variational experiments.
 
-Backend expectations
---------------------
-Most training-oriented models are JAX/Flax-first. NumPy may be used for
-pre/post-processing, but model forward/backward passes generally expect JAX
-arrays when using Flax-based networks.
+Purpose
+-------
+Use this namespace to obtain model constructors and training-time utilities
+without importing every backend-specific implementation eagerly.
 
 Input/output contracts
 ----------------------
-Network factories consume model identifiers plus shape metadata (for example
-``input_shape=(n_features,)``), dtype controls, and optional seeds. Outputs are
-model objects compatible with project training utilities.
+Public factories typically accept model identifiers, shape metadata (for
+example ``input_shape=(n_features,)``), and optional dtype and seed arguments.
+Returned objects are model instances or callables compatible with the training
+helpers in :mod:`general_python.ml.training_phases`.
 
-Determinism and numerical notes
--------------------------------
-Determinism depends on seeded PRNG keys and backend execution settings. On
-accelerators, reduction order and mixed precision can produce small numerical
-variations versus CPU runs.
+dtype and shape expectations
+----------------------------
+Input batches are conventionally rank-2 arrays with shape ``(batch, features)``
+unless a model documents an image or sequence layout. For stable optimization,
+``float32`` is the practical default on accelerators, while ``float64`` may be
+required for high-precision experiments.
+
+Numerical stability and determinism
+-----------------------------------
+Training trajectories depend on initialization, optimizer state, and operation
+ordering. For reproducibility, fix random seeds, keep backend/device constant,
+and avoid mixing precision policies within one experiment.
 """
 
 import importlib
