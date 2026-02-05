@@ -1,34 +1,25 @@
-"""Physics utilities for quantum simulations.
+"""Physics toolkit for quantum and statistical computations.
 
-Purpose
--------
-Provide physics-specific analysis routines for spectra, thermodynamics, and
-operator-based calculations used across QES workflows.
+The package groups modules for density matrices, entropy, operators, response
+functions, spectral functions, and thermal/statistical observables.
 
 Input/output contracts
 ----------------------
-- Density-matrix helpers accept state vectors or operators and return matrices
-  of shape ``(dim, dim)``.
-- Spectral and response utilities expect eigenvalues/eigenvectors and return
-  arrays indexed by frequency grids.
-- Thermal routines expect energies and inverse temperature ``beta`` and return
-  scalar observables or arrays over parameter grids.
+Functions generally accept array-like states, operators, or spectra and return
+NumPy or JAX-compatible arrays or scalar observables. Shape requirements follow
+physics conventions, e.g. state vectors ``(d,)``, operators ``(d, d)``, and grids
+for momentum or frequency response evaluations.
 
-Dtype and shape expectations
-----------------------------
-- State vectors are typically shape ``(dim,)`` or ``(n_states, dim)``.
-- Operators are shape ``(dim, dim)`` with real or complex dtype.
-- Frequency-domain outputs are usually complex arrays of shape ``(n_omega, ...)``.
+Backend expectations
+--------------------
+NumPy implementations are broadly available. JAX-specific modules are optional
+and loaded lazily when dependencies are installed.
 
-Numerical stability notes
--------------------------
-- Near-degenerate spectra require careful broadening and resolution choices.
-- Exponential weights in thermal sums can overflow; rescale energies when needed.
-
-Determinism notes
------------------
-- Most routines are deterministic given fixed inputs.
-- Optional JAX variants require explicit PRNG keys if random sampling is used.
+Numerical stability and determinism
+-----------------------------------
+Entropy and spectral routines include tolerance or regularization knobs to reduce
+instability near zero eigenvalues or narrow broadenings. Reproducibility depends
+on deterministic eigensolver settings and fixed random seeds in upstream code.
 """
 
 import sys

@@ -1,31 +1,22 @@
-"""Common utilities for data, plotting, logging, and files.
+"""Shared utilities for IO, plotting, logging, and runtime helpers.
 
-Purpose
--------
-Provide shared helpers used across QES and general_python for plotting, IO,
-logging, and small data utilities. Imports are lazy to keep startup time low.
+The ``common`` package contains cross-cutting infrastructure used by all major
+subpackages, including directory management, plotting, HDF5 helpers, timers,
+and low-level binary utilities.
 
 Input/output contracts
 ----------------------
-- File and directory helpers accept path-like strings and return validated paths
-  or file handles.
-- Plotting helpers expect numeric arrays with shapes compatible with matplotlib.
-- Logging utilities return logger instances configured for QES conventions.
+Utilities are intentionally lightweight: they accept standard Python objects or
+NumPy-compatible arrays and return plain Python or NumPy outputs where possible.
+Plotting helpers expect Matplotlib-compatible inputs.
 
-Dtype and shape expectations
-----------------------------
-- Plotting helpers expect float or complex arrays with standard 1D or 2D shapes.
-- Binary utilities operate on integer scalars or 1D integer arrays.
-
-Numerical stability notes
+Determinism and stability
 -------------------------
-- Formatting and plotting should not be used for high-precision validation;
-  use numeric assertions in analysis code instead.
+Most helpers are deterministic for fixed inputs. Logging or timing output may
+vary with runtime scheduling. Binary helper functions operate on integer bit
+patterns and are deterministic by construction.
 
-Determinism notes
------------------
-- Most helpers are deterministic given fixed inputs.
-- Log timestamps and file system ordering can vary across runs and platforms.
+Submodules are loaded lazily on first access to reduce import overhead.
 """
 
 import  importlib

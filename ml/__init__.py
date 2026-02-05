@@ -1,32 +1,25 @@
-"""Machine learning utilities for QES workflows.
+"""Machine-learning entry points for neural-network workflows.
 
-Purpose
--------
-Provide network factories, schedulers, and training helpers used in NQS/VMC
-pipelines with a focus on quantum-physics data.
+This package exposes network factories, schedulers, and low-level implementations
+used in variational and supervised experiments.
+
+Backend expectations
+--------------------
+Most training-oriented models are JAX/Flax-first. NumPy may be used for
+pre/post-processing, but model forward/backward passes generally expect JAX
+arrays when using Flax-based networks.
 
 Input/output contracts
 ----------------------
-- Network factories expect ``input_shape`` and backend-specific dtype settings.
-- Training helpers expect batched arrays and return loss scalars or metrics.
-- Flax-based models return parameter PyTrees and pure forward functions.
+Network factories consume model identifiers plus shape metadata (for example
+``input_shape=(n_features,)``), dtype controls, and optional seeds. Outputs are
+model objects compatible with project training utilities.
 
-Dtype and shape expectations
-----------------------------
-- Inputs are typically shape ``(batch, features)`` or ``(batch, sites, ...)``.
-- Complex dtypes are common for wavefunction models; keep dtype consistent
-  across preprocessing and model evaluation.
-
-Numerical stability notes
--------------------------
-- Log-amplitude and normalization paths can underflow for large systems; use
-  float64 where possible and monitor gradient norms.
-- Schedulers and optimizers assume finite gradients; clip or rescale if needed.
-
-Determinism notes
------------------
-- JAX-based models require explicit PRNG keys for reproducible initialization.
-- Parallel training can introduce nondeterministic reductions on some backends.
+Determinism and numerical notes
+-------------------------------
+Determinism depends on seeded PRNG keys and backend execution settings. On
+accelerators, reduction order and mixed precision can produce small numerical
+variations versus CPU runs.
 """
 
 import importlib

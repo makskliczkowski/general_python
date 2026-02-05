@@ -1,34 +1,28 @@
-"""Algebra utilities for scientific computing.
+"""Backend-aware linear algebra interfaces and solver entry points.
 
-Purpose
--------
-Provide backend-agnostic linear algebra helpers, iterative solvers, and
-random-matrix utilities used across QES and general_python workflows.
+This package exposes numerical kernels used across the project:
 
-Input/output contracts
-----------------------
-- Solver factories expect arrays or linear operators that represent Ax=b.
-- Preconditioners must map vectors of shape ``(n,)`` to ``(n,)`` and preserve
-  the backend (NumPy or JAX) of the inputs.
-- Random-matrix helpers return arrays with the requested shape and dtype.
+* Krylov and direct linear solvers.
+* Preconditioner abstractions.
+* Backend helpers for NumPy/JAX interoperability.
+* Random wrappers used in reproducible scientific workflows.
 
-Dtype and shape expectations
-----------------------------
-- Vectors are typically shape ``(n,)`` and matrices are shape ``(n, n)``.
-- Complex dtypes are supported; callers should keep dtype consistent across a
-  pipeline to avoid implicit promotion between float and complex.
-- JAX backends use device arrays; NumPy backends use ``numpy.ndarray``.
+Input/output and dtype contracts
+--------------------------------
+Most public APIs accept array-like vectors and matrices that are converted to the
+active backend where possible. Shapes follow linear-algebra conventions, for
+example ``A`` has shape ``(n, n)`` and ``b`` has shape ``(n,)`` or ``(n, k)``.
+Dtype promotion follows backend rules; explicit ``float64`` or ``complex128`` is
+recommended for ill-conditioned problems.
 
-Numerical stability notes
--------------------------
-- Iterative solver convergence depends on matrix conditioning and tolerance.
-- Preconditioners can improve stability but may change convergence paths; check
-  residual norms explicitly for ill-conditioned problems.
+Numerical stability and determinism
+-----------------------------------
+Stability depends on solver choice, conditioning, and preconditioning quality.
+For reproducibility, set random seeds via ``algebra.ran_wrapper`` and keep backend
+selection fixed in a run. NumPy and JAX results should agree up to floating-point
+roundoff; small differences can appear due to kernel fusion and reduction order.
 
-Determinism notes
------------------
-- Deterministic results require explicit seed control in random-matrix helpers.
-- JAX randomness requires passing PRNG keys; NumPy uses the global RNG state.
+The module uses lazy imports to keep import time low.
 """
 
 from typing import TYPE_CHECKING

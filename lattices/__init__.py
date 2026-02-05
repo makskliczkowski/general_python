@@ -1,32 +1,26 @@
-"""Lattice factories and geometry utilities.
+"""Lattice factory and registry for geometry-aware simulations.
 
-Purpose
--------
-Provide lattice classes, boundary-condition handling, and registry-based
-constructors for real-space and reciprocal-space geometry.
+The package provides canonical lattice classes (square, triangular, honeycomb,
+hexagonal, graph) together with registry helpers for custom lattices.
 
 Input/output contracts
 ----------------------
-- Factory helpers expect lattice dimensions, sizes, and boundary-condition
-  settings. Returned objects implement the ``Lattice`` interface.
-- Adjacency and neighbor utilities return integer index arrays or dense/sparse
-  adjacency matrices with a consistent site ordering.
+Factory functions return subclasses of :class:`Lattice` with explicit geometry
+metadata (dimensions, boundary conditions, primitive vectors, and neighbor maps).
+Typical constructor inputs are integer sizes ``(lx, ly, lz)``, a boundary mode,
+and optional flux or graph descriptors.
 
-Dtype and shape expectations
+Shape and dtype expectations
 ----------------------------
-- Coordinates are float arrays of shape ``(ns, dim)``.
-- Adjacency matrices are shape ``(ns, ns)`` with integer or float entries.
-- Reciprocal-space vectors are float arrays of shape ``(dim,)`` or ``(dim, dim)``.
+Coordinate arrays are expected as real-valued arrays with shape ``(ns, dim)``.
+Index-based neighbor structures are integer arrays or lists over site ids in
+``[0, ns)``. Plotting helpers consume NumPy-compatible arrays.
 
-Numerical stability notes
--------------------------
-- Geometry routines are mostly integer-based, but reciprocal-space transforms
-  can accumulate floating-point error for large lattices; keep units consistent.
-
-Determinism notes
------------------
-- Deterministic given the same lattice parameters.
-- Random graph lattices (if used) require explicit seeding for reproducibility.
+Numerical stability and determinism
+-----------------------------------
+Topology construction is deterministic for fixed parameters. Floating-point
+roundoff can affect reciprocal-space formatting or plotting labels but should not
+change connectivity.
 """
 
 from collections                import OrderedDict

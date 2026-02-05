@@ -1,30 +1,25 @@
-"""Mathematical utilities for general_python.
+"""Mathematical helper package with statistics and random tools.
 
-Purpose
--------
-Provide mathematical helpers, random-matrix routines, and statistics utilities
-used throughout QES and related tooling.
+This package collects utility functions used by physics, algebra, and ML modules.
+Submodules are lazy-loaded to keep top-level import overhead low.
 
-Input/output contracts
-----------------------
-- Functions accept numeric scalars or arrays and return scalars or arrays with
-  shapes consistent with the inputs.
-- Random-matrix utilities expect explicit sizes and optional RNG controls.
+Scope
+-----
+* ``math_utils``: numerical helper routines.
+* ``statistics``: smoothing, aggregation, and summary statistics.
+* ``random``: random-matrix-oriented helpers; for backend-wide RNG streams use
+  ``general_python.algebra.ran_wrapper``.
 
-Dtype and shape expectations
-----------------------------
-- Operations preserve input dtype when practical (float or complex).
-- Random-matrix helpers return arrays with the requested shape.
+Input/output, dtype, and shape guidance
+---------------------------------------
+Most routines accept NumPy array-like inputs and return NumPy arrays or scalars.
+APIs typically operate on 1D or 2D arrays where axis conventions are documented
+per function. Use floating dtypes for interpolation and filtering paths.
 
-Numerical stability notes
+Determinism and stability
 -------------------------
-- Statistical estimators and polynomial transforms can be sensitive to scale.
-  Normalize inputs when working with large dynamic ranges.
-
-Determinism notes
------------------
-- Random-matrix utilities are deterministic only when an explicit RNG seed or
-  key is provided.
+Pure algebraic or statistical transforms are deterministic for fixed inputs.
+Randomized routines require explicit seeding to be reproducible.
 """
 
 import  sys
