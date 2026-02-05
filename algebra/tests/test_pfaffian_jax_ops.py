@@ -7,7 +7,7 @@ try:
     import jax
     import jax.numpy as jnp
     from jax import random
-    from algebra.utilities.pfaffian_jax import Pfaffian
+    from general_python.algebra.utilities.pfaffian_jax import Pfaffian
     JAX_AVAILABLE = True
 except ImportError:
     JAX_AVAILABLE = False

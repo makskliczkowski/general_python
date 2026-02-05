@@ -9,9 +9,6 @@ import numpy as np
 import sys
 import os
 
-# Add path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
-
 from general_python.algebra.eigen.block_lanczos import BlockLanczosEigensolver
 
 # Check if JAX is available
