@@ -1,38 +1,32 @@
-"""
-Factory utilities and registry for lattice classes.
+"""Lattice factories and geometry utilities.
 
-This module exposes the core lattice classes and a registry-based factory that
-enables third-party extensions (e.g. custom graph lattices) to integrate with
-the rest of the general_python stack.
+Purpose
+-------
+Provide lattice classes, boundary-condition handling, and registry-based
+constructors for real-space and reciprocal-space geometry.
 
-Core Functions
---------------
-- ``choose_lattice``: Factory function to create lattice instances.
-- ``register_lattice``: Register custom lattice types for use with ``choose_lattice``.
-- ``plot_lattice_structure``: Visualise lattice geometry and connectivity.
+Input/output contracts
+----------------------
+- Factory helpers expect lattice dimensions, sizes, and boundary-condition
+  settings. Returned objects implement the ``Lattice`` interface.
+- Adjacency and neighbor utilities return integer index arrays or dense/sparse
+  adjacency matrices with a consistent site ordering.
 
-Examples
---------
-.. code-block:: python
+Dtype and shape expectations
+----------------------------
+- Coordinates are float arrays of shape ``(ns, dim)``.
+- Adjacency matrices are shape ``(ns, ns)`` with integer or float entries.
+- Reciprocal-space vectors are float arrays of shape ``(dim,)`` or ``(dim, dim)``.
 
-    from general_python.lattices import choose_lattice, LatticeBC
+Numerical stability notes
+-------------------------
+- Geometry routines are mostly integer-based, but reciprocal-space transforms
+  can accumulate floating-point error for large lattices; keep units consistent.
 
-    # Create a 4x4 square lattice with periodic boundary conditions
-    lat = choose_lattice(
-        typek='square',
-        dim=2,
-        lx=4, ly=4,
-        bc=LatticeBC.PBC
-    )
-
-    # Access neighbors of site 0
-    neighbors = lat.get_nei(0)
-
---------------------------------
-Author          : Maksymilian Kliczkowski
-Date            : 2025-12-30
-License         : MIT
---------------------------------
+Determinism notes
+-----------------
+- Deterministic given the same lattice parameters.
+- Random graph lattices (if used) require explicit seeding for reproducibility.
 """
 
 from collections                import OrderedDict

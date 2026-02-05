@@ -1,25 +1,30 @@
-"""
-Mathematics utilities for the `general_python` toolkit.
+"""Mathematical utilities for general_python.
 
-The package aggregates mathematical helpers, high-quality random number
-generators, and statistical analysis routines.  Submodules are imported lazily
-to keep top-level imports lightweight and consistent with the modular general_python
-design.
+Purpose
+-------
+Provide mathematical helpers, random-matrix routines, and statistics utilities
+used throughout QES and related tooling.
 
-Available submodule aliases
----------------------------
-- ``math_utils``   : General mathematical functions and utilities.
-- ``random``       : Specific Random Matrix Theory (RMT) utilities (e.g., CUE via QR).
-                     **Note**: For general random number generation (uniform, normal, etc.)
-                     compatible with NumPy/JAX, use ``algebra.ran_wrapper``.
-- ``statistics``   : Statistical functions and data analysis utilities.
+Input/output contracts
+----------------------
+- Functions accept numeric scalars or arrays and return scalars or arrays with
+  shapes consistent with the inputs.
+- Random-matrix utilities expect explicit sizes and optional RNG controls.
 
----------------------------------------------------------------------------
-File        : general_python/maths/__init__.py
-Author      : Maksymilian Kliczkowski
-License     : MIT
-Copyright   : (c) 2021-2024 general_python Group
----------------------------------------------------------------------------
+Dtype and shape expectations
+----------------------------
+- Operations preserve input dtype when practical (float or complex).
+- Random-matrix helpers return arrays with the requested shape.
+
+Numerical stability notes
+-------------------------
+- Statistical estimators and polynomial transforms can be sensitive to scale.
+  Normalize inputs when working with large dynamic ranges.
+
+Determinism notes
+-----------------
+- Random-matrix utilities are deterministic only when an explicit RNG seed or
+  key is provided.
 """
 
 import  sys

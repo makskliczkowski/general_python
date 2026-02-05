@@ -1,79 +1,34 @@
-r"""
-Physics Module for General Python Utilities.
+"""Physics utilities for quantum simulations.
 
-This module provides comprehensive utilities for quantum physics simulations and calculations,
-organized by physical concepts and applications.
+Purpose
+-------
+Provide physics-specific analysis routines for spectra, thermodynamics, and
+operator-based calculations used across QES workflows.
 
-Organization:
--------------
+Input/output contracts
+----------------------
+- Density-matrix helpers accept state vectors or operators and return matrices
+  of shape ``(dim, dim)``.
+- Spectral and response utilities expect eigenvalues/eigenvectors and return
+  arrays indexed by frequency grids.
+- Thermal routines expect energies and inverse temperature ``beta`` and return
+  scalar observables or arrays over parameter grids.
 
-**Basic Quantum States & Properties:**
-- density_matrix                : Density matrix operations and utilities
-    - density_matrix_jax        : JAX-optimized density matrix operations
-- eigenlevels                   : Eigenstate and energy level analysis
-- entropy                       : Entropy calculations for quantum systems (von Neumann, Rényi, etc.)
-    - entropy_jax               : JAX-optimized entropy calculations
-- operators                     : Quantum operator definitions and spectral analysis
+Dtype and shape expectations
+----------------------------
+- State vectors are typically shape ``(dim,)`` or ``(n_states, dim)``.
+- Operators are shape ``(dim, dim)`` with real or complex dtype.
+- Frequency-domain outputs are usually complex arrays of shape ``(n_omega, ...)``.
 
-**Statistical Analysis:**
-- statistical                   : Windowing, averaging, time series analysis for quantum data
-    - Finite window averages and moving statistics
-    - Local density of states (LDOS) and strength functions
-    - Energy window utilities for spectral analysis
+Numerical stability notes
+-------------------------
+- Near-degenerate spectra require careful broadening and resolution choices.
+- Exponential weights in thermal sums can overflow; rescale energies when needed.
 
-**Thermal Physics:**
-- thermal                       : Thermal quantum physics and statistical mechanics
-    - Partition functions and Boltzmann weights
-    - Thermal averages and expectation values
-    - Thermodynamic quantities (free energy, heat capacity, entropy)
-    - Magnetic and charge susceptibilities
-
-**Spectral Functions (subpackage):**
-- spectral.dos                  : Density of states (histogram and Gaussian-broadened)
-- spectral.greens               : Green's functions G(\Omega) and Fourier transforms
-- spectral.spectral_function    : Spectral functions A(k,\Omega) = -Im[G]/\pi
-
-**Response Functions (subpackage):**
-- response.structure_factor     : Dynamic structure factor S(q,\Omega) for spins (optimized!)
-- response.susceptibility       : Magnetic and charge susceptibilities chi(q,\Omega)
-
-**Specialized:**
-- sp                            : Single particle physics utilities
-
-Examples:
----------
->>> # Entropy calculation
->>> from general_python.physics import density_matrix, entropy
->>> rho = density_matrix.create_density_matrix(psi)
->>> s   = entropy.von_neumann_entropy(rho)
-
->>> # Thermal physics
->>> from general_python.physics import thermal
->>> Z       = thermal.partition_function(energies, beta=1.0)
->>> U       = thermal.internal_energy(energies, beta=1.0)
->>> C_V     = thermal.heat_capacity(energies, beta=1.0)
-
->>> # Spectral functions
->>> from general_python.physics.spectral import greens_function, spectral_function
->>> from general_python.physics.spectral.spectral_backend import greens_function_quadratic
->>> G = greens_function_quadratic(omega, eigenvalues, eigenvectors)
->>> A = spectral_function.spectral_function(greens_function=G)
-
->>> # Response functions
->>> from general_python.physics.response import structure_factor, susceptibility
->>> S_q_omega = structure_factor.structure_factor_spin(gs, eigvals, eigvecs, S_q, omega_grid)
->>> chi       = susceptibility.magnetic_susceptibility(eigvals, eigvecs, M_q, omega_grid)
-
->>> # Statistical analysis
->>> from general_python.physics import statistical
->>> smooth_data = statistical.moving_average(noisy_data, window_size=10)
->>> ldos_vals   = statistical.ldos(energies, overlaps)
-
-File    : general_python/physics/__init__.py
-Version : 0.1.0
-Author  : Maksymilian Kliczkowski
-Email   : maksymilian.kliczkowski@pwr.edu.pl
-License : MIT
+Determinism notes
+-----------------
+- Most routines are deterministic given fixed inputs.
+- Optional JAX variants require explicit PRNG keys if random sampling is used.
 """
 
 import sys

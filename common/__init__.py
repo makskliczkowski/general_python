@@ -1,39 +1,31 @@
-"""
-Common utilities for file handling, plotting, logging, binary operations, and data management.
+"""Common utilities for data, plotting, logging, and files.
 
-This module provides essential utility functions and classes for general-purpose tasks including:
+Purpose
+-------
+Provide shared helpers used across QES and general_python for plotting, IO,
+logging, and small data utilities. Imports are lazy to keep startup time low.
 
-**File and Directory Management:**
-- Directory operations and path management
-- File I/O utilities and data handling
+Input/output contracts
+----------------------
+- File and directory helpers accept path-like strings and return validated paths
+  or file handles.
+- Plotting helpers expect numeric arrays with shapes compatible with matplotlib.
+- Logging utilities return logger instances configured for QES conventions.
 
-**Plotting and Visualization:**
-- Advanced plotting utilities with customizable styles
-- Matrix printing and data visualization tools
-- Color schemes, line styles, and marker collections
+Dtype and shape expectations
+----------------------------
+- Plotting helpers expect float or complex arrays with standard 1D or 2D shapes.
+- Binary utilities operate on integer scalars or 1D integer arrays.
 
-**Data Processing:**
-- Data handling utilities for scientific computing
-- Matrix operations and data transformation
-- Statistical analysis tools
+Numerical stability notes
+-------------------------
+- Formatting and plotting should not be used for high-precision validation;
+  use numeric assertions in analysis code instead.
 
-**Binary Operations:**
-- Binary data manipulation and conversion utilities
-- Bit-level operations for quantum computing applications
-
-**Logging and Monitoring:**
-- Advanced logging systems with multiple output formats
-- Performance monitoring and debugging tools
-
-Example:
-    >>> from general_python.common import Plotter, DataHandler, Directories
-    >>> plotter = Plotter()
-    >>> data_handler = DataHandler()
-    >>> dirs = Directories()
-
-Note:
-    This module uses lazy loading. Submodules (like ``plot``, ``hdf5man``) are imported
-    only when their attributes are accessed. This keeps the initial import fast.
+Determinism notes
+-----------------
+- Most helpers are deterministic given fixed inputs.
+- Log timestamps and file system ordering can vary across runs and platforms.
 """
 
 import  importlib

@@ -1,52 +1,34 @@
-"""
-Algebraic operations and utilities for scientific computing.
+"""Algebra utilities for scientific computing.
 
-This module provides a unified interface for linear algebra, solvers, and random number
-generation that works seamlessly across different backends (NumPy and JAX).
-
-Core Functionalities
---------------------
-*   **Linear Solvers**: Iterative solvers (CG, MINRES, GMRES, etc.) that support both CPU (NumPy)
-    and GPU/TPU (JAX) execution. See ``algebra.solvers``.
-*   **Preconditioners**: Abstract and concrete preconditioners for iterative methods.
-    See ``algebra.preconditioners``.
-*   **Backend Abstraction**: Utilities to write backend-agnostic code. The module automatically
-    dispatches to ``numpy`` or ``jax.numpy`` based on configuration or input types.
-*   **Random Number Generation**: A unified wrapper around ``numpy.random`` and ``jax.random``
-    to ensure reproducible scientific simulations. See ``algebra.ran_wrapper``.
-
-Backend Agnosticism
--------------------
-The library is designed to write code once and run it anywhere.
-*   **NumPy**: Default backend for standard CPU execution.
-*   **JAX**: Optional backend for high-performance computing, automatic differentiation,
-    and JIT compilation.
-
-Lazy Loading
-------------
-To minimize startup time, heavy dependencies (like JAX or large submodules) are imported
-lazily. They are only loaded when you access them or when you explicitly configure
-a backend that requires them.
-
-Example
+Purpose
 -------
-.. code-block:: python
+Provide backend-agnostic linear algebra helpers, iterative solvers, and
+random-matrix utilities used across QES and general_python workflows.
 
-    from general_python.algebra import choose_solver
+Input/output contracts
+----------------------
+- Solver factories expect arrays or linear operators that represent Ax=b.
+- Preconditioners must map vectors of shape ``(n,)`` to ``(n,)`` and preserve
+  the backend (NumPy or JAX) of the inputs.
+- Random-matrix helpers return arrays with the requested shape and dtype.
 
-    # Create a Conjugate Gradient solver
-    solver = choose_solver('cg', backend='jax', tol=1e-6)
+Dtype and shape expectations
+----------------------------
+- Vectors are typically shape ``(n,)`` and matrices are shape ``(n, n)``.
+- Complex dtypes are supported; callers should keep dtype consistent across a
+  pipeline to avoid implicit promotion between float and complex.
+- JAX backends use device arrays; NumPy backends use ``numpy.ndarray``.
 
-    # Solve Ax = b
-    result = solver.solve_instance(b, x0, a=A)
+Numerical stability notes
+-------------------------
+- Iterative solver convergence depends on matrix conditioning and tolerance.
+- Preconditioners can improve stability but may change convergence paths; check
+  residual norms explicitly for ill-conditioned problems.
 
------------------------------------------------------------------------------------------------
-Author          : Maksymilian Kliczkowski
-Email           : maksymilian.kliczkowski@pwr.edu.pl
-Date            : 2025-02-01
-Version         : 1.1
-Description     : General Algebra Module with Lazy Imports
------------------------------------------------------------------------------------------------
+Determinism notes
+-----------------
+- Deterministic results require explicit seed control in random-matrix helpers.
+- JAX randomness requires passing PRNG keys; NumPy uses the global RNG state.
 """
 
 from typing import TYPE_CHECKING

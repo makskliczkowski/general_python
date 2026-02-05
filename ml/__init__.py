@@ -1,45 +1,32 @@
-"""
-Machine Learning Module for General Python Utilities.
+"""Machine learning utilities for QES workflows.
 
-This module provides machine learning utilities tailored for quantum physics applications,
-with support for both JAX and NumPy backends. It includes neural network implementations,
-training utilities, optimizers, and loss functions.
+Purpose
+-------
+Provide network factories, schedulers, and training helpers used in NQS/VMC
+pipelines with a focus on quantum-physics data.
 
-Core Features
--------------
-*   **Neural Networks**: A unified interface for defining and instantiating networks via
-    ``ml.networks.choose_network``. Supports RBMs, CNNs, Autoregressive models, and more.
-*   **Flax Integration**: Seamlessly wrap Flax modules for use within the framework.
-*   **Physics-Aware**: Networks are designed with quantum physics in mind (complex weights,
-    periodic boundary conditions, symmetry operations).
-*   **Backend Agnosticism**: While heavily leveraging JAX for training, components are
-    designed to interact with the broader ecosystem.
+Input/output contracts
+----------------------
+- Network factories expect ``input_shape`` and backend-specific dtype settings.
+- Training helpers expect batched arrays and return loss scalars or metrics.
+- Flax-based models return parameter PyTrees and pure forward functions.
 
-Submodules
-----------
-*   **networks**: Factory and registry for creating neural networks.
-*   **schedulers**: Learning rate schedulers (e.g., Step, Plateau).
-*   **net_impl**: Implementation details for networks and interfaces.
+Dtype and shape expectations
+----------------------------
+- Inputs are typically shape ``(batch, features)`` or ``(batch, sites, ...)``.
+- Complex dtypes are common for wavefunction models; keep dtype consistent
+  across preprocessing and model evaluation.
 
-Examples
---------
-.. code-block:: python
+Numerical stability notes
+-------------------------
+- Log-amplitude and normalization paths can underflow for large systems; use
+  float64 where possible and monitor gradient norms.
+- Schedulers and optimizers assume finite gradients; clip or rescale if needed.
 
-    from general_python.ml import networks
-
-    # Create a Restricted Boltzmann Machine
-    net = networks.choose_network(
-        'rbm',
-        input_shape=(100,),
-        alpha=2.0,
-        dtype='complex128'
-    )
-
----------------------------------
-File            : general_python/ml/__init__.py
-Author          : Maksymilian Kliczkowski
-License         : MIT
----------------------------------
+Determinism notes
+-----------------
+- JAX-based models require explicit PRNG keys for reproducible initialization.
+- Parallel training can introduce nondeterministic reductions on some backends.
 """
 
 import importlib
