@@ -10,9 +10,6 @@ import pytest
 import sys
 import os
 
-# Add path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
-
 try:
     from general_python.algebra.eigen import LanczosEigensolver, LanczosEigensolverScipy
 except ImportError:
@@ -64,7 +61,7 @@ class TestLanczosBasic:
         A           = create_symmetric_matrix(n, condition_number=50.0)
         
         # Lanczos - use more iterations for convergence
-        solver      = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, max_iter=100)
+        solver      = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, maxiter=100)
         result      = solver.solve(A=A)
         
         # Full diagonalization
@@ -90,7 +87,7 @@ class TestLanczosBasic:
         A               = create_symmetric_matrix(n, condition_number=50.0)
         
         # Lanczos
-        solver          = LanczosEigensolver(k=k, which='largest', backend='numpy', tol=1e-8, max_iter=100)
+        solver          = LanczosEigensolver(k=k, which='largest', backend='numpy', tol=1e-8, maxiter=100)
         result          = solver.solve(A=A)
 
         # Full diagonalization
@@ -114,7 +111,7 @@ class TestLanczosBasic:
         A               = create_symmetric_matrix(n, condition_number=50.0)
 
         # Lanczos with JAX
-        solver          = LanczosEigensolver(k=k, which='smallest', backend='jax', tol=1e-8, max_iter=100)
+        solver          = LanczosEigensolver(k=k, which='smallest', backend='jax', tol=1e-8, maxiter=100)
         result          = solver.solve(A=A)
 
         # Full diagonalization
@@ -172,7 +169,7 @@ class TestLanczosMatrixFree:
             return y
         
         # Lanczos with matvec
-        solver      = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, max_iter=150)
+        solver      = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, maxiter=150)
         result      = solver.solve(matvec=matvec, n=n)
         
         # Analytical eigenvalues for 1D Laplacian
@@ -194,12 +191,12 @@ class TestLanczosEigenvectors:
     # ----------------------------------
     
     def test_eigenvector_residuals(self):
-        """Test eigenvector residuals ||Av - \lambdav||."""
+        r"""Test eigenvector residuals ||Av - \lambdav||."""
         n       = 80
         k       = 5
         A       = create_symmetric_matrix(n, condition_number=20.0)
 
-        solver  = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, max_iter=100)
+        solver  = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, maxiter=100)
         result  = solver.solve(A=A)
         
         print(f"\nEigenvector Residuals:")
@@ -207,7 +204,7 @@ class TestLanczosEigenvectors:
             lam         = result.eigenvalues[i]
             v           = result.eigenvectors[:, i]
             residual    = np.linalg.norm(A @ v - lam * v)
-            print(f"  \lambda_{i} = {lam:.6f}, ||Av - \lambdav|| = {residual:.2e}")
+            print(f"  \\lambda_{i} = {lam:.6f}, ||Av - \\lambda v|| = {residual:.2e}")
             assert residual < 1e-6, f"Eigenvector {i} residual too large: {residual:.2e}"
         
         # Check orthonormality
@@ -236,7 +233,7 @@ class TestLanczosConvergence:
         print("-" * 40)
         
         for max_iter in max_iters:
-            solver  = LanczosEigensolver(k=k, which='smallest', max_iter=max_iter, 
+            solver  = LanczosEigensolver(k=k, which='smallest', maxiter=max_iter,
                                        backend='numpy', tol=1e-8)
             result  = solver.solve(A=A)
             error   = np.linalg.norm(result.eigenvalues - evals_full[:k])
@@ -259,12 +256,12 @@ class TestLanczosConvergence:
         A           = Q @ np.diag(eigenvalues) @ Q.T
         A           = 0.5 * (A + A.T)
         
-        solver      = LanczosEigensolver(k=k, which='smallest', max_iter=100, 
+        solver      = LanczosEigensolver(k=k, which='smallest', maxiter=100,
                                    backend='numpy', tol=1e-10)
         result      = solver.solve(A=A)
 
         print(f"\nBreakdown Detection:")
-        print(f"  Iterations: {result.iterations} (max_iter=100)")
+        print(f"  Iterations: {result.iterations} (maxiter=100)")
         print(f"  Converged: {result.converged}")
         print(f"  Expected early termination due to exact subspace")
         
@@ -286,7 +283,7 @@ class TestLanczosComplex:
         A           = 0.5 * (A + A.T.conj())  # Make Hermitian
         
         # Lanczos
-        solver      = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, max_iter=100)
+        solver      = LanczosEigensolver(k=k, which='smallest', backend='numpy', tol=1e-8, maxiter=100)
         result      = solver.solve(A=A)
         
         # Full diagonalization (eigenvalues are real for Hermitian)
