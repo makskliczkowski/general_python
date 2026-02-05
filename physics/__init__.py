@@ -1,79 +1,25 @@
-r"""
-Physics Module for General Python Utilities.
+"""Physics toolkit for quantum and statistical computations.
 
-This module provides comprehensive utilities for quantum physics simulations and calculations,
-organized by physical concepts and applications.
+The package groups modules for density matrices, entropy, operators, response
+functions, spectral functions, and thermal/statistical observables.
 
-Organization:
--------------
+Input/output contracts
+----------------------
+Functions generally accept array-like states, operators, or spectra and return
+NumPy or JAX-compatible arrays or scalar observables. Shape requirements follow
+physics conventions, e.g. state vectors ``(d,)``, operators ``(d, d)``, and grids
+for momentum or frequency response evaluations.
 
-**Basic Quantum States & Properties:**
-- density_matrix                : Density matrix operations and utilities
-    - density_matrix_jax        : JAX-optimized density matrix operations
-- eigenlevels                   : Eigenstate and energy level analysis
-- entropy                       : Entropy calculations for quantum systems (von Neumann, Rényi, etc.)
-    - entropy_jax               : JAX-optimized entropy calculations
-- operators                     : Quantum operator definitions and spectral analysis
+Backend expectations
+--------------------
+NumPy implementations are broadly available. JAX-specific modules are optional
+and loaded lazily when dependencies are installed.
 
-**Statistical Analysis:**
-- statistical                   : Windowing, averaging, time series analysis for quantum data
-    - Finite window averages and moving statistics
-    - Local density of states (LDOS) and strength functions
-    - Energy window utilities for spectral analysis
-
-**Thermal Physics:**
-- thermal                       : Thermal quantum physics and statistical mechanics
-    - Partition functions and Boltzmann weights
-    - Thermal averages and expectation values
-    - Thermodynamic quantities (free energy, heat capacity, entropy)
-    - Magnetic and charge susceptibilities
-
-**Spectral Functions (subpackage):**
-- spectral.dos                  : Density of states (histogram and Gaussian-broadened)
-- spectral.greens               : Green's functions G(\Omega) and Fourier transforms
-- spectral.spectral_function    : Spectral functions A(k,\Omega) = -Im[G]/\pi
-
-**Response Functions (subpackage):**
-- response.structure_factor     : Dynamic structure factor S(q,\Omega) for spins (optimized!)
-- response.susceptibility       : Magnetic and charge susceptibilities chi(q,\Omega)
-
-**Specialized:**
-- sp                            : Single particle physics utilities
-
-Examples:
----------
->>> # Entropy calculation
->>> from general_python.physics import density_matrix, entropy
->>> rho = density_matrix.create_density_matrix(psi)
->>> s   = entropy.von_neumann_entropy(rho)
-
->>> # Thermal physics
->>> from general_python.physics import thermal
->>> Z       = thermal.partition_function(energies, beta=1.0)
->>> U       = thermal.internal_energy(energies, beta=1.0)
->>> C_V     = thermal.heat_capacity(energies, beta=1.0)
-
->>> # Spectral functions
->>> from general_python.physics.spectral import greens_function, spectral_function
->>> from general_python.physics.spectral.spectral_backend import greens_function_quadratic
->>> G = greens_function_quadratic(omega, eigenvalues, eigenvectors)
->>> A = spectral_function.spectral_function(greens_function=G)
-
->>> # Response functions
->>> from general_python.physics.response import structure_factor, susceptibility
->>> S_q_omega = structure_factor.structure_factor_spin(gs, eigvals, eigvecs, S_q, omega_grid)
->>> chi       = susceptibility.magnetic_susceptibility(eigvals, eigvecs, M_q, omega_grid)
-
->>> # Statistical analysis
->>> from general_python.physics import statistical
->>> smooth_data = statistical.moving_average(noisy_data, window_size=10)
->>> ldos_vals   = statistical.ldos(energies, overlaps)
-
-File    : general_python/physics/__init__.py
-Version : 0.1.0
-Author  : Maksymilian Kliczkowski
-Email   : maksymilian.kliczkowski@pwr.edu.pl
-License : MIT
+Numerical stability and determinism
+-----------------------------------
+Entropy and spectral routines include tolerance or regularization knobs to reduce
+instability near zero eigenvalues or narrow broadenings. Reproducibility depends
+on deterministic eigensolver settings and fixed random seeds in upstream code.
 """
 
 import sys

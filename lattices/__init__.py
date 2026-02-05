@@ -1,38 +1,26 @@
-"""
-Factory utilities and registry for lattice classes.
+"""Lattice factory and registry for geometry-aware simulations.
 
-This module exposes the core lattice classes and a registry-based factory that
-enables third-party extensions (e.g. custom graph lattices) to integrate with
-the rest of the general_python stack.
+The package provides canonical lattice classes (square, triangular, honeycomb,
+hexagonal, graph) together with registry helpers for custom lattices.
 
-Core Functions
---------------
-- ``choose_lattice``: Factory function to create lattice instances.
-- ``register_lattice``: Register custom lattice types for use with ``choose_lattice``.
-- ``plot_lattice_structure``: Visualise lattice geometry and connectivity.
+Input/output contracts
+----------------------
+Factory functions return subclasses of :class:`Lattice` with explicit geometry
+metadata (dimensions, boundary conditions, primitive vectors, and neighbor maps).
+Typical constructor inputs are integer sizes ``(lx, ly, lz)``, a boundary mode,
+and optional flux or graph descriptors.
 
-Examples
---------
-.. code-block:: python
+Shape and dtype expectations
+----------------------------
+Coordinate arrays are expected as real-valued arrays with shape ``(ns, dim)``.
+Index-based neighbor structures are integer arrays or lists over site ids in
+``[0, ns)``. Plotting helpers consume NumPy-compatible arrays.
 
-    from general_python.lattices import choose_lattice, LatticeBC
-
-    # Create a 4x4 square lattice with periodic boundary conditions
-    lat = choose_lattice(
-        typek='square',
-        dim=2,
-        lx=4, ly=4,
-        bc=LatticeBC.PBC
-    )
-
-    # Access neighbors of site 0
-    neighbors = lat.get_nei(0)
-
---------------------------------
-Author          : Maksymilian Kliczkowski
-Date            : 2025-12-30
-License         : MIT
---------------------------------
+Numerical stability and determinism
+-----------------------------------
+Topology construction is deterministic for fixed parameters. Floating-point
+roundoff can affect reciprocal-space formatting or plotting labels but should not
+change connectivity.
 """
 
 from collections                import OrderedDict

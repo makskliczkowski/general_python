@@ -1,52 +1,28 @@
-"""
-Algebraic operations and utilities for scientific computing.
+"""Backend-aware linear algebra interfaces and solver entry points.
 
-This module provides a unified interface for linear algebra, solvers, and random number
-generation that works seamlessly across different backends (NumPy and JAX).
+This package exposes numerical kernels used across the project:
 
-Core Functionalities
---------------------
-*   **Linear Solvers**: Iterative solvers (CG, MINRES, GMRES, etc.) that support both CPU (NumPy)
-    and GPU/TPU (JAX) execution. See ``algebra.solvers``.
-*   **Preconditioners**: Abstract and concrete preconditioners for iterative methods.
-    See ``algebra.preconditioners``.
-*   **Backend Abstraction**: Utilities to write backend-agnostic code. The module automatically
-    dispatches to ``numpy`` or ``jax.numpy`` based on configuration or input types.
-*   **Random Number Generation**: A unified wrapper around ``numpy.random`` and ``jax.random``
-    to ensure reproducible scientific simulations. See ``algebra.ran_wrapper``.
+* Krylov and direct linear solvers.
+* Preconditioner abstractions.
+* Backend helpers for NumPy/JAX interoperability.
+* Random wrappers used in reproducible scientific workflows.
 
-Backend Agnosticism
--------------------
-The library is designed to write code once and run it anywhere.
-*   **NumPy**: Default backend for standard CPU execution.
-*   **JAX**: Optional backend for high-performance computing, automatic differentiation,
-    and JIT compilation.
+Input/output and dtype contracts
+--------------------------------
+Most public APIs accept array-like vectors and matrices that are converted to the
+active backend where possible. Shapes follow linear-algebra conventions, for
+example ``A`` has shape ``(n, n)`` and ``b`` has shape ``(n,)`` or ``(n, k)``.
+Dtype promotion follows backend rules; explicit ``float64`` or ``complex128`` is
+recommended for ill-conditioned problems.
 
-Lazy Loading
-------------
-To minimize startup time, heavy dependencies (like JAX or large submodules) are imported
-lazily. They are only loaded when you access them or when you explicitly configure
-a backend that requires them.
+Numerical stability and determinism
+-----------------------------------
+Stability depends on solver choice, conditioning, and preconditioning quality.
+For reproducibility, set random seeds via ``algebra.ran_wrapper`` and keep backend
+selection fixed in a run. NumPy and JAX results should agree up to floating-point
+roundoff; small differences can appear due to kernel fusion and reduction order.
 
-Example
--------
-.. code-block:: python
-
-    from general_python.algebra import choose_solver
-
-    # Create a Conjugate Gradient solver
-    solver = choose_solver('cg', backend='jax', tol=1e-6)
-
-    # Solve Ax = b
-    result = solver.solve_instance(b, x0, a=A)
-
------------------------------------------------------------------------------------------------
-Author          : Maksymilian Kliczkowski
-Email           : maksymilian.kliczkowski@pwr.edu.pl
-Date            : 2025-02-01
-Version         : 1.1
-Description     : General Algebra Module with Lazy Imports
------------------------------------------------------------------------------------------------
+The module uses lazy imports to keep import time low.
 """
 
 from typing import TYPE_CHECKING

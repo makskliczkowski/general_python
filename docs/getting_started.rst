@@ -1,101 +1,81 @@
 Getting Started
 ===============
 
-This guide will help you install **General Python Utilities** and get started with basic usage and testing.
+This page provides the shortest path to install, run, and validate the project.
 
 Installation
 ------------
 
-The library is designed to be installed as a standard Python package.
+The project is configured through ``pyproject.toml`` with optional extras.
 
-**Prerequisites**
-
-- Python 3.8 or higher
-- pip
-
-**Standard Installation**
-
-To install the package with core dependencies (NumPy, SciPy, Matplotlib):
+Core install
+^^^^^^^^^^^^
 
 .. code-block:: bash
 
-    pip install .
+    pip install -e .
 
-**Development Installation**
-
-If you plan to contribute or run the test suite, install with development dependencies:
+Development + tests
+^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
     pip install -e ".[dev]"
 
-**Machine Learning Support**
-
-To enable machine learning features (JAX, Flax, TensorFlow, etc.):
-
-.. code-block:: bash
-
-    pip install ".[ml]"
-
-**Building Documentation**
-
-To build this documentation locally:
+Documentation build dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
-    pip install ".[docs]"
-    cd docs
-    make html
+    pip install -e ".[docs]"
 
-Backend Configuration
----------------------
+Machine-learning dependencies
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-One of the core features of `general_python` is its ability to switch between **NumPy** (CPU) and **JAX** (CPU/GPU/TPU) backends seamlessly for linear algebra and array operations.
+.. code-block:: bash
 
-**Automatic Detection**
+    pip install -e ".[ml]"
 
-The library automatically detects if JAX is installed and available. If JAX is found, it may default to it for certain operations, or you can explicitly control this behavior.
+Optional JAX-only stack
+^^^^^^^^^^^^^^^^^^^^^^^
 
-**Explicit Selection**
+.. code-block:: bash
 
-You can check and select the backend using the `algebra.utils` module.
-The `backend_mgr` object allows you to switch the active backend globally for the session.
+    pip install -e ".[jax]"
 
-.. code-block:: python
+Backend expectations
+--------------------
 
-    from general_python.algebra import utils
+- **NumPy** is the default and baseline backend across the library.
+- **JAX** is optional and used in selected modules for accelerator-enabled workflows.
+- Some APIs dispatch by backend availability; for reproducible studies, keep backend choice fixed per run.
 
-    # Check active backend
-    print(f"Active backend: {utils.ACTIVE_BACKEND_NAME}")
+Quick verification
+------------------
 
-    # Switch globally to JAX (if available)
-    if utils.JAX_AVAILABLE:
-        utils.backend_mgr.set_active_backend("jax")
-
-    # Get the backend module explicitly (independent of global setting)
-    xp = utils.get_backend('jax')  # Returns jax.numpy
-
-Running Tests
--------------
-
-The project uses `pytest` for testing.
-
-**Run All Tests**
-
-To run the full test suite:
+Run core tests:
 
 .. code-block:: bash
 
     pytest
 
-**Run Documentation Tests**
-
-To verify that all modules are importable and documentation is consistent:
+Run the documentation import check:
 
 .. code-block:: bash
 
-    python3 test_documentation.py
+    python test_documentation.py
 
-**Troubleshooting**
+Build Sphinx docs locally:
 
-If you encounter `ImportError` regarding `general_python`, ensure you have installed the package in editable mode (`pip install -e .`) or that your `PYTHONPATH` includes the repository root.
+.. code-block:: bash
+
+    cd docs
+    make html
+
+Output is generated at ``docs/_build/html/index.html``.
+
+Notes on reproducibility
+------------------------
+
+- Set explicit RNG seeds in workflows that rely on random initialization.
+- Expect minor floating-point differences between NumPy and JAX backends due to execution and reduction ordering.

@@ -1,39 +1,22 @@
-"""
-Common utilities for file handling, plotting, logging, binary operations, and data management.
+"""Shared utilities for IO, plotting, logging, and runtime helpers.
 
-This module provides essential utility functions and classes for general-purpose tasks including:
+The ``common`` package contains cross-cutting infrastructure used by all major
+subpackages, including directory management, plotting, HDF5 helpers, timers,
+and low-level binary utilities.
 
-**File and Directory Management:**
-- Directory operations and path management
-- File I/O utilities and data handling
+Input/output contracts
+----------------------
+Utilities are intentionally lightweight: they accept standard Python objects or
+NumPy-compatible arrays and return plain Python or NumPy outputs where possible.
+Plotting helpers expect Matplotlib-compatible inputs.
 
-**Plotting and Visualization:**
-- Advanced plotting utilities with customizable styles
-- Matrix printing and data visualization tools
-- Color schemes, line styles, and marker collections
+Determinism and stability
+-------------------------
+Most helpers are deterministic for fixed inputs. Logging or timing output may
+vary with runtime scheduling. Binary helper functions operate on integer bit
+patterns and are deterministic by construction.
 
-**Data Processing:**
-- Data handling utilities for scientific computing
-- Matrix operations and data transformation
-- Statistical analysis tools
-
-**Binary Operations:**
-- Binary data manipulation and conversion utilities
-- Bit-level operations for quantum computing applications
-
-**Logging and Monitoring:**
-- Advanced logging systems with multiple output formats
-- Performance monitoring and debugging tools
-
-Example:
-    >>> from general_python.common import Plotter, DataHandler, Directories
-    >>> plotter = Plotter()
-    >>> data_handler = DataHandler()
-    >>> dirs = Directories()
-
-Note:
-    This module uses lazy loading. Submodules (like ``plot``, ``hdf5man``) are imported
-    only when their attributes are accessed. This keeps the initial import fast.
+Submodules are loaded lazily on first access to reduce import overhead.
 """
 
 import  importlib

@@ -1,45 +1,25 @@
-"""
-Machine Learning Module for General Python Utilities.
+"""Machine-learning entry points for neural-network workflows.
 
-This module provides machine learning utilities tailored for quantum physics applications,
-with support for both JAX and NumPy backends. It includes neural network implementations,
-training utilities, optimizers, and loss functions.
+This package exposes network factories, schedulers, and low-level implementations
+used in variational and supervised experiments.
 
-Core Features
--------------
-*   **Neural Networks**: A unified interface for defining and instantiating networks via
-    ``ml.networks.choose_network``. Supports RBMs, CNNs, Autoregressive models, and more.
-*   **Flax Integration**: Seamlessly wrap Flax modules for use within the framework.
-*   **Physics-Aware**: Networks are designed with quantum physics in mind (complex weights,
-    periodic boundary conditions, symmetry operations).
-*   **Backend Agnosticism**: While heavily leveraging JAX for training, components are
-    designed to interact with the broader ecosystem.
+Backend expectations
+--------------------
+Most training-oriented models are JAX/Flax-first. NumPy may be used for
+pre/post-processing, but model forward/backward passes generally expect JAX
+arrays when using Flax-based networks.
 
-Submodules
-----------
-*   **networks**: Factory and registry for creating neural networks.
-*   **schedulers**: Learning rate schedulers (e.g., Step, Plateau).
-*   **net_impl**: Implementation details for networks and interfaces.
+Input/output contracts
+----------------------
+Network factories consume model identifiers plus shape metadata (for example
+``input_shape=(n_features,)``), dtype controls, and optional seeds. Outputs are
+model objects compatible with project training utilities.
 
-Examples
---------
-.. code-block:: python
-
-    from general_python.ml import networks
-
-    # Create a Restricted Boltzmann Machine
-    net = networks.choose_network(
-        'rbm',
-        input_shape=(100,),
-        alpha=2.0,
-        dtype='complex128'
-    )
-
----------------------------------
-File            : general_python/ml/__init__.py
-Author          : Maksymilian Kliczkowski
-License         : MIT
----------------------------------
+Determinism and numerical notes
+-------------------------------
+Determinism depends on seeded PRNG keys and backend execution settings. On
+accelerators, reduction order and mixed precision can produce small numerical
+variations versus CPU runs.
 """
 
 import importlib
