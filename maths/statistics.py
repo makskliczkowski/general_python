@@ -154,28 +154,34 @@ class Statistics:
         """
         Compute the bin average of data over multiple realizations.
 
-        This method aggregates data points that fall within `[center - delta, center + delta]`
+        This method aggregates data points that fall within ``[center - delta, center + delta]``
         for each specified center. It supports both arithmetic mean and typical average (geometric mean).
 
         Parameters
         ----------
         data : np.ndarray
-            Data to average. Shape should be (n_realizations, n_points).
+            Input data array.
+            Shape: ``(n_realizations, n_points)``.
         x : np.ndarray
-            X-coordinates corresponding to the data. Shape should match `data`.
+            X-coordinates corresponding to the data.
+            Shape: ``(n_realizations, n_points)``, matching ``data``.
         centers : np.ndarray
             Array of bin centers to compute averages at.
+            Shape: ``(n_centers,)``.
         delta : float, default=0.05
-            Half-width of the bin interval.
+            Half-width of the bin interval. Bins are ``[c - delta, c + delta]``.
         typical : bool, default=False
-            If True, computes the typical average (geometric mean). The input `data` is
-            log-transformed internally before averaging, then exponentiated.
+            If True, computes the typical average (geometric mean).
+            Process: ``exp(mean(log(data)))``.
+            The input `data` is assumed to be positive if this is set.
         cutoffNum : int, default=10
-            Minimum number of data points required in a bin. If the count is lower,
-            the method attempts to expand the window to find nearest neighbors.
+            Minimum number of data points required in a bin to consider it valid without expansion.
+            If the count is lower, the method attempts to expand the window to find nearest neighbors.
         func : callable, optional
-            Aggregation function to apply to values in a bin. Defaults to `np.mean`.
-            Note: The Numba optimized path is only used if `func` is the default.
+            Aggregation function to apply to values in a bin.
+            Signature: ``func(values: array) -> scalar``.
+            Defaults to ``np.mean``.
+            **Note**: The Numba optimized path is only used if ``func`` is the default.
         verbose : bool, default=False
             If True, prints debug information (currently unused).
 
@@ -183,6 +189,8 @@ class Statistics:
         -------
         np.ndarray
             Array of averaged values corresponding to each center.
+            Shape: ``(n_valid_centers,)``.
+            Note: Invalid centers (where no data could be found even after expansion) are skipped in the output logic of the Numba path, but `np.nan_to_num` is applied at the end.
         """
         # Check for fast path eligibility
         # 1. func is default
@@ -246,10 +254,14 @@ class Statistics:
         ----------
         arr : np.ndarray
             Input array to rebin.
+            Shape depends on `d`.
         av_num : int
             Number of elements to average into a single bin.
         d : int
             Dimensionality of the array (1, 2, or 3).
+            If d=1: expects shape ``(N,)``.
+            If d=2: expects shape ``(N, M)``.
+            If d=3: expects shape ``(N, M, K)``.
         rng : np.random.Generator, optional
             Random number generator for shuffling. If None, a default generator is used.
 
@@ -257,6 +269,7 @@ class Statistics:
         -------
         np.ndarray
             Re-binned array.
+            The first dimension size is divided by `av_num`.
         """
         
         if rng is None:

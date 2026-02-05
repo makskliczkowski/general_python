@@ -1,41 +1,69 @@
-# Documentation Audit Report
+# Documentation Audit
 
-## 1. Executive Summary
-The documentation for `general_python` consists of a Sphinx-based documentation site (in `docs/`) and docstrings within the source code. While the structure is sound, there are inconsistencies between the `README.md` and the actual codebase, particularly regarding package names (QES vs. general_python) and module organization. Some modules have excellent documentation (e.g., `common.plot`), while others need improvement (e.g., `physics.operators`, `maths.statistics`).
+## 1. Existing Documentation
 
-## 2. Existing Documentation Assets
-### Root Directory
-- **`README.md`**: Provides a high-level overview but contains outdated references to "QES" (Quantum EigenSolver) and inconsistent installation instructions compared to `docs/installation.rst`.
-- **`pyproject.toml`**: Correctly defines the package metadata and dependencies.
+The `docs/` directory contains the following Sphinx documentation source files:
 
-### `docs/` Directory
-- **`index.rst`**: Main entry point.
-- **`api.rst`**: Auto-generated API reference using `sphinx.ext.autodoc`.
-- **`conf.py`**: Sphinx configuration. Notably, it mocks heavy dependencies (`tensorflow`, `sklearn`, `pandas`, `jax`) to facilitate building documentation in environments without these libraries.
-- **`installation.rst`**: Installation guide.
-- **`usage.rst`**: Usage examples.
-- **`contributing.rst`**, **`license.rst`**: Standard project files.
+*   **Core Guides:**
+    *   `index.rst`: Main entry point.
+    *   `introduction.rst`: Project overview.
+    *   `getting_started.rst`: Installation, backend configuration, and testing.
+    *   `design_principles.rst`: Architecture, backend agnosticism, lazy loading.
+    *   `installation.rst`: Detailed installation steps.
+    *   `usage.rst`: Basic usage examples.
+    *   `api.rst`: API reference.
+    *   `contributing.rst`: Contribution guidelines.
+    *   `license.rst`: License information.
 
-## 3. Discrepancies and Issues
-- **Project Identity**: The `README.md` often refers to the library as part of "QES", which seems to be a parent project. The package itself is `general_python`.
-- **Random Number Generation**: There is potential confusion between `maths/random.py` and `algebra/ran_wrapper.py`.
-    - `algebra/ran_wrapper.py`: The main, backend-agnostic RNG wrapper (NumPy/JAX).
-    - `maths/random.py`: Contains specific Random Matrix Theory (RMT) utilities like `CUE_QR`.
-    - The documentation should clearly distinguish these.
-- **Machine Learning Module**: `ml/networks.py` acts as a factory, but the directory structure (`ml/networks.py` vs `ml/net_impl/`) might be confusing without clear docstrings in `ml/__init__.py`.
+*   **Configuration:**
+    *   `conf.py`: Sphinx configuration.
+    *   `Makefile`: Build script for Make.
+    *   `requirements.txt`: Dependencies for documentation build.
 
-## 4. Module Docstring Audit
-| Module | Status | Notes |
-| :--- | :--- | :--- |
-| **`algebra`** | Good | `solvers/__init__.py` uses lazy loading and is well-documented. `ran_wrapper.py` has good docstrings. |
-| **`common`** | Excellent | `plot.py` is exemplary. `directories.py` and others are clear. |
-| **`lattices`** | Good | `lattice.py` has extensive docstrings. `square.py` and subclasses are consistent. |
-| **`maths`** | Needs Improvement | `statistics.py` has sparse docstrings for class methods. `random.py` is minimal. |
-| **`ml`** | Fair | `networks.py` is well-documented. `__init__.py` is sparse and should better explain the submodule structure. |
-| **`physics`** | Mixed | `entropy.py` is well-documented. `operators.py` lacks detailed explanations for methods like `resolveSite`. |
+*   **Root Configuration:**
+    *   `.readthedocs.yaml`: ReadTheDocs configuration file.
 
-## 5. Recommendations
-1.  **Clarify RNG**: Explicitly document `algebra.ran_wrapper` as the primary RNG tool and `maths.random` as a specialized RMT tool.
-2.  **Enhance Docstrings**: Focus on `maths.statistics.Statistics`, `physics.operators.Operators`, and module-level `__init__.py` files for `ml` and `lattices`.
-3.  **New Pages**: Add "Getting Started" and "Design Principles" to better onboard users and explain the backend-agnostic philosophy.
-4.  **Update Index**: Ensure new pages are discoverable.
+## 2. Missing or Outdated Information
+
+*   **Module-Specific Details:**
+    *   `physics`: The distinction between Numba-optimized CPU code and JAX-optimized GPU code needs to be clearer in the `density_matrix` and `entropy` modules.
+    *   `lattices`: Detailed input/output contracts for factory functions like `choose_lattice` are minimal.
+    *   `maths`: The `Statistics` class methods lack detailed docstrings regarding input shapes.
+*   **Advanced Usage:**
+    *   Guides for implementing custom Lattice classes or specialized Solvers are missing.
+    *   Examples for mixed-backend usage (e.g., NumPy lattice with JAX solver) could be expanded.
+
+## 3. Building Documentation
+
+### Local Build
+
+To build the documentation locally:
+
+1.  **Install dependencies:**
+    ```bash
+    pip install ".[docs]"
+    ```
+    *Note: This installs `sphinx` and `sphinx-rtd-theme`.*
+
+2.  **Build HTML:**
+    ```bash
+    cd docs
+    make html
+    ```
+
+3.  **View:**
+    Open `docs/_build/html/index.html` in your browser.
+
+### ReadTheDocs (RTD)
+
+The project is configured for RTD via `.readthedocs.yaml`.
+*   **OS:** Ubuntu 22.04
+*   **Python:** 3.10
+*   **Configuration:** Uses `docs/conf.py`.
+*   **Requirements:** Installs the package with `docs` extra.
+
+## 4. Proposed Improvements (Current Task)
+
+*   **Module Docstrings:** Enhance top-level docstrings for `algebra`, `lattices`, `maths`, `ml`, `physics`, and `common` to clarify purpose and scope.
+*   **Function Docstrings:** Add detailed input/output contracts, shapes, and backend specifics to key functions in `algebra/solver.py`, `lattices/lattice.py`, `maths/statistics.py`, `ml/networks.py`, and `physics/density_matrix.py`.
+*   **Alignment:** Ensure `getting_started.rst` and `design_principles.rst` accurately reflect the current lazy-loading architecture and backend selection mechanisms.

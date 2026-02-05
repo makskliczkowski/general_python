@@ -5,6 +5,29 @@ This module exposes the core lattice classes and a registry-based factory that
 enables third-party extensions (e.g. custom graph lattices) to integrate with
 the rest of the general_python stack.
 
+Core Functions
+--------------
+- ``choose_lattice``: Factory function to create lattice instances.
+- ``register_lattice``: Register custom lattice types for use with ``choose_lattice``.
+- ``plot_lattice_structure``: Visualise lattice geometry and connectivity.
+
+Examples
+--------
+.. code-block:: python
+
+    from general_python.lattices import choose_lattice, LatticeBC
+
+    # Create a 4x4 square lattice with periodic boundary conditions
+    lat = choose_lattice(
+        typek='square',
+        dim=2,
+        lx=4, ly=4,
+        bc=LatticeBC.PBC
+    )
+
+    # Access neighbors of site 0
+    neighbors = lat.get_nei(0)
+
 --------------------------------
 Author          : Maksymilian Kliczkowski
 Date            : 2025-12-30

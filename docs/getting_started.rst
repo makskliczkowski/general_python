@@ -58,7 +58,8 @@ The library automatically detects if JAX is installed and available. If JAX is f
 
 **Explicit Selection**
 
-You can check and select the backend using the `algebra.utils` module:
+You can check and select the backend using the `algebra.utils` module.
+The `backend_mgr` object allows you to switch the active backend globally for the session.
 
 .. code-block:: python
 
@@ -67,10 +68,12 @@ You can check and select the backend using the `algebra.utils` module:
     # Check active backend
     print(f"Active backend: {utils.ACTIVE_BACKEND_NAME}")
 
-    # Get the backend module explicitly
+    # Switch globally to JAX (if available)
+    if utils.JAX_AVAILABLE:
+        utils.backend_mgr.set_active_backend("jax")
+
+    # Get the backend module explicitly (independent of global setting)
     xp = utils.get_backend('jax')  # Returns jax.numpy
-    # or
-    xp = utils.get_backend('numpy') # Returns numpy
 
 Running Tests
 -------------
