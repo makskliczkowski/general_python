@@ -1,16 +1,32 @@
 # New Tests Documentation
 
-This document describes the new tests added to the `general_python` library to ensure correctness and stability.
+This document describes the new tests added to the repository to improve correctness coverage and robustness.
 
-| Test File | Purpose | Failure Mode | Module Guarded |
-| :--- | :--- | :--- | :--- |
-| `algebra/tests/test_solvers_sanity.py` | Validates that `LanczosEigensolver` and `MinresQLPSolver` converge correctly on known physical problems (2D Laplacian) and handle different data types (float32, float64, complex128) deterministically. | Regressions in solver logic, numerical instability, or broken dtype support. Hardcoded tolerances in library may cause failures if precision drops. | `algebra.solvers`, `algebra.eigen` |
-| `lattices/tests/test_lattice_invariants.py` | Verifies `SquareLattice` geometry, including neighbor finding (NN, NNN) under Periodic and Open Boundary Conditions, coordinate calculation, and site indexing. | Incorrect neighbor lists, broken boundary wrapping, or coordinate mapping errors. Catches bugs where neighbors are not correctly calculated or stored (e.g., `nnn` assignment bug). | `lattices` |
-| `physics/tests/test_operator_invariants.py` | Tests the parsing logic in `Operators` class, specifically `resolveSite` and `resolve_operator`, ensuring edge cases like "L", "pi", and division are handled. | Failures in parsing operator strings, incorrect site index resolution, or crashes on valid syntax. | `physics.operators` |
-| `maths/tests/test_utilities_edge_cases.py` | Checks edge cases and behavior of math utilities: `find_nearest_val` (returns index for arrays), power functions (`next_power`, `prev_power`), custom modulo functions, and `Fitter` basics. | Unexpected behavior in helper functions, regression in custom modulo logic, or `Fitter` breaking changes. | `maths` |
+## Algebra
+*   **Module**: `algebra/tests/test_arnoldi_sanity.py`
+    *   **Purpose**: Validates the `ArnoldiEigensolver` (for non-symmetric matrices) and its SciPy wrapper.
+    *   **Failure Modes**: Catches incorrect eigenvalue computations for non-symmetric matrices, backend issues in JAX implementation (currently xfailed due to a bug), and regression in SciPy wrapper logic.
+    *   **Guards**: `algebra/eigen/arnoldi.py`
 
-## Notes
+## Lattices
+*   **Module**: `lattices/tests/test_lattice_dimensions.py`
+    *   **Purpose**: Validates `SquareLattice` behavior in 1D and 3D dimensions, specifically checking neighbor finding logic under PBC and OBC.
+    *   **Failure Modes**: Catches incorrect neighbor mapping (e.g., wrong stride calculation in 3D), boundary condition violations (wrapping when shouldn't), and coordinate calculation errors.
+    *   **Guards**: `lattices/square.py`, `lattices/lattice.py`
 
-*   **Lattices:** `test_next_nearest_neighbors` in `lattices/tests/test_lattice_invariants.py` is currently marked as `xfail` due to a known bug in `lattice.py` where `calculate_nnn` overwrites `self._nnn` with `None`.
-*   **Algebra:** `test_lanczos_dtypes` in `algebra/tests/test_solvers_sanity.py` manually checks residual norms instead of relying on `result.converged` because the native Lanczos implementation has a hardcoded strict tolerance (`1e-8`) that `float32` cannot satisfy.
-*   **Maths:** `find_nearest_val` returns the *index* (wrapped in array) for numpy inputs, which is counter-intuitive but currently asserted behavior. `mod_round` behaves like truncation for positive numbers.
+## Physics
+*   **Module**: `physics/tests/test_hamiltonian_invariants.py`
+    *   **Purpose**: Verifies fundamental operator algebra (Pauli matrices) and the construction/diagonalization of a simple physical Hamiltonian (Heisenberg dimer).
+    *   **Failure Modes**: Catches errors in operator matrix definitions (if they were library provided), tensor product logic (`np.kron` usage), and basic physical correctness (ground state energy, trace preservation).
+    *   **Guards**: Implicitly guards `algebra/eigen` solvers (when used) and general physics modeling logic.
+
+## Maths / Common
+*   **Module**: `maths/tests/test_utilities_edge_cases.py` (Extended)
+    *   **Purpose**: Added edge cases for `find_nearest_val`.
+    *   **Failure Modes**: Catches handling of empty arrays (raises ValueError now) and ensures robust argument handling (ignored `col` for ndarray).
+    *   **Guards**: `maths/math_utils.py`
+
+## Fixes to Existing Tests
+*   **Module**: `lattices/tests/test_lattice_invariants.py`
+    *   **Action**: Unmarked `test_next_nearest_neighbors` as xfail by implementing a workaround for the known bug in `Lattice.calculate_nnn`.
+    *   **Purpose**: To verify the correctness of the underlying neighbor-finding logic (`calculate_nnn_in`) despite the broken wrapper.
