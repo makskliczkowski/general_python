@@ -29,6 +29,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "numba",
+    "h5py",
 ]
 
 [project.optional-dependencies]
