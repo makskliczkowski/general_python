@@ -1,260 +1,273 @@
 Usage
 =====
 
-This section illustrates usage examples for the key components of the *General Python Utilities* library.
+This section provides **working, end-to-end examples** for the core components of the
+*General Python Utilities* library. Each snippet is runnable and uses real APIs from
+the package.
 
 1. Linear Algebra & Solvers
 ---------------------------
 
-The library provides a unified interface for linear algebra that works with both NumPy and JAX.
+The algebra stack exposes a unified NumPy/JAX backend, deterministic RNG helpers,
+and a flexible solver interface (direct, iterative, matrix-free, and preconditioned).
 
-**Backend Management**
-
-You can switch backends or let the library detect the best available one.
+**Backend Selection, RNG, and SciPy Helpers**
 
 .. code-block:: python
 
-    import numpy as np
     from general_python.algebra import utils
 
-    # Check active backend (defaults to 'numpy' or 'jax' if available)
+    # Global backend info
     print(f"Active backend: {utils.ACTIVE_BACKEND_NAME}")
 
-    # Explicitly get backend operations
-    xp = utils.get_backend("numpy")
-    arr = xp.array([1, 2, 3])
+    # Explicit backend selection
+    xp  = utils.get_backend("numpy")
+    x   = xp.linspace(0.0, 1.0, 5)
 
-**Backend RNG and SciPy Helpers**
+    # Reproducible RNG + SciPy helpers (NumPy backend)
+    xp, (rng, _), sp = utils.get_backend("numpy", random=True, scipy=True, seed=123)
+    A = rng.normal(size=(4, 4))
+    A = 0.5 * (A + A.T)  # symmetrize
+    evals = sp.linalg.eigvalsh(A)
+    print("eigvals:", evals)
 
-If you want a backend-specific RNG or SciPy module, request them explicitly.
+    # Optional JAX backend (if installed)
+    if utils.JAX_AVAILABLE:
+        jxp, (jrn, key), jsp = utils.get_backend("jax", random=True, scipy=True, seed=0)
+        key, sub = jrn.split(key)
+        v = jrn.normal(sub, shape=(3,))
+        print("jax vector:", v)
+
+**Preconditioned Conjugate Gradient (SPD systems)**
 
 .. code-block:: python
 
-    from general_python.algebra import utils
-
-    # NumPy backend with RNG + SciPy helpers
-    xp, (rng, _), sp    = utils.get_backend("numpy", random=True, scipy=True, seed=123)
-    x                   = rng.normal(size=5)
-    print(f"Norm via SciPy: {sp.linalg.norm(x):.4f}")
-
-**Using Iterative Solvers**
-
-Solve :math:`Ax = b` using Krylov subspace methods like CG or MINRES.
-
-.. code-block:: python
-
-    from general_python.algebra.solvers import choose_solver, SolverType
     import numpy as np
+    from general_python.algebra.solvers import choose_solver, SolverType
+    from general_python.algebra.preconditioners import choose_precond
 
-    # Define a symmetric positive-definite matrix A and vector b
-    N = 100
-    A = np.diag(np.arange(1, N + 1))
-    b = np.ones(N)
+    n = 200
+    diag = np.linspace(1.0, 10.0, n)
+    A = np.diag(diag)
+    b = np.ones(n)
 
-    # 1. Using Conjugate Gradient (CG)
-    # You can pass the matrix directly
-    solver_cg   = choose_solver(SolverType.CG, a=A)
-    res_cg      = solver_cg.solve_instance(b=b)
-    print(f"CG converged: {res_cg.converged}, Iterations: {res_cg.iterations}")
+    # Jacobi preconditioner (diagonal inverse)
+    M = choose_precond("jacobi")
+    M.set(A)
 
-    # 2. Using MINRES (for symmetric indefinite matrices)
-    # You can also pass a matvec function/LinearOperator
+    solver = choose_solver(SolverType.CG, a=A)
+    result = solver.solve_instance(b=b, precond=M, tol=1e-10, maxiter=200)
+    print(f"CG converged: {result.converged}, iters: {result.iterations}")
+
+**Matrix-Free MINRES (symmetric indefinite systems)**
+
+.. code-block:: python
+
     def matvec(v):
         return A @ v
 
-    solver_minres   = choose_solver(SolverType.MINRES, matvec_func=matvec)
-    x0              = np.zeros_like(b)
-    res_minres      = solver_minres.solve_instance(b=b, x0=x0)
-    print(f"MINRES residual norm: {res_minres.residual_norm}")
+    solver = choose_solver(SolverType.MINRES, matvec_func=matvec)
+    x0 = np.zeros_like(b)
+    result = solver.solve_instance(b=b, x0=x0)
+    print(f"MINRES residual norm: {result.residual_norm}")
 
-**Direct (Backend) Solver**
-
-For small dense systems, the direct backend solve is convenient.
+**Direct Backend Solver (dense systems)**
 
 .. code-block:: python
-
-    from general_python.algebra.solvers import choose_solver, SolverType
-    import numpy as np
 
     A = np.array([[3.0, 1.0], [1.0, 2.0]])
     b = np.array([1.0, 0.0])
 
-    solver_direct   = choose_solver(SolverType.BACKEND, a=A)
-    res_direct      = solver_direct.solve_instance(b=b)
-    print(f"Direct solution: {res_direct.x}")
-
-**Preconditioners**
-
-.. code-block:: python
-
-    from general_python.algebra.preconditioners import choose_precond
-
-    # Create a Jacobi preconditioner (set up with matrix A)
-    M = choose_precond("jacobi")
-    M.set(A)
-
-    # Use it in a solver
-    solver_precond = choose_solver(SolverType.CG, a=A)
-    solver_precond.solve_instance(b=b, precond=M)
+    solver = choose_solver(SolverType.BACKEND, a=A, sigma=1e-12)
+    result = solver.solve_instance(b=b)
+    print("Direct solution:", result.x)
 
 2. Lattice Geometries
 ---------------------
 
-Create and navigate lattice structures for physics simulations.
+The lattice module provides geometry-aware models with real/reciprocal vectors,
+neighbor maps, and plotting helpers. Use the factory to stay backend-agnostic.
+
+**Factory + Metadata**
 
 .. code-block:: python
 
-    from general_python.lattices import SquareLattice, HexagonalLattice
-    
-    # Create a 4x4 square lattice with Periodic Boundary Conditions (PBC)
-    lat = SquareLattice(4, 4, bc='pbc')
+    from general_python.lattices import choose_lattice, available_lattices
 
-    print(f"Total sites: {lat.Ns}")
-    
-    # Get neighbors of site index 0
-    neighbors = lat.get_nn(0)
-    print(f"Neighbors of site 0: {neighbors}")
-    
-    # Get coordinates of site (2, 2)
-    site    = lat.site_index(2, 2, 0)
-    coord   = lat.get_coordinates(site)
-    print(f"Coordinates of (2,2): {coord}")
+    print("Available lattices:", available_lattices())
 
-    # Plot the lattice (requires matplotlib)
-    # fig, ax = lat.plot_structure(show_indices=True)
+    lat = choose_lattice("square", lx=4, ly=4, bc="pbc")
+    print(lat.summary_string())
 
-**Adjacency Matrix and Real-Space Plot**
+    # Coordinates and nearest neighbors
+    site = lat.site_index(2, 2, 0)
+    coord = lat.get_coordinates(site)
+    nn = lat.get_nn(site)
+    print(f"Site {site} coord: {coord}, nn: {nn}")
+
+**Adjacency + Real-Space Overview**
 
 .. code-block:: python
 
-    A = lat.adjacency_matrix(sparse=True)
+    A = lat.adjacency_matrix(sparse=True, include_nnn=True)
     print(f"Adjacency shape: {A.shape}, nnz: {A.nnz}")
 
-    # Quick scatter plot of the real-space sites
-    # fig, ax = lat.plot_real_space(show_indices=True, color="tab:blue")
+    # Compact report with vectors and Brillouin zone
+    print(lat.describe(max_rows=6))
+
+**Plotting (matplotlib)**
+
+.. code-block:: python
+
+    # fig, ax = lat.plot.structure(show_indices=True)
+    # fig, ax = lat.plot.real_space(show_indices=True, color="tab:blue")
 
 3. Physics & Quantum States
 ---------------------------
 
-Utilities for quantum mechanics and statistical physics.
+Density-matrix utilities cover reduced states, spectra, and entanglement
+metrics with NumPy implementations.
+
+**Reduced Density Matrix + Entropy**
 
 .. code-block:: python
 
-    from general_python.physics import density_matrix
     import numpy as np
+    from general_python.physics import density_matrix, entropy
 
-    # Create a random quantum state vector
-    psi     = np.random.rand(4) + 1j * np.random.rand(4)
-    psi    /= np.linalg.norm(psi)
+    # Random 2-qubit pure state
+    psi = np.random.randn(4) + 1j * np.random.randn(4)
+    psi /= np.linalg.norm(psi)
 
-    # Compute reduced density matrix for a 2x2 bipartition
-    rho     = density_matrix.rho_numpy(psi, dimA=2, dimB=2)
-    
-    # Von Neumann entropy from eigenvalues of rho
-    evals   = density_matrix.rho_spectrum(rho)
-    S       = -np.sum(evals * np.log(evals))
-    print(f"Entropy: {S:.4f}")
+    rho = density_matrix.rho_numpy(psi, dimA=2, dimB=2)
+    evals = density_matrix.rho_spectrum(rho)
+    S = -np.sum(evals * np.log(evals))
+    print(f"Von Neumann entropy: {S:.6f}")
 
-    # Purity: tr(rho^2)
-    purity   = np.real(np.trace(rho @ rho))
-    print(f"Purity: {purity:.4f}")
+    # Compare to Page value (finite-size average)
+    S_page = entropy.EntropyPredictions.Mean.page(da=2, db=2)
+    print(f"Page value (dA=2, dB=2): {S_page:.6f}")
 
-**Schmidt Decomposition**
+**Schmidt Decomposition + Two-Site RDM**
 
 .. code-block:: python
 
-    # Schmidt decomposition (eigenvalue route)
-    evals, vecs, _ = density_matrix.schmidt_numpy(psi, dimA=2, dimB=2, eig=True)
-    print(f"Top Schmidt weights: {evals[:3]}")
+    # Schmidt decomposition via eigen-decomposition
+    vals, vecs, _ = density_matrix.schmidt_numpy(psi, dimA=2, dimB=2, eig=True)
+    print("Top Schmidt weights:", vals[:3])
 
-**Two-Site Reduced Density Matrix**
+    # Two-site reduced density matrix for a 4-qubit state
+    ns = 4
+    psi = np.random.randn(2**ns) + 1j * np.random.randn(2**ns)
+    psi /= np.linalg.norm(psi)
 
-.. code-block:: python
-
-    # Example on a 4-qubit state (size 16)
-    ns      = 4
-    psi     = np.random.randn(2**ns) + 1j * np.random.randn(2**ns)
-    psi    /= np.linalg.norm(psi)
-
-    rho_ij  = density_matrix.rho_two_sites(psi, site_i=0, site_j=2, ns=ns)
-    print(f"Two-site rho shape: {rho_ij.shape}")
+    rho_ij = density_matrix.rho_two_sites(psi, site_i=0, site_j=2, ns=ns)
+    print("Two-site rho shape:", rho_ij.shape)
 
 4. Random Number Generation
 ---------------------------
 
-Reproducible random numbers using high-quality generators.
+High-quality random matrix samplers for quantum information tasks.
+
+**Haar-Random Unitary (CUE)**
 
 .. code-block:: python
 
-    from general_python.maths import random as rng_mod
     import numpy as np
+    from general_python.maths import random as rng_mod
 
-    # Create a seeded NumPy generator
     rng = np.random.default_rng(12345)
+    U = rng_mod.CUE_QR(4, rng=rng, simple=False)
 
-    # Draw a Haar-random unitary from the Circular Unitary Ensemble (CUE)
-    U   = rng_mod.CUE_QR(4, rng=rng, simple=False)
-    print(f"CUE unitary shape: {U.shape}")
-    print(f"Unitary check: {np.allclose(U.conj().T @ U, np.eye(4))}")
+    # Unitarity check
+    I = np.eye(4)
+    print("Unitary check:", np.allclose(U.conj().T @ U, I))
+
+    # Eigenvalue phases on the unit circle
+    phases = np.angle(np.linalg.eigvals(U))
+    print("Eigenphases:", phases)
 
 5. Machine Learning (Neural Networks)
 -------------------------------------
 
-Define and use neural networks with backend flexibility.
+Networks are created through a single factory that supports NumPy and JAX
+backends. The examples below use the lightweight `simple` network.
+
+**NumPy Backend (quick experiments)**
 
 .. code-block:: python
 
-    from general_python.ml.networks import choose_network
     import numpy as np
+    from general_python.ml.networks import choose_network
 
-    # Create a simple feed-forward network (NumPy backend)
     net = choose_network(
         "simple",
         input_shape=(16,),
-        layers=(8, 4),
-        act_fun=("tanh",),
+        layers=(32, 16),
+        act_fun=("tanh", "tanh"),
         backend="numpy",
         dtype=np.float32,
     )
 
-    x = np.random.randn(5, 16).astype(np.float32)
+    x = np.random.randn(4, 16).astype(np.float32)
     y = net.apply_np(x)
-    print(f"Network output shape: {y.shape}")
+    print("Output shape:", y.shape)
+    print("Total params:", sum(net.nparams))
 
-**Using the Callable Apply Function**
+    apply_fn, params = net.get_apply(use_jax=False)
+    y2 = apply_fn(params, x)
+    print("Output matches:", np.allclose(y, y2))
+
+**Optional JAX Backend (accelerated)**
 
 .. code-block:: python
 
-    apply_fn, params    = net.get_apply(use_jax=False)
-    y2                  = apply_fn(params, x)
-    print(f"Output matches: {np.allclose(y, y2)}")
+    from general_python.algebra import utils
+
+    if utils.JAX_AVAILABLE:
+        net_jax = choose_network(
+            "simple",
+            input_shape=(16,),
+            layers=(32, 16),
+            act_fun=("tanh", "tanh"),
+            backend="jax",
+            dtype="float32",
+        )
+        jxp = utils.get_backend("jax")
+        xj = jxp.ones((2, 16))
+        yj = net_jax.apply_jax(xj)
+        print("JAX output shape:", yj.shape)
 
 6. Common Utilities
 -------------------
 
-.. code-block:: python
+Convenience utilities for directories, timing, and lightweight benchmarking.
 
-    from general_python.common import Directories, Timer
-    
-    # Directory management
-    dirs = Directories("experiment_data")
-    dirs.mkdir()
-    
-    # Timing code execution
-    with Timer("Heavy Computation", verbose=True):
-        # simulate work
-        _ = [i**2 for i in range(100000)]
-    
-    # Timer automatically logs the duration
-
-**Benchmark Helper**
+**Directories**
 
 .. code-block:: python
 
+    from general_python.common import Directories
+
+    base = Directories("experiment_data").mkdir()
+    run_dir = base.join("run_001", create=True)
+
+    # List files (empty at first)
+    print(run_dir.list_files())
+
+**Timing & Benchmarking**
+
+.. code-block:: python
+
+    from general_python.common import Timer
     from general_python.common.timer import benchmark, timeit
     import numpy as np
 
     # Context manager timing
+    with Timer("Heavy Computation", verbose=True):
+        _ = [i**2 for i in range(100000)]
+
+    # Benchmark helper
     with benchmark("Vectorized op") as stats:
         _ = np.sum(np.arange(1_000_000))
     print(f"Elapsed (s): {stats.elapsed:.6f}")
