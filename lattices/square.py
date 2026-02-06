@@ -17,21 +17,24 @@ from typing import Optional
 #######################################################################################
 
 class SquareLattice(Lattice):
-    '''
-    Square Lattice Class for 1D, 2D, and 3D lattices. The lattice vectors are defined as:
-    - a = [1, 0, 0],
-    - b = [0, 1, 0],
+    """
+    Square Lattice Class for 1D, 2D, and 3D lattices.
+
+    The lattice vectors are defined as:
+    - a = [1, 0, 0]
+    - b = [0, 1, 0]
     - c = [0, 0, 1]
-    and the reciprocal lattice vectors are:
-    - a* = [2*pi, 0, 0], 
-    - b* = [0, 2*pi, 0], 
+
+    The reciprocal lattice vectors are:
+    - a* = [2*pi, 0, 0]
+    - b* = [0, 2*pi, 0]
     - c* = [0, 0, 2*pi]
     
     High-symmetry points in the Brillouin zone:
     - 1D: Γ (0) -> X (Pi) -> Γ (2Pi)
     - 2D: Γ (0,0) -> X (Pi,0) -> M (Pi,Pi) -> Γ (0,0)  
     - 3D: Γ -> X -> M -> Γ -> R -> X
-    '''
+    """
 
     def __init__(self, lx=1, ly=1, lz=1, dim=None, bc=LatticeBC.PBC, **kwargs):
         '''
@@ -169,10 +172,20 @@ class SquareLattice(Lattice):
     def site_index(self, x, y, z):
         """
         Convert (x, y, z) coordinates to a site index.
-        Args:
-            x (int): x-coordinate
-            y (int): y-coordinate
-            z (int): z-coordinate
+
+        Parameters
+        ----------
+        x : int
+            x-coordinate.
+        y : int
+            y-coordinate.
+        z : int
+            z-coordinate.
+
+        Returns
+        -------
+        int
+            Site index.
         """
         return z * self.Lx * self.Ly + y * self.Lx + x
     
@@ -181,6 +194,20 @@ class SquareLattice(Lattice):
     def get_real_vec(self, x: int, y: int, z: int):
         """
         Returns the real vector for a given (x, y, z) coordinate.
+
+        Parameters
+        ----------
+        x : int
+            x-coordinate.
+        y : int
+            y-coordinate.
+        z : int
+            z-coordinate.
+
+        Returns
+        -------
+        np.ndarray
+            Real vector.
         """
         return self._vectors[:, 0] * x + self._vectors[:, 1] * y + self._vectors[:, 2] * z
 
@@ -189,6 +216,15 @@ class SquareLattice(Lattice):
     def get_norm(self, x: int, y: int, z: int):
         """
         Returns the Euclidean norm of a real-space vector.
+
+        Parameters
+        ----------
+        x : int
+            x-coordinate.
+        y : int
+            y-coordinate.
+        z : int
+            z-coordinate.
         """
         return LatticeBackend.sqrt(x**2 + y**2 + z**2)
 
@@ -197,9 +233,18 @@ class SquareLattice(Lattice):
     def get_nn_direction(self, site: int, direction: LatticeDirection):
         """
         Returns nearest neighbors in a given direction (X, Y, Z).
-        Args:
-            site (int): Site index
-            direction (LatticeDirection): Direction to get the nearest neighbors
+
+        Parameters
+        ----------
+        site : int
+            Site index.
+        direction : LatticeDirection
+            Direction to get the nearest neighbors.
+
+        Returns
+        -------
+        int
+            Neighbor site index.
         """
         switcher = {
             LatticeDirection.X: self._nn[site][0],
@@ -234,10 +279,14 @@ class SquareLattice(Lattice):
         Calculates the nearest neighbors (NN) for 1D, 2D, and 3D square lattices.
         Also calculates the forward nearest neighbors (NNF).
         
-        Args:
-            - pbcx: Periodic boundary condition in x direction
-            - pbcy: Periodic boundary condition in y direction
-            - pbcz: Periodic boundary condition in z direction
+        Parameters
+        ----------
+        pbcx : bool
+            Periodic boundary condition in x direction.
+        pbcy : bool
+            Periodic boundary condition in y direction.
+        pbcz : bool
+            Periodic boundary condition in z direction.
         """
 
         def boundary_check(index, limit, pbc):
@@ -304,10 +353,14 @@ class SquareLattice(Lattice):
         Calculates the next-nearest neighbors (NNN) for 1D, 2D, and 3D square lattices.
         Also calculates the forward next-nearest neighbors (NNNF).
         
-        Args:
-            - pbcx: Periodic boundary condition in x direction
-            - pbcy: Periodic boundary condition in y direction
-            - pbcz: Periodic boundary condition in z direction
+        Parameters
+        ----------
+        pbcx : bool
+            Periodic boundary condition in x direction.
+        pbcy : bool
+            Periodic boundary condition in y direction.
+        pbcz : bool
+            Periodic boundary condition in z direction.
         """
 
         def boundary_check(index, limit, pbc):

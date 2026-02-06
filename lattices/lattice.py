@@ -29,8 +29,8 @@ try:
                                         KPathResult, find_nearest_kpoints)
     from .tools.region_handler  import LatticeRegionHandler
     from ..common               import hdf5man as HDF5Mod
-except ImportError:
-    raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")
+except ImportError as e:
+    raise ImportError(f"Failed to import modules from parent package. Ensure proper package structure. Original error: {e}")
 
 ############################################## GENERAL LATTICE ##############################################
 

@@ -36,34 +36,6 @@ class EntropyPredictions:
     A collection of static methods for predicting entanglement entropy in quantum systems under various physical scenarios.
 
     This class provides analytical and semi-analytical formulas for entanglement entropy, including volume law, chaotic, random Gaussian, and Page values, with and without U(1) conservation. The methods are based on results from quantum statistical mechanics and random matrix theory.
-
-    Attributes:
-        entro_ff (float): Entropy value from PRL 119, 020601 (2017).
-
-    Methods:
-        volume_law(L, f=0.5):
-            Computes the volume law entropy for a system of size L and filling f.
-
-        quadratic_chaotic(L: int, f: float):
-            Computes the entropy for quadratic chaotic systems as described in PRL 125, 180604 (2020).
-
-        entro_random_gaussian(L: int, f: float):
-            Computes the entropy for random Gaussian states in the thermodynamic limit.
-
-        entro_random_gaussian_u1(L: int, f: float, n=0.5):
-            Computes the entropy for random Gaussian states with U(1) conservation in the thermodynamic limit.
-
-        entro_page_th(L: int, f: float):
-            Computes the Page value (average entropy of a subsystem) in the thermodynamic limit.
-
-        entro_page(f: float, L: int):
-            Computes the Page value for a given subsystem size.
-
-        entro_page_u1(f: float, L: int, n=0.5):
-            Placeholder for Page value computation with U(1) correction.
-
-        entro_page_u1_th(f: float, L: int, n=0.5):
-            Computes the Page value with U(1) correction in the thermodynamic limit.
     """
 
     # ---------------------------------
@@ -75,37 +47,61 @@ class EntropyPredictions:
             """
             Calculates the entanglement entropy according to the volume law for a system of size L.
 
-            Parameters:
-                L (int or float):
-                    The size of the system (e.g., number of sites or particles).
-                f (float, optional):
-                    Fraction of the system considered. Default is 0.5.
+            Parameters
+            ----------
+            L : int or float
+                The size of the system (e.g., number of sites or particles).
+            f : float, optional
+                Fraction of the system considered. Default is 0.5.
 
-            Returns:
-                float: The entanglement entropy given by (f * L) * log(2).
+            Returns
+            -------
+            float
+                The entanglement entropy given by (f * L) * log(2).
 
-            Notes:
-                The volume law states that the entanglement entropy scales linearly with the size of the subsystem.
+            Notes
+            -----
+            The volume law states that the entanglement entropy scales linearly with the size of the subsystem.
             """
             return (f * L) * np.log(2)
 
         @staticmethod
         def quadratic_chaotic(L : int, f : float):
-            '''
-            PRL 125, 180604 (2020)
-            - La: subsystem size
-            - f : filling
-            '''
+            """
+            Computes entropy for quadratic chaotic systems (PRL 125, 180604 (2020)).
+
+            Parameters
+            ----------
+            L : int
+                System size.
+            f : float
+                Filling fraction.
+
+            Returns
+            -------
+            float
+                Entropy value.
+            """
             La = int(L * f)
             return (1. - (1. + (1. - f) * np.log(1. - f) / f) / np.log(2.)) * La * np.log(2.)
 
         @staticmethod
         def free_fermions_half(L : int, f : float):
-            r'''
-            PRL 119, 020601 (2017)
-            - La: subsystem size
-            - f : filling
-            '''
+            r"""
+            Computes entropy for free fermions at half filling (PRL 119, 020601 (2017)).
+
+            Parameters
+            ----------
+            L : int
+                System size.
+            f : float
+                Filling fraction.
+
+            Returns
+            -------
+            float
+                Entropy value.
+            """
             return 0.5378
     
         @staticmethod
@@ -113,12 +109,17 @@ class EntropyPredictions:
             r"""
             Random Gaussian states in the thermodynamic limit.
 
-            Parameters:
-            L (int): System size.
-            f (float): Filling fraction.
+            Parameters
+            ----------
+            L : int
+                System size.
+            f : float
+                Filling fraction.
 
-            Returns:
-            float: Entanglement entropy for random Gaussian states.
+            Returns
+            -------
+            float
+                Entanglement entropy for random Gaussian states.
             """
             return L * (f * (np.log(2.) - 1.) + (f - 1.) * np.log(1. - f)) + 0.5 * f + 0.25 * np.log(1. - f)
 
@@ -127,28 +128,38 @@ class EntropyPredictions:
             r"""
             Random Gaussian states with U(1) conservation in the thermodynamic limit.
 
-            Parameters:
-            L (int): System size.
-            f (float): Filling fraction.
-            n (float, optional): Fermionic filling. Default is 0.5.
+            Parameters
+            ----------
+            L : int
+                System size.
+            f : float
+                Filling fraction.
+            n : float, optional
+                Fermionic filling. Default is 0.5.
 
-            Returns:
-            float: Entanglement entropy for random Gaussian states with U(1) conservation.
+            Returns
+            -------
+            float
+                Entanglement entropy for random Gaussian states with U(1) conservation.
             """
-            # Note: The variable V is not defined in the original code. Please define V if needed.
-            return L * ((f - 1.0) * np.log(1.0 - f) + f * ((n - 1.0) * np.log(1.0 - n) - n * np.log(n) - 1))  # + (f * (1.0 - f + n * (1.0 - n))) / (12 * (1.0 - f) * (1.0 - n) * n * V)
+            return L * ((f - 1.0) * np.log(1.0 - f) + f * ((n - 1.0) * np.log(1.0 - n) - n * np.log(n) - 1))
 
         @staticmethod
         def page_th(L: int, f: float):
             r"""
             Page value in the thermodynamic limit.
 
-            Parameters:
-            L (int): System size.
-            f (float): Filling fraction.
+            Parameters
+            ----------
+            L : int
+                System size.
+            f : float
+                Filling fraction.
 
-            Returns:
-            float: Page value.
+            Returns
+            -------
+            float
+                Page value.
             """
             return f * L * np.log(2) - binom(2 * f * L, f * L) / binom(L, L / 2) / 2
 
@@ -157,14 +168,17 @@ class EntropyPredictions:
             r"""
             Page value for given subsystem sizes.
 
-            Parameters: 
-            da (int):
-                Size of subsystem A.
-            db (int):
-                Size of subsystem B.
+            Parameters
+            ----------
+            da : int
+                Dimension of Hilbert space of subsystem A.
+            db : int
+                Dimension of Hilbert space of subsystem B.
 
-            Returns:
-            float: Page value.
+            Returns
+            -------
+            float
+                Page value.
             """
             return digamma(da * db + 1) - digamma(db + 1) - (da - 1) / (2 * db)
 
@@ -173,20 +187,23 @@ class EntropyPredictions:
             r"""
             Page result with the correction for U(1) symmetry.
 
-            Parameters:
-            La (int):
+            Parameters
+            ----------
+            La : int
                 Subsystem A size.
-            Lb (int):
+            Lb : int
                 Subsystem B size.
-            n (float, optional):
-                Fermionic filling fraction. Default is 0.5 - half filling.
+            n : float, optional
+                Fermionic filling fraction. Default is 0.5 (half filling).
 
-            Returns:
-                float: Page value with U(1) correction.
+            Returns
+            -------
+            float
+                Page value with U(1) correction.
 
-            Notes:
-            This implements the Page value calculation for systems with U(1) charge conservation,
-            following the formula: 〈SA〉N = ∑(dA dB / dN)[〈SA〉 + \psi (dN + 1) - \psi (dA dB + 1)]
+            Notes
+            -----
+            This implements the Page value calculation for systems with U(1) charge conservation.
             """
             
             if La <= 0 or Lb <= 0:
@@ -220,13 +237,19 @@ class EntropyPredictions:
             """
             Page results with U(1) correction in the thermodynamic limit.
 
-            Parameters:
-            f (float): Filling fraction.
-            L (int): System size.
-            n (float, optional): Fermionic filling. Default is 0.5.
+            Parameters
+            ----------
+            f : float
+                Filling fraction.
+            L : int
+                System size.
+            n : float, optional
+                Fermionic filling. Default is 0.5.
 
-            Returns:
-            float: Page value with U(1) correction in the thermodynamic limit.
+            Returns
+            -------
+            float
+                Page value with U(1) correction in the thermodynamic limit.
             """
             return ((n - 1.0) * np.log(1.0 - n) - n * np.log(n)) * f * L \
             - np.sqrt(n * (1.0 - n) / (2.0 * np.pi)) * np.abs(np.log((1.0 - n) / n)) * (1.0 if f == 0.5 else 0.0) * np.sqrt(L) \
@@ -238,12 +261,6 @@ class EntropyPredictions:
     class Var:
         """
         A collection of static methods for calculating the variance of entanglement entropy in quantum systems.
-
-        This class provides methods to compute the variance of entanglement entropy based on the Page value and other parameters.
-
-        Methods:
-            page_var(LA, LB):
-                Computes the variance of entanglement entropy based on subsystem sizes LA and LB.
         """
 
         # ---------------------------------
@@ -253,12 +270,17 @@ class EntropyPredictions:
             """
             Computes the variance of the entanglement entropy (Page variance) for subsystems of sizes LA and LB.
 
-            Parameters:
-            LA (int): Size of subsystem A.
-            LB (int): Size of subsystem B.
+            Parameters
+            ----------
+            LA : int
+                Size of subsystem A.
+            LB : int
+                Size of subsystem B.
 
-            Returns:
-            float: Variance of the entanglement entropy.
+            Returns
+            -------
+            float
+                Variance of the entanglement entropy.
             """
             d_a     = 2 ** LA
             d_b     = 2 ** LB
@@ -278,43 +300,84 @@ class EntropyPredictions:
 
     @staticmethod
     def entro_random_gaussian(L : int, f : float):
-        '''
-        Random Gaussian states in thermodynamic limit
-        - L : system size
-        - f : filling
-        '''
+        """
+        Random Gaussian states in thermodynamic limit.
+
+        Parameters
+        ----------
+        L : int
+            System size.
+        f : float
+            Filling fraction.
+
+        Returns
+        -------
+        float
+            Entropy value.
+        """
         La = int(L * f)
         return  (L - 0.5) * psi(2 * L) + (0.5 + La - L) * psi(2 * L - 2 * La) + (0.25 - La) * psi(L) - 0.25 * psi(L - La) - La
-        # return L * (f * (np.log(2.) - 1.) + (f - 1.) * np.log(1. - f)) + 0.5 * f + 0.25 * np.log(1. - f)
 
     @staticmethod
     def entro_random_gaussian_u1(L : int, f : float, n = 0.5):
-        '''
-        Random Gaussian states with U(1) conservation in thermodynamic limit
-        - L : system size
-        - f : filling
-        '''
+        """
+        Random Gaussian states with U(1) conservation in thermodynamic limit.
+
+        Parameters
+        ----------
+        L : int
+            System size.
+        f : float
+            Filling fraction.
+        n : float, optional
+            Fermionic filling.
+
+        Returns
+        -------
+        float
+            Entropy value.
+        """
         return L * ((f - 1.0) * np.log(1.0 - f) + f * ((n - 1.0) * np.log(1.0 - n) - n * np.log(n) - 1)) + (f * (1.0 - f + n * (1.0 - n))) / (12 * (1.0 - f) * (1.0 - n) * n * L)
 
     ################################# MB CHAOS ##############################
 
     @staticmethod
     def entro_page_th(L : int, f : float):
-        '''
+        """
         Page value in thermodynamic limit.
-        - L : system size
-        - f : filling
-        '''
+
+        Parameters
+        ----------
+        L : int
+            System size.
+        f : float
+            Filling fraction.
+
+        Returns
+        -------
+        float
+            Entropy value.
+        """
         return f * L * np.log(2) - binom(2 * f * L, f * L) / binom(L, L/2) / 2
 
     @staticmethod
     def entro_page(f    : float, 
                    L    : int):
-        '''
+        """
         Page value for a given subsystem sizes.
-        - La : subsystem size
-        - Lb : subsystem size
-        '''
+
+        Parameters
+        ----------
+        f : float
+            Fraction of system size for subsystem A.
+        L : int
+            Total system size.
+
+        Returns
+        -------
+        float
+            Entropy value.
+        """
         La = int(L * f)
         Lb = L - La
         da = 2**La
@@ -326,33 +389,43 @@ class EntropyPredictions:
                       L : int, 
                       n = 0.5):
 
-        '''
-        Page result with the correction for U1.
-        - La : subsystem size
-        - Lb : subsystem size
-        - n  : fermionic filling
-        '''
+        """
+        Page result with the correction for U(1).
+
+        **Not Implemented**
+
+        Parameters
+        ----------
+        f : float
+            Fraction.
+        L : int
+            System size.
+        n : float
+            Fermionic filling.
+        """
         pass
-        # Sval = 0
-        # L_tot = int(La + Lb)
-        # N = int(L_tot * n)
-        # for na in range(0, min(N, L_a) + 1):
-        #     d_a = binom(La, na)
-        #     d_b = binom(Lb, N - na)
-        #     d_N = binom(L_tot, N)
-        #     Sval += d_a * d_b / d_N * ( page_result2(d_a, d_b) + digamma(d_N + 1) - digamma(d_a * d_b + 1) )
-        # return Sval
 
     @staticmethod
     def entro_page_u1_th(f  : float,
                          L  : int,
                          n  = 0.5):
-        '''
-        Page results with U1 correction in thermodynamic limit
-        - f : filling
-        - L : system size
-        - n : fermionic filling
-        '''
+        """
+        Page results with U(1) correction in thermodynamic limit.
+
+        Parameters
+        ----------
+        f : float
+            Filling.
+        L : int
+            System size.
+        n : float
+            Fermionic filling.
+
+        Returns
+        -------
+        float
+            Entropy value.
+        """
         return ((n - 1.0) * np.log(1.0 - n) - n * np.log(n)) * f * L \
             - np.sqrt(n * (1.0 - n) / (2.0 * np.pi)) * np.abs(np.log((1.0 - n) / n)) * (1.0 if f == 0.5 else 0.0) * np.sqrt(L) \
             + (f + np.log(1 - f)) / 2.0 \
@@ -379,11 +452,15 @@ def purity(dens_or_vals: np.ndarray):
     r"""
     Calculates the purity of a quantum state represented by its density matrix.
 
-    Args:
-        dens (np.ndarray): Density matrix of the quantum state.
+    Parameters
+    ----------
+    dens_or_vals : np.ndarray
+        Density matrix of the quantum state or its eigenvalues.
 
-    Returns:
-        float: Purity of the state.
+    Returns
+    -------
+    float
+        Purity of the state.
     """
     if isinstance(dens_or_vals, np.ndarray):
         if dens_or_vals.ndim == 1:
@@ -397,7 +474,7 @@ def purity(dens_or_vals: np.ndarray):
 @numba.njit(cache=True)
 def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
     r"""
-    Calculates the von Neumann entropy for a given probability distribution.c
+    Calculates the von Neumann entropy for a given probability distribution.
 
     Parameters
     ----------
@@ -427,27 +504,26 @@ def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e, threshold: floa
     r"""
     Calculates the Rényi entropy of a probability distribution.
 
-    The Rényi entropy is a generalization of the Shannon (von Neumann) entropy, parameterized by q.
-    For q = 1, it reduces to the von Neumann entropy.
+    Parameters
+    ----------
+    lam : np.ndarray
+        Probability distribution (array of probabilities or eigenvalues).
+    q : float
+        Order of the Rényi entropy. Must be a positive real number.
+    base : float, optional
+        Logarithm base to use. Default is the natural logarithm (np.e).
+    threshold : float
+        Threshold for cleaning probabilities.
 
-    Args:
-        lam (np.ndarray):
-            Probability distribution (array of probabilities or eigenvalues).
-        q (float):
-            Order of the Rényi entropy. Must be a positive real number.
-        base (float, optional):
-            Logarithm base to use. Default is the natural logarithm (np.e).
+    Returns
+    -------
+    float
+        The Rényi entropy of the distribution.
 
-    Returns:
-        float:
-            The Rényi entropy of the distribution.
-
-    Raises:
-        ValueError: If q is not a positive real number.
-
-    Notes:
-        - If q == 1, the function returns the von Neumann entropy.
-        - The input probabilities are cleaned to remove zeros and ensure normalization.
+    Notes
+    -----
+    - If q == 1, the function returns the von Neumann entropy.
+    - The input probabilities are cleaned to remove zeros and ensure normalization.
     """
     if q == 1.0:
         return vn_entropy(lam, base)
@@ -464,20 +540,19 @@ def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> floa
     r"""
     Compute the Tsallis entropy for a given probability distribution.
 
-    The Tsallis entropy is a generalization of the standard von Neumann entropy,
-    parameterized by a real number q. For q=1, it reduces to the von Neumann entropy.
+    Parameters
+    ----------
+    lam : np.ndarray
+        Array of eigenvalues or probabilities (should sum to 1).
+    q : float
+        Entropy parameter. For q=1, returns the von Neumann entropy.
+    threshold : float
+        Threshold for cleaning probabilities.
 
-    Args:
-        lam (np.ndarray):
-            Array of eigenvalues or probabilities (should sum to 1).
-        q (float):
-            Entropy parameter. For q=1, returns the von Neumann entropy.
-
-    Returns:
-        float: The Tsallis entropy of the input distribution.
-
-    References:
-        - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479-487 (1988).
+    Returns
+    -------
+    float
+        The Tsallis entropy of the input distribution.
     """
     if 1.0 - threshold < q < 1.0 + threshold:
         return vn_entropy(lam)
@@ -491,6 +566,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for generic q)
     of a set of eigenvalues `lam` (typically from a correlation matrix), after mapping each eigenvalue
     from the interval [-1, 1] to a probability in [0, 1].
+
     Parameters
     ----------
     lam : np.ndarray
@@ -499,10 +575,12 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
         Entropy order parameter. If q == 1, computes the von Neumann entropy; otherwise, computes the Rényi entropy.
     base : float, optional
         The logarithm base to use (default is the natural logarithm, base e).
+
     Returns
     -------
     float
         The computed entropy value.
+
     Notes
     -----
     - For q == 1, the function computes the von Neumann entropy:
@@ -540,8 +618,8 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
 @numba.njit(cache=True)
 def information_entropy(states: np.ndarray, threshold: float = 1e-12):
     """
-    Compute S_j = -∑_i p_{i,j} ln p_{i,j},  p_{i,j}=|states[i,j]|^2,
-    dropping p<=threshold.  Works for 1D (n,) or 2D (n,m) input.
+    Compute S_j = -∑_i p_{i,j} ln p_{i,j},  p_{i,j}=|states[i,j]|^2.
+    Dropping p<=threshold. Works for 1D (n,) or 2D (n,m) input.
 
     Parameters
     ----------
@@ -586,14 +664,21 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
     The participation entropy is a measure of how evenly the probability is distributed among the eigenvalues.
     It is defined as the negative logarithm of the sum of the squares of the probabilities.
 
-    Args:
-        lam (np.ndarray):
-            Array of eigenvalues or probabilities (should sum to 1).
-        q (float):
-            Entropy parameter. For q=1, returns the von Neumann entropy.
+    Parameters
+    ----------
+    states : np.ndarray
+        Array of states.
+    q : float
+        Entropy parameter. For q=1, returns the von Neumann entropy.
+    threshold : float
+        Threshold.
+    square : bool
+        Whether to square the probabilities.
 
-    Returns:
-        float: The participation entropy of the input distribution.
+    Returns
+    -------
+    float
+        The participation entropy of the input distribution.
     """
     single = False
     if states.ndim == 1:
@@ -642,29 +727,30 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
     """
     Calculates the entropy of a probability distribution using the specified entanglement entropy type.
 
-    Parameters:
-        lam (np.ndarray):
-            The probability distribution (eigenvalues) for which to compute the entropy.
-        q (float, optional):
-            The order parameter for Rényi and Tsallis entropies. Default is 1.0.
-        base (float, optional):
-            The logarithm base to use in entropy calculations. Default is the natural logarithm (np.e).
-        typek (Entanglement, optional):
-            The type of entanglement entropy to compute. Must be one of:
-                - Entanglement.VN:
-                    Von Neumann entropy
-                - Entanglement.RENYI:
-                    Rényi entropy
-                - Entanglement.TSALLIS:
-                    Tsallis entropy
-                - Entanglement.SINGLE:
-                    Single-particle correlation entropy
+    Parameters
+    ----------
+    lam : np.ndarray
+        The probability distribution (eigenvalues) for which to compute the entropy.
+    q : float, optional
+        The order parameter for Rényi and Tsallis entropies. Default is 1.0.
+    base : float, optional
+        The logarithm base to use in entropy calculations. Default is the natural logarithm (np.e).
+    typek : Entanglement, optional
+        The type of entanglement entropy to compute.
+    backend : str, optional
+        Backend to use for entropy calculations ('numpy' or 'jax'). Default is 'numpy'.
+    **kwargs
+        Additional arguments passed to the specific entropy function.
 
-    Returns:
-        float: The computed entropy value.
+    Returns
+    -------
+    float
+        The computed entropy value.
 
-    Raises:
-        ValueError: If an unsupported entanglement type is provided.
+    Raises
+    ------
+    ValueError
+        If an unsupported entanglement type is provided.
     """
     if backend.lower() == 'numpy':
         lam = np.asarray(lam)
@@ -695,15 +781,32 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
 def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> float:
     r"""
     Calculate the mutual information between two single sites in a quantum state.
-    Parameters:
-        psi (Array): The quantum state vector.
-        i (int): Index of the first site.
-        j (int): Index of the second site.
-        ns (int): Number of sites in the system.
-        q (float, optional): Order parameter for Rényi and Tsallis entropies. Default is 1.0.
-        base (float, optional): Logarithm base for entropy calculations. Default is the natural logarithm (np.e).
-        typek (Entanglement, optional): Type of entanglement entropy to compute.
-        backend (str, optional): Backend to use for entropy calculations ('numpy' or 'jax'). Default is 'numpy'.
+
+    Parameters
+    ----------
+    psi : Array
+        The quantum state vector.
+    i : int
+        Index of the first site.
+    j : int
+        Index of the second site.
+    ns : int
+        Number of sites in the system.
+    q : float, optional
+        Order parameter for Rényi and Tsallis entropies. Default is 1.0.
+    base : float, optional
+        Logarithm base for entropy calculations. Default is the natural logarithm (np.e).
+    typek : Entanglement, optional
+        Type of entanglement entropy to compute.
+    backend : str, optional
+        Backend to use for entropy calculations ('numpy' or 'jax'). Default is 'numpy'.
+
+    Returns
+    -------
+    float
+        Mutual information.
+    tuple
+        (Si, Sj, Sij) entropies.
     """
     from .density_matrix import rho_single_site, rho_two_sites
     
@@ -730,32 +833,33 @@ def topological_entropy(psi, regions: dict, ns: int, q: float = 1.0, base: float
     r"""
     Calculate the topological entanglement entropy (TEE) \gamma.
     
-    Parameters:
-        psi (np.ndarray): 
-            Quantum state vector.
-        regions (dict): 
+    Parameters
+    ----------
+    psi : np.ndarray
+        Quantum state vector.
+    regions : dict
         Dictionary of regions (name -> list of site indices).
-        - Expected keys for Kitaev-Preskill:
-            'A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC'.
-        - Expected keys for Levin-Wen:
-            'inner', 'outer', 'inner_outer'.
-        ns (int): 
-            Total number of sites.
-        q (float):
-            Order of Rényi entropy.
-        base (float):
-            Logarithm base.
-        typek (Entanglement):
-            Entropy type.
+        - Expected keys for Kitaev-Preskill: 'A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC'.
+        - Expected keys for Levin-Wen: 'inner', 'outer', 'inner_outer'.
+    ns : int
+        Total number of sites.
+    q : float
+        Order of Rényi entropy.
+    base : float
+        Logarithm base.
+    typek : Entanglement
+        Entropy type.
+    backend : str
+        Backend specifier.
         
-    Returns:
-        gamma (float):
-            Topological entanglement entropy.
-        entropies (dict):
-            Dictionary of computed entropies for each region.
+    Returns
+    -------
+    dict
+        Dictionary containing 'gamma', 'entropies', and 'regions'.
         
-    Notes:
-        Regions can be generated using `Lattice.region_kitaev_preskill()` or similar methods.
+    Notes
+    -----
+    Regions can be generated using `Lattice.region_kitaev_preskill()` or similar methods.
     """
     from .density_matrix import rho_numba_mask, schmidt_numba_mask
     
@@ -811,35 +915,59 @@ def topological_entropy(psi, regions: dict, ns: int, q: float = 1.0, base: float
 ####################################
 
 class Fractal:
+    """
+    Methods to calculate fractal dimensions from entropy.
+    """
     
     @staticmethod
     def fractal_dim_s_info(S_lp1, S_l, lp1, l):
-        '''
+        """
         Calculate the fractal dimension out of the information entropy of the system.
-        - S_lp1 : Entropy of the system with L+1 sites.
-        - S_l   : Entropy of the system with L sites.
-        '''
+
+        Parameters
+        ----------
+        S_lp1 : float
+            Entropy of the system with L+1 sites.
+        S_l : float
+            Entropy of the system with L sites.
+        lp1 : int
+            System size L+1.
+        l : int
+            System size L.
+        """
         return (S_lp1 - S_l) / (np.log(2**lp1) - np.log(2**l))
     
     @staticmethod
     def fractal_dim_s_info_mean(dq_lp1, dq_l):
-        '''
+        """
         Calculate the fractal dimension out of the information entropy of the system.
         Average over system sizes to get the mean value.
-        - dq_lp1    : fractal of the system with L+1 sites.
-        - dq_l      : fractal of the system with L sites.
-        '''
+
+        Parameters
+        ----------
+        dq_lp1 : float
+            Fractal dim of the system with L+1 sites.
+        dq_l : float
+            Fractal dim of the system with L sites.
+        """
         return (dq_lp1 - dq_l) / 2.0
 
     ################################
     
     @staticmethod
     def fractal_dim_pr(pr_lp1, pr_l, q):
-        '''
+        """
         Calculate the fractal dimension out of the information entropy of the system.
-        - pr_lp1: Entropy of the system with L+1 sites.
-        - pr_l: Entropy of the system with L sites.
-        '''
+
+        Parameters
+        ----------
+        pr_lp1 : float
+            Entropy of the system with L+1 sites.
+        pr_l : float
+            Entropy of the system with L sites.
+        q : float
+            Entropy order.
+        """
         if q != 1.0:    
             return (np.log2(pr_lp1) - np.log2(pr_l)) / (1 - q)
         else:
