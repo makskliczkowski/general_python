@@ -24,6 +24,19 @@ You can switch backends or let the library detect the best available one.
     xp = utils.get_backend("numpy")
     arr = xp.array([1, 2, 3])
 
+**Backend RNG and SciPy Helpers**
+
+If you want a backend-specific RNG or SciPy module, request them explicitly.
+
+.. code-block:: python
+
+    from general_python.algebra import utils
+
+    # NumPy backend with RNG + SciPy helpers
+    xp, (rng, _), sp    = utils.get_backend("numpy", random=True, scipy=True, seed=123)
+    x                   = rng.normal(size=5)
+    print(f"Norm via SciPy: {sp.linalg.norm(x):.4f}")
+
 **Using Iterative Solvers**
 
 Solve :math:`Ax = b` using Krylov subspace methods like CG or MINRES.
@@ -53,6 +66,22 @@ Solve :math:`Ax = b` using Krylov subspace methods like CG or MINRES.
     x0              = np.zeros_like(b)
     res_minres      = solver_minres.solve_instance(b=b, x0=x0)
     print(f"MINRES residual norm: {res_minres.residual_norm}")
+
+**Direct (Backend) Solver**
+
+For small dense systems, the direct backend solve is convenient.
+
+.. code-block:: python
+
+    from general_python.algebra.solvers import choose_solver, SolverType
+    import numpy as np
+
+    A = np.array([[3.0, 1.0], [1.0, 2.0]])
+    b = np.array([1.0, 0.0])
+
+    solver_direct   = choose_solver(SolverType.BACKEND, a=A)
+    res_direct      = solver_direct.solve_instance(b=b)
+    print(f"Direct solution: {res_direct.x}")
 
 **Preconditioners**
 
@@ -94,6 +123,16 @@ Create and navigate lattice structures for physics simulations.
     # Plot the lattice (requires matplotlib)
     # fig, ax = lat.plot_structure(show_indices=True)
 
+**Adjacency Matrix and Real-Space Plot**
+
+.. code-block:: python
+
+    A = lat.adjacency_matrix(sparse=True)
+    print(f"Adjacency shape: {A.shape}, nnz: {A.nnz}")
+
+    # Quick scatter plot of the real-space sites
+    # fig, ax = lat.plot_real_space(show_indices=True, color="tab:blue")
+
 3. Physics & Quantum States
 ---------------------------
 
@@ -105,8 +144,8 @@ Utilities for quantum mechanics and statistical physics.
     import numpy as np
 
     # Create a random quantum state vector
-    psi = np.random.rand(4) + 1j * np.random.rand(4)
-    psi /= np.linalg.norm(psi)
+    psi     = np.random.rand(4) + 1j * np.random.rand(4)
+    psi    /= np.linalg.norm(psi)
 
     # Compute reduced density matrix for a 2x2 bipartition
     rho     = density_matrix.rho_numpy(psi, dimA=2, dimB=2)
@@ -120,6 +159,26 @@ Utilities for quantum mechanics and statistical physics.
     purity   = np.real(np.trace(rho @ rho))
     print(f"Purity: {purity:.4f}")
 
+**Schmidt Decomposition**
+
+.. code-block:: python
+
+    # Schmidt decomposition (eigenvalue route)
+    evals, vecs, _ = density_matrix.schmidt_numpy(psi, dimA=2, dimB=2, eig=True)
+    print(f"Top Schmidt weights: {evals[:3]}")
+
+**Two-Site Reduced Density Matrix**
+
+.. code-block:: python
+
+    # Example on a 4-qubit state (size 16)
+    ns      = 4
+    psi     = np.random.randn(2**ns) + 1j * np.random.randn(2**ns)
+    psi    /= np.linalg.norm(psi)
+
+    rho_ij  = density_matrix.rho_two_sites(psi, site_i=0, site_j=2, ns=ns)
+    print(f"Two-site rho shape: {rho_ij.shape}")
+
 4. Random Number Generation
 ---------------------------
 
@@ -128,13 +187,15 @@ Reproducible random numbers using high-quality generators.
 .. code-block:: python
 
     from general_python.maths import random as rng_mod
+    import numpy as np
 
     # Create a seeded NumPy generator
     rng = np.random.default_rng(12345)
 
     # Draw a Haar-random unitary from the Circular Unitary Ensemble (CUE)
-    U   = rng_mod.CUE_QR(4, rng=rng)
+    U   = rng_mod.CUE_QR(4, rng=rng, simple=False)
     print(f"CUE unitary shape: {U.shape}")
+    print(f"Unitary check: {np.allclose(U.conj().T @ U, np.eye(4))}")
 
 5. Machine Learning (Neural Networks)
 -------------------------------------
@@ -160,6 +221,14 @@ Define and use neural networks with backend flexibility.
     y = net.apply_np(x)
     print(f"Network output shape: {y.shape}")
 
+**Using the Callable Apply Function**
+
+.. code-block:: python
+
+    apply_fn, params    = net.get_apply(use_jax=False)
+    y2                  = apply_fn(params, x)
+    print(f"Output matches: {np.allclose(y, y2)}")
+
 6. Common Utilities
 -------------------
 
@@ -177,3 +246,22 @@ Define and use neural networks with backend flexibility.
         _ = [i**2 for i in range(100000)]
     
     # Timer automatically logs the duration
+
+**Benchmark Helper**
+
+.. code-block:: python
+
+    from general_python.common.timer import benchmark, timeit
+    import numpy as np
+
+    # Context manager timing
+    with benchmark("Vectorized op") as stats:
+        _ = np.sum(np.arange(1_000_000))
+    print(f"Elapsed (s): {stats.elapsed:.6f}")
+
+    # Functional timing
+    def work(n):
+        return sum(i * i for i in range(n))
+
+    result, dt = timeit(work, 100_000)
+    print(f"Timeit elapsed (s): {dt:.6f}")
