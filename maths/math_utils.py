@@ -48,10 +48,24 @@ PIHALF      = math.pi / 2
 #################################### FINDERS ####################################
 
 def find_maximum_idx(x):
-    ''' 
-    Find maximum index in a DataFrame, numpy array, or JAX array
-    - x : DataFrame, numpy array, or JAX array
-    '''
+    """
+    Find maximum index in a DataFrame, numpy array, or JAX array.
+
+    Parameters
+    ----------
+    x : Union[pd.DataFrame, np.ndarray, jnp.ndarray]
+        Input data.
+
+    Returns
+    -------
+    int or index
+        Index of the maximum value.
+
+    Raises
+    ------
+    TypeError
+        If input is not a DataFrame, numpy array, or JAX array.
+    """
     if pd is not None and isinstance(x, pd.DataFrame):
         return x.idxmax(axis=1)
     elif isinstance(x, np.ndarray):
@@ -65,12 +79,23 @@ def find_maximum_idx(x):
         raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
     
 def find_nearest_val(x, val, col):
-    ''' 
-    Find the nearest value to the value given 
-    - x     : a DataFrame or numpy array
-    - val   : a scalar
-    - col   : a string on which column to find the nearest
-    '''
+    """
+    Find the nearest value to the given value.
+
+    Parameters
+    ----------
+    x : Union[pd.DataFrame, np.ndarray, jnp.ndarray]
+        Input data container.
+    val : scalar
+        The value to search for.
+    col : str
+        Column name (only for DataFrame inputs).
+
+    Returns
+    -------
+    scalar
+        The value in `x` closest to `val`.
+    """
     if pd is not None and isinstance(x, pd.DataFrame):
         return x.loc[(x[col]-val).abs().idxmin()]
     elif isinstance(x, np.ndarray):
@@ -84,13 +109,23 @@ def find_nearest_val(x, val, col):
         raise TypeError("Input must be a DataFrame, numpy array, or JAX array")
 
 def find_nearest_idx(x, val : float, **kwargs):
-    ''' 
-    Find the nearest idx to the value given 
-    - x     : a DataFrame or numpy array
-    - val   : a scalar
-    - col   : a string on which column to find the nearest
-    Returns the index of the nearest value to the given value
-    '''
+    """
+    Find the index of the nearest value to the given value.
+
+    Parameters
+    ----------
+    x : Union[pd.DataFrame, np.ndarray, jnp.ndarray]
+        Input data container.
+    val : float
+        The target value.
+    **kwargs
+        Additional arguments, e.g., `col` for DataFrame column name.
+
+    Returns
+    -------
+    int or index
+        Index of the nearest value.
+    """
     if pd is not None and isinstance(x, pd.DataFrame):
         col = kwargs.get('col', None)
         if col is None:
@@ -109,20 +144,32 @@ def find_nearest_idx(x, val : float, **kwargs):
 ###################################### FITS ######################################
 
 class FitterParams(object):
-    '''
-    Class that stores only the parameters of the fit function
-    - popt  :   parameters of the fit
-    - pcov  :   covariance matrix of the fit
-    - funct :   function of the fit
-    '''
+    """
+    Class that stores the parameters of a fit function.
+
+    Attributes
+    ----------
+    popt : list
+        Parameters of the fit.
+    pcov : list
+        Covariance matrix of the fit.
+    funct : callable
+        The fitted function.
+    """
     
     def __init__(self, funct, popt, pcov):
-        '''
-        Initialize the class
-        - funct :   function of the fit
-        - popt  :   parameters of the fit
-        - pcov  :   covariance matrix of the fit
-        '''
+        """
+        Initialize the FitterParams.
+
+        Parameters
+        ----------
+        funct : callable
+            Function of the fit.
+        popt : list or array
+            Parameters of the fit.
+        pcov : list or array
+            Covariance matrix of the fit.
+        """
         self._popt   = popt
         self._pcov   = pcov
         self._funct  = funct
@@ -155,21 +202,26 @@ class FitterParams(object):
         return 'FitterParams: ' + str(self._popt) + ' ' + str(self._pcov)
     
 class Fitter:
-    '''
-    Class that contains the fit functions and their general usage.
-    - x     :   arguments
-    - y     :   values
-    - fitter:   FitterParams object
-    '''
+    """
+    Class providing curve fitting functionalities.
+
+    Contains methods for fitting various mathematical models (linear, exponential, power law, etc.)
+    to data provided in the constructor or passed directly to static methods.
+    """
     
     ###################################################
     
     def __init__(self, x : np.ndarray, y : np.ndarray):
-        '''
-        Initialize the class
-        - x     : arguments
-        - y     : values
-        '''
+        """
+        Initialize the Fitter.
+
+        Parameters
+        ----------
+        x : np.ndarray
+            Arguments (independent variable).
+        y : np.ndarray
+            Values (dependent variable).
+        """
         self._x      = x
         self._y      = y
         self._fitter = FitterParams(None, None, None)
@@ -183,13 +235,25 @@ class Fitter:
     
     @staticmethod
     def skip(x, y, skipF = 0, skipL = 0):
-        '''
-        Skips a certain part of the values for the fit
-        - x     :   arguments to trim
-        - y     :   values to trim
-        - skipF :   number of first elements to skip
-        - skipL :   number of last elements to skip
-        '''
+        """
+        Skips a certain part of the values for the fit.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments to trim.
+        y : array-like
+            Values to trim.
+        skipF : int, optional
+            Number of first elements to skip.
+        skipL : int, optional
+            Number of last elements to skip.
+
+        Returns
+        -------
+        tuple
+            (trimmed_x, trimmed_y)
+        """
         xfit            =       x[skipF if skipF!= 0 else None : -skipL if skipL!= 0 else None]
         yfit            =       y[skipF if skipF!= 0 else None : -skipL if skipL!= 0 else None]
         return xfit, yfit
@@ -197,11 +261,16 @@ class Fitter:
     #################### F I T S ! #################### 
     
     def fit_linear(self, skipF = 0, skipL = 0):
-        '''
-        Fits a linear function.
-        - skipF : skip first arguments
-        - skipL : skip last arguments
-        '''
+        """
+        Fits a linear function (y = ax + b).
+
+        Parameters
+        ----------
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+        """
         xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         a, b            =       np.polyfit(xfit, yfit, 1)
         self._fitter    =       FitterParams(lambda x: a * x + b, [a, b], [])
@@ -210,13 +279,25 @@ class Fitter:
     def fitLinear(  x, y,
                     skipF = 0,
                     skipL = 0):
-        '''
-        Fits a linear function.
-        - x     : arguments
-        - y     : values
-        - skipF : skip first arguments
-        - skipL : skip last arguments
-        '''
+        """
+        Fits a linear function (y = ax + b) statically.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        y : array-like
+            Values.
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+
+        Returns
+        -------
+        FitterParams
+            Fitted parameters and function.
+        """
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         a, b            =       np.polyfit(xfit, yfit, 1)
         return FitterParams(lambda x: a * x + b, [a, b], [])
@@ -226,11 +307,16 @@ class Fitter:
     def fit_exp(self,
                 skipF   = 0,
                 skipL   = 0):
-        '''
-        Fits [a * exp(-b * x)]
-        - skipF : skip first arguments
-        - skipL : skip last arguments
-        '''
+        """
+        Fits an exponential function [a * exp(-b * x)].
+
+        Parameters
+        ----------
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+        """
         xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         funct           =       lambda x, a, b: a * np.exp(-b * x)
         popt, pcov      =       fit(funct, xfit, yfit)
@@ -241,13 +327,25 @@ class Fitter:
                 y,
                 skipF   = 0,
                 skipL   = 0):
-        '''
-        Fits [a * exp(-b * x)]
-        - x     : arguments
-        - y     : values
-        - skipF : skip first arguments
-        - skipL : skip last arguments
-        '''
+        """
+        Fits an exponential function [a * exp(-b * x)] statically.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        y : array-like
+            Values.
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+
+        Returns
+        -------
+        FitterParams
+            Fitted parameters and function.
+        """
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         funct           =       lambda x, a, b: a * np.exp(-b * x)
         popt, pcov      =       fit(funct, xfit, yfit)
@@ -258,11 +356,16 @@ class Fitter:
     def fit_x_plus_x2(  self,
                         skipF   = 0,
                         skipL   = 0):
-        '''
-        Fits [a * x + b * x ** 2]
-        - skipF :   number of elements to skip on the left
-        - skipR :   number of elements to skip on the right
-        '''
+        """
+        Fits [a * x + b * x^2].
+
+        Parameters
+        ----------
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+        """
         xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
@@ -273,13 +376,25 @@ class Fitter:
                     y,
                     skipF   = 0,
                     skipL   = 0):
-        '''
-        Fits [a * x + b * x ** 2]
-        - x     :   arguments to the fit
-        - y     :   values to fit
-        - skipF :   number of elements to skip on the left
-        - skipR :   number of elements to skip on the right
-        '''
+        """
+        Fits [a * x + b * x^2] statically.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        y : array-like
+            Values.
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+
+        Returns
+        -------
+        FitterParams
+            Fitted parameters and function.
+        """
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         funct           =       lambda x, a, b: (a * x) + (b * x ** 2)
         popt, pcov      =       fit(funct, xfit, yfit)
@@ -290,13 +405,16 @@ class Fitter:
     def fit_power(self, 
                   skipF = 0,
                   skipL = 0):
-        '''
-        Fits function [a*x**b]
-        - x     :   arguments to the fit
-        - y     :   values to the fit
-        - skipF :   number of elements to skip on the left
-        - skipR :   number of elements to skip on the right
-        '''
+        """
+        Fits a power law function [a * x^b].
+
+        Parameters
+        ----------
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+        """
         xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         funct           =       lambda x, a, b: a * x ** b
         popt, pcov      =       fit(funct, xfit, yfit)
@@ -307,13 +425,25 @@ class Fitter:
                   y,
                   skipF = 0,
                   skipL = 0):
-        '''
-        Fits function [a*x**b]
-        - x     :   arguments to the fit
-        - y     :   values to the fit
-        - skipF :   number of elements to skip on the left
-        - skipR :   number of elements to skip on the right
-        '''
+        """
+        Fits a power law function [a * x^b] statically.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        y : array-like
+            Values.
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+
+        Returns
+        -------
+        FitterParams
+            Fitted parameters and function.
+        """
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         funct           =       lambda x, a, b: a * x ** b
         popt, pcov      =       fit(funct, xfit, yfit)
@@ -325,12 +455,18 @@ class Fitter:
                 funct,
                 skipF   = 0,
                 skipL   = 0):
-        '''
-        Fits function [any]
-        - funct :   function to fit to
-        - skipF :   number of elements to skip on the left
-        - skipR :   number of elements to skip on the right
-        '''
+        """
+        Fits an arbitrary user-provided function.
+
+        Parameters
+        ----------
+        funct : callable
+            Function to fit.
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+        """
         xfit, yfit      =       Fitter.skip(self._x, self._y, skipF, skipL)
         popt, pcov      =       fit(funct, xfit, yfit)
         self._fitter     =       FitterParams(funct, popt, pcov)
@@ -342,14 +478,29 @@ class Fitter:
                 skipF   = 0,
                 skipL   = 0, 
                 bounds  = []):
-        '''
-        Fits function [any]
-        - x     :   arguments to fit
-        - y     :   values to fit
-        - funct :   function to fit to
-        - skipF :   number of elements to skip on the left
-        - skipR :   number of elements to skip on the right
-        '''
+        """
+        Fits an arbitrary user-provided function statically.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        y : array-like
+            Values.
+        funct : callable
+            Function to fit.
+        skipF : int, optional
+            Skip first N elements.
+        skipL : int, optional
+            Skip last N elements.
+        bounds : list, optional
+            Bounds for parameters.
+
+        Returns
+        -------
+        FitterParams
+            Fitted parameters and function.
+        """
         xfit, yfit      =       Fitter.skip(x, y, skipF, skipL)
         if bounds == []:
             popt, pcov  =       fit(funct, xfit, yfit)
@@ -362,101 +513,231 @@ class Fitter:
 
     @staticmethod
     def gen_cauchy(x, v = 1.0, gamma = 1.0, alpha = 1.0, beta = 1.0):
-        r'''
-        Generalized Cauchy distribution
-        - v is the normalization factor
-        - \alpha is the stability parameter, often referred to as the shape parameter,
-        - \beta is the scale parameter,
-        - \gamma is a scale parameter related to the width of the distribution.
-        '''
+        """
+        Generalized Cauchy distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        v : float
+            Normalization factor.
+        gamma : float
+            Scale parameter related to width.
+        alpha : float
+            Stability/shape parameter.
+        beta : float
+            Scale parameter.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return v * gamma * (1 + (x * gamma / beta)**2) ** (-(alpha + 1) / 2)
     
     @staticmethod
     def cauchy(x, x0 = 0., gamma = 1.0, v = 1.0):
-        '''
-        Cauchy distribution
-        - x     :   arguments
-        - x0    :   x0 parameter
-        - gamma :   gamma parameter
-        '''
+        """
+        Cauchy distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        x0 : float
+            Location parameter.
+        gamma : float
+            Scale parameter.
+        v : float
+            Normalization/Amplitude.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         y = v / ((x - x0)**2 + gamma**2)
         return y
 
     @staticmethod
     def pareto(x, v = 1.0, alpha = 1.0, xm = 1.0, mu = 0.0):
-        '''
-        Pareto distribution
-        - x     :   arguments
-        - alpha :   alpha parameter
-        - xm    :   xm parameter
-        '''
+        """
+        Pareto distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        v : float
+            Normalization factor.
+        alpha : float
+            Shape parameter.
+        xm : float
+            Scale parameter.
+        mu : float
+            Location parameter.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return v * np.power(1.0 + alpha * (np.abs(x - mu)), -1.0 / xm - 1.0)
 
     @staticmethod
     def poisson(x, lambd = 1.0, v = 1.0):
-        '''
-        Poisson distribution
-        - k     :   arguments
-        - lamb  :   lambda parameter
-        '''
+        """
+        Poisson distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        lambd : float
+            Lambda parameter.
+        v : float
+            Normalization factor.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return v * np.exp(-lambd * (np.abs(x)))
     
     @staticmethod
     def chi2(x, k = 1.0, v = 1.0, z = 1.0):
-        '''
-        Chi2 distribution
-        - x     :   arguments
-        - k     :   k parameter
-        '''
+        """
+        Chi-squared distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        k : float
+            Degrees of freedom.
+        v : float
+            Normalization factor.
+        z : float
+            Scale factor.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return v * np.exp(-np.abs(z * x) / 2) * (np.abs(x) ** (k / 2 - 1)) / (2 ** (k/2) * gamma(k/2))
     
     @staticmethod
     def gaussian(x, mu = 0.0, sigma = 1.0):
-        '''
-        Gaussian distribution
-        - x     :   arguments
-        - mu    :   mean
-        - sigma :   standard deviation
-        '''
+        """
+        Gaussian distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        mu : float
+            Mean.
+        sigma : float
+            Standard deviation.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return norm.pdf(x, mu, sigma)
     
     @staticmethod
     def laplace(x, lambd = 1.0, v = 1.0, mu = 0.0):
-        '''
-        Laplace distribution
-        - x     :   arguments
-        - mu    :   mean
-        - b     :   scale parameter
-        '''
+        """
+        Laplace distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        lambd : float
+            Scale parameter (decay).
+        v : float
+            Normalization factor.
+        mu : float
+            Mean.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return (0.5 + 0.5 * np.sign(x-mu) * (1.0 - np.exp(-np.abs(x - mu) / lambd))) / (v)
     
     @staticmethod
     def exponential(x, lambd, sigma):
-        '''
-        Exponential distribution
-        - x     :   arguments
-        - lambd :   lambda parameter
-        '''
+        """
+        Exponential distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        lambd : float
+            Lambda parameter.
+        sigma : float
+            Normalization/Scale factor.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return sigma * np.exp(-lambd * np.abs(x))
     
     @staticmethod
     def lorentzian(x, v = 1.0, g = 1.0):
-        '''
-        Lorentzian distribution
-        - x     :   arguments
-        - v     :   multiplication constant
-        - g     :   gamma parameter
-        '''
+        """
+        Lorentzian distribution.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        v : float
+            Amplitude.
+        g : float
+            Gamma (width) parameter.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         return np.abs(v) * g / ((x)**2 + g**2)
     
     @staticmethod
     def two_lorentzian(x, v = 1.0, g1 = 1.0, g2 = 1.0, v2 = 1.0):
-        '''
-        Two Lorentzian distribution
-        - x     :   arguments
-        - x0    :   x0 parameter
-        - gamma :   gamma parameter
-        '''
+        """
+        Sum of two Lorentzian distributions.
+
+        Parameters
+        ----------
+        x : array-like
+            Arguments.
+        v : float
+            Amplitude of first Lorentzian.
+        g1 : float
+            Gamma of first Lorentzian.
+        g2 : float
+            Gamma of second Lorentzian.
+        v2 : float
+            Amplitude of second Lorentzian.
+
+        Returns
+        -------
+        array-like
+            Distribution values.
+        """
         if g1 < 0 or g2 < 0:
             return 1.0E10
         if v < 0 or v2 < 0:
@@ -469,6 +750,9 @@ class Fitter:
     
     @staticmethod
     def lorentzian_system_size(param):
+        """
+        Returns a Lorentzian function parametrized by system size.
+        """
         def lorentzian(x, g = 1.0, v = 1.0):
             return v * (g / param[0]) / ( (x)**2 + (g / param[0])**2 )
         return lorentzian
@@ -484,6 +768,33 @@ class Fitter:
                       centers   = [],
                       params    = [],
                       bounds    = None):
+        """
+        Fit a histogram with a specified distribution.
+
+        Parameters
+        ----------
+        edges : array-like
+            Histogram bin edges.
+        counts : array-like
+            Histogram counts.
+        typek : str, optional
+            Type of distribution ('gaussian', 'poisson', 'laplace', 'exponential', 'pareto', 'cauchy', 'gen_cauchy', 'chi2', 'lorentzian', 'two_lorentzian', 'lorentzian_system_size').
+        skipF : int, optional
+            Skip first N bins.
+        skipL : int, optional
+            Skip last N bins.
+        centers : array-like, optional
+            Bin centers. If empty, computed from edges.
+        params : list, optional
+            Extra parameters (e.g., for lorentzian_system_size).
+        bounds : tuple, optional
+            Bounds for optimization.
+
+        Returns
+        -------
+        FitterParams
+            Fitted parameters and function.
+        """
         
         if len(centers) == 0:
             if len(edges) <= 1:
@@ -523,8 +834,17 @@ class Fitter:
     @staticmethod
     def get_histogram(typek = 'gaussian'):
         """
-        Get the histogram function based on the type of distribution
+        Get the histogram function based on the type of distribution.
         
+        Parameters
+        ----------
+        typek : str
+            Distribution type name.
+
+        Returns
+        -------
+        callable
+            The distribution function.
         """
         if typek == 'gaussian':
             return Fitter.gaussian
@@ -544,32 +864,66 @@ class Fitter:
 ##############
 
 def next_power(x : float, base : int = 2):
-    '''
-    Get the next power of a number (base) that is greater than x\
-    - x     : number to get the next power
-    - base  : base of the power (default 2 for binary, can be 10 for decimal)
-    '''
+    """
+    Get the next power of a number (base) that is greater than x.
+
+    Parameters
+    ----------
+    x : float
+        Number to get the next power of.
+    base : int, optional
+        Base of the power (default 2 for binary, can be 10 for decimal).
+
+    Returns
+    -------
+    int
+        Next power.
+    """
     return base ** math.ceil(math.log(x) / math.log(base))
 
 def prev_power(x : float, base : int = 2):
-    '''
-    Get the previous power of a number (base) that is smaller than x\
-    - x     : number to get the next power
-    - base  : base of the power (default 2 for binary, can be 10 for decimal)
-    '''
+    """
+    Get the previous power of a number (base) that is smaller than x.
+
+    Parameters
+    ----------
+    x : float
+        Number to get the previous power of.
+    base : int, optional
+        Base of the power (default 2 for binary, can be 10 for decimal).
+
+    Returns
+    -------
+    int
+        Previous power.
+    """
     return base ** math.floor(math.log(x) / math.log(base))
 
 #################################################################################
 
 def mod_euc(a: int, b: int) -> int:
-    '''
+    """
     Compute the modified Euclidean remainder of a divided by b.
     
     This function ensures that the result has the same sign as b.
     
-    - a : integer dividend
-    - b : integer divisor
-    '''
+    Parameters
+    ----------
+    a : int
+        Dividend.
+    b : int
+        Divisor.
+
+    Returns
+    -------
+    int
+        Euclidean remainder.
+
+    Raises
+    ------
+    ValueError
+        If b is zero.
+    """
     if b == 0:
         raise ValueError("Divisor 'b' cannot be zero.")
         
@@ -579,14 +933,28 @@ def mod_euc(a: int, b: int) -> int:
     return m
 
 def mod_floor(a: int, b: int) -> int:
-    '''
+    """
     Compute the modified floor division of a divided by b.
     
     This function ensures that the result has the same sign as b.
     
-    - a : integer dividend
-    - b : integer divisor
-    '''
+    Parameters
+    ----------
+    a : int
+        Dividend.
+    b : int
+        Divisor.
+
+    Returns
+    -------
+    int
+        Floor division result.
+
+    Raises
+    ------
+    ValueError
+        If b is zero.
+    """
     if b == 0:
         raise ValueError("Divisor 'b' cannot be zero.")
         
@@ -596,14 +964,28 @@ def mod_floor(a: int, b: int) -> int:
     return m
 
 def mod_ceil(a: int, b: int) -> int:
-    '''
+    """
     Compute the modified ceiling division of a divided by b.
     
     This function ensures that the result has the same sign as b.
     
-    - a : integer dividend
-    - b : integer divisor
-    '''
+    Parameters
+    ----------
+    a : int
+        Dividend.
+    b : int
+        Divisor.
+
+    Returns
+    -------
+    int
+        Ceiling division result.
+
+    Raises
+    ------
+    ValueError
+        If b is zero.
+    """
     if b == 0:
         raise ValueError("Divisor 'b' cannot be zero.")
         
@@ -613,28 +995,56 @@ def mod_ceil(a: int, b: int) -> int:
     return m
 
 def mod_trunc(a: int, b: int) -> int:
-    '''
+    """
     Compute the modified truncation division of a divided by b.
     
     This function ensures that the result has the same sign as a.
     
-    - a : integer dividend
-    - b : integer divisor
-    '''
+    Parameters
+    ----------
+    a : int
+        Dividend.
+    b : int
+        Divisor.
+
+    Returns
+    -------
+    int
+        Truncation result.
+
+    Raises
+    ------
+    ValueError
+        If b is zero.
+    """
     if b == 0:
         raise ValueError("Divisor 'b' cannot be zero.")
         
     return a // b
 
 def mod_round(a: int, b: int) -> int:
-    '''
+    """
     Compute the modified rounding division of a divided by b.
     
     This function ensures that the result has the same sign as a.
     
-    - a : integer dividend
-    - b : integer divisor
-    '''
+    Parameters
+    ----------
+    a : int
+        Dividend.
+    b : int
+        Divisor.
+
+    Returns
+    -------
+    int
+        Rounded result.
+
+    Raises
+    ------
+    ValueError
+        If b is zero.
+    """
     if b == 0:
         raise ValueError("Divisor 'b' cannot be zero.")
         
@@ -644,4 +1054,3 @@ def mod_round(a: int, b: int) -> int:
     return int(m)
 
 #################################################################################
-

@@ -985,7 +985,7 @@ class Solver(ABC):
         self._last_solution         = result.x
         self._last_converged        = result.converged
         self._last_iterations       = result.iterations
-        self._last_residual_norm    = result.residual_norm
+        self._last_residual_norm        = result.residual_norm
         
         return result
 
@@ -1024,14 +1024,23 @@ class Solver(ABC):
 
 @maybe_jit
 def _sym_ortho(a, b, backend):
-    '''
+    """
     Performs a stable symmetric Householder (Givens) reflection for complex numbers.
-    Parameters:
+
+    Parameters
+    ----------
     a : scalar
         The first element of the two-vector [a; b].
     b : scalar
         The second element of the two-vector [a; b].
-    '''
+    backend : module
+        Backend module.
+
+    Returns
+    -------
+    tuple
+        (c, s, r) coefficients.
+    """
     _absa   = backend.abs(a)
     _absb   = backend.abs(b)
     if b == 0:
@@ -1064,16 +1073,19 @@ def sym_ortho(a, b, backend: str = "default"):
     For complex inputs, r preserves the phase of a (if b==0) or b (if a==0),
     and the reflectors are computed in a stable manner.
     
-    Parameters:
-        a : scalar (real or complex)
-            The first element of the two-vector [a; b].
-        b : scalar (real or complex)
-            The second element of the two-vector [a; b].
-        backend : str, optional (default "default")
-            Specifies which backend to use. If set to "jax", the function uses
-            jax.numpy and is jitted for speed.
+    Parameters
+    ----------
+    a : scalar (real or complex)
+        The first element of the two-vector [a; b].
+    b : scalar (real or complex)
+        The second element of the two-vector [a; b].
+    backend : str, optional (default "default")
+        Specifies which backend to use. If set to "jax", the function uses
+        jax.numpy and is jitted for speed.
     
-    Returns:
+    Returns
+    -------
+    tuple
         (c, s, r) : tuple of scalars
             The computed reflection parameters satisfying:
                 c = a / r   and   s = b / r,

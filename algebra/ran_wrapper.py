@@ -101,18 +101,21 @@ _registry = RandomRegistry()
 
 def initialize(backend  : str           = "default",
                 seed    : Optional[int] = None):
-    ''' 
+    """
     Initializes the random number generator with a new seed.
-    
-    Parameters:
-        backend : str (optional)
-            The backend to use for random number generation.
-        seed : int (optional)
-            The seed to use for the random number generator.
-            
-    Returns:
+
+    Parameters
+    ----------
+    backend : str, optional
+        The backend to use for random number generation.
+    seed : int, optional
+        The seed to use for the random number generator.
+
+    Returns
+    -------
+    tuple
         A tuple (rnd_module, key) where key is the PRNG key for JAX (or None for NumPy).
-    '''
+    """
 
     module = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = module if isinstance(module, tuple) else (module, (None, None))
@@ -209,21 +212,25 @@ def handle_rng(rng = None, rng_k = None, backend="default", seed: Optional[int] 
 ###############################################################################
 
 def __uniform_np(rng, low, high, size):
-    ''' 
-        Generate a random uniform array using NumPy. 
-        Parameters:
-            - rng : numpy.random.Generator if NumPy version >= 1.17, else numpy.random
-                The random number generator.
-            - low : float
-                Lower bound of the distribution.
-            - high : float
-                Upper bound of the distribution.
-            - size : tuple
-                Shape of the output array.
-        Returns:
-            - array
-                An array of the specified shape drawn from a uniform distribution.
-            '''
+    """
+    Generate a random uniform array using NumPy.
+
+    Parameters
+    ----------
+    rng : numpy.random.Generator or numpy.random
+        The random number generator.
+    low : float
+        Lower bound of the distribution.
+    high : float
+        Upper bound of the distribution.
+    size : tuple
+        Shape of the output array.
+
+    Returns
+    -------
+    array
+        An array of the specified shape drawn from a uniform distribution.
+    """
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.uniform(low=low, high=high, size=size)
@@ -231,7 +238,25 @@ def __uniform_np(rng, low, high, size):
 if JAX_AVAILABLE:
     @partial(jax.jit, static_argnames=('minval', 'maxval', 'shape'))
     def _uniform_jax(key, shape, minval, maxval):
-        ''' Generate a random uniform array using JAX. '''
+        """
+        Generate a random uniform array using JAX.
+
+        Parameters
+        ----------
+        key : PRNGKey
+            The random number generator key.
+        shape : tuple
+            Shape of the output array.
+        minval : float
+            Lower bound.
+        maxval : float
+            Upper bound.
+
+        Returns
+        -------
+        jax.Array
+            Random uniform array.
+        """
         return random_jp.uniform(key, shape=shape, minval=minval, maxval=maxval)
 else:
     def _uniform_jax(key, shape, minval, maxval):
@@ -284,21 +309,25 @@ def uniform(shape   : Union[tuple, int] =   (1,),
 ###############################################################################
 
 def __normal_np(rng, shape, mean=0.0, std=1.0):
-    ''' 
-        Generate a random normal array using NumPy. 
-        Parameters:
-            - rng : numpy.random.Generator if NumPy version >= 1.17, else numpy.random
-                The random number generator.    
-            - shape : tuple
-                Shape of the output array.
-            - mean : float (optional)
-                Mean of the distribution.
-            - std : float (optional)
-                Standard deviation of the distribution.
-        Returns:
-            - array
-                An array of the specified shape drawn from a normal distribution.
-    '''
+    """
+    Generate a random normal array using NumPy.
+
+    Parameters
+    ----------
+    rng : numpy.random.Generator or numpy.random
+        The random number generator.
+    shape : tuple
+        Shape of the output array.
+    mean : float, optional
+        Mean of the distribution.
+    std : float, optional
+        Standard deviation of the distribution.
+
+    Returns
+    -------
+    array
+        An array of the specified shape drawn from a normal distribution.
+    """
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.normal(loc=mean, scale=std, size=shape)
@@ -306,25 +335,27 @@ def __normal_np(rng, shape, mean=0.0, std=1.0):
 if JAX_AVAILABLE:
     @jax.jit
     def __normal_jax(key, shape, dtype, mean, std):
-        ''' 
-            Generate a random normal array using JAX. 
-            Parameters:
-                - rng_module : module
-                    The JAX random module.
-                - key : PRNGKey
-                    The random number generator key.
-                - shape : tuple
-                    Shape of the output array.
-                - dtype : data-type
-                    Desired output dtype.
-                - mean : float
-                    Mean of the distribution.
-                - std : float
-                    Standard deviation of the distribution.
-            Returns:
-                - array
-                    An array of the specified shape drawn from a normal distribution.        
-        '''
+        """
+        Generate a random normal array using JAX.
+
+        Parameters
+        ----------
+        key : PRNGKey
+            The random number generator key.
+        shape : tuple
+            Shape of the output array.
+        dtype : data-type
+            Desired output dtype.
+        mean : float
+            Mean of the distribution.
+        std : float
+            Standard deviation of the distribution.
+
+        Returns
+        -------
+        jax.Array
+            An array of the specified shape drawn from a normal distribution.
+        """
         return random_jp.normal(key, shape=shape, dtype=dtype) * std + mean
 else:
     def __normal_jax(key, shape, dtype, mean, std):
@@ -376,6 +407,9 @@ def normal(shape,
 ###############################################################################
 
 def __exponential_np(rng, scale, size):
+    """
+    Generate a random exponential array using NumPy.
+    """
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.exponential(scale=scale, size=size)
@@ -383,6 +417,9 @@ def __exponential_np(rng, scale, size):
 if JAX_AVAILABLE:
     @jax.jit
     def __exponential_jax(key, shape, scale, dtype):
+        """
+        Generate a random exponential array using JAX.
+        """
         return random_jp.exponential(key, shape=shape, dtype=dtype) * scale
 else:
     def __exponential_jax(key, shape, scale, dtype):
@@ -394,6 +431,24 @@ def exponential(shape,
                 scale=1.0, dtype=None, rng=None, rng_k=None):
     """
     Generate a random exponential array.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the output array.
+    backend : str, optional
+        Backend specifier.
+    seed : int, optional
+        Random seed.
+    scale : float, optional
+        The scale parameter (beta) = 1/lambda.
+    dtype : data-type, optional
+        Output data type.
+
+    Returns
+    -------
+    array
+        Exponentially distributed values.
     """
     (rng, rng_k) = handle_rng(rng, rng_k, backend, seed)
     
@@ -411,6 +466,9 @@ def exponential(shape,
 ###############################################################################
 
 def __poisson_np(rng, lam, size):
+    """
+    Generate a random Poisson array using NumPy.
+    """
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.poisson(lam=lam, size=size)
@@ -418,6 +476,9 @@ def __poisson_np(rng, lam, size):
 if JAX_AVAILABLE:
     @jax.jit
     def __poisson_jax(key, shape, lam, dtype):
+        """
+        Generate a random Poisson array using JAX.
+        """
         return random_jp.poisson(key, lam=lam, shape=shape, dtype=dtype)
 else:
     def __poisson_jax(key, shape, lam, dtype):
@@ -427,7 +488,25 @@ def poisson(shape, backend="default",
             seed: Optional[int] = None,
             lam=1.0, dtype=None, rng=None, rng_k=None):
     """
-    Generate a random poisson array.
+    Generate a random Poisson array.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the output array.
+    backend : str, optional
+        Backend specifier.
+    seed : int, optional
+        Random seed.
+    lam : float, optional
+        Expectation of interval (lambda).
+    dtype : data-type, optional
+        Output data type.
+
+    Returns
+    -------
+    array
+        Poisson distributed values.
     """
     (rng, rng_k) = handle_rng(None, None, backend, seed)
     if dtype is None:
@@ -443,6 +522,9 @@ def poisson(shape, backend="default",
 ###############################################################################
 
 def __gamma_np(rng, a, scale, size):
+    """
+    Generate a random Gamma array using NumPy.
+    """
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.gamma(shape=a, scale=scale, size=size)
@@ -450,6 +532,9 @@ def __gamma_np(rng, a, scale, size):
 if JAX_AVAILABLE:
     @jax.jit
     def __gamma_jax(key, shape, a, scale, dtype):
+        """
+        Generate a random Gamma array using JAX.
+        """
         return random_jp.gamma(key, a, shape=shape, dtype=dtype) * scale
 else:
     def __gamma_jax(key, shape, a, scale, dtype):
@@ -459,7 +544,27 @@ def gamma(shape, backend="default",
         seed: Optional[int] = None,
         a=1.0, scale=1.0, dtype=None, rng=None, rng_k=None):
     """
-    Generate a random gamma array.
+    Generate a random Gamma array.
+
+    Parameters
+    ----------
+    shape : tuple
+        Output shape.
+    backend : str, optional
+        Backend specifier.
+    seed : int, optional
+        Random seed.
+    a : float
+        Shape parameter (sometimes k).
+    scale : float
+        Scale parameter (theta).
+    dtype : data-type, optional
+        Output data type.
+
+    Returns
+    -------
+    array
+        Gamma distributed values.
     """
     (rng, rng_k) = handle_rng(None, None, backend, seed)
     if dtype is None:
@@ -475,6 +580,9 @@ def gamma(shape, backend="default",
 ###############################################################################
 
 def _beta_np(rng, a, b, size):
+    """
+    Generate a random Beta array using NumPy.
+    """
     if rng is None:
         rng = npr.default_rng(None)
     return rng.beta(a, b, size=size)
@@ -482,6 +590,9 @@ def _beta_np(rng, a, b, size):
 if JAX_AVAILABLE:
     @jax.jit
     def _beta_jax(key, shape, a, b, dtype):
+        """
+        Generate a random Beta array using JAX.
+        """
         try:
             return random_jp.beta(key, a, b, shape=shape, dtype=dtype)
         except AttributeError as e:
@@ -496,7 +607,27 @@ else:
     
 def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dtype=None):
     """
-    Generate a random beta array.
+    Generate a random Beta array.
+
+    Parameters
+    ----------
+    shape : tuple
+        Output shape.
+    backend : str, optional
+        Backend specifier.
+    seed : int, optional
+        Random seed.
+    a : float
+        Alpha parameter > 0.
+    b : float
+        Beta parameter > 0.
+    dtype : data-type, optional
+        Output data type.
+
+    Returns
+    -------
+    array
+        Beta distributed values.
     """
     modules = get_backend(backend, random=True, seed=seed)
     backend_mod, (rnd_module, key) = modules if isinstance(modules, tuple) else (modules, (None, None))
@@ -514,7 +645,7 @@ def beta(shape, backend="default", seed: Optional[int] = None, a=0.5, b=0.5, dty
 
 @numba.njit
 def randint_np(low, high, size):
-    '''Create a random integer array using NumPy.'''
+    """Create a random integer array using NumPy."""
     # if np.__version__ >= '1.17':
         # if rng is None:
             # rng = npr.default_rng(None)    
@@ -570,6 +701,9 @@ def randint(low, high, shape, backend="default", seed: Optional[int] = None, dty
 ###############################################################################
 
 def choice_np(rng, a, size, replace=True, p=None):
+    """
+    Randomly select elements using NumPy.
+    """
     if rng is None:
         rng = npr.default_rng(None) if hasattr(npr, "default_rng") else npr
     return rng.choice(a, size=size, replace=replace, p=p)
@@ -578,23 +712,23 @@ if JAX_AVAILABLE:
 
     @partial(jax.jit, static_argnames=('shape'))
     def choice_jax(key, a, shape):
-        '''
+        """
         Randomly select elements from an array using JAX.
+
         Parameters
         ----------
-        rng_module : module
-            The JAX random module.
         key : PRNGKey
             The random number generator key.
         a : array-like
             The input array.
-        size : int or tuple
-            Number of samples to draw.
-        backend_mod : module
-            The backend module (e.g., jax.numpy).
+        shape : tuple
+            Output shape.
+
         Returns
         -------
-        '''
+        array
+            Selected elements.
+        """
         a = jnp.asarray(a)
         return random_jp.choice(key, a, shape=shape, replace=True)
         # Generate random indices and select elements from the array)
@@ -623,7 +757,7 @@ def choice(a,
     ----------
     a : array-like
         The input array.
-    size : int or tuple
+    shape : int or tuple
         Number of samples to draw.
     replace : bool, optional
         Whether sampling is with replacement.
@@ -631,9 +765,7 @@ def choice(a,
         Probability distribution. (Not implemented for JAX.)
     backend : str, optional
         Backend specifier.
-    seed : int, optional
-        Random seed.
-        
+
     Returns
     -------
     array
@@ -720,7 +852,7 @@ def shuffle_indices(n, backend="default", seed: Optional[int] = None):
 
 @unique
 class RMT(Enum):
-    ''' Random matrix types. '''
+    """ Random matrix types. """
     COE = "COE"
     GUE = "GUE"
     GOE = "GOE"
@@ -735,6 +867,8 @@ def random_matrix(shape, typek : RMT, backend="default", dtype=None):
     ----------
     shape : tuple
         Shape of the output matrix.
+    typek : RMT
+        The random matrix ensemble type (COE, GUE, etc).
     backend : str, optional
         Backend specifier.
     dtype : data-type, optional
@@ -777,23 +911,23 @@ def random_matrix(shape, typek : RMT, backend="default", dtype=None):
 
 
 def goe(shape, backend="default", dtype=None):
-    ''' Generate a Gaussian Orthogonal Ensemble (GOE) matrix. '''
+    """ Generate a Gaussian Orthogonal Ensemble (GOE) matrix. """
     return random_matrix(shape, typek=RMT.GOE, backend=backend, dtype=dtype)
 
 def gue(shape, backend="default", dtype=None):
-    ''' Generate a Gaussian Unitary Ensemble (GUE) matrix. '''
+    """ Generate a Gaussian Unitary Ensemble (GUE) matrix. """
     return random_matrix(shape, typek=RMT.GUE, backend=backend, dtype=dtype)
 
 def coe(shape, backend="default", dtype=None):
-    ''' Generate a Circular Orthogonal Ensemble (COE) matrix. '''
+    """ Generate a Circular Orthogonal Ensemble (COE) matrix. """
     return random_matrix(shape, typek=RMT.COE, backend=backend, dtype=dtype)
 
 def cue(shape, backend="default", dtype=None):
-    ''' Generate a Circular Unitary Ensemble (CUE) matrix. '''
+    """ Generate a Circular Unitary Ensemble (CUE) matrix. """
     return random_matrix(shape, typek=RMT.CUE, backend=backend, dtype=dtype)
 
 def cre(shape, backend="default", dtype=None):
-    ''' Generate a Circular Real Ensemble (CRE) matrix. '''
+    """ Generate a Circular Real Ensemble (CRE) matrix. """
     return random_matrix(shape, typek=RMT.CRE, backend=backend, dtype=dtype)
 
 ###############################################################################
@@ -806,24 +940,28 @@ def random_vector(shape, typek: str, backend="default", dtype = None, separator 
     Types of random vectors:
         - "uniform" : Uniformly distributed random vector - 'r;first;last'
         - "normal"  : Normally distributed random vector. - 'n;mean;std'
-    Parameters:
-        - shape : tuple
-            Shape of the output vector.
-        - typek : str
-            Type of the random vector.
-        - backend : str
-            Backend specifier.
-        - dtype : data-type
-            Desired output dtype.
-        - separator : str
-            Separator for the type string.    
-    Returns:
-        - array
-            A random vector of the specified shape.
+
+    Parameters
+    ----------
+    shape : tuple
+        Shape of the output vector.
+    typek : str
+        Type of the random vector.
+    backend : str
+        Backend specifier.
+    dtype : data-type
+        Desired output dtype.
+    separator : str
+        Separator for the type string.
+
+    Returns
+    -------
+    array
+        A random vector of the specified shape.
     """
     
     def __parse_type(typek):
-        ''' Parse the type of random vector. '''
+        """ Parse the type of random vector. """
         val = typek.split(separator)
         
         if val[0] == 'r':
