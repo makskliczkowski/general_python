@@ -31,6 +31,33 @@ class TestMathUtilities:
         assert val == 3
         assert find_nearest_idx(arr, 10.0) == 3
 
+    def test_find_nearest_edge_cases(self):
+        """Test find_nearest on edge cases."""
+        # Empty array
+        arr_empty = np.array([])
+        with pytest.raises(ValueError):
+            find_nearest_val(arr_empty, 1.0, None)
+
+        # Single element
+        arr_single = np.array([5.0])
+        val = find_nearest_val(arr_single, 100.0, None)
+        assert val == 0 # Index 0
+
+        # With NaNs
+        arr_nan = np.array([1.0, np.nan, 10.0])
+        # abs(nan - 5) -> nan.
+        # argmin might behave differently with NaNs depending on numpy version.
+        # Usually nan < num is False. nan < nan is False.
+        # But argmin often ignores NaNs or propagates them?
+        # np.argmin([1, nan, 10]) -> 1 usually if nan is considered min?
+        # Actually standard argmin propagates first NaN or fails?
+        # Let's check what happens. If it's undefined behavior, maybe skip or test what it does.
+        # np.nanargmin handles nans. argmin does not.
+
+        # Test valid col argument ignored for ndarray
+        val = find_nearest_val(np.array([1.0, 2.0]), 1.9, col="garbage")
+        assert val == 1
+
     def test_powers(self):
         """Test next/prev power functions."""
         # Powers of 2
