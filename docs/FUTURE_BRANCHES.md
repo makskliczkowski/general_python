@@ -12,6 +12,7 @@ Submodules like `algebra`, `maths`, `ml` are located in the root directory and b
 *   `pyproject.toml` explicitly lists all subpackages to ensure they are discovered by `setuptools` (since `find_packages(where='.')` would find them as top-level packages, but we want them under `general_python`).
 *   Namespace pollution in the root directory (mixing source code, config files, docs, scripts).
 *   Editable installs require careful configuration (`package-dir = {"general_python": "."}`).
+*   Requires `recursive-include` in `MANIFEST.in` to ensure source files are included.
 
 ### Proposal: Move to `src/` Layout
 Refactor the repository to use the standard `src/` layout:
@@ -38,18 +39,32 @@ general_python/
 
 ## Missing `__init__.py` Files
 
-Some subdirectories were found missing `__init__.py` files, which prevented them from being treated as regular packages:
-*   `general_python.common.embedded`
-*   `general_python.physics.sp`
+Some subdirectories were found missing `__init__.py` files in previous versions (e.g. `common/embedded`, `physics/sp`).
+These should be maintained to ensure proper subpackage traversal if they contain importable code.
+Current audit shows they are present.
 
-These have been patched by adding empty `__init__.py` files, but future modules should ensure `__init__.py` is present if they are intended to be importable packages.
+## Dependency Management
 
-## Optional Dependencies
+### Optional Dependencies
+The `maths` module has a runtime dependency on `pandas` (guarded).
+The `lattices` module has a hard dependency on `h5py` (via `common.hdf5man`), which was added to core dependencies during the audit.
+Future work could refine these:
+1.  **Split heavy modules**: Move `pandas`-dependent functions to `general_python.data_utils` or similar.
+2.  **Lazy Loading**: Ensure heavy dependencies like `tensorflow` or `jax` are only imported when specific functions are called, not at module level (mostly handled by `LazyImporter` in `__init__.py` but check internal modules).
 
-The `maths` module has a hard dependency on `pandas` in `math_utils.py`.
-This has been patched with a runtime guard, but structurally it might be better to:
-1.  Move pandas-dependent functions to a separate submodule (e.g. `maths.statistics.dataframe_utils`).
-2.  Or ensure `pandas` is a hard dependency if it is core to the library's function.
+## CI/CD Pipeline
+
+### Current State
+There is no automated CI configuration (e.g. `.github/workflows`).
+Documentation is built on ReadTheDocs (`.readthedocs.yaml` exists).
+
+### Proposal: Add GitHub Actions
+Add a `.github/workflows/ci.yml` to run tests on push/PR:
+*   Checkout code.
+*   Set up Python.
+*   Install dependencies: `pip install .[dev,ml,jax]`.
+*   Run tests: `pytest`.
+*   Linting: `flake8` / `black`.
 
 ## Circular Imports and Lazy Loading
 The project relies heavily on `LazyImporter` and `lazy_import` helpers in `__init__.py` files.

@@ -8,3 +8,4 @@ jaxlib
 flax
 numba
 pandas
+h5py
