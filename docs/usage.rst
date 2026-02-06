@@ -40,18 +40,19 @@ Solve :math:`Ax = b` using Krylov subspace methods like CG or MINRES.
 
     # 1. Using Conjugate Gradient (CG)
     # You can pass the matrix directly
-    solver_cg = choose_solver(SolverType.CG, A=A)
-    res_cg = solver_cg.solve(b)
-    print(f"CG converged: {res_cg.success}, Iterations: {res_cg.info['iter']}")
+    solver_cg   = choose_solver(SolverType.CG, a=A)
+    res_cg      = solver_cg.solve_instance(b=b)
+    print(f"CG converged: {res_cg.converged}, Iterations: {res_cg.iterations}")
 
     # 2. Using MINRES (for symmetric indefinite matrices)
     # You can also pass a matvec function/LinearOperator
     def matvec(v):
         return A @ v
 
-    solver_minres = choose_solver(SolverType.MINRES, matvec=matvec, shape=(N, N))
-    res_minres = solver_minres.solve(b)
-    print(f"MINRES solution norm: {np.linalg.norm(res_minres.x)}")
+    solver_minres   = choose_solver(SolverType.MINRES, matvec_func=matvec)
+    x0              = np.zeros_like(b)
+    res_minres      = solver_minres.solve_instance(b=b, x0=x0)
+    print(f"MINRES residual norm: {res_minres.residual_norm}")
 
 **Preconditioners**
 
@@ -59,12 +60,13 @@ Solve :math:`Ax = b` using Krylov subspace methods like CG or MINRES.
 
     from general_python.algebra.preconditioners import choose_precond
 
-    # Create an ILU preconditioner
-    M = choose_precond("ilu", A=A)
+    # Create a Jacobi preconditioner (set up with matrix A)
+    M = choose_precond("jacobi")
+    M.set(A)
 
     # Use it in a solver
-    solver_precond = choose_solver(SolverType.CG, A=A, M=M)
-    solver_precond.solve(b)
+    solver_precond = choose_solver(SolverType.CG, a=A)
+    solver_precond.solve_instance(b=b, precond=M)
 
 2. Lattice Geometries
 ---------------------
@@ -81,15 +83,16 @@ Create and navigate lattice structures for physics simulations.
     print(f"Total sites: {lat.Ns}")
     
     # Get neighbors of site index 0
-    neighbors = lat.get_neighbors(0)
+    neighbors = lat.get_nn(0)
     print(f"Neighbors of site 0: {neighbors}")
     
     # Get coordinates of site (2, 2)
-    coord = lat.get_coord((2, 2))
+    site    = lat.site_index(2, 2, 0)
+    coord   = lat.get_coordinates(site)
     print(f"Coordinates of (2,2): {coord}")
 
     # Plot the lattice (requires matplotlib)
-    # lat.plot_lattice(show=True)
+    # fig, ax = lat.plot_structure(show_indices=True)
 
 3. Physics & Quantum States
 ---------------------------
@@ -98,24 +101,23 @@ Utilities for quantum mechanics and statistical physics.
 
 .. code-block:: python
 
-    from general_python.physics import density_matrix, entropy
+    from general_python.physics import density_matrix
     import numpy as np
 
     # Create a random quantum state vector
     psi = np.random.rand(4) + 1j * np.random.rand(4)
     psi /= np.linalg.norm(psi)
 
-    # Compute density matrix rho = |psi><psi|
-    rho = density_matrix.create_density_matrix(psi)
+    # Compute reduced density matrix for a 2x2 bipartition
+    rho     = density_matrix.rho_numpy(psi, dimA=2, dimB=2)
     
-    # Calculate Von Neumann Entropy
-    # S = -tr(rho ln rho)
-    S = entropy.von_neumann_entropy(rho)
+    # Von Neumann entropy from eigenvalues of rho
+    evals   = density_matrix.rho_spectrum(rho)
+    S       = -np.sum(evals * np.log(evals))
     print(f"Entropy: {S:.4f}")
 
-    # Calculate Purity
-    # P = tr(rho^2)
-    purity = entropy.purity(rho)
+    # Purity: tr(rho^2)
+    purity   = np.real(np.trace(rho @ rho))
     print(f"Purity: {purity:.4f}")
 
 4. Random Number Generation
@@ -127,16 +129,12 @@ Reproducible random numbers using high-quality generators.
 
     from general_python.maths import random as rng_mod
 
-    # Create a generator with a specific seed
-    rng = rng_mod.Xoshiro256(seed=12345)
+    # Create a seeded NumPy generator
+    rng = np.random.default_rng(12345)
 
-    # Generate random numbers
-    r = rng.random()
-    print(f"Random float: {r}")
-    
-    # Generate random integers
-    ints = rng.randint(0, 10, size=5)
-    print(f"Random integers: {ints}")
+    # Draw a Haar-random unitary from the Circular Unitary Ensemble (CUE)
+    U   = rng_mod.CUE_QR(4, rng=rng)
+    print(f"CUE unitary shape: {U.shape}")
 
 5. Machine Learning (Neural Networks)
 -------------------------------------
@@ -145,22 +143,22 @@ Define and use neural networks with backend flexibility.
 
 .. code-block:: python
 
-    from general_python.ml.networks import DenseSymm
-    import jax.numpy as jnp
-    import jax
+    from general_python.ml.networks import choose_network
+    import numpy as np
 
-    # Define a dense symmetric network (RBM-like)
-    # Note: Requires JAX backend for this specific network
-    
-    net = DenseSymm(input_size=16, hidden_size=4, output_size=1)
-    
-    # Initialize parameters
-    key = jax.random.PRNGKey(0)
-    params = net.init(key, jnp.ones((1, 16)))
-    
-    # Forward pass
-    output = net.apply(params, jnp.ones((5, 16)))
-    print(f"Network output shape: {output.shape}")
+    # Create a simple feed-forward network (NumPy backend)
+    net = choose_network(
+        "simple",
+        input_shape=(16,),
+        layers=(8, 4),
+        act_fun=("tanh",),
+        backend="numpy",
+        dtype=np.float32,
+    )
+
+    x = np.random.randn(5, 16).astype(np.float32)
+    y = net.apply_np(x)
+    print(f"Network output shape: {y.shape}")
 
 6. Common Utilities
 -------------------
@@ -171,10 +169,10 @@ Define and use neural networks with backend flexibility.
     
     # Directory management
     dirs = Directories("experiment_data")
-    dirs.create_if_not_exists()
+    dirs.mkdir()
     
     # Timing code execution
-    with Timer("Heavy Computation"):
+    with Timer("Heavy Computation", verbose=True):
         # simulate work
         _ = [i**2 for i in range(100000)]
     
