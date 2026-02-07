@@ -1,4 +1,4 @@
-"""
+r"""
 general_python/physics/response
 
 Response functions and dynamical correlation functions for quantum systems.

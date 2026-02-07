@@ -157,7 +157,7 @@ def extend_kspace_data(
 
 @dataclass
 class HighSymmetryPoint:
-    """
+    r"""
     A high-symmetry point in the Brillouin zone.
     
     Attributes

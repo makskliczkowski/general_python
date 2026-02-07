@@ -1,3 +1,18 @@
+"""
+Statistical analysis tools and data aggregation utilities.
+
+This module contains:
+- Binning and averaging routines (`bin_avg`, `rebin`).
+- Histogram classes with support for merging and weighted averages.
+- Statistical moments, fluctuations, and distribution fitting.
+- Helpers for spectral function analysis (fractional statistics).
+
+Numerical Stability
+-------------------
+Numba-optimized routines (`_bin_avg_numba`) are provided for performance on large datasets.
+Robust handling of NaN values and empty bins is included in averaging functions.
+"""
+
 import sys
 from numpy.lib.stride_tricks import sliding_window_view
 from numba import int64, float64, njit

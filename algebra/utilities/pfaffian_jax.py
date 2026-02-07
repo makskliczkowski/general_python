@@ -1,3 +1,20 @@
+"""
+JAX-based Pfaffian implementation.
+
+This module provides JIT-compiled routines for computing the Pfaffian of
+skew-symmetric matrices. It includes several algorithms:
+- Recursive definition (O(N!)).
+- Hessenberg form (O(N^3)).
+- Parlett-Reid algorithm (O(N^3), numerically stable).
+- Log-Pfaffian via log-determinant.
+
+Stability Note
+--------------
+Parlett-Reid is generally preferred for dense matrices.
+The log-Pfaffian approximation (0.5 * log det) is suitable for NQS optimization
+where phase consistency is handled via the determinant sign.
+"""
+
 from ..utils import JAX_AVAILABLE, Array
 import numpy as np
 

@@ -21,7 +21,7 @@ import numpy as np
 from general_python.algebra import solvers
 
 def create_spd_matrix(n, condition_number=10.0):
-    """
+    r"""
     Create a symmetric positive-definite matrix with specified condition number.
     
     The condition number k(A) = \lambda_max / \lambda_min affects convergence rate:

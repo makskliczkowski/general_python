@@ -121,7 +121,7 @@ class DirectSolver(Solver):
             A               : Optional[Array] = None, # REQUIRED
             sigma           : Optional[float] = None, # Optional
             **kwargs        : Any) -> SolverResult:
-        """
+        r"""
         Static solve implementation using the backend's `linalg.solve`.
 
         Args:

@@ -39,7 +39,7 @@ except ImportError:
 # ----------------------------------------------------------------------
 
 class GraphConv(nn.Module):
-    """
+    r"""
     Decoupled Graph Convolution.
     Separates self-interaction from neighbor-interaction for better physical expressivity.
     

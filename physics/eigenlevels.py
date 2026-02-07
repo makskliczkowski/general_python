@@ -1,3 +1,25 @@
+"""
+Eigenlevel statistics and entropy calculators for quantum systems.
+
+This module contains tools for:
+- Reduced density matrix calculation (direct or Schmidt decomposition).
+- Entanglement entropy (von Neumann).
+- Level statistics (gap ratios).
+- Statistical measures of eigenstates (participation ratio, moments).
+
+Input/Output Contracts
+----------------------
+- States are typically 1D or 2D NumPy arrays (basis size, number of states).
+- Reduced density matrices return shape (dimA, dimA).
+- Entropies return scalar floats.
+- Gap ratios return a dictionary with mean, std, and raw values.
+
+Numerical Stability
+-------------------
+Entropy calculations handle small eigenvalues by clipping or conditional checks to avoid log(0).
+Schmidt decomposition is preferred for reduced density matrices when possible for stability and efficiency.
+"""
+
 import numpy as np
 import pandas as pd
 from scipy.special import psi

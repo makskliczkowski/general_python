@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 GRAM Form Solver - TDVP/NQS Example
 
 This example demonstrates the GRAM form solver, which is the most common
@@ -315,7 +315,7 @@ def example_regularization():
     print(f"  Iterations: {result_reg.iterations}")
     print(f"  Residual: {result_reg.residual_norm:.2e}")
     
-    print(f"\nTip: In practice, use small ε \in  [1e-4, 1e-3] for stability")
+    print(rf"\nTip: In practice, use small ε \in  [1e-4, 1e-3] for stability")
     
     return result_no_reg, result_reg
 
@@ -369,7 +369,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 70)
     print("GRAM FORM SOLVER - TDVP/NQS EXAMPLES")
     print("=" * 70)
-    print("\nGRAM form solves: (S\dag S) p = S\dag Sp")
+    print(r"\nGRAM form solves: (S\dag S) p = S\dag Sp")
     print("Common in: TDVP, NQS, Stochastic Reconfiguration")
     print("=" * 70)
     
@@ -388,5 +388,5 @@ if __name__ == "__main__":
     print("2. Equivalent to least-squares: min ||Sp - S p||^2 ")
     print("3. Always use regularization (ε ∼ 1e-4) for numerical stability")
     print("4. Works naturally with complex matrices (quantum wavefunctions)")
-    print("5. S is typically log-derivatives (∂log \psi /∂θ) from MC samples")
+    print(r"5. S is typically log-derivatives (∂log \psi /∂θ) from MC samples")
     print("\nNext: See example_with_preconditioners.py for acceleration")

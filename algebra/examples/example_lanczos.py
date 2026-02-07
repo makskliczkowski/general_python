@@ -124,10 +124,10 @@ def example_quantum_harmonic_oscillator():
     
     print(f"\nResidual norms:")
     for i, res in enumerate(result.residual_norms):
-        print(f"  n={i}: ||H|\psi > - E|\psi >|| = {res:.2e}")
+        print(rf"  n={i}: ||H|\psi > - E|\psi >|| = {res:.2e}")
     
     # Theoretical values for harmonic oscillator: E_n = 2n + 1 (in suitable units)
-    print(f"\nNote: For quantum harmonic oscillator, E_n = \omega (n + 1/2)")
+    print(rf"\nNote: For quantum harmonic oscillator, E_n = \omega (n + 1/2)")
     print(f"      Numerical values depend on discretization")
     
     return result
@@ -197,13 +197,13 @@ def example_matrix_free():
     print(f"  Iterations: {result.iterations}")
     print(f"\nSmallest eigenvalues:")
     for i, lam in enumerate(result.eigenvalues):
-        print(f"  \lambda_{i+1} = {lam:.6f}")
+        print(rf"  \lambda_{i+1} = {lam:.6f}")
     
     # Analytical eigenvalues: \lambda_k = 2(1 - cos(k\pi/(n+1))) for k=1,2,...,n
     analytical = np.array([2*(1 - np.cos((k+1)*np.pi/(n+1))) for k in range(8)])
     print(f"\nAnalytical eigenvalues:")
     for i, lam in enumerate(analytical):
-        print(f"  \lambda_{i+1} = {lam:.6f}")
+        print(rf"  \lambda_{i+1} = {lam:.6f}")
     
     error = np.linalg.norm(result.eigenvalues - analytical)
     print(f"\nError vs analytical: {error:.2e}")

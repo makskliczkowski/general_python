@@ -1,3 +1,25 @@
+"""
+NumPy-based utility functions for neural network operations.
+
+This module provides backend-agnostic implementations (using NumPy and Numba) for:
+- Batch creation and padding.
+- Batched evaluation of functions.
+- Gradient computation (analytical and numerical via Autograd).
+- Local energy estimation helpers (apply_callable).
+
+Input/Output Contracts
+----------------------
+Functions generally expect NumPy arrays as input.
+Batching functions return arrays with shape (n_batches, batch_size, ...).
+Gradient functions return flattened arrays or dictionaries matching the parameter structure.
+
+Dependencies
+------------
+- numpy
+- numba (for JIT compilation)
+- autograd (optional, for numerical gradients)
+"""
+
 import numpy as np
 import numba
 from typing import Union, Callable, Optional, Any

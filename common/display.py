@@ -95,7 +95,7 @@ def _format_coeff(c: complex | float) -> str:
             minus     = '-'
         else:
             minus     = '-' if pi_mult < 0 else ''
-            phase_tex = f"{abs(pi_mult):.3g}\\pi"
+            phase_tex = rf"{abs(pi_mult):.3g}\\pi"
             
         if amp == 1:
             return fr"e^{{{minus}i{phase_tex}}}" if phase_tex else ""
@@ -311,5 +311,5 @@ if __name__ == "__main__":
     ns = 4
     display_state(3, ns, label="Initial")
     new = 3 ^ (1 << (ns - 1 - 2))   # flip site 2
-    display_operator_action("c^\\dagger", 2, 3, ns, new, -1)
+    display_operator_action(r"c^\\dagger", 2, 3, ns, new, -1)
     display_superposition([(0.5, 0), (0.5, 15)], ns, label="GHZ")

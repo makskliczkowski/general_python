@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 
 @numba.njit(cache=True, fastmath=True)
 def _corr_single_slater_raw_kernel(W_A: np.ndarray, occ_bool: np.ndarray, C: np.ndarray) -> None:
-    """
+    r"""
     Numba kernel for fast Slater correlation: C = 2 * W_occ^\dag @ W_occ.
     
     Parameters
@@ -100,7 +100,7 @@ def _corr_superposition_diagonal_kernel(
     coeffs_abs_sq: np.ndarray,      # (gamma,) real
     C: np.ndarray                   # (La, La) output
 ) -> None:
-    """
+    r"""
     Numba kernel for diagonal contributions to superposition correlation matrix.
     
     Computes: C += sum_k |a_k|^2 * 2 * W_occ[k]^\dag @ W_occ[k]

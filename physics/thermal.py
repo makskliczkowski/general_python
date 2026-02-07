@@ -38,7 +38,7 @@ else:
 # =============================================================================
 
 def partition_function(energies: Array, beta: float) -> float:
-    """
+    r"""
     Compute the canonical partition function Z(\beta) = \sum _n exp(-\beta E_n).
     
     Parameters
@@ -64,7 +64,7 @@ def partition_function(energies: Array, beta: float) -> float:
     return np.sum(np.exp(-beta * (energies - E_min))) * np.exp(-beta * E_min)
 
 def boltzmann_weights(energies: Array, beta: float, normalize: bool = True) -> Array:
-    """
+    r"""
     Compute Boltzmann weights rho_n = exp(-\beta E_n) / Z.
     
     Parameters
@@ -153,7 +153,7 @@ def thermal_average_diagonal(energies: Array, observable_diagonal: Array, beta: 
     return avg, Z_full
 
 def thermal_average_general(energies: Array, eigenvectors: Array, observable_matrix: Union[Array, sp.spmatrix], beta: float) -> Tuple[float, float]:
-    """
+    r"""
     Compute thermal average of a general operator.
     
     <O>_\beta = \sum _n <n|O|n> exp(-\beta E_n) / Z
@@ -202,7 +202,7 @@ def thermal_average_general(energies: Array, eigenvectors: Array, observable_mat
 # =============================================================================
 
 def free_energy(energies: Array, beta: float) -> float:
-    """
+    r"""
     Compute Helmholtz free energy F = -k_B T ln Z = -(1/\beta) ln Z.
     
     Parameters
@@ -228,7 +228,7 @@ def free_energy(energies: Array, beta: float) -> float:
         return np.inf
 
 def internal_energy(energies: Array, beta: float) -> float:
-    """
+    r"""
     Compute internal energy U = <H> = \sum _n E_n exp(-\beta E_n) / Z.
     
     Parameters
@@ -247,7 +247,7 @@ def internal_energy(energies: Array, beta: float) -> float:
     return U
 
 def heat_capacity(energies: Array, beta: float) -> float:
-    """
+    r"""
     Compute heat capacity C_V = \beta^2 (<H^2> - <H>^2).
     
     Parameters
@@ -272,7 +272,7 @@ def heat_capacity(energies: Array, beta: float) -> float:
     return beta**2 * (U2 - U**2)
 
 def entropy_thermal(energies: Array, beta: float) -> float:
-    """
+    r"""
     Compute thermal entropy S = k_B (ln Z + \beta U) = \beta(U - F).
     
     Parameters
@@ -330,7 +330,7 @@ def magnetic_susceptibility(energies: Array, magnetization_diagonal: Array, beta
     return beta * (M2 - M**2)
 
 def charge_susceptibility(energies: Array, charge_diagonal: Array, beta: float) -> float:
-    """
+    r"""
     Compute charge susceptibility chi_c = \beta (<N^2> - <N>^2).
     
     Parameters
@@ -360,7 +360,7 @@ def charge_susceptibility(energies: Array, charge_diagonal: Array, beta: float) 
 # =============================================================================
 
 def specific_heat_from_moments(avg_H: float, avg_H2: float, beta: float) -> float:
-    """
+    r"""
     Compute specific heat from energy moments: C_V = \beta^2 (<H^2> - <H>^2).
     
     Parameters
@@ -380,7 +380,7 @@ def specific_heat_from_moments(avg_H: float, avg_H2: float, beta: float) -> floa
     return beta**2 * (avg_H2 - avg_H**2)
 
 def susceptibility_from_moments(avg_O: float, avg_O2: float, beta: float) -> float:
-    """
+    r"""
     Generic susceptibility from moments: chi = \beta (<O^2> - <O>^2).
     
     Parameters

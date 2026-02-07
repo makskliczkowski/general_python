@@ -51,7 +51,7 @@ def example_no_preconditioner():
     
     print(f"Problem size: {n}")
     print(f"Condition number k(A): {condition_number:.2e}")
-    print(f"Expected CG iterations: O(\sqrt k) ≈ {int(np.sqrt(condition_number))}")
+    print(rf"Expected CG iterations: O(\sqrt k) ≈ {int(np.sqrt(condition_number))}")
     
     # Solve without preconditioner
     solver      = solvers.choose_solver('cg', sigma=0.0)
@@ -210,8 +210,8 @@ def example_preconditioner_comparison():
         (None, "None (baseline)"),
         (JacobiPreconditioner(), "Jacobi"),
         (CholeskyPreconditioner(), "Cholesky"),
-        (SSORPreconditioner(omega=1.0), "SSOR (\omega =1.0)"),
-        (SSORPreconditioner(omega=1.5), "SSOR (\omega =1.5)"),
+        (SSORPreconditioner(omega=1.0), r"SSOR (\omega =1.0)"),
+        (SSORPreconditioner(omega=1.5), r"SSOR (\omega =1.5)"),
     ]
     
     print(f"\nComparing preconditioners:")
@@ -268,7 +268,7 @@ def example_gram_form_with_preconditioner():
     print(f"GRAM problem:")
     print(f"  Samples: {n_samples}")
     print(f"  Parameters: {n_params}")
-    print(f"  Solving: (S\dag S) p = S\dag Sp")
+    print(rf"  Solving: (S\dag S) p = S\dag Sp")
     
     # Setup solver for Fisher/GRAM form
     solver      = solvers.choose_solver('cg', sigma=0.0)
@@ -303,7 +303,7 @@ def example_gram_form_with_preconditioner():
     print(f"{'Jacobi (GRAM)':<25} {str(result_precond.converged):<12} "
           f"{result_precond.iterations:<12} {result_precond.residual_norm:.2e}")
     
-    print(f"\nNote: Preconditioner is applied to Gram matrix S\dag S")
+    print(rf"\nNote: Preconditioner is applied to Gram matrix S\dag S")
     print(f"      Common in TDVP for quantum geometric tensor preconditioning")
     
     return result_precond
@@ -387,8 +387,8 @@ if __name__ == "__main__":
     print("1. Preconditioners drastically reduce iterations for ill-conditioned systems")
     print("2. Jacobi: Simple, cheap, good for diagonally dominant matrices")
     print("3. Cholesky: Very effective but expensive O(n^3) setup")
-    print("4. SSOR: Good balance, omega \in [1.0, 2.0] for tuning")
-    print("5. GRAM form: Preconditioner applies to S\dag S (common in TDVP/NQS)")
+    print(r"4. SSOR: Good balance, omega \in [1.0, 2.0] for tuning")
+    print(r"5. GRAM form: Preconditioner applies to S\dag S (common in TDVP/NQS)")
     print("6. Factory: choose_precond() for flexible creation")
     print("\nRecommendation: Start with Jacobi, upgrade to SSOR/Cholesky if needed")
 

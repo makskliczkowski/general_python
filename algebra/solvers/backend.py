@@ -1,4 +1,4 @@
-'''
+r'''
 
 Implements a unified BackendSolver that wraps native `linalg.solve` functions
 from NumPy, SciPy, and JAX backends. This provides a simple, direct solver
@@ -315,7 +315,7 @@ class BackendSolver(Solver):
             assume_a        : str = 'gen',              # SciPy option
             use_scipy       : bool = False,             # Force SciPy even with NumPy arrays
             **kwargs        : Any) -> SolverResult:
-        """
+        r"""
         Static solve implementation using the appropriate backend's `linalg.solve`.
         
         Parameters
