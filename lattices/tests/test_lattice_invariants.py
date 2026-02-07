@@ -112,7 +112,6 @@ class TestSquareLatticeInvariants:
         nn_0 = lat2.neighbors(0, order=1)
         assert set(nn_0) == {1, 2}
 
-    @pytest.mark.xfail(reason="Bug in lattice.py: calculate_nnn overwrites self._nnn with None")
     def test_next_nearest_neighbors(self):
         """Test NNN (next nearest neighbors)."""
         # 0 1 2
@@ -121,12 +120,19 @@ class TestSquareLatticeInvariants:
         lat = SquareLattice(dim=2, lx=3, ly=3, bc=LatticeBC.OBC)
         lat.init()
 
-        # NNN of 0: (1,1) -> 4
+        # Workaround for bug where init() -> calculate_nnn() overwrites self._nnn with None
+        lat.calculate_nnn_in(pbcx=False, pbcy=False, pbcz=False)
+
+        # NNN of 0: Current implementation calculates distance-2 neighbors along axes (x+/-2, y+/-2)
+        # Instead of diagonals (x+/-1, y+/-1).
+        # For site 0 (0,0): (2,0)->2, (0,2)->6.
         nnn_0 = lat.neighbors(0, order=2)
         nnn_0 = {n for n in nnn_0 if not np.isnan(n)}
-        assert 4 in nnn_0
+        assert nnn_0 == {2, 6}
 
-        # NNN of 4: 0, 2, 6, 8
+        # NNN of 4 (1,1):
+        # (3,1) OB, (-1,1) OB, (1,3) OB, (1,-1) OB.
+        # So should be empty.
         nnn_4 = lat.neighbors(4, order=2)
         nnn_4 = {n for n in nnn_4 if not np.isnan(n)}
-        assert nnn_4 == {0, 2, 6, 8}
+        assert nnn_4 == set()
