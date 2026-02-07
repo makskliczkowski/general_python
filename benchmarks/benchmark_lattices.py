@@ -1,3 +1,7 @@
+"""
+Benchmarks for lattices module.
+Measures initialization time for SquareLattice with different boundary conditions.
+"""
 import time
 from general_python.lattices.square import SquareLattice
 from general_python.lattices import LatticeBC

@@ -2,7 +2,7 @@ import numpy as np
 import scipy.sparse as sp
 
 def create_spin_chain_hamiltonian(n_spins: int):
-    """
+    r"""
     Create Heisenberg spin chain Hamiltonian (dense).
     H = \Sigma _i (S^x_i S^x_{i+1} + S^y_i S^y_{i+1} + S^z_i S^z_{i+1})
 
@@ -27,13 +27,14 @@ def create_spin_chain_hamiltonian(n_spins: int):
 
             # S^x_i S^x_{i+1} + S^y_i S^y_{i+1} = 0.5 * (S+_i S-_{i+1} + S-_i S+_{i+1})
             # These flip both spins if they are antiparallel
-            new_state = state ^ (1 << site) ^ (1 << (site + 1))
-            H[new_state, state] += 0.5
+            if bit_i != bit_ip1:
+                new_state = state ^ (1 << site) ^ (1 << (site + 1))
+                H[new_state, state] += 0.5
 
     return H
 
 def create_sparse_spin_chain_hamiltonian(n_spins: int):
-    """
+    r"""
     Create Heisenberg spin chain Hamiltonian as a sparse matrix (CSR).
     H = \Sigma _i (S^x_i S^x_{i+1} + S^y_i S^y_{i+1} + S^z_i S^z_{i+1})
     """
