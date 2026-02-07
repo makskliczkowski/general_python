@@ -1,3 +1,7 @@
+"""
+Minimal benchmark runner for general_python.
+Run with: python3 -m benchmarks.run [--heavy]
+"""
 import argparse
 import sys
 import os

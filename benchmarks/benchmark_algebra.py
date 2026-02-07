@@ -1,3 +1,7 @@
+"""
+Benchmarks for algebra module (Lanczos, Arnoldi eigensolvers).
+Measures runtime and residual norms for solving eigenvalue problems on sparse matrices.
+"""
 import time
 import numpy as np
 import scipy.sparse as sp

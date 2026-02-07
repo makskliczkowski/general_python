@@ -1,3 +1,7 @@
+"""
+Benchmarks for physics module.
+Measures time to build and apply Heisenberg spin chain Hamiltonians (dense and sparse).
+"""
 import time
 import numpy as np
 from .utils import create_spin_chain_hamiltonian, create_sparse_spin_chain_hamiltonian
