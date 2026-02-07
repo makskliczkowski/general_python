@@ -94,3 +94,4 @@ For Continuous Integration, the following steps are recommended:
 1.  **Install**: `pip install .[dev,ml,jax,docs]`
 2.  **Test**: `pytest tests/`
 3.  **Doc Build**: `cd docs && make html`
+4.  **Sanity Check**: `python3 test_documentation.py`

@@ -55,3 +55,13 @@ This has been patched with a runtime guard, but structurally it might be better 
 The project relies heavily on `LazyImporter` and `lazy_import` helpers in `__init__.py` files.
 While this reduces startup time, it can hide import errors until runtime.
 Regular verification scripts (like `test_documentation.py`) are essential to catch these issues early.
+
+## Version Management
+
+The version number is currently hardcoded in three places:
+1.  `pyproject.toml`
+2.  `__init__.py`
+3.  `docs/conf.py`
+
+This redundancy requires manual synchronization (e.g. bumping from 0.1.0 to 1.1.0).
+**Proposal**: Use a single source of truth, such as reading `__init__.py` from `pyproject.toml` (dynamic metadata) or vice-versa.
