@@ -2,86 +2,52 @@
 
 ## Scope
 
-This audit covers Sphinx docs in `docs/`, package-level docstrings, and Read the Docs (RTD) configuration.
+This audit covers the current state of documentation in `docs/` and inline docstrings within the codebase (`algebra/`, `lattices/`, `maths/`, `ml/`, `physics/`, `common/`).
 
-## 1) What documentation currently exists
+## 1) Existing Documentation
 
-### User-facing docs in `docs/`
+### Pages
+- **Getting Started** (`docs/getting_started.rst`): Covers installation, backend expectations, and verification.
+- **Design Principles** (`docs/design_principles.rst`): Outlines scientific contracts, backend awareness, and coding standards.
+- **API Reference** (`docs/api.rst`): Uses `automodule` to pull docstrings from source.
+- **Benchmarks** (`docs/BENCHMARKS.md`): Documents performance tests.
+- **Tests** (`docs/TESTS_CURRENT.md`): Inventory of tests.
 
-- Core navigation and overview pages exist: `index.rst`, `introduction.rst`, `usage.rst`, `api.rst`, `contributing.rst`, `license.rst`.
-- Setup and architecture pages exist: `installation.rst`, `getting_started.rst`, `design_principles.rst`.
-- Process notes exist: `BUILD_AND_CI.md`, `TESTS_CURRENT.md`, `TESTS_NEW.md`, `BENCHMARKS.md`, `FUTURE_BRANCHES.md`.
+### Build System
+- **Local:** Sphinx (`Makefile`, `conf.py`). Run `make html` in `docs/`.
+- **ReadTheDocs:** Configured in `.readthedocs.yaml` (uses Ubuntu 24.04, Python 3.12).
 
-### API surface documentation
+## 2) Issues Identified
 
-- `docs/api.rst` uses `automodule` entries for major packages (`algebra`, `common`, `lattices`, `maths`, `ml`, `physics`) and selected submodules.
-- Sphinx config enables autodoc + napoleon, so module and function docstrings are directly exposed in generated docs.
+- **Missing Module Docstrings:** Several key files were missing module-level docstrings, including:
+  - `ml/net_impl/utils/net_utils_np.py`
+  - `common/timer.py`
+  - `physics/eigenlevels.py`
+  - `physics/sp/__init__.py`
+  - `maths/random.py`
+  - `maths/statistics.py`
+  - `lattices/hexagonal.py`
+  - `algebra/utilities/pfaffian_jax.py`
+  - `algebra/utilities/hafnian_jax.py`
 
-### Build configuration
+- **Syntax Warnings:** Numerous `SyntaxWarning: invalid escape sequence` errors were present due to LaTeX sequences (e.g., `\sigma`, `\alpha`, `\Delta`) in normal string literals instead of raw strings. This affects python 3.12+ and can lead to incorrect rendering or runtime warnings.
 
-- Local Sphinx build path is configured via `docs/conf.py` and `docs/Makefile`.
-- RTD build path is configured in `.readthedocs.yaml` and points to `docs/conf.py`.
+## 3) Improvements Made
 
-## 2) What is missing
+- **Added Docstrings:** Comprehensive module-level docstrings were added to the files listed above, detailing purpose, input/output contracts, and stability notes.
+- **Fixed Syntax Warnings:** A targeted script was used to convert string literals containing invalid escape sequences into raw strings (`r"..."`). This covered:
+  - LaTeX in docstrings (e.g., `r"""... \sigma ..."""`).
+  - Regex patterns (e.g., `r"\d"`).
+  - Scientific constants/symbols in comments or strings.
+- **Validation:** Checked using `ast` parsing to ensure docstrings are present and no syntax warnings are emitted.
 
-- Some module-level docstrings were previously inconsistent in scientific contracts (shape, dtype, determinism) across top-level packages.
-- The docs set did not clearly connect `pyproject.toml` optional extras (`docs`, `dev`, `ml`, `jax`) to quick-start workflows in one concise place.
-- Backend expectations (NumPy baseline, optional JAX paths) were present but not consistently emphasized as operational guidance.
+## 4) Current Status
 
-## 3) What is outdated or potentially confusing
+- **Docstring Coverage:** significantly improved for core scientific modules.
+- **Code Hygiene:** Source code is free of invalid escape sequence warnings.
+- **Docs Build:** Ready for Sphinx build (locally and RTD).
 
-- Earlier prose in audit notes referenced RTD environment details that no longer match current `.readthedocs.yaml` values.
-  - Current RTD config uses Ubuntu 24.04 and Python 3.12.
-- Existing architecture pages discussed backend behavior in broad terms but did not always spell out determinism caveats (floating-point ordering differences between backends).
+## 5) Recommended Next Steps
 
-## 4) How docs are built
-
-### Local build
-
-From repository root:
-
-```bash
-pip install -e ".[docs]"
-cd docs
-make html
-```
-
-Output:
-
-- HTML site in `docs/_build/html/`
-- Entry point: `docs/_build/html/index.html`
-
-### Read the Docs build
-
-RTD configuration source: `.readthedocs.yaml`.
-
-- Uses config version 2.
-- Uses Ubuntu 24.04 and Python 3.12.
-- Uses Sphinx config at `docs/conf.py`.
-- Installs package from repository root with `docs` extra and also installs `docs/requirements.txt`.
-
-## 5) Improvements made in this task
-
-- Refined module-level docstrings for:
-  - `algebra`
-  - `lattices`
-  - `maths`
-  - `ml`
-  - `physics`
-  - `common`
-- Docstrings now consistently call out:
-  - module purpose
-  - input/output contracts
-  - dtype and shape expectations
-  - numerical stability notes
-  - determinism and reproducibility caveats
-- Refreshed quick-start and design pages (`getting_started.rst`, `design_principles.rst`) to emphasize:
-  - installation paths from `pyproject.toml` extras
-  - backend expectations (NumPy baseline, optional JAX)
-  - practical test commands
-
-## 6) Recommended next steps (non-blocking)
-
-- Add small API examples for each major top-level package in `docs/usage.rst` that include explicit shapes and dtypes.
-- Add a short troubleshooting page for backend mismatch and import-time optional dependencies.
-- Add a CI docs job that runs `sphinx-build -W` to catch warning regressions early.
+- Add specific API examples in `docs/usage.rst`.
+- Expand docstrings for `tests/` directories if needed (currently excluded from audit).

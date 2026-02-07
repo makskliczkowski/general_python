@@ -1,6 +1,18 @@
-'''
+"""
+Random Matrix Theory and specialized sampling utilities.
 
-'''
+This module complements `algebra.ran_wrapper` by providing specific ensembles
+like Circular Unitary Ensemble (CUE) matrices via QR decomposition.
+
+Input/Output Contracts
+----------------------
+- `CUE_QR`: Returns a unitary complex matrix of shape (n, n).
+
+Numerical Stability
+-------------------
+The QR method for CUE is generally stable but phase adjustment is needed
+for true Haar measure compliance (controlled by `simple=False`).
+"""
 
 import numpy as np
 

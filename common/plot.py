@@ -3355,7 +3355,7 @@ class Plotter:
                     # Style
                     fontsize: int = None,
                     **kwargs):
-        """
+        r"""
         Configure axis visibility, spines, ticks, and labels in one call.
         
         This is a convenience function for common axis customizations.
@@ -3655,7 +3655,7 @@ class Plotter:
     
     @staticmethod
     def power_law_guide(ax, x_range, exponent, *, add_label: bool = True, label=None, position='lower right', color='gray', ls='--', lw=1.5, offset_log=0, zorder=3, **kwargs):
-        """
+        r"""
         Add a power-law guide line to a log-log plot.
         
         Useful for showing scaling behavior (e.g., y ~ x^{-2}).

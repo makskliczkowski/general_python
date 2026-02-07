@@ -1,3 +1,17 @@
+"""
+Timing utilities for benchmarking and profiling.
+
+This module provides:
+- A `Timer` class for context-manager and decorator-based timing with support for laps and deadlines.
+- Functional wrappers (`timeit`) for simple benchmarking.
+- JAX-aware synchronization helpers to ensure accurate timing of asynchronous operations.
+
+Features:
+- High-precision monotonic clock (nanoseconds).
+- Automatic synchronization for JAX arrays (blocks until ready).
+- Detailed reporting with laps and mean/std stats.
+"""
+
 from __future__ import annotations
 from dataclasses import dataclass, field
 from contextlib import contextmanager
