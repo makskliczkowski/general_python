@@ -1,23 +1,83 @@
-# Current Test Inventory
+# Inventory of Current Tests
 
-This document lists the existing tests in the `general_python` library, their purpose, and characteristics.
+This document lists the existing test modules in the repository, their purpose, runtime classification, and determinism status.
 
-| Test File | Purpose | Type | Deterministic |
-| :--- | :--- | :--- | :--- |
-| `algebra/utilities/tests/test_pfaffian.py` | Unit tests for Pfaffian calculation and Sherman-Morrison skew updates using JAX. | Unit | Yes |
-| `algebra/solvers/tests/test_minres_qlp.py` | Unit/Integration tests for MINRES-QLP solver (NumPy backend). Checks convergence on SPD/indefinite systems. | Unit/Integration | Yes (seeded) |
-| `algebra/tests/test_pfaffian_jax_ops.py` | Unit tests for JAX implementation of Pfaffian operations and performance. | Unit | Yes (seeded) |
-| `algebra/tests/test_algebra.py` | Unit tests for linear algebra utilities: change of basis, outer product, Kronecker product, ket-bra. | Unit | Yes |
-| `algebra/eigen/tests/test_lanczos.py` | Comprehensive tests for Lanczos eigensolver (NumPy & JAX). Checks smallest/largest eigenvalues, matrix-free ops, eigenvectors. | Integration | Yes (seeded) |
-| `algebra/eigen/tests/test_all_solvers.py` | High-level integration test checking all eigensolvers (Exact, Lanczos, Block Lanczos). | Integration | Yes (seeded) |
-| `algebra/eigen/tests/test_block_lanczos_comprehensive.py` | Detailed tests for Block Lanczos solver with varying block sizes, backends, and matrix-free ops. | Integration | Yes (seeded) |
-| `tests/test_imports.py` | Checks package structure, lazy loading of submodules, and key exports. | Integration | Yes |
-| `tests/test_activations.py` | Unit tests for activation functions (tanh, etc.) in NumPy and JAX, and complex-value handling. | Unit | Yes |
-| `tests/test_lazy_imports.py` | Verifies lazy import mechanism for heavy dependencies. | Integration | Yes |
-| `test_documentation.py` | Meta-test ensuring documentation consistency or similar (root level). | Meta | Yes |
+## Algebra Tests
 
-## Notes
+### `algebra/eigen/tests/test_block_lanczos_comprehensive.py`
+*   **Validates**: Block Lanczos eigensolver functionality, including convergence and handling of degenerate eigenvalues.
+*   **Class**: Integration / Slow
+*   **Deterministic**: Yes (seeded)
 
-*   Most tests in `algebra` subdirectories currently use `sys.path` insertion hacks to resolve the package, which should be replaced with proper `general_python` imports.
-*   `test_documentation.py` checks for docstring validity and module imports.
-*   Deterministic behavior is ensured via `np.random.seed` or `jax.random.PRNGKey` in most numerical tests.
+### `algebra/eigen/tests/test_lanczos.py`
+*   **Validates**: Basic Lanczos eigensolver functionality.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `algebra/solvers/tests/test_minres_qlp.py`
+*   **Validates**: MINRES-QLP solver for linear systems Ax=b.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `algebra/tests/test_algebra.py`
+*   **Validates**: Basic algebraic operations and backend utilities.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `algebra/tests/test_pfaffian_jax_ops.py`
+*   **Validates**: Pfaffian calculation using JAX operations.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `algebra/tests/test_solvers_sanity.py`
+*   **Validates**: Convergence of solvers (Lanczos, MINRES) on known matrices (e.g., Laplacian). Checks residuals and determinism.
+*   **Class**: Integration / Slow
+*   **Deterministic**: Yes
+
+### `algebra/utilities/tests/test_pfaffian.py`
+*   **Validates**: Pfaffian utility functions.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+## Lattices Tests
+
+### `lattices/tests/test_lattice_invariants.py`
+*   **Validates**: Lattice invariants such as neighbor finding, coordinate calculation, and boundary conditions for SquareLattice.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+## Physics Tests
+
+### `physics/tests/test_operator_invariants.py`
+*   **Validates**: Operator string resolution and basic operator invariants.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+## Maths Tests
+
+### `maths/tests/test_utilities_edge_cases.py`
+*   **Validates**: Edge cases for mathematical utility functions.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+## General Tests
+
+### `test_documentation.py`
+*   **Validates**: Documentation consistency and importability.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `tests/test_activations.py`
+*   **Validates**: Activation functions (likely for ML components).
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `tests/test_imports.py`
+*   **Validates**: Package imports work correctly.
+*   **Class**: Unit
+*   **Deterministic**: Yes
+
+### `tests/test_lazy_imports.py`
+*   **Validates**: Lazy import mechanism.
+*   **Class**: Unit
+*   **Deterministic**: Yes
