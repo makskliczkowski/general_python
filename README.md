@@ -27,8 +27,7 @@ Advanced numerical methods and sparse matrix operations:
 
 **Example:**
 ```python
-import QES
-from QES.general_python.algebra import solvers
+from general_python.algebra import solvers
 import numpy as np
 
 # Sparse Hamiltonian (CSR format, 100×100)
@@ -67,7 +66,7 @@ Specialized quantum mechanical and statistical mechanics utilities:
 
 **Example:**
 ```python
-from QES.general_python.physics import entropy, correlations
+from general_python.physics import entropy, correlations
 import numpy as np
 
 # Pure state (rank-1 density matrix)
@@ -105,7 +104,7 @@ Efficient lattice construction and topology handling:
 
 **Example:**
 ```python
-from QES.general_python.lattices import SquareLattice
+from general_python.lattices import SquareLattice
 
 # 8×8 square lattice, periodic boundaries
 lat = SquareLattice(lx=8, ly=8, bc='pbc')
@@ -149,7 +148,7 @@ Reproducible high-quality pseudorandom sequences:
 
 **Example:**
 ```python
-from QES.general_python.algebra import ran_wrapper
+from general_python.algebra import ran_wrapper
 import numpy as np
 
 # Create seeded RNG
@@ -179,8 +178,7 @@ General-purpose tools:
 All modules support both NumPy and JAX transparently:
 
 ```python
-import QES
-from QES.general_python.algebra import utils
+from general_python.algebra import utils
 
 # Check active backend
 backend = utils.get_global_backend()
@@ -190,29 +188,23 @@ print(f"Backend: {backend.__name__}")  # 'numpy' or 'jax'
 xp = utils.get_backend("jax")  # Returns jax module
 ```
 
-Switch backends via QES session manager:
-
-```python
-with QES.run(backend='jax'):
-    # JAX code here
-    from QES.general_python.physics import entropy
-    S = entropy.von_neumann_entropy(rho)  # Uses JAX operations
-```
-
 ---
 
 ## Installation
 
-### Within QES
-Already included. Install QES with:
+To install the package in editable mode (recommended for development):
+
 ```bash
-pip install -e "QuantumEigenSolver/pyqusolver/Python/[all,dev]"
+pip install -e ".[dev,ml,jax,docs]"
 ```
 
-### Standalone (if extracted separately)
+For a standard installation:
+
 ```bash
-pip install -e ".[dev]"
+pip install .
 ```
+
+For detailed build and CI instructions, see [docs/BUILD_AND_CI.md](docs/BUILD_AND_CI.md).
 
 ---
 
@@ -221,7 +213,7 @@ pip install -e ".[dev]"
 ### Example 1: Lattice Construction and Topology
 
 ```python
-from QES.general_python.lattices import HexagonalLattice
+from general_python.lattices import HexagonalLattice
 import matplotlib.pyplot as plt
 
 # Create 6×6 hexagonal lattice (Honeycomb/Graphene-like)
@@ -238,7 +230,7 @@ plt.show()
 ### Example 2: Entanglement Entropy Calculation
 
 ```python
-from QES.general_python.physics import entropy
+from general_python.physics import entropy
 import numpy as np
 
 # Ground state of 8-spin system (from exact diagonalization)
@@ -255,7 +247,7 @@ print(f"Entanglement entropy: {S_ent:.4f} bits")
 ### Example 3: Sparse Matrix Solver
 
 ```python
-from QES.general_python.algebra.solvers import LanczosSolver
+from general_python.algebra.solvers import LanczosSolver
 from scipy.sparse import diags
 import numpy as np
 
@@ -315,4 +307,4 @@ Contributions welcome! Please:
 
 ## License
 
-**CC-BY-4.0** – See root [LICENSE.md](../../../../LICENSE.md)
+**CC-BY-4.0** – See [LICENSE](LICENSE)

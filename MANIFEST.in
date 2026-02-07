@@ -1,6 +1,7 @@
 include README.md
 include LICENSE
 include pyproject.toml
+include test_documentation.py
 recursive-include algebra *
 recursive-include common *
 recursive-include docs *
