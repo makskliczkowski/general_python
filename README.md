@@ -1,10 +1,10 @@
-# General Python Utilities – Scientific Computing Tools for QES
+# General Python Utilities – Scientific Computing Tools
 
-[![License](https://img.shields.io/badge/License-CC--BY--4.0-blue.svg)](https://creativecommons.org/licenses/by/4.0/)
+[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 
-A comprehensive library of reusable scientific computing utilities for quantum physics simulations, numerical linear algebra, and machine learning. Designed as the foundation for **QES** (Quantum EigenSolver), these tools are available throughout the package and can be used independently.
+A comprehensive library of reusable scientific computing utilities for quantum physics simulations, numerical linear algebra, and machine learning.
 
 ## Purpose
 
@@ -190,7 +190,7 @@ xp = utils.get_backend("jax")  # Returns jax module
 
 ---
 
-## Installation
+## Installation, Testing, and Documentation
 
 To install the package in editable mode (recommended for development):
 
@@ -261,36 +261,6 @@ A = diags([off_diag, diag, off_diag], [-1, 0, 1], shape=(n, n))
 solver = LanczosSolver(k=10)
 evals, evecs = solver.solve(A)
 print(f"Lowest eigenvalue: {evals[0]:.6f}")
-```
-
----
-
-## Documentation
-
-### Submodule READMEs
-- **[Algebra](algebra/README.md)** – Linear solvers, matrix operations
-- **[Physics](physics/README.md)** – Quantum operators, thermodynamics, spectral analysis
-- **[Lattices](lattices/README.md)** – Geometry, neighbor finding, visualization
-- **[ML](ml/README.md)** – Neural networks, training loops
-
-### Build Full Docs
-```bash
-cd docs
-pip install -r requirements.txt
-make html
-# Open _build/html/index.html
-```
-
----
-
-## Testing
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Test general_python specifically
-pytest tests/test_imports.py -v
 ```
 
 ---

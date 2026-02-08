@@ -1,4 +1,4 @@
-"""
+r"""
 Fast dynamic structure factor S(q,\Omega) for spin systems.
 
 The dynamic structure factor measures spin-spin correlations:
@@ -32,7 +32,7 @@ else:
 @numba.njit(parallel=True, fastmath=True, cache=True)
 def _structure_factor_kernel(energies: np.ndarray, matrix_elements: np.ndarray,
         omega_bins: np.ndarray, eta: float) -> np.ndarray:
-    """
+    r"""
     Fast Numba kernel for computing S(q,\Omega) with Lorentzian broadening.
     
     Parameters
@@ -79,7 +79,7 @@ def structure_factor_spin(
         eta: float = 0.01,
         temperature: Optional[float] = None
 ) -> Array:
-    """
+    r"""
     Compute dynamic structure factor S(q,\Omega) for a spin system.
     
     S(q,\Omega) = \sum _f |<f|S_q|i>|^2 delta (\Omega - (E_f - E_i))
@@ -209,7 +209,7 @@ def structure_factor_multi_q(
         eta: float = 0.01,
         temperature: Optional[float] = None
 ) -> Array:
-    """
+    r"""
     Compute S(q,\Omega) for multiple q-vectors.
     
     Parameters
@@ -273,7 +273,7 @@ def structure_factor_sum_rule(
         structure_factor: Array,
         omega_grid: Array
 ) -> float:
-    """
+    r"""
     Compute sum rule: int d\Omega S(q,\Omega) = <S\dag_q S_q>.
     
     Parameters
@@ -295,7 +295,7 @@ def structure_factor_first_moment(
         structure_factor: Array,
         omega_grid: Array
 ) -> float:
-    """
+    r"""
     Compute first moment: int d\Omega \Omega S(q,\Omega) / int d\Omega S(q,\Omega).
     
     This gives the average excitation energy at momentum q.
@@ -330,7 +330,7 @@ def create_spin_q_operator_1d(
         lattice_positions: Array,
         local_spin_operators: Array
 ) -> Array:
-    """
+    r"""
     Create Fourier-transformed spin operator S_q for 1D lattice.
     
     S_q = \sum _j S_j exp(iq\cdot r_j)

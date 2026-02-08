@@ -29,6 +29,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "numba",
+    "h5py",
 ]
 
 [project.optional-dependencies]
@@ -62,6 +63,7 @@ Repository          = "https://github.com/yourusername/general_python.git"
 Issues              = "https://github.com/yourusername/general_python/issues"
 
 [tool.setuptools]
+include-package-data = true
 py-modules          = []
 packages            = [
     "general_python",

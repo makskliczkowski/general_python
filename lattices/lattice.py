@@ -20,17 +20,14 @@ from    typing      import Dict, List, Mapping, Optional, Tuple, Union, Any
 import  numpy as np
 import  scipy.sparse as sp
 
-try:
-    from .tools.lattice_tools   import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
-    from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
-    from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path, 
-                                        reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
-                                        build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
-                                        KPathResult, find_nearest_kpoints)
-    from .tools.region_handler  import LatticeRegionHandler
-    from ..common               import hdf5man as HDF5Mod
-except ImportError:
-    raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")
+from .tools.lattice_tools   import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
+from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
+from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path,
+                                    reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
+                                    build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
+                                    KPathResult, find_nearest_kpoints)
+from .tools.region_handler  import LatticeRegionHandler
+from ..common               import hdf5man as HDF5Mod
 
 ############################################## GENERAL LATTICE ##############################################
 
