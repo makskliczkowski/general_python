@@ -29,8 +29,8 @@ sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
 project     = 'General Python Utilities'
 copyright   = '2025, Maksymilian Kliczkowski'
 author      = 'Maksymilian Kliczkowski'
-version     = '0.1.0'
-release     = '0.1.0'
+version     = '1.1.0'
+release     = '1.1.0'
 
 # -- General configuration ---------------------------------------------------
 

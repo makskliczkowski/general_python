@@ -93,6 +93,6 @@ The generated HTML documentation will be available in `docs/_build/html/index.ht
 For Continuous Integration (CI), the following steps are recommended:
 
 1.  **Install**: `pip install .[dev,ml,jax,docs]`
-2.  **Lint**: `flake8` and `black --check .`
-3.  **Test**: `pytest`
-4.  **Docs**: `sphinx-build -W -b html docs docs/_build/html` (Treat warnings as errors to ensure doc quality)
+2.  **Test**: `pytest tests/`
+3.  **Doc Build**: `cd docs && make html`
+4.  **Sanity Check**: `python3 test_documentation.py`

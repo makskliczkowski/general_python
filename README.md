@@ -188,33 +188,23 @@ print(f"Backend: {backend.__name__}")  # 'numpy' or 'jax'
 xp = utils.get_backend("jax")  # Returns jax module
 ```
 
-Switch backends via backend manager:
-
-```python
-from general_python.algebra.utils import backend_mgr
-
-# Switch to JAX
-if backend_mgr.is_jax_available:
-    backend_mgr.set_active_backend('jax')
-    # JAX code here
-    from general_python.physics import entropy
-    # S = entropy.von_neumann_entropy(rho)  # Uses JAX operations
-
-    # Switch back to NumPy
-    backend_mgr.set_active_backend('numpy')
-```
-
 ---
 
 ## Installation, Testing, and Documentation
 
-For detailed instructions on installation, running tests, and building documentation, please refer to [docs/BUILD_AND_CI.md](docs/BUILD_AND_CI.md).
-
-### Quick Install
+To install the package in editable mode (recommended for development):
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,ml,jax,docs]"
 ```
+
+For a standard installation:
+
+```bash
+pip install .
+```
+
+For detailed build and CI instructions, see [docs/BUILD_AND_CI.md](docs/BUILD_AND_CI.md).
 
 ---
 
@@ -287,4 +277,4 @@ Contributions welcome! Please:
 
 ## License
 
-**MIT** – See [LICENSE](LICENSE)
+**CC-BY-4.0** – See [LICENSE](LICENSE)
