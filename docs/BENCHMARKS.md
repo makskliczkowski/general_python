@@ -5,7 +5,7 @@ This directory contains a lightweight benchmark suite for the `general_python` l
 ## Overview
 
 The benchmarks measure the performance of key components:
-*   **Algebra**: Krylov subspace methods (Lanczos and Arnoldi algorithms) on structured sparse matrices (Laplacian and Convection-Diffusion).
+*   **Algebra**: Krylov subspace methods (Lanczos and Arnoldi algorithms) on structured sparse matrices (Laplacian 1D/2D and Convection-Diffusion).
 *   **Lattices**: Initialization and neighbor list generation for square lattices.
 *   **Physics**: Construction and application of Heisenberg spin chain Hamiltonians (Dense and Sparse).
 
@@ -34,6 +34,9 @@ python3 -m benchmarks.run --heavy
 *   **Benchmark**: `Lanczos Laplacian 1D`
     *   **Metric**: Runtime (seconds) and Minimum Residual Norm (`||Av - λv||`).
     *   **Workload**: Solving for the `k` smallest eigenvalues of a symmetric 1D Laplacian matrix of size `n` using `LanczosEigensolver`.
+*   **Benchmark**: `Lanczos Laplacian 2D`
+    *   **Metric**: Runtime (seconds) and Minimum Residual Norm.
+    *   **Workload**: Solving for the `k` smallest eigenvalues of a symmetric 2D Laplacian matrix of size `Nx` x `Ny` using `LanczosEigensolver`. The matrix is constructed via Kronecker sum.
 *   **Benchmark**: `Arnoldi Conv-Diff`
     *   **Metric**: Runtime (seconds) and Minimum Residual Norm.
     *   **Workload**: Solving for the `k` largest magnitude eigenvalues of a non-symmetric Convection-Diffusion matrix of size `n` using `ArnoldiEigensolver`.

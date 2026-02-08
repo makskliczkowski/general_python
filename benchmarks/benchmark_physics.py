@@ -5,6 +5,7 @@ from .utils import create_spin_chain_hamiltonian, create_sparse_spin_chain_hamil
 def benchmark_hamiltonian(n_spins):
     """
     Benchmark building a Hamiltonian and applying it (Dense).
+    Measures time to construct H and compute H @ v.
     """
     # 1. Construction
     start_time = time.perf_counter()
@@ -40,6 +41,7 @@ def benchmark_hamiltonian(n_spins):
 def benchmark_hamiltonian_sparse(n_spins):
     """
     Benchmark building a Hamiltonian and applying it (Sparse).
+    Measures time to construct sparse H (CSR) and compute H @ v.
     """
     # 1. Construction
     start_time = time.perf_counter()

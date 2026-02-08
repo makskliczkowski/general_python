@@ -1,57 +1,52 @@
-# Future Structural Improvements
+# Future Development and Structural Improvements
 
-This document outlines potential structural improvements for the `general_python` package.
+This document outlines structural issues and potential improvements for the `general_python` codebase.
 
-## Package Layout ("Flat" vs `src`)
+## Structural Pain Points
 
-### Current State
-The project currently uses a "flat" layout where the root directory `.` is mapped to the package `general_python`.
-Submodules like `algebra`, `maths`, `ml` are located in the root directory and become subpackages `general_python.algebra`, etc.
+### Flat Layout and Package Discovery
 
-**Implications:**
-*   `pyproject.toml` explicitly lists all subpackages to ensure they are discovered by `setuptools` (since `find_packages(where='.')` would find them as top-level packages, but we want them under `general_python`).
-*   Namespace pollution in the root directory (mixing source code, config files, docs, scripts).
-*   Editable installs require careful configuration (`package-dir = {"general_python": "."}`).
+The current project uses a "flat" layout where the root directory (`.`) is mapped to the `general_python` package.
+This is configured explicitly in `pyproject.toml` using `package-dir = {general_python = "."}`.
 
-### Proposal: Move to `src/` Layout
-Refactor the repository to use the standard `src/` layout:
+**Issue**:
+- New submodules must be manually added to the `packages` list in `pyproject.toml`.
+- Mixing source code with configuration files (`pyproject.toml`, `README.md`, etc.) in the root directory can be confusing for packaging tools and developers.
 
-```text
-general_python/
-├── pyproject.toml
-├── src/
-│   └── general_python/
-│       ├── __init__.py
-│       ├── algebra/
-│       ├── maths/
-│       └── ...
-├── tests/
-├── docs/
-└── ...
-```
+**Proposal**:
+- Move source code to a `src/` directory (src-layout).
+- Use `find:` directive in `pyproject.toml` (or `setuptools.find_packages()`) to automatically discover packages.
 
-**Benefits:**
-*   Cleaner root directory.
-*   Standard auto-discovery of packages using `find_packages(where='src')`.
-*   Avoids accidental import of the local folder as a package when running scripts from root (forces testing against installed package).
-*   Simplifies `pyproject.toml` configuration.
+### Heavy Imports in `__init__.py`
 
-## Missing `__init__.py` Files
+The root `__init__.py` attempts to eagerly import submodules (`algebra`, `common`, `lattices`, `maths`, `physics`, `ml`) inside a `try/except` block for CI compatibility.
 
-Some subdirectories were found missing `__init__.py` files, which prevented them from being treated as regular packages:
-*   `general_python.common.embedded`
-*   `general_python.physics.sp`
+**Issue**:
+- Eagerly importing all submodules can lead to slow startup times if dependencies are large (e.g., `tensorflow`, `jax`).
+- It defeats the purpose of the lazy loading mechanism implemented via `__getattr__`.
+- If optional dependencies are missing, the eager import fails silently, potentially masking issues until runtime access.
 
-These have been patched by adding empty `__init__.py` files, but future modules should ensure `__init__.py` is present if they are intended to be importable packages.
+**Proposal**:
+- Remove the eager `try/except` import block in `__init__.py` and rely fully on lazy loading.
+- Ensure that CI environments explicitly import modules they need to test.
 
-## Optional Dependencies
+### Unguarded Test Imports
 
-The `maths` module has a hard dependency on `pandas` in `math_utils.py`.
-This has been patched with a runtime guard, but structurally it might be better to:
-1.  Move pandas-dependent functions to a separate submodule (e.g. `maths.statistics.dataframe_utils`).
-2.  Or ensure `pandas` is a hard dependency if it is core to the library's function.
+Some tests (e.g., `tests/test_activations.py`, `algebra/utilities/tests/test_pfaffian.py`) import optional dependencies like `jax` at the module level without checking for their presence.
 
-## Circular Imports and Lazy Loading
-The project relies heavily on `LazyImporter` and `lazy_import` helpers in `__init__.py` files.
-While this reduces startup time, it can hide import errors until runtime.
-Regular verification scripts (like `test_documentation.py`) are essential to catch these issues early.
+**Issue**:
+- Running `pytest` without optional dependencies installed results in `ImportError` during test collection, failing the entire test suite.
+- This forces users to install all optional dependencies even if they only want to test the core functionality.
+
+**Proposal**:
+- Use `pytest.importorskip("jax")` or similar guards inside test files or functions.
+- Mark tests requiring optional dependencies with custom markers (e.g., `@pytest.mark.jax`) so they can be deselected easily (`pytest -m "not jax"`).
+
+### Circular Dependencies
+
+(Placeholder: If any circular dependencies are identified during future audits, document them here.)
+
+## Maintenance
+
+When addressing these issues, ensure backward compatibility is maintained or clearly communicated.
+Moving to a `src` layout is a breaking change for editable installs if not handled carefully, but is generally recommended for modern Python packaging.
