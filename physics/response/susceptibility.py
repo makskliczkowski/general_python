@@ -1,4 +1,4 @@
-"""
+r"""
 Magnetic and charge susceptibilities chi(q,\Omega) for quantum systems.
 
 The dynamical susceptibility is the linear response function:
@@ -120,7 +120,7 @@ def susceptibility_multi_omega(
         omega_grid          : Array,
         eta                 : float = 0.01,
         temperature         : float = 0.0) -> Array:
-    """
+    r"""
     Compute chi(q,\Omega) for multiple frequencies.
     
     Parameters
@@ -169,7 +169,7 @@ def static_susceptibility(
         hamiltonian_eigvecs : Array,
         operator_q          : Array,
         temperature         : float = 0.0) -> float:
-    """
+    r"""
     Compute static (\Omega=0) susceptibility chi(q,0).
     
     chi(q,0) = \beta <(A_q - <A_q>)^2>  (fluctuation-dissipation)

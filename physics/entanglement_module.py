@@ -738,7 +738,7 @@ class EntanglementModule:
                           backend               : str                                   = 'numpy',
                           **kwargs
                           ) -> float:
-        """
+        r"""
         Calculate entanglement entropy from single-particle correlation matrix.
         
         **SINGLE-PARTICLE METHOD** - Fast O(L_A³) method for non-interacting (quadratic)
@@ -1608,7 +1608,7 @@ class EntanglementModule:
     
     def help(self):
         """Print usage help for the entanglement module."""
-        help_text = """
+        help_text = r"""
         EntanglementModule - Unified entanglement calculations
         ======================================================
         

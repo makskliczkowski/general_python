@@ -1,48 +1,53 @@
 # Documentation Audit
 
 ## Scope
-This audit covers the Sphinx documentation in `docs/`, package-level docstrings, and general documentation quality.
 
-## 1. Existing Documentation
-### User-facing docs
-- `docs/index.rst`, `introduction.rst`, `usage.rst`, `api.rst`, `contributing.rst`, `license.rst` exist and provide a solid foundation.
-- `docs/getting_started.rst` and `docs/design_principles.rst` are present and cover installation, backend expectations, and design philosophy.
-- `docs/BUILD_AND_CI.md` and `docs/BENCHMARKS.md` provide operational details.
+This audit covers the current state of documentation in `docs/` and inline docstrings within the codebase (`algebra/`, `lattices/`, `maths/`, `ml/`, `physics/`, `common/`).
 
-### API Documentation
-- Package-level docstrings (`__init__.py`) in `algebra`, `lattices`, `maths`, `ml`, `physics`, and `common` are high-quality, covering:
-    - Purpose
-    - Input/output contracts
-    - Shape/dtype expectations
-    - Numerical stability and determinism
+## 1) Existing Documentation
 
-### Build Configuration
-- `docs/conf.py` and `docs/Makefile` are configured for Sphinx.
-- `pyproject.toml` defines optional dependencies including `docs`.
+### Pages
+- **Getting Started** (`docs/getting_started.rst`): Covers installation, backend expectations, and verification.
+- **Design Principles** (`docs/design_principles.rst`): Outlines scientific contracts, backend awareness, and coding standards.
+- **API Reference** (`docs/api.rst`): Uses `automodule` to pull docstrings from source.
+- **Benchmarks** (`docs/BENCHMARKS.md`): Documents performance tests.
+- **Tests** (`docs/TESTS_CURRENT.md`): Inventory of tests.
 
-## 2. Improvements Implemented
-During this session, the following improvements were verified or made:
+### Build System
+- **Local:** Sphinx (`Makefile`, `conf.py`). Run `make html` in `docs/`.
+- **ReadTheDocs:** Configured in `.readthedocs.yaml` (uses Ubuntu 24.04, Python 3.12).
 
-- **Module-level Docstrings**:
-    - Confirmed high-quality docstrings in `__init__.py` files across all major packages.
-    - Improved `algebra/solver.py` to explicitly detail numerical stability in orthogonalization routines (`sym_ortho`).
-    - Standardized docstrings in `physics/entropy.py` for consistent parameter/return descriptions and marked `entro_page_u1` as "Not Implemented".
-    - Updated `lattices/square.py` to include input/output contracts and shape/dtype expectations in the class docstring.
+## 2) Issues Identified
 
-- **Documentation Pages**:
-    - Confirmed `getting_started.rst` correctly describes installation via `pyproject.toml` extras.
-    - Confirmed `design_principles.rst` articulates backend-aware design and numerical robustness.
+- **Missing Module Docstrings:** Several key files were missing module-level docstrings, including:
+  - `ml/net_impl/utils/net_utils_np.py`
+  - `common/timer.py`
+  - `physics/eigenlevels.py`
+  - `physics/sp/__init__.py`
+  - `maths/random.py`
+  - `maths/statistics.py`
+  - `lattices/hexagonal.py`
+  - `algebra/utilities/pfaffian_jax.py`
+  - `algebra/utilities/hafnian_jax.py`
 
-## 3. Observations
-- The codebase uses a flat layout (`general_python` package).
-- Documentation correctly advises on `pip install -e .` usage.
-- Backend expectations (NumPy vs JAX) are consistently noted.
+- **Syntax Warnings:** Numerous `SyntaxWarning: invalid escape sequence` errors were present due to LaTeX sequences (e.g., `\sigma`, `\alpha`, `\Delta`) in normal string literals instead of raw strings. This affects python 3.12+ and can lead to incorrect rendering or runtime warnings.
 
-## 4. Build Instructions
-To build docs locally:
-```bash
-pip install -e ".[docs]"
-cd docs
-make html
-```
-Output is generated at `docs/_build/html/index.html`.
+## 3) Improvements Made
+
+- **Added Docstrings:** Comprehensive module-level docstrings were added to the files listed above, detailing purpose, input/output contracts, and stability notes.
+- **Fixed Syntax Warnings:** A targeted script was used to convert string literals containing invalid escape sequences into raw strings (`r"..."`). This covered:
+  - LaTeX in docstrings (e.g., `r"""... \sigma ..."""`).
+  - Regex patterns (e.g., `r"\d"`).
+  - Scientific constants/symbols in comments or strings.
+- **Validation:** Checked using `ast` parsing to ensure docstrings are present and no syntax warnings are emitted.
+
+## 4) Current Status
+
+- **Docstring Coverage:** significantly improved for core scientific modules.
+- **Code Hygiene:** Source code is free of invalid escape sequence warnings.
+- **Docs Build:** Ready for Sphinx build (locally and RTD).
+
+## 5) Recommended Next Steps
+
+- Add specific API examples in `docs/usage.rst`.
+- Expand docstrings for `tests/` directories if needed (currently excluded from audit).
