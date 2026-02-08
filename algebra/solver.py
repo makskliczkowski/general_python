@@ -1026,11 +1026,20 @@ class Solver(ABC):
 def _sym_ortho(a, b, backend):
     '''
     Performs a stable symmetric Householder (Givens) reflection for complex numbers.
-    Parameters:
+
+    Parameters
+    ----------
     a : scalar
         The first element of the two-vector [a; b].
     b : scalar
         The second element of the two-vector [a; b].
+    backend : module
+        The numerical backend module (numpy or jax.numpy).
+
+    Returns
+    -------
+    c, s, r : scalar
+        The rotation coefficients and the norm.
     '''
     _absa   = backend.abs(a)
     _absb   = backend.abs(b)
@@ -1064,20 +1073,28 @@ def sym_ortho(a, b, backend: str = "default"):
     For complex inputs, r preserves the phase of a (if b==0) or b (if a==0),
     and the reflectors are computed in a stable manner.
     
-    Parameters:
-        a : scalar (real or complex)
-            The first element of the two-vector [a; b].
-        b : scalar (real or complex)
-            The second element of the two-vector [a; b].
-        backend : str, optional (default "default")
-            Specifies which backend to use. If set to "jax", the function uses
-            jax.numpy and is jitted for speed.
+    Parameters
+    ----------
+    a : scalar (real or complex)
+        The first element of the two-vector [a; b].
+    b : scalar (real or complex)
+        The second element of the two-vector [a; b].
+    backend : str, optional (default "default")
+        Specifies which backend to use. If set to "jax", the function uses
+        jax.numpy and is jitted for speed.
     
-    Returns:
-        (c, s, r) : tuple of scalars
-            The computed reflection parameters satisfying:
-                c = a / r   and   s = b / r,
-            with r = sqrt(a^2 + b^2) for real numbers (or the appropriately phased value for complex).
+    Returns
+    -------
+    (c, s, r) : tuple of scalars
+        The computed reflection parameters satisfying:
+            c = a / r   and   s = b / r,
+        with r = sqrt(a^2 + b^2) for real numbers (or the appropriately phased value for complex).
+
+    Numerical stability
+    -------------------
+    This function avoids overflow and underflow by scaling by the larger magnitude component
+    (either `|a|` or `|b|`). This ensures that the intermediate calculations of `tau`
+    and the hypotenuse do not exceed floating-point range limits unnecessarily.
     """
     # Select the numerical backend: jax.numpy if "jax" is chosen; otherwise, NumPy.
     
