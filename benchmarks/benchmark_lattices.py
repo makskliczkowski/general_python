@@ -4,7 +4,8 @@ from general_python.lattices import LatticeBC
 
 def benchmark_lattice_init(lx, ly, bc_name):
     """
-    Benchmark initialization of SquareLattice (which computes neighbors).
+    Benchmark initialization of SquareLattice.
+    This includes coordinate generation, neighbor list computation, and basis construction.
     """
     bc = LatticeBC.PBC if bc_name == 'PBC' else LatticeBC.OBC
 

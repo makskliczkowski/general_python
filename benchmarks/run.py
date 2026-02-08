@@ -15,6 +15,7 @@ def main():
 
     print("=" * 80)
     print(f"Running general_python Benchmarks (Heavy={args.heavy})")
+    print("Suites: Algebra, Lattices, Physics")
     print("=" * 80)
 
     all_results = []
