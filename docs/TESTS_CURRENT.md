@@ -1,23 +1,26 @@
-# Current Test Inventory
+# Current Tests Inventory
 
-This document lists the existing tests in the `general_python` library, their purpose, and characteristics.
+This document lists the existing test modules in the repository, their validation scope, runtime classification, and determinism.
 
-| Test File | Purpose | Type | Deterministic |
-| :--- | :--- | :--- | :--- |
-| `algebra/utilities/tests/test_pfaffian.py` | Unit tests for Pfaffian calculation and Sherman-Morrison skew updates using JAX. | Unit | Yes |
-| `algebra/solvers/tests/test_minres_qlp.py` | Unit/Integration tests for MINRES-QLP solver (NumPy backend). Checks convergence on SPD/indefinite systems. | Unit/Integration | Yes (seeded) |
-| `algebra/tests/test_pfaffian_jax_ops.py` | Unit tests for JAX implementation of Pfaffian operations and performance. | Unit | Yes (seeded) |
-| `algebra/tests/test_algebra.py` | Unit tests for linear algebra utilities: change of basis, outer product, Kronecker product, ket-bra. | Unit | Yes |
-| `algebra/eigen/tests/test_lanczos.py` | Comprehensive tests for Lanczos eigensolver (NumPy & JAX). Checks smallest/largest eigenvalues, matrix-free ops, eigenvectors. | Integration | Yes (seeded) |
-| `algebra/eigen/tests/test_all_solvers.py` | High-level integration test checking all eigensolvers (Exact, Lanczos, Block Lanczos). | Integration | Yes (seeded) |
-| `algebra/eigen/tests/test_block_lanczos_comprehensive.py` | Detailed tests for Block Lanczos solver with varying block sizes, backends, and matrix-free ops. | Integration | Yes (seeded) |
-| `tests/test_imports.py` | Checks package structure, lazy loading of submodules, and key exports. | Integration | Yes |
-| `tests/test_activations.py` | Unit tests for activation functions (tanh, etc.) in NumPy and JAX, and complex-value handling. | Unit | Yes |
-| `tests/test_lazy_imports.py` | Verifies lazy import mechanism for heavy dependencies. | Integration | Yes |
-| `test_documentation.py` | Meta-test ensuring documentation consistency or similar (root level). | Meta | Yes |
+| Test Module | Validates | Runtime Class | Deterministic | Notes |
+| :--- | :--- | :--- | :--- | :--- |
+| `algebra/eigen/tests/test_block_lanczos_comprehensive.py` | Block Lanczos eigensolver (NumPy/JAX) correctness and convergence. | Unit | Yes (seeds used) | Comprehensive coverage including block sizes and JAX support. |
+| `algebra/eigen/tests/test_lanczos.py` | Lanczos eigensolver (NumPy/JAX/SciPy) correctness, convergence, and breakdown detection. | Unit | Yes (seeds used) | Checks tolerance handling (known issue with NumPy backend ignoring tolerance). |
+| `algebra/solvers/tests/test_minres_qlp.py` | MINRES-QLP solver for symmetric indefinite systems. | Unit | Yes (seeds used) | Contains one skipped test (`test_minres_qlp_with_shift`) due to broken shift handling in library. |
+| `algebra/tests/test_algebra.py` | Basic algebraic utilities import and function. | Unit | Yes | Minimal smoke test. |
+| `algebra/tests/test_pfaffian_jax_ops.py` | JAX operations for Pfaffian computation. | Unit | Yes | Requires JAX. |
+| `algebra/tests/test_solvers_sanity.py` | Integration tests for solvers on physical systems (2D Laplacian). | Integration | Yes (seeds used) | Verifies solvers work on realistic Hamiltonians. |
+| `algebra/utilities/tests/test_pfaffian.py` | Pfaffian calculation utilities. | Unit | Yes | |
+| `lattices/tests/test_lattice_invariants.py` | `SquareLattice` geometry, neighbors, and boundary conditions. | Unit | Yes | Contains one `xfail` test (`test_next_nearest_neighbors`) due to `calculate_nnn` bug in library. |
+| `maths/tests/test_utilities_edge_cases.py` | Math utility functions (`find_nearest`, modular arithmetic, fitting). | Unit | Yes | Documents non-standard behavior of `find_nearest_val` (returns index) and `mod_round` (truncation). |
+| `physics/tests/test_operator_invariants.py` | Operator string parsing and resolution (`Operators` class). | Unit | Yes | Checks parsing logic for site strings. |
+| `test_documentation.py` | Docstring validity and import checks. | Unit | Yes | Meta-test. |
+| `tests/test_activations.py` | Activation functions (tanh, log_cosh) for neural networks. | Unit | Yes | Checks JAX/NumPy consistency. |
+| `tests/test_imports.py` | Package importability. | Unit | Yes | Meta-test. |
+| `tests/test_lazy_imports.py` | Lazy import mechanism. | Unit | Yes | Meta-test. |
 
-## Notes
-
-*   Most tests in `algebra` subdirectories currently use `sys.path` insertion hacks to resolve the package, which should be replaced with proper `general_python` imports.
-*   `test_documentation.py` checks for docstring validity and module imports.
-*   Deterministic behavior is ensured via `np.random.seed` or `jax.random.PRNGKey` in most numerical tests.
+**Summary:**
+- Most tests are unit tests and deterministic.
+- Known issues:
+  - `lattices/tests/test_lattice_invariants.py`: `test_next_nearest_neighbors` fails due to library bug.
+  - `algebra/solvers/tests/test_minres_qlp.py`: `test_minres_qlp_with_shift` is skipped.
