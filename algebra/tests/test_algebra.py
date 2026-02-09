@@ -254,6 +254,9 @@ class AlgebraTests:
 
         self.change_basis(verbose=verbose)
         self.change_basis_matrix(verbose=verbose)
+        self.outer(verbose=verbose)
+        self.kron(verbose=verbose)
+        self.ket_bra(verbose=verbose)
 
         overall_end     = time.time()
         self.logger.say(f"All algebra tests completed in {overall_end - overall_start:.4f} seconds!", log=0, lvl=0)

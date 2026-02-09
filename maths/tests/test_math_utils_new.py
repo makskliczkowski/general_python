@@ -30,40 +30,28 @@ class TestMathUtilsNew:
         # Just ensure it doesn't crash
         assert idx in [0, 1, 2]
 
-    def test_mod_round_negative(self):
-        """Verify mod_round behavior for negative inputs."""
-        # Current implementation documented as "truncation" in existing tests
-        # mod_round(5, 2) -> int(2.5) -> 2
+    @pytest.mark.parametrize("numer, denom, expected", [
+        (5, 2, 2),      # 2.5 -> 2
+        (-5, 2, -1),    # Non-intuitive: -5/2 = -2.5. Yields -1.
+        (-5, 3, 0),     # -1.66 -> 0
+        (4, 2, 2),      # 2.0 -> 2
+        (-4, 2, -1),    # -2.0 -> -1.
+        (-3, 2, 0),     # -1.5 -> 0
+    ])
+    def test_mod_round_parametrization(self, numer, denom, expected):
+        """
+        Parametrized test for mod_round behavior.
+        Note: mod_round handles negative numbers non-intuitively.
+        """
+        assert mod_round(numer, denom) == expected
 
-        # Behavior for negative inputs:
-        # mod_round(-5, 2) -> -2.5. Python % 2 is positive.
-        # Implementation adds 1 -> -1.5. Truncates to -1.
-        assert mod_round(-5, 2) == -1
-
-        # mod_round(-5, 3) -> -1.66. Remainder positive.
-        # Adds 1 -> -0.66. Truncates to 0.
-        assert mod_round(-5, 3) == 0
-
-    def test_mod_floor_negative(self):
-        """Verify mod_floor behavior for negative inputs."""
-        # Based on existing tests: mod_floor(-5, 2) == -4.
-        # -5 / 2 = -2.5. Floor is -3.
-        # So it seems to be floor - 1? Or something else.
-
-        # Let's verify standard floor division first
-        assert -5 // 2 == -3
-
-        # The function `mod_floor` seems to implement something distinct from python `//`.
-        # Existing test: assert mod_floor(-5, 2) == -4
-
-        # Let's test a case that is divisible
-        # -4 / 2 = -2.
-        assert mod_floor(-4, 2) == -2
-
-        # Case -3 / 2 = -1.5. Floor -2.
-        # If pattern holds, might be -3?
-        # Let's just run it and see (or not assert exact value if unsure, but I want to pin behavior).
-
-        # I'll rely on the property that it should be <= real division
-        res = mod_floor(-3, 2)
-        assert res <= -1.5
+    @pytest.mark.parametrize("numer, denom, expected", [
+        (-5, 2, -4),
+        (-4, 2, -2),
+        (-3, 2, -3),
+    ])
+    def test_mod_floor_parametrization(self, numer, denom, expected):
+        """
+        Parametrized test for mod_floor behavior.
+        """
+        assert mod_floor(numer, denom) == expected

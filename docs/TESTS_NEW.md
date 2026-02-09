@@ -1,36 +1,51 @@
-# New Tests Inventory
+# New Tests Documentation
 
-This document details the newly added tests to improve correctness coverage across the library.
+This document describes the new tests added to the codebase to improve correctness, coverage, and stability.
 
-## Algebra
-**Module:** `algebra/tests/test_solver_edge_cases.py`
-- **Purpose**: Verify solver behavior on edge cases and ill-conditioned systems.
-- **Tests**:
-  - `test_lanczos_singular_matrix`: Ensures `LanczosEigensolver` correctly finds 0 eigenvalue for singular matrices.
-  - `test_lanczos_degenerate_eigenvalues`: Checks behavior with degenerate eigenvalues (multiplicity > 1).
-  - `test_minres_ill_conditioned`: Verifies `MinresQLPSolver` can reduce residual even for high condition number matrices.
+## New Test Files
 
-## Lattices
-**Module:** `lattices/tests/test_lattice_new.py`
-- **Purpose**: Expand lattice geometry coverage beyond standard 2D PBC.
-- **Tests**:
-  - `test_square_lattice_1d`: Validates 1D chain neighbor logic.
-  - `test_square_lattice_3d`: Validates 3D cubic lattice neighbor logic.
-  - `test_get_coordinates_shapes`: Ensures coordinate array shapes are consistent (N, 3).
-  - `test_mbc_boundary`: verifies Mixed Boundary Conditions (MBC) behave as cylinder (PBC x, OBC y).
+### 1. `algebra/tests/test_solver_properties.py`
 
-## Physics
-**Module:** `physics/tests/test_operator_algebra_new.py`
-- **Purpose**: Verify fundamental quantum mechanical invariants.
-- **Tests**:
-  - `test_pauli_commutators`: Checks that manually constructed Pauli matrices satisfy $[S_i, S_j] = i \epsilon_{ijk} S_k$.
-  - `test_operators_parsing`: Verifies string resolution for operators.
-  - `test_entropy_functions`: Checks `purity` and `vn_entropy` for pure and mixed states.
+*   **Purpose**: Validates numerical properties of linear algebra solvers (`LanczosEigensolver`, `MinresQLPSolver`).
+*   **Key Checks**:
+    *   **Residual Norms**: Ensures solvers achieve requested tolerance for various dtypes (`float32`, `float64`, `complex64`, `complex128`).
+    *   **Determinism**: Verifies that solvers produce identical results when provided with fixed seeds (addressing potential non-deterministic behavior in iterative methods).
+    *   **Convergence**: Tests convergence on known matrices (e.g., 2D Laplacian) to ensure basic correctness.
+*   **Guarded Modules**: `algebra.eigen`, `algebra.solvers`.
 
-## Maths
-**Module:** `maths/tests/test_math_utils_new.py`
-- **Purpose**: Document and verify edge case behavior of math utilities.
-- **Tests**:
-  - `test_find_nearest_val_empty`: Ensures finding value in empty array raises `ValueError`.
-  - `test_find_nearest_val_nan`: Checks behavior with `NaN`s in array.
-  - `test_mod_round_negative`: Documents specific rounding behavior for negative inputs (tends towards zero/truncation logic).
+### 2. `lattices/tests/test_lattice_boundaries.py`
+
+*   **Purpose**: explicit testing of boundary conditions and edge cases for Lattice classes.
+*   **Key Checks**:
+    *   **Small Lattices**: Validates behavior for degenerate cases like 1x1 and 2x1 lattices, which often break neighbor-finding logic.
+    *   **Boundary Conditions**: strictly tests Periodic (PBC) vs Open (OBC) boundary logic for neighbor counting.
+    *   **Consistency**: Verifies that generated coordinates match the neighbor topology (distance check).
+*   **Guarded Modules**: `lattices.square`.
+
+### 3. `physics/tests/test_physics_invariants.py`
+
+*   **Purpose**: Enforces physical invariants in operator and state manipulations.
+*   **Key Checks**:
+    *   **Hermiticity**: Ensures constructed Pauli matrices and density matrices are Hermitian.
+    *   **Trace/Normalization**: Verifies density matrices have unit trace and purity properties ($Tr(\rho^2) \le 1$).
+    *   **Commutators**: Validates Jacobi identity for operator commutators.
+*   **Guarded Modules**: `physics.operators`, `physics.entropy`.
+
+### 4. `maths/tests/test_common_edge_cases.py`
+
+*   **Purpose**: Tests mathematical utility functions against edge cases and potentially non-intuitive behaviors.
+*   **Key Checks**:
+    *   **Modulo Operations**: Documents and verifies the specific behavior of `mod_round` and `mod_floor` with negative divisors (e.g., `mod_round(5, -2) == -3`).
+    *   **Next Power**: Tests `next_power` with inputs like 0 (raises Error) or non-integers.
+    *   **Array Utils**: Tests `find_maximum_idx` with NumPy 2.x compatibility (handling `AxisError` location).
+*   **Guarded Modules**: `maths.math_utils`.
+
+## Improvements to Existing Tests
+
+### `algebra/tests/test_algebra.py`
+*   **Change**: Uncommented and enabled `outer`, `kron`, and `ket_bra` tests in the `run_all` suite.
+*   **Impact**: Increases coverage of basic tensor operations which were previously skipped.
+
+### `maths/tests/test_math_utils_new.py`
+*   **Change**: Expanded parametrization for `mod_round` and `mod_floor` to explicitly cover and document negative input behaviors.
+*   **Impact**: Prevents regression in utility functions that have non-standard rounding logic.
