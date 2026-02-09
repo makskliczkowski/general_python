@@ -35,12 +35,12 @@ pois        = 0.386294
 
 ####################################################### REDUCED DENSITY MATRIX #######################################################
 
-'''
-Calculate the reduced density matrix out of a state
-'''
 def reduced_density_matrix(state    : np.ndarray, 
                            A_size   : int,
                            L        : int):
+        """
+        Calculate the reduced density matrix out of a state.
+        """
         dimA    = int(( (2 **      A_size ) ))
         dimB    = int(( (2 ** (L - A_size)) ))
         N       = dimA * dimB
@@ -53,12 +53,12 @@ def reduced_density_matrix(state    : np.ndarray,
                 counter                 +=  1
         return rho
 
-'''
-Calculates the reduced density matrix via the Schmidt decomposition
-'''
 def reduced_density_matrix_schmidt(state     :   np.ndarray, 
                                     L        :   int, 
                                     La       :   int):    
+    """
+    Calculates the reduced density matrix via the Schmidt decomposition.
+    """
     dimA        =   2 ** La
     dimB        =   2 ** (L-La)
     N           =   dimA * dimB
@@ -74,13 +74,13 @@ def reduced_density_matrix_schmidt(state     :   np.ndarray,
 
 ######################################################### ENTANGLEMENT ENTROPY #########################################################
 
-'''
-Calculate the bipartite entanglement entropy
-'''
 def entropy_vonNeuman(  state       :   np.ndarray, 
                         L           :   int, 
                         La          :   int,
                         TYP         =   "SCHMIDT"):    
+    """
+    Calculate the bipartite entanglement entropy.
+    """
     entropy = 0
     eV      = None
     if TYP == "SCHMIDT":
@@ -110,13 +110,13 @@ def gap_ratio(en: np.ndarray,
             fraction                = 0.3,
             use_mean_lvl_spacing    = True
         ):
-    r'''
+    r"""
     Calculate the gap ratio of the eigenvalues as:
         $\gamma = \frac{min(\Delta_n, \Delta_{n+1})}{max(\Delta_n, \Delta_{n+1})}$
     - en                    : eigenvalues
     - fraction              : fraction of the eigenvalues to use
     - use_mean_lvl_spacing  : divide by mean level spacing
-    '''
+    """
     
     mean            = np.mean(en)
     energies        = Fraction.take_fraction(frac=fraction, data=en, around=mean)
@@ -132,12 +132,12 @@ def gap_ratio(en: np.ndarray,
         'vals': gap_ratios
     }
 
-'''
-Calculate the average entropy in a given DataFrame
-- df : DataFrame with entropies
-- row : row number (-1 for half division of a system)
-'''
 def mean_entropy(df : pd.DataFrame, row : int):
+    """
+    Calculate the average entropy in a given DataFrame.
+    - df : DataFrame with entropies
+    - row : row number (-1 for half division of a system)
+    """
     # return np.mean(df.loc[row] if row != -1 else df.iloc[row])
     ent_np = df.to_numpy()
     return np.mean(ent_np[row])
@@ -160,11 +160,11 @@ class StatMeasures:
 
     @staticmethod
     def moments(arr : np.ndarray, axis = None):
-        '''
-        Calculate the moments of the array
+        """
+        Calculate the moments of the array.
         - arr : array to calculate the moments
         - axis : axis to calculate the moments
-        '''
+        """
         if axis is not None:
             S   = np.mean(arr, axis = axis)
             S2  = np.mean(arr**2, axis = axis)
@@ -181,11 +181,11 @@ class StatMeasures:
 
     @staticmethod
     def gaussianity(arr : np.ndarray, axis = None):
-        '''
+        """
         Calculate the gaussianity <|Oab|^2>/<|Oab|>^2 -> for normal == pi/2
         - arr : array to calculate the gaussianity
         - axis : axis to calculate the gaussianity
-        '''
+        """
         if axis is not None:
             return np.mean(np.square(arr), axis = axis) / np.square(np.mean(arr, axis = axis))
         return np.mean(np.square(arr))/np.square(np.mean(arr))
@@ -194,32 +194,32 @@ class StatMeasures:
     
     @staticmethod
     def binder_cumulant(arr : np.ndarray, axis = None):
-        '''
+        """
         Calculate the binder cumulant <|Oab|^4>/(3 * <|Oab|^2>^2) -> for normal == 2/3
         - arr : array to calculate the binder cumulant
-        '''
+        """
         if axis is not None:
             return np.mean(np.power(arr, 4), axis = axis) / (3 * np.square(np.mean(np.square(arr), axis = axis)))
         return np.mean(np.power(arr, 4)) / (3 * np.square(np.mean(np.square(arr))))
     
     ##############################################################
     
-    '''
-    Calculate the modulus fidelity - should be 2/pi for gauss
-    - states : np.array of eigenstates
-    '''
     @staticmethod
     def modulus_fidelity(states : np.ndarray):
+        """
+        Calculate the modulus fidelity - should be 2/pi for gauss.
+        - states : np.array of eigenstates
+        """
         Ms = []
         for i in range(0, states.shape[-1] - 1):
             Ms.append(np.dot(states[:, i], states[:, i+1]))
         return np.mean(Ms)
 
-'''
-Calculate the information entropy for given states
-'''
 @staticmethod
 def info_entropy(states : np.ndarray, model_info : str):
+    """
+    Calculate the information entropy for given states.
+    """
     try:
         entropies = []
         for state in states.T:

@@ -1,13 +1,13 @@
-'''
+"""
 This is a module for solving ordinary differential equations (ODEs)
 It provides a set of classes and methods to define and solve initial value problems (IVPs)
 
 -----------------------------------------------
-File    : general_python/common/ode.py
+File    : general_python/algebra/ode.py
 Author  : Maksymilian Kliczkowski
 email   : maxgrom97@gmail.com
 -----------------------------------------------
-'''
+"""
 
 import  time
 import  numpy as np

@@ -83,6 +83,25 @@ def CUE_QR(n: int, simple: bool = True, rng: Optional[object] = None, backend: s
 
 
 def goe(n: int, use_tenpy: bool = True) -> np.ndarray:
+    """
+    Generate a random matrix from the Gaussian Orthogonal Ensemble (GOE).
+
+    If TenPy is available and `use_tenpy` is True, it uses `tenpy.linalg.random_matrix.GOE`.
+    Otherwise, it constructs a symmetric real matrix: A = (X + X^T) / sqrt(2),
+    where X has i.i.d. normal entries.
+
+    Parameters
+    ----------
+    n : int
+        Dimension of the matrix (n x n).
+    use_tenpy : bool
+        Whether to use TenPy implementation if available.
+
+    Returns
+    -------
+    np.ndarray
+        A sample from the GOE.
+    """
     if use_tenpy and _TENPY_AVAILABLE:
         return np.asarray(_T_GOE((n, n)))
     rng = npr.default_rng()
@@ -91,6 +110,25 @@ def goe(n: int, use_tenpy: bool = True) -> np.ndarray:
 
 
 def gue(n: int, use_tenpy: bool = True) -> np.ndarray:
+    """
+    Generate a random matrix from the Gaussian Unitary Ensemble (GUE).
+
+    If TenPy is available and `use_tenpy` is True, it uses `tenpy.linalg.random_matrix.GUE`.
+    Otherwise, it constructs a Hermitian complex matrix: H = (X + X^dag) / 2,
+    where X has i.i.d. complex normal entries.
+
+    Parameters
+    ----------
+    n : int
+        Dimension of the matrix (n x n).
+    use_tenpy : bool
+        Whether to use TenPy implementation if available.
+
+    Returns
+    -------
+    np.ndarray
+        A sample from the GUE.
+    """
     if use_tenpy and _TENPY_AVAILABLE:
         return np.asarray(_T_GUE((n, n)))
     rng = npr.default_rng()
@@ -100,12 +138,48 @@ def gue(n: int, use_tenpy: bool = True) -> np.ndarray:
 
 
 def coe(n: int, use_tenpy: bool = True) -> np.ndarray:
+    """
+    Generate a random matrix from the Circular Orthogonal Ensemble (COE).
+
+    If TenPy is available and `use_tenpy` is True, it uses `tenpy.linalg.random_matrix.COE`.
+    Otherwise, it generates a Haar-distributed orthogonal matrix via QR decomposition.
+
+    Parameters
+    ----------
+    n : int
+        Dimension of the matrix (n x n).
+    use_tenpy : bool
+        Whether to use TenPy implementation if available.
+
+    Returns
+    -------
+    np.ndarray
+        A sample from the COE (unitary symmetric or orthogonal, context dependent).
+    """
     if use_tenpy and _TENPY_AVAILABLE:
         return np.asarray(_T_COE((n, n)))
     return _haar_orthogonal_qr_np(n)
 
 
 def cre(n: int, use_tenpy: bool = True) -> np.ndarray:
+    """
+    Generate a random matrix from the Circular Real Ensemble (CRE).
+
+    If TenPy is available and `use_tenpy` is True, it uses `tenpy.linalg.random_matrix.CRE`.
+    Otherwise, falls back to COE (Haar orthogonal).
+
+    Parameters
+    ----------
+    n : int
+        Dimension of the matrix (n x n).
+    use_tenpy : bool
+        Whether to use TenPy implementation if available.
+
+    Returns
+    -------
+    np.ndarray
+        A sample from the CRE.
+    """
     if use_tenpy and _TENPY_AVAILABLE:
         return np.asarray(_T_CRE((n, n)))
     # Fallback: treat CRE same as COE (orthogonal) in absence of TenPy
@@ -113,6 +187,27 @@ def cre(n: int, use_tenpy: bool = True) -> np.ndarray:
 
 
 def cue(n: int, use_tenpy: bool = True, simple: bool = True) -> np.ndarray:
+    """
+    Generate a random matrix from the Circular Unitary Ensemble (CUE).
+
+    If TenPy is available and `use_tenpy` is True, it uses `tenpy.linalg.random_matrix.CUE`.
+    Otherwise, it generates a Haar-distributed unitary matrix via QR decomposition.
+
+    Parameters
+    ----------
+    n : int
+        Dimension of the matrix (n x n).
+    use_tenpy : bool
+        Whether to use TenPy implementation if available.
+    simple : bool
+        If True, uses a simpler QR method (may have phase bias). If False, corrects phases
+        to ensure true Haar measure (passed to CUE_QR).
+
+    Returns
+    -------
+    np.ndarray
+        A sample from the CUE.
+    """
     if use_tenpy and _TENPY_AVAILABLE:
         return np.asarray(_T_CUE((n, n)))
     return CUE_QR(n, simple=simple)

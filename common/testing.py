@@ -1,7 +1,7 @@
-'''
+"""
 file: general_python/common/testing.py
 Contains an abstract class for testing the common functions in the general_python/common module.
-'''
+"""
 
 import unittest
 import time
@@ -10,9 +10,9 @@ from abc import ABC, abstractmethod
 from ..common.flog import get_global_logger
 
 class GeneralTests:
-    '''
+    """
     Abstract class for testing
-    '''
+    """
     
     # ---------------------------------------------------------------------------------------------
     
@@ -28,7 +28,7 @@ class GeneralTests:
     # ---------------------------------------------------------------------------------------------
         
     def _log(self, message, test_number, color="white", log=0, lvl=1):
-        '''
+        """
         Logs the message with the test number and colorizes the message
         Parameters:
             message: str
@@ -41,7 +41,7 @@ class GeneralTests:
                 The log level
             lvl: int
                 The verbosity level
-        '''
+        """
         
         msg = self.logger.colorize(f"[TEST {test_number}] {message}", color)
         self.logger.say(msg, log=log, lvl=lvl)
@@ -49,12 +49,12 @@ class GeneralTests:
     # ---------------------------------------------------------------------------------------------
     
     def run_test(self, number = Union[str, int]):
-        '''
+        """
         Runs the test with the given number
         Parameters:
             number: int
                 The test number
-        '''
+        """
         self._log(f"Running test {number}", number, color="green", log=1)
         t0 = time.time()
         if isinstance(number, str):
@@ -67,31 +67,31 @@ class GeneralTests:
     # ---------------------------------------------------------------------------------------------
     
     def change_backend(self, backend : str):
-        ''' Adds the backend to the tests 
+        """ Adds the backend to the tests
         May be overridden by the child class...
-        '''
+        """
         pass
     
     @abstractmethod
     def add_tests(self):
-        '''
+        """
         Abstract method to add tests
-        '''
+        """
         self.tests.append(self.dummy_test)
         self.tests_dict[self.dummy_test.__name__] = self.dummy_test
     
     # ---------------------------------------------------------------------------------------------
     
     def dummy_test(self):
-        '''
+        """
         Dummy test
-        '''
+        """
         self._log("Dummy test", 0, color="white", log=1)
     
     def run(self, backend = 'default'):
-        '''
+        """
         Runs the tests
-        '''
+        """
         self.change_backend(backend)
         for i, test in enumerate(self.tests):
             # go through the tests
@@ -109,9 +109,9 @@ class GeneralTests:
 ###################################################################################################
 
 class GeneralAlgebraicTest(GeneralTests):
-    '''
+    """
     Abstract class for testing the algebraic operations
-    '''
+    """
     
     # ---------------------------------------------------------------------------------------------
     
@@ -122,18 +122,18 @@ class GeneralAlgebraicTest(GeneralTests):
     
     @abstractmethod
     def add_tests(self):
-        '''
+        """
         Abstract method to add tests
-        '''
+        """
         pass
     
     # ---------------------------------------------------------------------------------------------
     
     def change_backend(self, backend : str):
-        ''' 
+        """
         Adds the backend to the tests 
         May be overridden by the child class...
-        '''
+        """
         from ..algebra.utils import get_backend
         if isinstance(backend, str):
             self.backend = get_backend(backend)
