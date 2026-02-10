@@ -8,7 +8,6 @@ Author      : Maks Kliczkowski
 '''
 
 from    typing import Dict, Optional, TYPE_CHECKING
-import  gc
 import  numpy as np
 
 if TYPE_CHECKING:
@@ -65,8 +64,11 @@ def check_memory_for_operation(required_gb: float, operation_name: str, safety_f
         logger.info(f"Memory check passed for {operation_name}: {required_gb:.2f} GB / {available:.2f} GB available", lvl=2)
     return True
 
-def log_memory_status(context: str = "", logger: Optional["Logger"] = None, lvl: int = 0) -> None:
+def log_memory_status(context: str = "", logger: Optional["Logger"] = None, lvl: int = 0, verbose: bool = True, **kwargs) -> None:
     """Log current memory usage."""
+    if not verbose:
+        return
+    
     if PSUTIL_AVAILABLE:
         used        = get_used_memory_gb()
         available   = get_available_memory_gb()
@@ -76,9 +78,12 @@ def log_memory_status(context: str = "", logger: Optional["Logger"] = None, lvl:
             if used < 1.0 or available < 1.0:
                 used_mB         = used * 1024
                 available_mB    = available * 1024
-                logger.info(f"Memory [{context}]: Used={used_mB:.2f}mB, Available={available_mB:.2f}mB", lvl=lvl, color='yellow')
+                logger.info(f"Memory [{context}]: Used={used_mB:.2f}mB, Available={available_mB:.2f}mB", lvl=lvl, color='yellow', **kwargs)
             else:
-                logger.info(f"Memory [{context}]: Used={used:.2f}GB, Available={available:.2f}GB", lvl=lvl, color='yellow')
+                logger.info(f"Memory [{context}]: Used={used:.2f}GB, Available={available:.2f}GB", lvl=lvl, color='yellow', **kwargs)
+    else:
+        if logger is not None:
+            logger.warning(f"Memory status unavailable (psutil not installed) [{context}]", lvl=lvl, color='red', **kwargs)
 
 # --------------------------------------------------------------------------------
 #! End of File
