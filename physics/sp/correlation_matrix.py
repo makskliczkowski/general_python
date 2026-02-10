@@ -93,52 +93,54 @@ def _corr_single_slater_raw_kernel(W_A: np.ndarray, occ_bool: np.ndarray, C: np.
             if i != j:
                 C[j, i] = np.conj(C[i, j])  # Fill lower triangle by Hermitian conjugate
 
-@numba.njit(cache=True, fastmath=True, parallel=True)
-def _corr_superposition_diagonal_kernel(
-    W_A: np.ndarray,
-    occ_list_packed: np.ndarray,    # (gamma, Ls) as uint8
-    coeffs_abs_sq: np.ndarray,      # (gamma,) real
-    C: np.ndarray                   # (La, La) output
+@numba.njit(cache=True, fastmath=True)
+def _compute_orbital_weights(
+    occ_packed      : np.ndarray,       # (gamma, Ls) uint8
+    coeffs_abs_sq   : np.ndarray,       # (gamma,)    float64
+) -> np.ndarray:
+    r"""
+    Compute orbital weights :math:`s_q = \sum_{k:\,q\in\mathrm{occ}_k} |a_k|^2`.
+    
+    Returns
+    -------
+    s : ndarray (Ls,) float64
+    """
+    gamma, Ls = occ_packed.shape
+    s = np.zeros(Ls, dtype=np.float64)
+    for k in range(gamma):
+        w = coeffs_abs_sq[k]
+        for q in range(Ls):
+            if occ_packed[k, q] != 0:
+                s[q] += w
+    return s
+
+def _corr_superposition_diagonal(
+    W_A             : np.ndarray,       # (Ls, La)
+    W_A_CT          : np.ndarray,       # (La, Ls)
+    occ_packed      : np.ndarray,       # (gamma, Ls) uint8
+    coeffs_abs_sq   : np.ndarray,       # (gamma,)    float64
+    C               : np.ndarray,       # (La, La) output – modified in-place
 ) -> None:
     r"""
-    Numba kernel for diagonal contributions to superposition correlation matrix.
-    
-    Computes: C += sum_k |a_k|^2 * 2 * W_occ[k]^\dag @ W_occ[k]
+    Add diagonal contributions to the superposition correlation matrix.
+
+    Mathematically:
+
+    .. math::
+        C_{ij}^{\mathrm{diag}}
+        = 2\sum_q \bar W_{qi}\,W_{qj}\,s_q,\qquad
+        s_q = \sum_{k:\,q\in\mathrm{occ}_k} |a_k|^2
+
+    i.e.  :math:`C^{\mathrm{diag}} = 2\,W_A^\dagger\,\operatorname{diag}(s)\,W_A`,
+    which is a single BLAS ``zgemm`` / ``dgemm`` call.
+
+    This replaces the old ``_corr_superposition_diagonal_kernel`` which had a
+    data-race in Numba's ``prange`` (multiple threads writing ``C[i,j] +=``
+    for the *same* ``(i,j)``.
     """
-    gamma, Ls   = occ_list_packed.shape
-    La          = W_A.shape[1]
-    
-    for k in numba.prange(gamma):
-        # Count occupied
-        nocc = 0
-        for i in range(Ls):
-            if occ_list_packed[k, i] != 0:
-                nocc += 1
-        
-        if nocc == 0:
-            continue
-        
-        # Extract occupied rows
-        W_occ = np.empty((nocc, La), dtype=W_A.dtype)
-        idx = 0
-        for i in range(Ls):
-            if occ_list_packed[k, i] != 0:
-                for j in range(La):
-                    W_occ[idx, j] = W_A[i, j]
-                idx += 1
-        
-        # Compute C_k = W_occ^\dag @ W_occ with Hermitian symmetry
-        weight = 2.0 * coeffs_abs_sq[k]
-        for i in range(La):
-            for j in range(i, La):  # Upper triangle only
-                s = 0.0 + 0.0j
-                for m in range(nocc):
-                    s += np.conj(W_occ[m, i]) * W_occ[m, j]
-                # Atomic add for thread safety
-                val      = weight * s
-                C[i, j] += val
-                if i != j:
-                    C[j, i] += np.conj(val)  # Hermitian symmetry
+    s   = _compute_orbital_weights(occ_packed, coeffs_abs_sq)   # (Ls,)
+    W_s = W_A * s[:, np.newaxis]                                # (Ls, La)
+    C  += 2.0 * (W_A_CT @ W_s)                                  # (La, La)
 
 @numba.njit(cache=True, fastmath=True)
 def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, int, int]:
@@ -178,6 +180,137 @@ def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, i
         return (1, q2, q1)
     else:
         return (0, -1, -1)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Hash-optimised off-diagonal kernel  O(gamma * V^2)  instead of  O(gamma^2·V)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@numba.njit(cache=True, fastmath=True)
+def _occ_to_bitmask(occ: np.ndarray) -> np.uint64:
+    """Convert a boolean / uint8 occupation vector to a uint64 bitmask."""
+    mask = np.uint64(0)
+    for i in range(occ.shape[0]):
+        if occ[i] != 0:
+            mask |= np.uint64(1) << np.uint64(i)
+    return mask
+
+@numba.njit(cache=True, fastmath=True)
+def _fermionic_sign(occ: np.ndarray, q_from: int, q_to: int) -> float:
+    r"""
+    Compute the fermionic exchange sign for a single-hop transition.
+    
+    Returns :math:`(-1)^N` where *N* is the number of occupied orbitals
+    strictly between ``q_from`` and ``q_to``.
+    """
+    lo = min(q_from, q_to)
+    hi = max(q_from, q_to)
+    parity = 0
+    for k in range(lo + 1, hi):
+        if occ[k] != 0:
+            parity += 1
+    return 1.0 if (parity & 1) == 0 else -1.0
+
+@numba.njit(cache=True, fastmath=True)
+def _corr_offdiag_hash_accumulate(
+    bitmasks        : np.ndarray,       # (gamma,)      uint64
+    sorted_bitmasks : np.ndarray,       # (gamma,)      uint64 – sorted copy
+    sorted_orig_idx : np.ndarray,       # (gamma,)      int64  – index into original order
+    occ_packed      : np.ndarray,       # (gamma, Ls)   uint8
+    coeff           : np.ndarray,       # (gamma,)      complex128
+    Ls              : int,
+    P               : np.ndarray,       # (Ls, Ls)      complex128 – output (accumulated)
+) -> None:
+    r"""
+    For every configuration *a*, enumerate all single-hop neighbours and binary-search
+    for them in the sorted bitmask array.  Accumulate weighted coefficient products
+    into ``P[q_from, q_to]`` so that the caller only needs :math:`\le V^2` rank-1
+    outer-product updates.
+    """
+    gamma = bitmasks.shape[0]
+
+    for a in range(gamma):
+        mask_a = bitmasks[a]
+
+        for q_from in range(Ls):
+            if occ_packed[a, q_from] == 0:
+                continue                            # not occupied → skip
+            for q_to in range(Ls):
+                if occ_packed[a, q_to] != 0:
+                    continue                        # already occupied → skip
+
+                # Bitmask of the single-hop neighbour
+                mask_b = mask_a ^ (np.uint64(1) << np.uint64(q_from)) ^ (np.uint64(1) << np.uint64(q_to))
+
+                # Binary search in sorted_bitmasks
+                lo_s    = np.int64(0)
+                hi_s    = np.int64(gamma)
+                b_orig  = np.int64(-1)
+                while lo_s < hi_s:
+                    mid = (lo_s + hi_s) >> 1
+                    if sorted_bitmasks[mid] < mask_b:
+                        lo_s = mid + 1
+                    elif sorted_bitmasks[mid] > mask_b:
+                        hi_s = mid
+                    else:
+                        b_orig = sorted_orig_idx[mid]
+                        break
+
+                if b_orig <= a:                     # not found (-1) or already counted
+                    continue
+
+                # Fermionic exchange sign
+                sign                = _fermionic_sign(occ_packed[a], q_from, q_to)
+                P[q_from, q_to]    += 2.0 * sign * np.conjugate(coeff[a]) * coeff[b_orig]
+
+def _corr_superposition_offdiag_fast(
+    W_A         : np.ndarray,           # (Ls, La)
+    W_A_CT      : np.ndarray,           # (La, Ls)
+    occ_packed  : np.ndarray,           # (gamma, Ls) uint8
+    coeff       : np.ndarray,           # (gamma,) complex
+    C           : np.ndarray,           # (La, La) – modified in-place
+) -> None:
+    r"""
+    Hash-optimised off-diagonal contributions to the superposition correlation
+    matrix.  Complexity is :math:`O(\gamma \cdot N_\mathrm{occ} \cdot (V - N_\mathrm{occ}) \cdot \log\gamma)`
+    instead of the brute-force :math:`O(\gamma^2 \cdot V)`.
+    
+    Strategy
+    --------
+    1.  Convert each occupation vector to a ``uint64`` bitmask.
+    2.  Sort bitmasks and keep an index map back to the original ordering.
+    3.  For each configuration *a* enumerate all possible single-hop neighbours
+        (of which there are ``nocc × (V − nocc)``), binary-search the sorted
+        array to find matches, and accumulate signed coefficient products into
+        a ``(V, V)`` matrix ``P[q_from, q_to]``.
+    4.  Apply at most :math:`V^2` rank-1 outer-product updates to *C*.
+    """
+    gamma, Ls = occ_packed.shape
+
+    # 1) Occupation → bitmask
+    bitmasks = np.empty(gamma, dtype=np.uint64)
+    for k in range(gamma):
+        bitmasks[k] = _occ_to_bitmask(occ_packed[k])
+
+    # 2) Sort for binary search
+    order           = np.argsort(bitmasks)
+    sorted_bitmasks = bitmasks[order]
+    sorted_orig_idx = order.astype(np.int64)
+
+    # 3) Accumulate coefficient products per hop channel (q_from, q_to)
+    P = np.zeros((Ls, Ls), dtype=coeff.dtype)
+    _corr_offdiag_hash_accumulate(
+        bitmasks, sorted_bitmasks, sorted_orig_idx,
+        occ_packed, coeff, Ls, P,
+    )
+
+    # 4) Apply outer-product updates — at most V² of them
+    for q_from in range(Ls):
+        for q_to in range(Ls):
+            p = P[q_from, q_to]
+            if p == 0.0:
+                continue
+            C += p * np.outer(W_A_CT[:, q_from], W_A[q_to, :])
+            C += np.conjugate(p) * np.outer(W_A_CT[:, q_to], W_A[q_from, :])
 
 #################################### 
 #! 1) Single Slater determinant
@@ -687,43 +820,46 @@ def corr_superposition(
 
     # --------------------------------------------------------------------------------
     # Diagonal (m = n): sum_k |a_k|^2 * C[occ_k], with the same fast-path as corr_single
+    #   C_diag = 2 * W_A^H diag(s) W_A,  s_q = sum_{k: q in occ_k} |a_k|^2
     # --------------------------------------------------------------------------------
     
-    # Use optimized Numba kernel for diagonal contributions
     # Pack occupations into uint8 array for Numba compatibility
     occ_list_packed = np.array([occ.astype(np.uint8) for occ in occ_bool_list], dtype=np.uint8)
     coeffs_abs_sq   = np.abs(coeff)**2
     
-    _corr_superposition_diagonal_kernel(W_A, occ_list_packed, coeffs_abs_sq, C)
+    _corr_superposition_diagonal(W_A, W_A_CT, occ_list_packed, coeffs_abs_sq, C)
 
     # --------------------------------------------------------------------------------
-    # Off-diagonal (m \neq  n): only when configurations differ by exactly one hop
-    #   i.e., XOR has Hamming weight 2. Let q_from be occupied in m,rmm empty in n,
+    # Off-diagonal (m != n): only when configurations differ by exactly one hop
+    #   i.e., XOR has Hamming weight 2. Let q_from be occupied in m, empty in n,
     #   and q_to be empty in m, occupied in n. Then the contribution is:
-    #       2 * a_m* a_n * sgn * |phi_{q_to}><phi_{q_from}|  + h.c.
+    #       2 * a_m* a_n * sgn * |phi_{q_from}><phi_{q_to}|  + h.c.
     #   where sgn = (-1)^(# occupied between q_from and q_to in m).
+    #
+    # For large gamma the brute-force O(gamma^2) pair scan is replaced by a
+    # hash-indexed O(gamma * nocc * (V - nocc) * log(gamma)) approach.
     # --------------------------------------------------------------------------------
-    
-    # go through the occupations - optimized with Numba helper
-    for a in range(gamma):
-        occ_a = occ_list_packed[a]
-        for b in range(a + 1, gamma):
-            # Use Numba helper to check for single-hop
-            occ_b                   = occ_list_packed[b]
-            status, q_from, q_to    = _find_single_hop_pairs(occ_a, occ_b)
-            if status == 0:
-                continue
+    _OFFDIAG_HASH_THRESHOLD         = 200 # switch to hash path above this gamma
 
-            # The +/-  sign from fermionic exchange
-            sign = -1.0 if occ_a[q_to] != 0 else 1.0
-            coef = 2.0 * sign * np.conjugate(coeff[a]) * coeff[b]
+    if gamma > _OFFDIAG_HASH_THRESHOLD and Ls <= 64:
+        # Fast path: hash-optimised off-diagonal
+        _corr_superposition_offdiag_fast(W_A, W_A_CT, occ_list_packed, coeff, C)
+    else:
+        # Legacy path (small gamma): brute-force pair scan
+        for a in range(gamma):
+            occ_a = occ_list_packed[a]
+            for b in range(a + 1, gamma):
+                occ_b                   = occ_list_packed[b]
+                status, q_from, q_to    = _find_single_hop_pairs(occ_a, occ_b)
+                if status == 0:
+                    continue
 
-            #! Outer product  (La,1)\cdot (1,La) fused by BLAS as gemm
-            C   += coef * np.outer(W_A_CT[:, q_from], W_A[q_to, :])
+                # Correct fermionic exchange sign
+                sign = _fermionic_sign(occ_a, q_from, q_to)
+                coef = 2.0 * sign * np.conjugate(coeff[a]) * coeff[b]
 
-            # and its Hermitian conjugate (because we skipped the term with indices
-            # swapped in the loop)
-            C   += np.conjugate(coef) * np.outer(W_A_CT[:, q_to], W_A[q_from, :])
+                C   += coef * np.outer(W_A_CT[:, q_from], W_A[q_to, :])
+                C   += np.conjugate(coef) * np.outer(W_A_CT[:, q_to], W_A[q_from, :])
 
     #! Identity
     if subtract_identity:
