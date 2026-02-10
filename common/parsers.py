@@ -138,7 +138,7 @@ class StringParser:
 
     @staticmethod
     def sci(x: float, prec: int) -> str:
-        """
+        r"""
         Format `x` in scientific notation with `prec` decimals:  
         $$ x \\approx d.ddd\\times10^{\\pm e} $$
         """

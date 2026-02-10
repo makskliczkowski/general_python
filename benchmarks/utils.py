@@ -1,8 +1,43 @@
 import numpy as np
 import scipy.sparse as sp
 
-def create_spin_chain_hamiltonian(n_spins: int):
+def create_1d_laplacian(n):
     """
+    Create a 1D Laplacian matrix using scipy.sparse.
+    -u'' discretized on [0, 1] with Dirichlet BCs results in tridiagonal [..., -1, 2, -1, ...]
+    """
+    # 2 on diagonal, -1 on off-diagonals
+    diags = [np.ones(n)*2, -np.ones(n-1), -np.ones(n-1)]
+    return sp.diags(diags, [0, 1, -1], format='csr')
+
+def create_2d_laplacian(nx, ny):
+    r"""
+    Create a 2D Laplacian matrix using scipy.sparse (Kronecker sum).
+    L = Ix \otimes Ly + Lx \otimes Iy
+    """
+    lx = create_1d_laplacian(nx)
+    ly = create_1d_laplacian(ny)
+
+    ix = sp.eye(nx)
+    iy = sp.eye(ny)
+
+    # L = kron(Ix, Ly) + kron(Lx, Iy)
+    # Note: Kronecker product order depends on how the grid is flattened (row-major vs column-major).
+    # Standard is row-major: index = x * ny + y.
+    # Then L = kron(Lx, Iy) + kron(Ix, Ly).
+    # Wait, usually L2D = kron(I, L1D) + kron(L1D, I).
+    # Let's verify.
+    # If flatten row by row: (0,0), (0,1)... (0, ny-1), (1,0)...
+    # Neighbors of (x,y) are (x, y-1), (x, y+1) -> +/- 1 index (Ly part)
+    # And (x-1, y), (x+1, y) -> +/- ny index (Lx part)
+    # So we need Ly on the 'inner' dimension and Lx on the 'outer' dimension?
+    # No, typically:
+    # L = kron(Ix, Ly) + kron(Lx, Iy)
+
+    return sp.kron(ix, ly) + sp.kron(lx, iy)
+
+def create_spin_chain_hamiltonian(n_spins: int):
+    r"""
     Create Heisenberg spin chain Hamiltonian (dense).
     H = \Sigma _i (S^x_i S^x_{i+1} + S^y_i S^y_{i+1} + S^z_i S^z_{i+1})
 
@@ -33,7 +68,7 @@ def create_spin_chain_hamiltonian(n_spins: int):
     return H
 
 def create_sparse_spin_chain_hamiltonian(n_spins: int):
-    """
+    r"""
     Create Heisenberg spin chain Hamiltonian as a sparse matrix (CSR).
     H = \Sigma _i (S^x_i S^x_{i+1} + S^y_i S^y_{i+1} + S^z_i S^z_{i+1})
     """

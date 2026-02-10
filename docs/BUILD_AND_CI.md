@@ -1,96 +1,98 @@
-# Build and CI
+# Build and CI Instructions
 
-This document describes how to install, test, and build the `general_python` package.
+This document outlines how to install, test, and build documentation for the `general_python` package.
 
 ## Installation
 
-The package uses a `pyproject.toml` based build system.
+### Prerequisites
+- Python 3.8+
+- pip
 
-### Editable Install (for development)
-To install the package in editable mode (changes to source files are immediately reflected):
-
-```bash
-pip install -e .
-```
-
-### Regular Install
-To install the package normally:
-
+### Install for Usage
+To install the package in your current environment:
 ```bash
 pip install .
 ```
 
-## Dependencies
-
-The project defines several optional dependency groups in `pyproject.toml`:
-
-*   `ml`: Machine learning dependencies (tensorflow, scikit-learn, pandas, jax, flax).
-*   `jax`: JAX specific dependencies (jax, jaxlib, flax).
-*   `docs`: Documentation build dependencies (sphinx, sphinx-rtd-theme).
-*   `dev`: Development tools (pytest, black, flake8).
-
-To install with specific extras:
-
+### Install for Development (Editable)
+To install in editable mode (changes to source code are immediately reflected):
 ```bash
-pip install .[dev,ml,jax]
+pip install -e .
 ```
 
-## Testing
+### Optional Dependencies
+The package provides several optional dependency groups (extras):
+- `ml`: Machine learning utilities (TensorFlow, Scikit-learn, Pandas, JAX, Flax).
+- `jax`: JAX-specific utilities (JAX, Flax).
+- `docs`: Documentation building tools (Sphinx).
+- `dev`: Development tools (pytest, Black, Flake8).
 
-Tests are located in `tests/` and subdirectories of modules.
+To install with specific extras:
+```bash
+pip install -e ".[ml,jax]"
+```
+
+To install all development dependencies:
+```bash
+pip install -e ".[dev,ml,jax,docs]"
+```
+
+## Running Tests
+
+Tests are located in `tests/` and in `tests/` subdirectories within each module.
 
 ### Prerequisites
 Install development and optional dependencies to run the full test suite:
-
 ```bash
-pip install .[dev,ml,jax]
+pip install -e ".[dev,ml,jax]"
+```
+*Note: Some tests require `jax` or `h5py` (included in core dependencies) and will fail if these are missing.*
+
+### Running with Pytest
+Run all tests:
+```bash
+pytest
 ```
 
-### Running Tests
-Run all tests using `pytest`:
-
+Run tests for a specific module:
 ```bash
-pytest tests/ -v
+pytest general_python/algebra/tests/
 ```
 
-To run a specific test file:
-
+Run a specific test file:
 ```bash
-pytest tests/test_imports.py -v
+pytest tests/test_imports.py
 ```
 
-There is also a documentation integrity script:
-
-```bash
-python3 test_documentation.py
-```
-
-## Documentation
+## Building Documentation
 
 The documentation is built using Sphinx.
 
 ### Prerequisites
 Install documentation dependencies:
-
 ```bash
-pip install .[docs]
+pip install -e ".[docs]"
 ```
-Note: You may also need `ml` or `jax` dependencies if `autodoc` imports modules that depend on them (e.g. `pandas` in `maths`, though it is guarded).
 
-### Building Docs
-Navigate to the `docs/` directory and run `make html`:
-
+### Building HTML Docs
+Using `make` (Unix/Linux/macOS):
 ```bash
 cd docs
 make html
 ```
 
-The output will be in `docs/_build/html/index.html`.
+Using `sphinx-build` directly:
+```bash
+sphinx-build -b html docs docs/_build/html
+```
+
+The generated HTML documentation will be available in `docs/_build/html/index.html`.
 
 ## CI Verification
 
-For Continuous Integration, the following steps are recommended:
+For Continuous Integration (CI), the following steps are recommended:
 
 1.  **Install**: `pip install .[dev,ml,jax,docs]`
 2.  **Test**: `pytest tests/`
 3.  **Doc Build**: `cd docs && make html`
+4.  **Sanity Check**: `python3 test_documentation.py`

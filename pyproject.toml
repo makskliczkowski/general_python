@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "general-python-utils"
-version         = "0.1.0"
+version         = "1.1.0"
 description     = "A comprehensive Python library for mathematical computations, machine learning, and physics simulations"
 authors         = [{ name = "Maksymilian Kliczkowski", email = "maxgrom97@gmail.com" }]
 license         = {text = "MIT"}
@@ -29,6 +29,7 @@ dependencies = [
     "scipy",
     "matplotlib",
     "numba",
+    "h5py",
 ]
 
 [project.optional-dependencies]
@@ -62,6 +63,7 @@ Repository          = "https://github.com/yourusername/general_python.git"
 Issues              = "https://github.com/yourusername/general_python/issues"
 
 [tool.setuptools]
+include-package-data = true
 py-modules          = []
 packages            = [
     "general_python",

@@ -1,3 +1,19 @@
+"""
+Hexagonal Lattice implementation.
+
+This module provides the ``HexagonalLattice`` class, which supports:
+- 1D, 2D, and 3D hexagonal geometries.
+- Calculation of nearest (NN) and next-nearest (NNN) neighbor lists.
+- Real-space and reciprocal-space coordinate generation.
+- High-symmetry points for band structure plotting.
+
+Coordinate System
+-----------------
+The lattice is defined using a non-orthogonal basis in 2D/3D.
+Sites are indexed linearly, with mapping to (x, y, z) coordinates provided by
+`get_coordinates` and `site_index`.
+"""
+
 import numpy as np
 from typing import Optional
 from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType

@@ -89,7 +89,7 @@ def _cg_logic_numpy(matvec          : MatVecFunc,
                     maxiter         : int,
                     precond_apply   : Optional[Callable[[np.ndarray], np.ndarray]] = None
                     ) -> SolverResult:
-    """
+    r"""
     Core Conjugate Gradient (CG) algorithm implementation using NumPy.
 
     Solves the linear system $ Ax = b $ for a symmetric positive definite matrix A.
@@ -196,7 +196,7 @@ if _NUMBA_AVAILABLE:
             x0_nb           : np.ndarray,
             tol_nb          : float,
             maxiter_nb      : int) -> Tuple[np.ndarray, bool, int, float]:
-        """
+        r"""
         Numba-compiled CG core (no preconditioner). 
         
         Parameters:
@@ -286,7 +286,7 @@ if _NUMBA_AVAILABLE:
             maxiter_nb      : int,
             precond_apply_nb: Callable[[np.ndarray], np.ndarray] # Required
             ) -> Tuple[np.ndarray, bool, int, float]:
-        """ 
+        r"""
         Numba-compiled CG core (WITH preconditioner).
         Parameters:
             matvec_nb Callable[[np.ndarray], np.ndarray]:
@@ -363,7 +363,7 @@ if _NUMBA_AVAILABLE:
                                         tol             : float,
                                         maxiter         : int,
                                         precond_apply   : Callable[[np.ndarray], np.ndarray] = None):
-        """ 
+        r"""
         Wrapper for Numba CG: Calls no_precond or precond version. 
         Parameters:
             matvec Callable[[np.ndarray], np.ndarray]:
@@ -422,7 +422,7 @@ if JAX_AVAILABLE:
             tol             : float,
             maxiter         : int,
             precond_apply   : Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None) -> SolverResult:
-        """
+        r"""
         Core CG algorithm implementation using JAX. See _cg_logic_numpy for math.
         
         Args:
@@ -604,7 +604,7 @@ class CgSolver(Solver):
             backend_module  : Any                                   = np,
             sigma           : Optional[float]                       = None,
             **kwargs        : Any) -> SolverResult:
-        """
+        r"""
         Static CG execution: Determines the appropriate backend function and executes it.
 
         Args:
@@ -721,7 +721,7 @@ class CgSolverScipy(Solver):
             s               : Optional[Array]                       = None,
             s_p             : Optional[Array]                       = None,
             **kwargs        : Any) -> SolverResult:
-        """
+        r"""
         Static CG execution: Determines the appropriate backend function and executes it.
 
         Args:

@@ -338,7 +338,7 @@ if JAX_AVAILABLE:
             degenerate: bool = False,
             tol: float = 1e-8
     ) -> Array:
-        """
+        r"""
         JAX-optimized Local Density of States (LDOS).
         
         Parameters
@@ -375,7 +375,7 @@ def ldos(
         degenerate: bool = False,
         tol: float = 1e-8
 ) -> Array:
-    """
+    r"""
     Local Density of States (LDOS) or strength function.
     
     LDOS_i = |<i|\psi >|^2 (non-degenerate)

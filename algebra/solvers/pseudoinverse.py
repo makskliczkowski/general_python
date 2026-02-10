@@ -205,7 +205,7 @@ class PseudoInverseSolver(Solver):
             s               : Optional[Array]       = None,
             s_p             : Optional[Array]       = None,
             **kwargs        : Any) -> SolverResult:
-        """
+        r"""
         Static solve implementation using the backend's `linalg.pinv`.
 
         Args:
