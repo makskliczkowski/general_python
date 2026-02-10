@@ -64,7 +64,35 @@ def _haar_orthogonal_qr_np(n: int, rng: Optional[npr.Generator] = None) -> np.nd
 
 
 def CUE_QR(n: int, simple: bool = True, rng: Optional[object] = None, backend: str = "numpy"):
-    """Haar unitary via QR of complex Ginibre (NumPy or JAX)."""
+    """
+    Haar unitary via QR decomposition of complex Ginibre ensemble.
+
+    Supports both NumPy and JAX backends.
+
+    Parameters
+    ----------
+    n : int
+        Dimension of the unitary matrix (n x n).
+    simple : bool, optional
+        If True, returns the Q factor directly. If False, adjusts phases to ensure
+        correct Haar measure distribution (see Mezzadri, AMS 2007). Default is True.
+    rng : Optional[object], optional
+        - For NumPy: A `numpy.random.Generator` instance.
+        - For JAX: A `jax.random.PRNGKey`.
+        If None, uses the default generator/key.
+    backend : str, optional
+        'numpy' (or 'np') or 'jax'. Default is 'numpy'.
+
+    Returns
+    -------
+    np.ndarray or jax.numpy.ndarray
+        A random unitary matrix of shape (n, n).
+
+    Raises
+    ------
+    ImportError
+        If 'jax' backend is requested but JAX is not available.
+    """
     if backend in ("numpy", "np") or backend is np:
         return _haar_unitary_qr_np(n, rng=rng, simple=simple)
     if not _JAX_AVAILABLE:
@@ -127,6 +155,34 @@ class RMT:
 
 
 def random_matrix(n: Union[int, Tuple[int, int]], kind: Union[str, RMT] = RMT.GOE, **kwargs) -> np.ndarray:
+    """
+    Generate a random matrix from a specified ensemble (RMT).
+
+    Parameters
+    ----------
+    n : Union[int, Tuple[int, int]]
+        Dimension of the matrix. If a tuple is provided, `n[0]` is used (square matrices assumed).
+    kind : Union[str, RMT], optional
+        The random matrix ensemble to sample from. Options (case-insensitive):
+        - 'GOE': Gaussian Orthogonal Ensemble (Real, Symmetric)
+        - 'GUE': Gaussian Unitary Ensemble (Complex, Hermitian)
+        - 'COE': Circular Orthogonal Ensemble (Real, Unitary/Orthogonal)
+        - 'CUE': Circular Unitary Ensemble (Complex, Unitary)
+        - 'CRE': Circular Real Ensemble (Alias for COE in fallback)
+        Default is RMT.GOE.
+    **kwargs
+        Additional arguments passed to the underlying generator (e.g., `use_tenpy`).
+
+    Returns
+    -------
+    np.ndarray
+        The generated random matrix of shape (n, n).
+
+    Raises
+    ------
+    ValueError
+        If an unknown ensemble `kind` is specified.
+    """
     if isinstance(n, tuple):
         n = n[0]
     kind = str(kind).upper()

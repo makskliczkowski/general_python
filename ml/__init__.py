@@ -36,7 +36,7 @@ try:
     from . import networks
     from . import schedulers
 except ImportError as e:
-    raise Exception(f"Could not import {e}")
+    raise ImportError(f"Could not import machine learning modules. Ensure optional dependencies are installed. Error: {e}")
 
 # Lazy import aliases for common submodules
 

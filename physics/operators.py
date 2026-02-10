@@ -1,7 +1,15 @@
-'''
-Allows one to parse physical operators created in the simulation. 
+"""
+Physical Operator Parsing and Spectral Statistics Utilities.
 
-'''
+This module provides tools for:
+1.  **Parsing Operator Strings**: Converting string representations of operators (e.g., "Sz/L_2") into numeric values or indices via the `Operators` class.
+2.  **Spectral Statistics**: Utilities for analyzing eigenvalue distributions, such as taking fractions of spectra and calculating cutoffs, via the `Spectral` class.
+
+Classes
+-------
+- `Spectral`: Static methods for spectral data manipulation (diagonal cutoff, taking fractions).
+- `Operators`: Static methods for parsing and resolving operator strings and Hilbert space dimensions.
+"""
 
 import numpy as np
 

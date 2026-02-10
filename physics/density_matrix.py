@@ -308,20 +308,28 @@ if numba:
                     order       : tuple,
                     size_a      : int) -> Array:
         """
-        Reshapes and reorders a quantum state vector for subsystem partitioning.
-        This function takes a 1D quantum state vector and reshapes it into a multi-dimensional array,
-        then transposes and flattens it to produce a 2D array suitable for partial trace or reduced
-        density matrix calculations. The partitioning is determined by the `order` and `size_a` arguments.
-        Args:
-            state (np.ndarray):
-                The input quantum state vector as a 1D complex-valued array of length 2**N, where N is the number of qubits.
-            order (tuple):
-                A tuple specifying the new order of qubits after partitioning. The first `size_a` elements correspond to subsystem A.
-            size_a (int):
-                The number of qubits in subsystem A.
-        Returns:
-            Array:
-                A 2D array of shape (2**size_a, 2**(N - size_a)), where N = len(order), representing the reshaped and reordered wavefunction.
+        Reshapes and reorders a quantum state vector for subsystem partitioning using Numba-compatible operations.
+
+        This function reshapes a flat state vector into a tensor, permutes dimensions according to `order`,
+        and flattens it into a matrix where rows correspond to subsystem A and columns to subsystem B.
+
+        Parameters
+        ----------
+        state : np.ndarray
+            Input quantum state vector.
+            Shape: ``(2**N,)`` where N is total qubits.
+            Dtype: Complex (e.g., complex128).
+        order : tuple of int
+            Permutation order for the qubits. The first ``size_a`` indices in this tuple
+            define the subsystem A.
+        size_a : int
+            Number of qubits in subsystem A.
+
+        Returns
+        -------
+        Array
+            Reshaped state matrix (Schmidt matrix).
+            Shape: ``(dim_A, dim_B)`` where ``dim_A = 2**size_a``.
         """
         psi_nd      = state.reshape((2, ) * len(order), order='F') # no copy, reshape to (2, 2, ..., 2)
         dA          = 1 << size_a
@@ -398,24 +406,29 @@ if numba:
                         size_a      : int,
                         eig         : bool) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Computes the Schmidt decomposition of a bipartite quantum state using Numba.
+        Computes the Schmidt decomposition (or reduced density matrix eigenvalues) of a partitioned state.
+
         Parameters
         ----------
-        state : np.ndarray
-            The input state vector representing the bipartite quantum system.
-        order : tuple
-            A tuple specifying the new order of qubits after partitioning. The first `size_a` elements correspond to subsystem A.
+        psi : np.ndarray
+            The input state vector. Shape: ``(2**N,)``.
+        order : tuple of int
+            Qubit permutation order.
         size_a : int
-            Dimension of subsystem A.
+            Number of qubits in subsystem A (defines the cut).
         eig : bool
-            If True, use eigenvalue decomposition of the reduced density matrix; 
-            if False, use singular value decomposition (SVD).
+            - If ``True``: Explicitly forms the reduced density matrix and diagonalizes it (EIG).
+              Preferred when subsystem size is small.
+            - If ``False``: Performs Singular Value Decomposition (SVD) on the reshaped state.
+              Preferred when subsytem sizes are balanced.
+
         Returns
         -------
         vals : np.ndarray
-            The Schmidt coefficients (squared singular values or eigenvalues), sorted in descending order.
+            Eigenvalues of the reduced density matrix (squared Schmidt coefficients).
+            Sorted in descending order.
         vecs : np.ndarray
-            The corresponding Schmidt vectors, columns ordered according to descending Schmidt coefficients.
+            Schmidt vectors (eigenvectors of the RDM) corresponding to `vals`.
         """
         
         if eig:

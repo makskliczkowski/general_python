@@ -1,53 +1,76 @@
 # Documentation Audit
 
-## Scope
+## Current State
 
-This audit covers the current state of documentation in `docs/` and inline docstrings within the codebase (`algebra/`, `lattices/`, `maths/`, `ml/`, `physics/`, `common/`).
+The documentation is built using **Sphinx** and hosted on **ReadTheDocs**. The source files are located in the `docs/` directory.
 
-## 1) Existing Documentation
+### Existing Documentation
 
-### Pages
-- **Getting Started** (`docs/getting_started.rst`): Covers installation, backend expectations, and verification.
-- **Design Principles** (`docs/design_principles.rst`): Outlines scientific contracts, backend awareness, and coding standards.
-- **API Reference** (`docs/api.rst`): Uses `automodule` to pull docstrings from source.
-- **Benchmarks** (`docs/BENCHMARKS.md`): Documents performance tests.
-- **Tests** (`docs/TESTS_CURRENT.md`): Inventory of tests.
+*   **Core Pages (`.rst`)**:
+    *   `index.rst`: Main entry point.
+    *   `getting_started.rst`: Installation and basic usage.
+    *   `design_principles.rst`: Architectural philosophy (Backend agnostic, Lazy loading).
+    *   `installation.rst`: Detailed installation steps.
+    *   `usage.rst`: Usage examples.
+    *   `api.rst`: API reference structure.
+    *   `contributing.rst`: Contribution guidelines.
+    *   `license.rst`: License information.
 
-### Build System
-- **Local:** Sphinx (`Makefile`, `conf.py`). Run `make html` in `docs/`.
-- **ReadTheDocs:** Configured in `.readthedocs.yaml` (uses Ubuntu 24.04, Python 3.12).
+*   **Markdown Guides (`.md`)**:
+    *   `BENCHMARKS.md`: Performance benchmarks for Algebra, Lattices, and Physics modules.
+    *   `BUILD_AND_CI.md`: Instructions for building the project and running CI.
+    *   `FUTURE_BRANCHES.md`: Technical debt and future refactoring plans.
+    *   `TESTS_CURRENT.md` & `TESTS_NEW.md`: Test inventory and new test documentation.
 
-## 2) Issues Identified
+### Module Documentation
 
-- **Missing Module Docstrings:** Several key files were missing module-level docstrings, including:
-  - `ml/net_impl/utils/net_utils_np.py`
-  - `common/timer.py`
-  - `physics/eigenlevels.py`
-  - `physics/sp/__init__.py`
-  - `maths/random.py`
-  - `maths/statistics.py`
-  - `lattices/hexagonal.py`
-  - `algebra/utilities/pfaffian_jax.py`
-  - `algebra/utilities/hafnian_jax.py`
+The source code (`algebra/`, `lattices/`, `maths/`, `ml/`, `physics/`, `common/`) generally contains high-quality docstrings, often using NumPy style.
 
-- **Syntax Warnings:** Numerous `SyntaxWarning: invalid escape sequence` errors were present due to LaTeX sequences (e.g., `\sigma`, `\alpha`, `\Delta`) in normal string literals instead of raw strings. This affects python 3.12+ and can lead to incorrect rendering or runtime warnings.
+*   **`algebra/`**: Good coverage. `solvers` and `utils` are well-documented.
+*   **`lattices/`**: Extensive docstrings for `Lattice` classes (`Square`, `Hexagonal`, `Honeycomb`).
+*   **`physics/`**: Detailed docstrings for `entropy`, `density_matrix`.
+*   **`ml/`**: `networks` module has detailed factory documentation.
+*   **`common/`**: `plot` module has extensive documentation on plotting utilities.
 
-## 3) Improvements Made
+## Build Process
 
-- **Added Docstrings:** Comprehensive module-level docstrings were added to the files listed above, detailing purpose, input/output contracts, and stability notes.
-- **Fixed Syntax Warnings:** A targeted script was used to convert string literals containing invalid escape sequences into raw strings (`r"..."`). This covered:
-  - LaTeX in docstrings (e.g., `r"""... \sigma ..."""`).
-  - Regex patterns (e.g., `r"\d"`).
-  - Scientific constants/symbols in comments or strings.
-- **Validation:** Checked using `ast` parsing to ensure docstrings are present and no syntax warnings are emitted.
+### Local Build
 
-## 4) Current Status
+To build the documentation locally:
 
-- **Docstring Coverage:** significantly improved for core scientific modules.
-- **Code Hygiene:** Source code is free of invalid escape sequence warnings.
-- **Docs Build:** Ready for Sphinx build (locally and RTD).
+1.  Install documentation dependencies:
+    ```bash
+    pip install -e ".[docs]"
+    ```
+2.  Navigate to `docs/` and run `make`:
+    ```bash
+    cd docs
+    make html
+    ```
+    Output is generated in `docs/_build/html/`.
 
-## 5) Recommended Next Steps
+### ReadTheDocs (RTD)
 
-- Add specific API examples in `docs/usage.rst`.
-- Expand docstrings for `tests/` directories if needed (currently excluded from audit).
+The project is configured for ReadTheDocs via `.readthedocs.yaml`.
+*   **OS**: Ubuntu 24.04
+*   **Python**: 3.12
+*   **Configuration**: `docs/conf.py`
+
+## Recent Improvements (Session Audit)
+
+The following improvements have been identified and applied to enhance scientific clarity and robustness:
+
+1.  **`ml/__init__.py`**:
+    *   Replaced generic `Exception` with `ImportError` to provide clearer feedback when optional ML dependencies are missing.
+
+2.  **`algebra/ran_matrices.py`**:
+    *   Enhanced docstrings for `random_matrix` to clearly specify input/output contracts and supported ensembles.
+    *   Clarified `CUE_QR` backend handling in docstrings.
+
+3.  **`physics/operators.py`**:
+    *   Added module-level docstring to explain the purpose of operator parsing and spectral statistics utilities.
+
+4.  **`physics/density_matrix.py`**:
+    *   Refined docstrings for `rho_numba_mask` and `schmidt_numba_mask` to explicitly state input dimensions (1D state vector) and output formats.
+
+These changes ensure that the API contracts are explicit, especially regarding shapes, dtypes, and optional dependencies.
