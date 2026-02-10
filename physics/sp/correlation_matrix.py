@@ -136,11 +136,11 @@ def _corr_superposition_diagonal(
 
     This replaces the old ``_corr_superposition_diagonal_kernel`` which had a
     data-race in Numba's ``prange`` (multiple threads writing ``C[i,j] +=``
-    for the *same* ``(i,j)``).
+    for the *same* ``(i,j)``.
     """
-    s   = _compute_orbital_weights(occ_packed, coeffs_abs_sq)     # (Ls,)
-    W_s = W_A * s[:, np.newaxis]                                  # (Ls, La)
-    C  += 2.0 * (W_A_CT @ W_s)                                   # (La, La)
+    s   = _compute_orbital_weights(occ_packed, coeffs_abs_sq)   # (Ls,)
+    W_s = W_A * s[:, np.newaxis]                                # (Ls, La)
+    C  += 2.0 * (W_A_CT @ W_s)                                  # (La, La)
 
 @numba.njit(cache=True, fastmath=True)
 def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, int, int]:
@@ -181,9 +181,8 @@ def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, i
     else:
         return (0, -1, -1)
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# Hash-optimised off-diagonal kernel  O(gamma * V^2)  instead of  O(gamma^2 * V)
+# Hash-optimised off-diagonal kernel  O(gamma * V^2)  instead of  O(gamma^2·V)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @numba.njit(cache=True, fastmath=True)
@@ -194,7 +193,6 @@ def _occ_to_bitmask(occ: np.ndarray) -> np.uint64:
         if occ[i] != 0:
             mask |= np.uint64(1) << np.uint64(i)
     return mask
-
 
 @numba.njit(cache=True, fastmath=True)
 def _fermionic_sign(occ: np.ndarray, q_from: int, q_to: int) -> float:
@@ -212,20 +210,19 @@ def _fermionic_sign(occ: np.ndarray, q_from: int, q_to: int) -> float:
             parity += 1
     return 1.0 if (parity & 1) == 0 else -1.0
 
-
 @numba.njit(cache=True, fastmath=True)
 def _corr_offdiag_hash_accumulate(
-    bitmasks        : np.ndarray,       # (gamma,)   uint64
-    sorted_bitmasks : np.ndarray,       # (gamma,)   uint64 – sorted copy
-    sorted_orig_idx : np.ndarray,       # (gamma,)   int64  – index into original order
-    occ_packed      : np.ndarray,       # (gamma, Ls) uint8
-    coeff           : np.ndarray,       # (gamma,)   complex128
+    bitmasks        : np.ndarray,       # (gamma,)      uint64
+    sorted_bitmasks : np.ndarray,       # (gamma,)      uint64 – sorted copy
+    sorted_orig_idx : np.ndarray,       # (gamma,)      int64  – index into original order
+    occ_packed      : np.ndarray,       # (gamma, Ls)   uint8
+    coeff           : np.ndarray,       # (gamma,)      complex128
     Ls              : int,
-    P               : np.ndarray,       # (Ls, Ls)   complex128 – output (accumulated)
+    P               : np.ndarray,       # (Ls, Ls)      complex128 – output (accumulated)
 ) -> None:
     r"""
     For every configuration *a*, enumerate all single-hop neighbours and binary-search
-    for them in the sorted bitmask array. Accumulate weighted coefficient products
+    for them in the sorted bitmask array.  Accumulate weighted coefficient products
     into ``P[q_from, q_to]`` so that the caller only needs :math:`\le V^2` rank-1
     outer-product updates.
     """
@@ -261,11 +258,9 @@ def _corr_offdiag_hash_accumulate(
                 if b_orig <= a:                     # not found (-1) or already counted
                     continue
 
-                # ── Fermionic exchange sign ──
-                sign = _fermionic_sign(occ_packed[a], q_from, q_to)
-
-                P[q_from, q_to] += 2.0 * sign * np.conjugate(coeff[a]) * coeff[b_orig]
-
+                # Fermionic exchange sign
+                sign                = _fermionic_sign(occ_packed[a], q_from, q_to)
+                P[q_from, q_to]    += 2.0 * sign * np.conjugate(coeff[a]) * coeff[b_orig]
 
 def _corr_superposition_offdiag_fast(
     W_A         : np.ndarray,           # (Ls, La)
@@ -844,7 +839,7 @@ def corr_superposition(
     # For large gamma the brute-force O(gamma^2) pair scan is replaced by a
     # hash-indexed O(gamma * nocc * (V - nocc) * log(gamma)) approach.
     # --------------------------------------------------------------------------------
-    _OFFDIAG_HASH_THRESHOLD = 200      # switch to hash path above this gamma
+    _OFFDIAG_HASH_THRESHOLD         = 200 # switch to hash path above this gamma
 
     if gamma > _OFFDIAG_HASH_THRESHOLD and Ls <= 64:
         # Fast path: hash-optimised off-diagonal
