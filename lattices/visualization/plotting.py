@@ -561,6 +561,7 @@ def plot_lattice_structure(
     boundary_node_color         : str                           = "tab:red",
     periodic_color              : str                           = "tab:orange",
     open_color                  : str                           = "tab:green",
+    bond_colors                 : dict                          = { 0 : "tab:red", 1 : "tab:blue", 2: "tab:green" },
     node_size                   : int                           = 30,
     edge_alpha                  : float                         = 0.7,
     label_padding               : float                         = 0.05,
@@ -618,14 +619,14 @@ def plot_lattice_structure(
         current_azim = azim if azim is not None else getattr(axis, "azim", None)
         axis.view_init(elev=current_elev, azim=current_azim)
 
-    # --- 1. Compute Connectivity ---
+    # Compute Connectivity
     edges       = _gather_nn_edges(lattice)
     adjacency   = [[] for _ in range(lattice.Ns)]
     for i, j in edges:
         adjacency[i].append(j)
         adjacency[j].append(i)
 
-    # --- 2. Periodic Edges Detection ---
+    # Periodic Edges Detection
     periodic_neighbors      = defaultdict(list)
     periodic_label_counts   = defaultdict(int)
     typical_distance        = None
@@ -639,9 +640,10 @@ def plot_lattice_structure(
 
     # Draw edges
     for i, j in edges:
-        start   = coords[i]
-        end     = coords[j]
-        dist    = np.linalg.norm(end - start)
+        start       = coords[i]
+        end         = coords[j]
+        dist        = np.linalg.norm(end - start)
+        bond_type   = lattice.bond_type(i, j)
         
         # Check if this edge wraps around the boundary
         is_periodic = False
@@ -658,7 +660,11 @@ def plot_lattice_structure(
             periodic_neighbors[j].append(i)
         
         # Plot the line
-        line_args = dict(color=edge_color, alpha=edge_alpha, linestyle=linestyle, linewidth=1.0, zorder=2)
+        line_args = dict(color      =   bond_colors.get(bond_type, edge_color), 
+                         alpha      =   edge_alpha,
+                         linestyle  =   linestyle, 
+                         linewidth  =   1.0,
+                         zorder     =   2)
         
         if dim == 3:
             axis.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **line_args)
@@ -667,7 +673,7 @@ def plot_lattice_structure(
         else: # 1D
             axis.plot([start[0], end[0]], [0.0, 0.0], **line_args)
 
-    # --- 3. Node Coloring ---
+    # 3. Node Coloring
     node_face_colors    = [node_color] * lattice.Ns
     
     if partition_colors:
