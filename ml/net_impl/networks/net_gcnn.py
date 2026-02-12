@@ -1,21 +1,33 @@
-"""
+r"""
 general_python.ml.net_impl.networks.net_gcnn
 ==============================================
 
-State-of-the-Art Graph Convolutional Neural Network (GCNN) for NQS.
+Graph & Group-Equivariant Convolutional Neural Networks for NQS.
 
-This architecture is optimized for:
-1. **Non-Bravais Lattices**: Handles Kagome, Honeycomb, and random graphs naturally.
-2. **Deep Sets Topology**: Sum-pooling over sites + Dense Head for max expressivity.
-3. **Split-Complex Speed**: Real-valued arithmetic backbone for 2x-4x speedup.
+This module provides two architectures:
+
+1. **GCNN** (Graph CNN):
+   Adjacency-based message passing on arbitrary graphs.
+   Optimized for non-Bravais lattices (Kagome, Honeycomb, random graphs).
+   Uses Deep Sets pooling + Dense Head.
+
+2. **EquivariantGCNN** (Group-Equivariant CNN):
+    Convolutions over the symmetry group G (translations ⋊ point group).
+    Enforces exact G-invariance of psi(sigma).  Based on:
+    - Sharma, Manna, Rao, Sreejith, 
+        - arXiv:2505.23728v1 (2025)
+    - Roth & MacDonald, 
+        - arXiv:2104.05085 (2021)
+    - Cohen & Welling, 
+        - arXiv:1602.07576 (2016)
 
 Usage
 -----
-    # Defines a Honeycomb or Kagome graph structure
-    edges = [(0, 1), (1, 2), ...] 
-    
-    # Fast, Real-valued backbone GCNN
+    # Graph-based GCNN
     gcnn = GCNN(input_shape=(N,), graph_edges=edges, split_complex=True)
+
+    # Group-Equivariant GCNN (from lattice)
+    net = EquivariantGCNN.from_lattice(lattice, channels=(8, 8))
 """
 
 import  numpy   as np
@@ -282,6 +294,218 @@ class GCNN(FlaxInterface):
             # Flatten to (batch_size,) or scalar
             return flat_output.reshape(-1)[:x.shape[0] if x.ndim > 1 else 1]
         
+# ----------------------------------------------------------------------
+# 4. Group-Equivariant GCNN (arXiv:2505.23728)
+# ----------------------------------------------------------------------
+
+if JAX_AVAILABLE:
+
+    class _FlaxEquivariantGCNN(nn.Module):
+        r"""
+        Group-Equivariant CNN backbone for NQS
+        (Sharma et al. 2025, arXiv:2505.23728).
+
+        1. **Embedding**:  $\sigma \to f^1(g)$
+           $$f^1_{g,\alpha} = \Gamma\!\bigl(\sum_r (g^{-1}\sigma)_r K^\alpha_r + b^{1,\alpha}\bigr)$$
+        2. **Group convolution** ($\ell = 1 \ldots \mathcal{L}-1$):
+           $$f^{\ell+1}_{g,\beta} = \Gamma\!\bigl(\sum_{h}\sum_\alpha W^{\ell+1}_{h^{-1}g,\alpha\beta} f^\ell_{h,\alpha} + b^{\ell+1,\beta}\bigr)$$
+        3. **Irrep projection** (trivial irrep, $\chi_g=1$):
+           $$\psi(\sigma) = \exp\!\bigl(\sum_g\sum_\alpha f^{\mathcal{L}}_{g,\alpha}\bigr)$$
+
+        Activation: complex SELU.
+        """
+        perm_table      : jnp.ndarray           # (|G|, Ns)   — frozen
+        cayley_table    : jnp.ndarray           # (|G|, |G|)  — frozen
+        channels        : Sequence[int]
+        dtype           : Any
+        param_dtype     : Any
+        split_complex   : bool
+        islog           : bool
+
+        @nn.compact
+        def __call__(self, x):
+            if x.ndim == 1:
+                x = x[jnp.newaxis, :]
+
+            n_group = self.perm_table.shape[0]
+            Ns      = x.shape[-1]
+
+            # Resolve computation dtype
+            if self.split_complex:
+                cd = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
+                if jnp.iscomplexobj(x):
+                    x = x.real
+            else:
+                cd = self.dtype
+                
+            x       = x.astype(cd)
+            k_init  = (cplx_variance_scaling(1.0, 'fan_in', 'normal', cd)
+                        if jnp.issubdtype(cd, jnp.complexfloating)
+                        else nn.initializers.lecun_normal(dtype=cd))
+            is_cplx = jnp.issubdtype(cd, jnp.complexfloating)
+
+            def _act(h):
+                return (jax.nn.selu(h.real) + 1j * jax.nn.selu(h.imag)) if is_cplx else jax.nn.selu(h)
+
+            # Embedding layer
+            x_perm  = x[:, self.perm_table]                         # (B, |G|, Ns)
+            c0      = self.channels[0]
+            K_emb   = self.param('K_embed', k_init, (Ns, c0), cd)
+            b_emb   = self.param('b_embed', nn.initializers.zeros, (c0,), cd)
+            f       = _act(jnp.einsum('bgn,nc->bgc', x_perm, K_emb) + b_emb)
+
+            # Group convolution layers
+            for l in range(len(self.channels) - 1):
+                c_in, c_out = self.channels[l], self.channels[l + 1]
+                W           = self.param(f'W_gc_{l}', k_init, (n_group, c_in, c_out), cd)
+                b           = self.param(f'b_gc_{l}', nn.initializers.zeros, (c_out,), cd)
+
+                # W_idx[h, g] = W[cayley[h, g]]  →  (|G|, |G|, c_in, c_out)
+                W_idx       = W[self.cayley_table.reshape(-1)].reshape(n_group, n_group, c_in, c_out,)
+                # f_new[b,g,o] = Σ_h Σ_i f[b,h,i] · W_idx[h,g,i,o]
+                f           = _act(jnp.einsum('bhi,hgio->bgo', f, W_idx) + b)
+
+            # Output: trivial-irrep projection
+            if self.split_complex:
+                f_pool      = jnp.sum(f, axis=1) # (B, c_L)
+                head_init   = nn.initializers.normal(stddev=0.1, dtype=cd)
+                out         = nn.Dense(2, dtype=cd, param_dtype=cd,
+                               kernel_init=head_init, name='head_proj')(f_pool)
+                val         = out[..., 0] + 1j * out[..., 1]
+            else:
+                val         = jnp.sum(f, axis=(1, 2)) # (B,)
+
+            return val if self.islog else jnp.exp(val)
+
+    class EquivariantGCNN(FlaxInterface):
+        r"""
+        Group-Equivariant CNN for NQS on lattice systems.
+
+        Implements the architecture from Sharma et al. (2025, arXiv:2505.23728)
+        and Roth & MacDonald (2021).  Convolutions run over the symmetry group
+        $G$ (translations $\rtimes$ point group), guaranteeing *exact*
+        $G$-invariance of $\psi(\sigma)$.
+
+        **Key results from arXiv:2505.23728**:
+
+        * $\mathcal{L}=2$ layers achieve fidelity $> 0.99999$ with ED (L=8).
+        * Excellent agreement with QMC for $12 \le L \le 32$.
+        * QGT rank saturates → more layers don't improve (sampling-limited).
+
+        Usage
+        -----
+        >>> net = EquivariantGCNN.from_lattice(lattice, channels=(8, 8))
+        >>> from QES.general_python.lattices.tools.lattice_symmetry import generate_space_group_perms
+        >>> perms = generate_space_group_perms(Lx, Ly, point_group='full')
+        >>> net = EquivariantGCNN(input_shape=(Ns,), symmetry_perms=perms)
+        """
+
+        def __init__(
+            self,
+            input_shape     : tuple,
+            *,
+            symmetry_perms  : "np.ndarray",
+            cayley_table    : Optional["np.ndarray"] = None,
+            channels        : Sequence[int]         = (8, 8),
+            split_complex   : bool                  = False,
+            dtype           : Any                   = "complex128",
+            seed            : int                   = 0,
+            **kwargs,
+        ):
+            from ....lattices.tools.lattice_symmetry import compute_cayley_table as _cayley
+
+            perm_table = np.asarray(symmetry_perms, dtype=np.int32)
+            if cayley_table is None:
+                cayley_table = _cayley(perm_table)
+            cayley_table = np.asarray(cayley_table, dtype=np.int32)
+
+            jax_dtype = getattr(jnp, dtype) if isinstance(dtype, str) else dtype
+
+            net_kwargs = dict(
+                perm_table      = jnp.array(perm_table),
+                cayley_table    = jnp.array(cayley_table),
+                channels        = tuple(channels),
+                dtype           = jax_dtype,
+                param_dtype     = jax_dtype,
+                split_complex   = split_complex,
+                islog           = True,
+            )
+
+            super().__init__(
+                net_module  = _FlaxEquivariantGCNN,
+                net_args    = (),
+                net_kwargs  = net_kwargs,
+                input_shape = input_shape,
+                backend     = kwargs.pop('backend', 'jax'),
+                dtype       = jax_dtype,
+                seed        = seed,
+                **kwargs,
+            )
+            self._has_analytic_grad = False
+            self._name      = 'eqgcnn'
+            self._n_group   = perm_table.shape[0]
+
+        @classmethod
+        def from_lattice(
+            cls,
+            lattice,
+            *,
+            channels        : Sequence[int] = (8, 8),
+            point_group     : str           = "full",
+            dtype           : Any           = "complex128",
+            **kwargs,
+        ):
+            """
+            Create from a lattice object (recommended entry point).
+
+            Automatically generates symmetry permutations from geometry.
+
+            Parameters
+            ----------
+            lattice : Lattice
+                Must expose ``.Lx``, ``.Ly``, ``.ns``.
+            channels : tuple of int
+                Channel widths per layer (length = number of layers).
+            point_group : str
+                ``'full'`` (maximal) or ``'translations'`` only.
+            """
+            from ....lattices.tools.lattice_symmetry import generate_space_group_perms
+
+            Lx, Ly  = lattice.Lx, lattice.Ly
+            Ns      = lattice.ns
+            spc     = Ns // (Lx * Ly)              # sites per unit cell
+            perms   = generate_space_group_perms(Lx, Ly, spc, point_group)
+            return cls(
+                input_shape     = (Ns,),
+                symmetry_perms  = perms,
+                channels        = channels,
+                dtype           = dtype,
+                **kwargs,
+            )
+
+        @property
+        def output_shape(self) -> Tuple[int, ...]:
+            return self._out_shape
+
+        @property
+        def group_size(self) -> int:
+            """Order of the symmetry group |G|."""
+            return self._n_group
+
+        def __repr__(self):
+            ch = self._flax_module.channels
+            return (f"EquivariantGCNN(sites={self.input_dim},"
+                    f"|G|={self._n_group},channels={ch})")
+
+        def __str__(self):
+            return self.__repr__()
+
+        def __call__(self, x):
+            out = super().__call__(x)
+            if out.ndim <= 1:
+                return out
+            return out.reshape(-1)[:x.shape[0] if x.ndim > 1 else 1]
+
 # ----------------------------------------------------------------------
 # End of File
 # ----------------------------------------------------------------------

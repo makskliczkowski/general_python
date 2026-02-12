@@ -20,12 +20,16 @@ from    typing      import Dict, List, Mapping, Optional, Tuple, Union, Any
 import  numpy as np
 import  scipy.sparse as sp
 
-from .tools.lattice_tools   import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
+from .tools.lattice_tools   import (
+                                LatticeDirection, LatticeBC, LatticeType, 
+                                handle_boundary_conditions, handle_boundary_conditions_detailed, handle_dim
+                            )
 from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
 from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path,
-                                    reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
-                                    build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
-                                    KPathResult, find_nearest_kpoints)
+                                reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
+                                build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
+                                KPathResult, find_nearest_kpoints
+                            )
 from .tools.region_handler  import LatticeRegionHandler
 from ..common               import hdf5man as HDF5Mod
 
@@ -612,6 +616,30 @@ class Lattice(ABC):
     # -----------------------------------------------------------------------------
     #! Physical 
     # -----------------------------------------------------------------------------
+
+    @property
+    def sites_per_cell(self) -> int:
+        """Sites per unit cell (1 for Bravais, 2 for honeycomb, etc.)."""
+        n_cells = max(1, self._lx * self._ly * self._lz)
+        return max(1, self._ns // n_cells)
+
+    def symmetry_perms(self, point_group: str = "full") -> np.ndarray:
+        """
+        Generate space-group permutation table for this lattice.
+
+        Delegates to :func:`~.tools.lattice_symmetry.generate_space_group_perms`.
+
+        Parameters
+        ----------
+        point_group : str
+            ``'full'`` for maximal point group, ``'translations'`` for translations only.
+
+        Returns
+        -------
+        ndarray, shape (|G|, Ns)
+        """
+        from .tools.lattice_symmetry import generate_space_group_perms
+        return generate_space_group_perms(self.Lx, self.Ly, self.sites_per_cell, point_group)
     
     @property
     def a1(self):           return self._a1
@@ -766,6 +794,13 @@ class Lattice(ABC):
     def bc(self):                   return self._bc
     @bc.setter
     def bc(self, value):            self._bc = value
+    
+    @property
+    def bc_x(self):                 return handle_boundary_conditions_detailed(self._bc).get('x', False)
+    @property
+    def bc_y(self):                 return handle_boundary_conditions_detailed(self._bc).get('y', False)
+    @property
+    def bc_z(self):                 return handle_boundary_conditions_detailed(self._bc).get('z', False)
     
     @property
     def cardinality(self):          return self.get_nn_forward_num_max()
