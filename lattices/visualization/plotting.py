@@ -115,7 +115,7 @@ def plot_real_space(
     azim            : Optional[float]               = None,
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
-    """
+    r"""
     Scatter-plot of real-space lattice vectors.
 
     Parameters
@@ -192,7 +192,6 @@ def plot_real_space(
         _finalise_figure(fig)
         
     return fig, axis
-
 
 def plot_reciprocal_space(
     lattice         : Lattice,
@@ -388,12 +387,17 @@ def plot_brillouin_zone(
 def _gather_nn_edges(lattice: Lattice) -> List[Tuple[int, int]]:
     """ Extract nearest-neighbor edges from lattice. """
     edges = set()
+    
     for i in range(lattice.Ns):
+        
         neighbors = lattice.get_nn(i)
-        if not neighbors: continue
+        
+        if not neighbors: 
+            continue
         
         for j in neighbors:
-            if lattice.wrong_nei(j): continue
+            if lattice.wrong_nei(j): 
+                continue
             
             # Canonical edge (min, max) to avoid duplicates
             a, b = sorted((int(i), int(j)))
@@ -403,6 +407,7 @@ def _gather_nn_edges(lattice: Lattice) -> List[Tuple[int, int]]:
 
 def _infer_bipartite_coloring(adjacency: List[List[int]]) -> Optional[List[int]]:
     """ Try to 2-color the graph. Returns list of 0/1 colors or None if not bipartite. """
+    
     ns      = len(adjacency)
     colors  = [-1] * ns
     
@@ -410,16 +415,17 @@ def _infer_bipartite_coloring(adjacency: List[List[int]]) -> Optional[List[int]]
         if colors[start] != -1 or not adjacency[start]:
             continue
             
-        colors[start] = 0
-        queue = [start]
+        colors[start]   = 0
+        queue           = [start]
         while queue:
-            node = queue.pop(0)
+            node        = queue.pop(0)
             for neigh in adjacency[node]:
                 if neigh < 0: continue
                 
                 if colors[neigh] == -1:
                     colors[neigh] = colors[node] ^ 1
                     queue.append(neigh)
+                    
                 elif colors[neigh] == colors[node]:
                     return None # Not bipartite
                     
@@ -451,42 +457,26 @@ def _boundary_masks(positions: np.ndarray, lattice: Lattice, *, tol_factor: floa
     interior_mask = ~boundary_mask
     return boundary_mask, interior_mask
 
-def _draw_primitive_cell(axis: Axes, origin: np.ndarray, basis_vectors: List[np.ndarray], dim: int) -> None:
+def _draw_primitive_cell(axis: Axes, origin: np.ndarray, basis_vectors: List[np.ndarray], dim: int, **kwargs) -> None:
     """ Draw the primitive unit cell vectors from an origin. """
-    if not basis_vectors: return
     
-    color       = "0.4"
-    linestyle   = ":"
-    linewidth   = 1.0
+    if not basis_vectors: 
+        return
+    
+    color       = kwargs.get("color",       "0.4")
+    linestyle   = kwargs.get("linestyle",   ":")
+    linewidth   = kwargs.get("linewidth",   1.0)
 
     if dim == 1 and len(basis_vectors) >= 1:
-        points = np.vstack([origin, origin + basis_vectors[0]])
+        points  = np.vstack([origin, origin + basis_vectors[0]])
         axis.plot(points[:, 0], np.zeros_like(points[:, 0]), color=color, linestyle=linestyle, linewidth=linewidth)
         
     elif dim == 2 and len(basis_vectors) >= 2:
         a1, a2  = basis_vectors[:2]
         corners = np.array([origin, origin + a1, origin + a1 + a2, origin + a2, origin])
         axis.plot(corners[:, 0], corners[:, 1], color=color, linestyle=linestyle, linewidth=linewidth)
-        
     elif dim == 3 and len(basis_vectors) >= 3:
-        a1, a2, a3 = basis_vectors[:3]
-        base       = origin
-        # vertices of the parallelepiped
-        corners    = [
-            base, base + a1, base + a2, base + a3,
-            base + a1 + a2, base + a1 + a3, base + a2 + a3,
-            base + a1 + a2 + a3
-        ]
-        # edges to draw
-        edges = [
-            (0, 1), (0, 2), (0, 3),
-            (1, 4), (1, 5), (2, 4), (2, 6),
-            (3, 5), (3, 6), (4, 7), (5, 7), (6, 7)
-        ]
-        for i, j in edges:
-            start, end = corners[i], corners[j]
-            axis.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]],
-                      color=color, linestyle=linestyle, linewidth=linewidth, alpha=0.7)
+        raise NotImplementedError("3D primitive cell plotting is not implemented yet.")
 
 def _draw_boundary_annotations(
     axis            : Axes,
@@ -534,8 +524,7 @@ def _draw_boundary_annotations(
         elif axis_index == 1:  # Y-direction boundaries
             x = mid[0]
             if is_periodic:
-                axis.annotate(f"PBC {label}", xy=(x, maxs[1]), xytext=(x, maxs[1] + padding),
-                              ha="center", va="bottom", arrowprops=arrow_kw, **text_kw)
+                axis.annotate(f"PBC {label}", xy=(x, maxs[1]), xytext=(x, maxs[1] + padding), ha="center", va="bottom", arrowprops=arrow_kw, **text_kw)
                 axis.annotate("", xy=(x, mins[1]), xytext=(x, mins[1] - padding), arrowprops=arrow_kw)
             else:
                 axis.plot([mins[0], maxs[0]], [mins[1], mins[1]], **style_kw)
@@ -555,6 +544,7 @@ def plot_lattice_structure(
     ax                          : Optional[Axes]                = None,
     show_indices                : bool                          = False,
     highlight_boundary          : bool                          = True,
+    # related to boundary highlighting
     show_axes                   : bool                          = False,
     edge_color                  : str                           = "0.5",
     node_color                  : str                           = "tab:blue",
@@ -562,10 +552,12 @@ def plot_lattice_structure(
     periodic_color              : str                           = "tab:orange",
     open_color                  : str                           = "tab:green",
     bond_colors                 : dict                          = { 0 : "tab:red", 1 : "tab:blue", 2: "tab:green" },
+    # styling
     node_size                   : int                           = 30,
     edge_alpha                  : float                         = 0.7,
     label_padding               : float                         = 0.05,
     boundary_offset             : float                         = 0.05,
+    # general plot settings
     figsize                     : Optional[Tuple[float, float]] = None,
     title                       : Optional[str]                 = None,
     title_kwargs                : Optional[Dict[str, object]]   = None,
@@ -577,7 +569,7 @@ def plot_lattice_structure(
     show_primitive_cell         : bool                          = True,
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
-    """
+    r"""
     Visualise lattice geometry with connectivity, boundary cues, and sublattices.
 
     This function draws nodes and edges based on nearest-neighbor connectivity.
@@ -679,8 +671,8 @@ def plot_lattice_structure(
     if partition_colors:
         partitions = _infer_bipartite_coloring(adjacency)
         if partitions is not None:
-            palette = partition_colors
-            node_face_colors = [palette[partitions[i] % len(palette)] for i in range(lattice.Ns)]
+            palette             = partition_colors
+            node_face_colors    = [palette[partitions[i] % len(palette)] for i in range(lattice.Ns)]
 
     # Draw Nodes
     scatter_defaults = dict(s=node_size, zorder=3, **scatter_kwargs)
@@ -815,6 +807,10 @@ def plot_lattice_structure(
         
     return fig, axis
 
+# ==============================================================================
+# Region Plotting
+# ==============================================================================
+
 def _region_palette(n: int) -> List:
     """
     Return *n* high-contrast, distinguishable colours for region plots.
@@ -839,7 +835,6 @@ def _region_palette(n: int) -> List:
     cmap = cm.get_cmap("tab20", max(n, 20))
     return [cmap(i) for i in range(n)]
 
-
 def plot_regions(
     lattice             : Lattice,
     regions             : Dict[str, List[int]],
@@ -849,7 +844,6 @@ def plot_regions(
     show_system         : bool                          = True,
     show_complement     : bool                          = False,
     show_labels         : bool                          = True,
-    show_connections    : bool                          = False,
     show_overlaps       : bool                          = True,
     show_bonds          : bool                          = False,
     system_color        : str                           = 'lightgray',
@@ -857,7 +851,6 @@ def plot_regions(
     complement_color    : str                           = 'lightgray',
     complement_alpha    : float                         = 0.3,
     overlap_color       : str                           = 'red',
-    cmap                : str                           = 'Set2',
     fill                : bool                          = False,
     fill_alpha          : float                         = 0.2,
     blob_radius         : Optional[float]               = None,
@@ -873,6 +866,7 @@ def plot_regions(
     region_descriptions : Optional[Dict[str, str]]      = None,
     legend_loc          : str                           = 'best',
     legend_fontsize     : int                           = 9,
+    legend_bbox         : tuple                         = (1.05, 1),
     label_fontsize      : int                           = 11,
     label_offset        : float                         = 1.2,
     **scatter_kwargs,
@@ -898,7 +892,7 @@ def plot_regions(
         Region name → sorted site-index list.
     region_descriptions : dict[str, str], optional
         Optional human-readable description per region key that is appended
-        to the legend entry (e.g. ``{'A': 'sector 0°–120°'}``).
+        to the legend entry (e.g. ``{'A': 'sector 0°-120°'}``).
     legend_loc : str
         Matplotlib legend location string (default ``'best'``).
     legend_fontsize : int
@@ -907,7 +901,7 @@ def plot_regions(
         Font size for region labels drawn on the plot (default 11).
     label_offset : float
         Controls how far the label is pushed radially outward from the
-        region centroid (default 1.2 ×  distance from plot centre to
+        region centroid (default 1.2 x distance from plot centre to
         centroid).  Values > 1 push the label outside the region.
     show_bonds : bool
         Draw NN bonds coloured by region.
@@ -927,6 +921,7 @@ def plot_regions(
     if figsize is not None and axis is fig.axes[0]:
         fig.set_size_inches(*figsize, forward=True)
 
+    # Set 3D view if requested and applicable
     if dim == 3 and (elev is not None or azim is not None):
         axis.view_init(
             elev=elev if elev is not None else getattr(axis, "elev", None),
@@ -943,19 +938,20 @@ def plot_regions(
             axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **_sc)
 
     # site membership bookkeeping 
-    all_region_sites    = set()
+    all_region_sites            = set()
     site_counts: Dict[int, int] = {}
     for indices in regions.values():
         for idx in indices:
             all_region_sites.add(idx)
             site_counts[idx] = site_counts.get(idx, 0) + 1
 
+    # complement and overlap sites for optional distinct styling
     complement_sites = [i for i in range(len(coords)) if i not in all_region_sites]
     overlap_sites    = [i for i, c in site_counts.items() if c > 1]
 
-    # complement — small faint dots (no distracting 'x' markers)
+    # complement — small faint dots
     if show_complement and complement_sites:
-        cc = coords[complement_sites]
+        cc  = coords[complement_sites]
         _ca = dict(color=complement_color, alpha=complement_alpha, marker='o',
                    s=marker_size * 0.25, edgecolors='none', zorder=0)
         if dim <= 2:
@@ -964,12 +960,10 @@ def plot_regions(
         else:
             axis.scatter(cc[:, 0], cc[:, 1], cc[:, 2], **_ca)
 
-    # colour palette
-    palette = _region_palette(len(regions))
-
     # Global centroid (used for radial label placement)
-    global_com = np.mean(coords, axis=0)
-
+    # colour palette
+    palette             = _region_palette(len(regions))
+    global_com          = np.mean(coords, axis=0)
     region_descriptions = region_descriptions or {}
 
     # draw each region
@@ -987,7 +981,7 @@ def plot_regions(
         if desc:
             lbl += f" — {desc}"
 
-        # 1. Convex-hull fill (2D)
+        # Convex-hull fill (2D) - allows visualising the overall shape of the region even if the sites are sparse
         if fill and dim == 2 and ConvexHull is not None and len(rc) >= 3:
             try:
                 hull   = ConvexHull(rc)
@@ -996,16 +990,15 @@ def plot_regions(
             except Exception:
                 pass
 
-        # 2. Per-site blobs (2D)
+        # Per-site blobs (2D) - gives a visual sense of the site density and extent of the region
         if blob_radius is not None and dim == 2:
-            from matplotlib.patches import Circle as _Circle
+            from matplotlib.patches     import Circle as _Circle
             from matplotlib.collections import PatchCollection as _PC
-            circles = [_Circle((x, y), blob_radius) for x, y in rc[:, :2]]
-            pc = _PC(circles, facecolors=color, edgecolors='none',
-                     alpha=blob_alpha, zorder=1)
+            circles     = [_Circle((x, y), blob_radius) for x, y in rc[:, :2]]
+            pc          = _PC(circles, facecolors=color, edgecolors='none', alpha=blob_alpha, zorder=1)
             axis.add_collection(pc)
 
-        # 3. Intra-region NN bonds (2D)
+        # Intra-region NN bonds (2D)
         if show_bonds and dim == 2:
             idx_set = set(indices)
             for si in indices:
@@ -1018,25 +1011,26 @@ def plot_regions(
                         axis.plot([ri[0], rj[0]], [ri[1], rj[1]],
                                   color=color, lw=1.2, alpha=0.55, zorder=2)
 
-        # 4. Scatter markers
-        sc_kw = dict(color=color, marker='o', s=marker_size, edgecolors='black',
-                     linewidths=edge_width * 0.5, label=lbl, zorder=3)
+        # Scatter markers
+        sc_kw   = dict(color=color, marker='o', s=marker_size, edgecolors='black', linewidths=edge_width * 0.5, label=lbl, zorder=3)
         sc_kw.update(scatter_kwargs)
+        
         if dim <= 2:
             y = rc[:, 1] if dim == 2 else np.zeros(len(rc))
             axis.scatter(rc[:, 0], y, **sc_kw)
         else:
             axis.scatter(rc[:, 0], rc[:, 1], rc[:, 2], **sc_kw)
 
-        # 5. Region label — placed radially outward from global centroid
+        # Region label — placed radially outward from global centroid
+        # Place near one of the first sites, not in centroid
         if show_labels and dim == 2 and len(rc) > 0:
             com    = np.mean(rc[:, :2], axis=0)
             direc  = com - global_com[:2]
             norm   = np.linalg.norm(direc)
             if norm < 1e-9:
-                direc = np.array([0.0, 1.0])
+                direc   = np.array([0.0, 1.0])
             else:
-                direc = direc / norm
+                direc   = direc / norm
             lbl_pos = com + direc * norm * (label_offset - 1.0) + direc * 0.6
 
             axis.annotate(
@@ -1049,6 +1043,8 @@ def plot_regions(
                           alpha=0.85, lw=1.0),
                 zorder=5,
             )
+            
+        # Fallback label placement for non-2D or if no sites (just put at centroid)
         elif show_labels and dim != 2 and len(rc) > 0:
             com = np.mean(rc, axis=0)
             txt_kw = dict(fontsize=label_fontsize, fontweight='bold', color=color,
@@ -1059,9 +1055,9 @@ def plot_regions(
             else:
                 axis.text(com[0], com[1], com[2], name, **txt_kw)
 
-    # overlap highlight
+    # overlap highlight -> draw on top of everything else with a distinct style
     if show_overlaps and overlap_sites:
-        oc = coords[overlap_sites]
+        oc  = coords[overlap_sites]
         _oa = dict(color='none', edgecolors=overlap_color, marker='o',
                    s=marker_size * 1.5, linewidths=edge_width * 1.5,
                    label=f'Overlaps ({len(overlap_sites)})', zorder=4)
@@ -1090,6 +1086,7 @@ def plot_regions(
         if title_kwargs:
             kw.update(title_kwargs)
         axis.set_title(title, **kw)
+        
     elif ax is None:
         n_total    = len(coords)
         n_covered  = len(all_region_sites)
@@ -1101,22 +1098,28 @@ def plot_regions(
 
     # legend (deduplicated, compact)
     handles, labels = axis.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
+    by_label        = dict(zip(labels, handles))
     if by_label:
         axis.legend(
             by_label.values(), by_label.keys(),
-            loc=legend_loc, fontsize=legend_fontsize,
-            framealpha=0.90, edgecolor='lightgray', fancybox=True,
-            handletextpad=0.3, labelspacing=0.25,
-            borderpad=0.4, handlelength=1.2,
-            markerscale=0.7,
+            loc             =legend_loc, 
+            fontsize        =legend_fontsize,
+            bbox_to_anchor  =legend_bbox,
+            framealpha      =0.90, 
+            edgecolor       ='lightgray', 
+            fancybox        =True,
+            handletextpad   =0.3, 
+            labelspacing    =0.25,
+            borderpad       =0.4, 
+            handlelength    =1.2,
+            markerscale     =0.7,
+            **scatter_kwargs,
         )
 
     if tight_layout:
         _finalise_figure(fig)
 
     return fig, axis
-
 
 # ==============================================================================
 # K-space / Brillouin-zone with High-Symmetry Points
@@ -1320,7 +1323,7 @@ class LatticePlotter:
         return plot_brillouin_zone(self.lattice, **kwargs)
 
     def structure(self, **kwargs) -> Tuple[Figure, Axes]:
-        """ 
+        r""" 
         Plot detailed lattice structure with connectivity. 
         
         Parameters

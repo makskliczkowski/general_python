@@ -29,7 +29,7 @@ except ImportError:
 if TYPE_CHECKING:
     from general_python.lattices.lattice import Lattice
 
-
+# --------------------------------------------------------------
 
 def plot_static_structure_factor(
         ax,

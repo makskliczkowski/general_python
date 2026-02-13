@@ -401,31 +401,6 @@ class HoneycombLattice(Lattice):
         """
         return (x - (self.Lx - 1), y - (2 * self.Ly - 1), z - (self.Lz - 1))
 
-    @staticmethod
-    def dispersion(k, a=1.0):
-        """
-        Honeycomb (graphene-like) nearest-neighbour dispersion magnitude.
-        Computes |f(k)| where f = sum_{δ} exp(-i k·δ) for the three A->B vectors
-        used by this lattice implementation.
-        """
-        k   = np.asarray(k)
-        s3  = np.sqrt(3.0)
-        d1  = np.array([a/2.0, -s3 * a / 2.0])
-        d2  = np.array([a/2.0,  s3 * a / 2.0])
-        d3  = np.array([-a, 0.0])
-        def _f(kx, ky):
-            z1 = np.exp(-1j * (kx * d1[0] + ky * d1[1]))
-            z2 = np.exp(-1j * (kx * d2[0] + ky * d2[1]))
-            z3 = np.exp(-1j * (kx * d3[0] + ky * d3[1]))
-            return np.abs(z1 + z2 + z3)
-        if k.ndim == 1:
-            kx, ky = k[0], k[1]
-            return _f(kx, ky)
-        else:
-            kx = k[..., 0]
-            ky = k[..., 1]
-            return _f(kx, ky)
-
     def bond_type(self, s1: int, s2: int) -> int:
         """Return directional bond type (X_BOND_NEI, Y_BOND_NEI, Z_BOND_NEI) or -1."""
         if s2 == self._nn[s1][X_BOND_NEI]: return X_BOND_NEI
@@ -491,6 +466,31 @@ class HoneycombLattice(Lattice):
 
         self._plaquettes = plaquettes
         return plaquettes
+
+    @staticmethod
+    def dispersion(k, a=1.0):
+        """
+        Honeycomb (graphene-like) nearest-neighbour dispersion magnitude.
+        Computes |f(k)| where f = sum_{δ} exp(-i k·δ) for the three A->B vectors
+        used by this lattice implementation.
+        """
+        k   = np.asarray(k)
+        s3  = np.sqrt(3.0)
+        d1  = np.array([a/2.0, -s3 * a / 2.0])
+        d2  = np.array([a/2.0,  s3 * a / 2.0])
+        d3  = np.array([-a, 0.0])
+        def _f(kx, ky):
+            z1 = np.exp(-1j * (kx * d1[0] + ky * d1[1]))
+            z2 = np.exp(-1j * (kx * d2[0] + ky * d2[1]))
+            z3 = np.exp(-1j * (kx * d3[0] + ky * d3[1]))
+            return np.abs(z1 + z2 + z3)
+        if k.ndim == 1:
+            kx, ky = k[0], k[1]
+            return _f(kx, ky)
+        else:
+            kx = k[..., 0]
+            ky = k[..., 1]
+            return _f(kx, ky)
 
 # ---------------------------------------------------------------------------
 #! EOF
