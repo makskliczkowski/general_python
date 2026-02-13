@@ -1965,24 +1965,22 @@ class Lattice(ABC):
         list[tuple]
             Unique undirected edges ``(i, j)`` with ``i < j``.
         """
-        if not hasattr(self, '_bonds') or self._bonds is None:
+        if not hasattr(self, '_bonds') or not self._bonds:
             self.calculate_bonds()
 
         result = []
         for i, j in self._bonds:
             a, b = (i, j) if i < j else (j, i)
             c = self.bond_type(a, b)
-            if filter_color is not None:
-                # bond_type() may return str ('nn','nnn','none') on the base class
-                # or int on subclasses; accept both
-                if c != filter_color and c != 'nn':
-                    continue
-                if isinstance(c, str) and filter_color is not None:
-                    continue  # skip base-class fallback when colour filtering
+            if filter_color is not None and c != filter_color:
+                continue
             if return_color:
                 result.append((a, b, c))
             else:
                 result.append((a, b))
+        # Deduplicate (forward list may still have symmetric pairs)
+        if not return_color:
+            result = sorted(set(result))
         return result
 
     @property
@@ -2011,7 +2009,8 @@ class Lattice(ABC):
         -------
         np.ndarray  shape (3,)
         """
-        dr = self.rvectors[j] - self.rvectors[i]
+        i, j    = int(i), int(j)
+        dr      = self.rvectors[j] - self.rvectors[i]
         if not minimum_image:
             return dr
 

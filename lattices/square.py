@@ -381,5 +381,21 @@ class SquareLattice(Lattice):
             raise ValueError("Only 1D, 2D, and 3D lattices are supported.")
         
     # ---------------------------------------------------------------------------------
+
+    @staticmethod
+    def dispersion(k):
+        """
+        Simple nearest-neighbour tight-binding/spin-wave-like dispersion for the
+        square lattice. Accepts k as (2,) or (...,2) array and returns same-shaped
+        scalar or array of energies.
+        """
+        k = np.asarray(k)
+        if k.ndim == 1:
+            kx, ky = k[0], k[1]
+            return 2.0 * (2.0 - np.cos(kx) - np.cos(ky))
+        else:
+            kx = k[..., 0]
+            ky = k[..., 1]
+            return 2.0 * (2.0 - np.cos(kx) - np.cos(ky))
     
 # -------------------------------------------------------------------------------------

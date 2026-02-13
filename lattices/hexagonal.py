@@ -26,9 +26,9 @@ Basis positions inside each unit cell:
 Nearest neighbours (coordination z = 3 per site):
 
 *   **A** at cell (n_x, n_y):
-    → B(n_x, n_y),  B(n_x, n_y−1),  B(n_x−1, n_y)
+    → B(n_x, n_y),  B(n_x, n_y−1),  B(n_x+1, n_y−1)
 *   **B** at cell (n_x, n_y):
-    → A(n_x, n_y),  A(n_x, n_y+1),  A(n_x+1, n_y)
+    → A(n_x, n_y),  A(n_x, n_y+1),  A(n_x−1, n_y+1)
 
 High-symmetry points in the Brillouin zone:
     - Γ (Gamma): Zone center (0, 0)
@@ -52,8 +52,8 @@ from .tools.lattice_kspace import HighSymmetryPoints
 
 # Bond-type indices (consistent with 3-coordination of the honeycomb)
 X_BOND = 0  # intra-cell bond  (A <-> B within same unit cell)
-Y_BOND = 1  # bond along a2 direction
-Z_BOND = 2  # bond along a1 direction
+Y_BOND = 1  # bond along -a2 direction
+Z_BOND = 2  # bond along (a1-a2) direction
 
 # ---------------------------------------------------------------------------
 
@@ -98,9 +98,9 @@ class HexagonalLattice(Lattice):
         ])
 
         # NN displacement vectors (from A to its three B neighbours)
-        self._delta_intra = self._basis[1] - self._basis[0]          # (0, a, 0)
-        self._delta_a2    = self._basis[1] - self._basis[0] - self._a2  # via -a2
-        self._delta_a1    = self._basis[1] - self._basis[0] - self._a1  # via -a1
+        self._delta_intra = self._basis[1] - self._basis[0]                          # (0, a, 0)
+        self._delta_a2    = self._basis[1] - self._basis[0] - self._a2               # (-√3/2 a, -a/2, 0)  via -a2
+        self._delta_z     = self._basis[1] - self._basis[0] + self._a1 - self._a2    # (+√3/2 a, -a/2, 0)  via a1-a2
 
         # Adjust dimension
         match self._dim:
@@ -137,6 +137,30 @@ class HexagonalLattice(Lattice):
         Return high-symmetry points for the hexagonal BZ.
         """
         return HighSymmetryPoints.hexagonal_2d()
+
+    @staticmethod
+    def dispersion(k, a=1.0):
+        """
+        Hexagonal/honeycomb (armchair) nearest-neighbour dispersion magnitude.
+        Uses the three NN vectors defined in the hexagonal geometry.
+        """
+        k = np.asarray(k)
+        s3 = np.sqrt(3.0)
+        d1 = np.array([0.0, a])
+        d2 = np.array([-s3 * a / 2.0, -a / 2.0])
+        d3 = np.array([ s3 * a / 2.0, -a / 2.0])
+        def _f(kx, ky):
+            z1 = np.exp(-1j * (kx * d1[0] + ky * d1[1]))
+            z2 = np.exp(-1j * (kx * d2[0] + ky * d2[1]))
+            z3 = np.exp(-1j * (kx * d3[0] + ky * d3[1]))
+            return np.abs(z1 + z2 + z3)
+        if k.ndim == 1:
+            kx, ky = k[0], k[1]
+            return _f(kx, ky)
+        else:
+            kx = k[..., 0]
+            ky = k[..., 1]
+            return _f(kx, ky)
 
     # ------------------------------------------------------------------
     #! Geometry helpers
@@ -197,14 +221,14 @@ class HexagonalLattice(Lattice):
         Each site has exactly 3 nearest neighbours (honeycomb coordination).
 
         Bond convention (for an A-site at cell (cx, cy)):
-            [X_BOND] intra-cell  -> B(cx,   cy  )
-            [Y_BOND] along a2    -> B(cx,   cy-1)
-            [Z_BOND] along a1    -> B(cx-1, cy  )
+            [X_BOND] intra-cell    -> B(cx,   cy  )
+            [Y_BOND] along -a2     -> B(cx,   cy-1)
+            [Z_BOND] along a1 - a2 -> B(cx+1, cy-1)
 
         For a B-site at cell (cx, cy):
-            [X_BOND] intra-cell  -> A(cx,   cy  )
-            [Y_BOND] along a2    -> A(cx,   cy+1)
-            [Z_BOND] along a1    -> A(cx+1, cy  )
+            [X_BOND] intra-cell    -> A(cx,   cy  )
+            [Y_BOND] along +a2     -> A(cx,   cy+1)
+            [Z_BOND] along -a1+a2  -> A(cx-1, cy+1)
         """
         Lx, Ly, Lz = self._lx, self._ly, self._lz
         Ns = self._ns
@@ -234,14 +258,15 @@ class HexagonalLattice(Lattice):
                 self._nn[i][X_BOND] = _idx(cx, cy, cz, 1)
                 self._nn_forward[i][X_BOND] = self._nn[i][X_BOND]
 
-                # Y_BOND: -> B in cell (cx, cy-1)
+                # Y_BOND: -> B in cell (cx, cy-1)  [along -a2]
                 cy_m = _bc(cy - 1, Ly, pbcy)
                 self._nn[i][Y_BOND] = _idx(cx, cy_m, cz, 1) if cy_m != -1 else -1
                 self._nn_forward[i][Y_BOND] = -1  # backward for A
 
-                # Z_BOND: -> B in cell (cx-1, cy)
-                cx_m = _bc(cx - 1, Lx, pbcx)
-                self._nn[i][Z_BOND] = _idx(cx_m, cy, cz, 1) if cx_m != -1 else -1
+                # Z_BOND: -> B in cell (cx+1, cy-1)  [along a1-a2]
+                cx_p = _bc(cx + 1, Lx, pbcx)
+                cy_m = _bc(cy - 1, Ly, pbcy)
+                self._nn[i][Z_BOND] = _idx(cx_p, cy_m, cz, 1) if (cx_p != -1 and cy_m != -1) else -1
                 self._nn_forward[i][Z_BOND] = -1  # backward for A
 
             else:
@@ -250,14 +275,15 @@ class HexagonalLattice(Lattice):
                 self._nn[i][X_BOND] = _idx(cx, cy, cz, 0)
                 self._nn_forward[i][X_BOND] = -1  # backward for B
 
-                # Y_BOND: -> A in cell (cx, cy+1)
+                # Y_BOND: -> A in cell (cx, cy+1)  [along +a2]
                 cy_p = _bc(cy + 1, Ly, pbcy)
                 self._nn[i][Y_BOND] = _idx(cx, cy_p, cz, 0) if cy_p != -1 else -1
                 self._nn_forward[i][Y_BOND] = self._nn[i][Y_BOND]
 
-                # Z_BOND: -> A in cell (cx+1, cy)
-                cx_p = _bc(cx + 1, Lx, pbcx)
-                self._nn[i][Z_BOND] = _idx(cx_p, cy, cz, 0) if cx_p != -1 else -1
+                # Z_BOND: -> A in cell (cx-1, cy+1)  [along -a1+a2]
+                cx_m = _bc(cx - 1, Lx, pbcx)
+                cy_p = _bc(cy + 1, Ly, pbcy)
+                self._nn[i][Z_BOND] = _idx(cx_m, cy_p, cz, 0) if (cx_m != -1 and cy_p != -1) else -1
                 self._nn_forward[i][Z_BOND] = self._nn[i][Z_BOND]
 
         # 3D: add interlayer bonds
