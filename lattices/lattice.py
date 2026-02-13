@@ -1894,6 +1894,142 @@ class Lattice(ABC):
         '''Return any forward neighbor (first) of given order or None.'''
         neigh = self.neighbors_forward(site, order)
         return neigh[0] if neigh else Lattice._BAD_LATTICE_SITE
+
+    # =========================================================================
+    #! NetKet-inspired convenience API
+    # =========================================================================
+
+    @property
+    def n_nodes(self) -> int:
+        """Number of nodes (sites) in the lattice — alias for ``Ns``."""
+        return self._ns
+
+    @property
+    def n_edges(self) -> int:
+        """Number of unique undirected nearest-neighbour edges."""
+        return len(self.edges())
+
+    @property
+    def positions(self) -> np.ndarray:
+        """Real-space position vectors (same as ``rvectors``)."""
+        return self.rvectors
+
+    @property
+    def site_offsets(self) -> np.ndarray:
+        """Position offsets of sites inside the unit cell (same as ``basis``)."""
+        return self._basis
+
+    @property
+    def basis_coords(self) -> np.ndarray:
+        """
+        Integer basis coordinates ``[nx, ny, nz, sub]`` for every site.
+
+        Shape ``(Ns, 4)`` — the first three columns are the cell-index
+        triplet and the last column is the sublattice label.
+        """
+        if self._fracs is None or self._subs is None:
+            return None
+        return np.column_stack([self._fracs, self._subs])
+
+    @property
+    def ndim(self) -> int:
+        """Spatial dimensionality of the lattice."""
+        return self._dim
+
+    @property
+    def extent(self) -> Tuple[int, ...]:
+        """Number of unit cells in each direction ``(Lx, Ly, Lz)``."""
+        return (self._lx, self._ly, self._lz)
+
+    @property
+    def pbc(self) -> Tuple[bool, bool, bool]:
+        """Per-axis periodicity flags (alias for ``periodic_flags()``)."""
+        return self.periodic_flags()
+
+    # Edge / bond queries
+
+    def edges(self, *, filter_color: Optional[int] = None,
+              return_color: bool = False) -> List:
+        """
+        Return list of nearest-neighbour edges.
+
+        Parameters
+        ----------
+        filter_color : int, optional
+            If given, return only edges whose ``bond_type`` equals this colour.
+        return_color : bool
+            If *True* each element is ``(i, j, color)``; otherwise ``(i, j)``.
+
+        Returns
+        -------
+        list[tuple]
+            Unique undirected edges ``(i, j)`` with ``i < j``.
+        """
+        if not hasattr(self, '_bonds') or self._bonds is None:
+            self.calculate_bonds()
+
+        result = []
+        for i, j in self._bonds:
+            a, b = (i, j) if i < j else (j, i)
+            c = self.bond_type(a, b)
+            if filter_color is not None:
+                # bond_type() may return str ('nn','nnn','none') on the base class
+                # or int on subclasses; accept both
+                if c != filter_color and c != 'nn':
+                    continue
+                if isinstance(c, str) and filter_color is not None:
+                    continue  # skip base-class fallback when colour filtering
+            if return_color:
+                result.append((a, b, c))
+            else:
+                result.append((a, b))
+        return result
+
+    @property
+    def edge_colors(self) -> List[int]:
+        """
+        Sequence of bond-type colours for every edge in ``edges()``,
+        matching the order returned by ``edges()``.
+        """
+        return [c for (_, _, c) in self.edges(return_color=True)]
+
+    # -- Displacement helpers -----------------------------------------------
+
+    def displacement(self, i: int, j: int, *, minimum_image: bool = True) -> np.ndarray:
+        """
+        Real-space displacement vector from site *i* to site *j*.
+
+        Parameters
+        ----------
+        i, j : int
+            Site indices.
+        minimum_image : bool
+            If *True* (default) and the lattice is periodic, return the
+            shortest displacement under periodic boundary conditions.
+
+        Returns
+        -------
+        np.ndarray  shape (3,)
+        """
+        dr = self.rvectors[j] - self.rvectors[i]
+        if not minimum_image:
+            return dr
+
+        # Minimum-image convention using fractional coordinates
+        flags   = self.periodic_flags()
+        dims    = [self._lx, max(self._ly, 1), max(self._lz, 1)]
+        dn      = np.array(self._fracs[j], dtype=float) - np.array(self._fracs[i], dtype=float)
+        for d in range(3):
+            if flags[d]:
+                L       = dims[d]
+                dn[d]   -= L * np.round(dn[d] / L)
+        dr      = dn[0] * self._a1 + dn[1] * self._a2 + dn[2] * self._a3
+        dr      += self._basis[self._subs[j]] - self._basis[self._subs[i]]
+        return dr
+
+    def distance(self, i: int, j: int, *, minimum_image: bool = True) -> float:
+        """Euclidean distance between sites *i* and *j* (PBC-aware by default)."""
+        return float(np.linalg.norm(self.displacement(i, j, minimum_image=minimum_image)))
     
     # -----------------------------------------------------------------------------
     #! Standard getters

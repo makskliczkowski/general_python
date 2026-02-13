@@ -85,7 +85,7 @@ class HoneycombLattice(Lattice):
         # self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
         # self._a3        = np.array([0, 0, self.c])
         self._a1        = np.array([3 * self.a / 2.0,  +np.sqrt(3) * self.a / 2.0, 0])
-        self._a2        = np.array([0,  3 * self.a / 2.0, 0])
+        self._a2        = np.array([0,  np.sqrt(3) * self.a, 0])
         self._a3        = np.array([0, 0, self.c])
         
         self._basis     = np.array([
@@ -297,51 +297,91 @@ class HoneycombLattice(Lattice):
         """
         Calculates the next-nearest neighbors (NNN) of the honeycomb lattice.
         
-        NNN are defined as the second-nearest (diagonal) neighbors within the same sublattice.
+        NNN are second-nearest neighbors, connecting sites on the *same* sublattice.
+        For sublattice A (even sites), the three NNN directions are obtained by
+        composing two consecutive NN hops:
+            NNN_1: Y-bond then X-bond^{-1}  → cell shift  (0, -1)   [down in y]
+            NNN_2: Z-bond then Y-bond^{-1}  → cell shift  (-1, 0)   [left in x]
+            NNN_3: X-bond then Z-bond^{-1}  → cell shift  (+1, +1)  [diagonal]
+        For sublattice B (odd sites), the shifts are inverted.
         """
         def _bcfun(_i, _L, _pbc):
             if _pbc:
                 return mod_euc(_i, _L)
             return _i if 0 <= _i < _L else -1
 
-        self._nnn = [[] for _ in range(self.Ns)]
+        self._nnn           = [[] for _ in range(self.Ns)]
+        self._nnn_forward   = [[] for _ in range(self.Ns)]
+        
         match self.dim:
             case 1:
                 for i in range(self.Ns):
                     self._nnn[i] = [
-                        _bcfun(i + 2, self.Lx, self.bc == LatticeBC.PBC),
-                        _bcfun(i - 2, self.Lx, self.bc == LatticeBC.PBC)
+                        _bcfun(i + 2, self.Ns, pbcx),
+                        _bcfun(i - 2, self.Ns, pbcx)
                     ]
+                    self._nnn_forward[i] = [_bcfun(i + 2, self.Ns, pbcx)]
             case 2:
+                # NNN shifts (dX, dY) for sublattice A (even sites)
+                # These connect A→A via two NN hops
+                nnn_shifts_A = [
+                    ( 0, -1),   # down   : Y→X^{-1}
+                    (-1,  0),   # left   : Z→Y^{-1}
+                    ( 1,  1),   # diag   : X→Z^{-1}
+                ]
                 for i in range(self.Ns):
-                    x, y, z = self.get_coordinates(i)
-                    even = (i % 2 == 0)
-                    y1 = _bcfun(y - 2 if even else y + 2, self.Ly, self.bc == LatticeBC.PBC)
-                    y2 = _bcfun(y, self.Ly, self.bc == LatticeBC.PBC)
-                    x1 = _bcfun(x - 1, self.Lx, self.bc == LatticeBC.PBC)
-                    x2 = _bcfun(x + 1, self.Lx, self.bc == LatticeBC.PBC)
-                    self._nnn[i] = [
-                        (y1 * self.Lx + x) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x1) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x2) * 2 + (0 if even else 1)
-                    ]
+                    n       = i // 2
+                    r       = i % 2
+                    X       = n % self.Lx
+                    Y       = n // self.Lx
+                    _even   = (r == 0)
+                    
+                    nnn_list = []
+                    for dX, dY in nnn_shifts_A:
+                        if not _even:
+                            dX, dY = -dX, -dY       # invert for B sublattice
+                        Xn = _bcfun(X + dX, self.Lx, pbcx)
+                        Yn = _bcfun(Y + dY, self.Ly, pbcy)
+                        if Xn == -1 or Yn == -1:
+                            nnn_list.append(-1)
+                        else:
+                            nnn_list.append((Yn * self.Lx + Xn) * 2 + r)
+                    self._nnn[i] = nnn_list
+                    # Forward: only the positive-direction hops (for even: all three, for odd: reversed)
+                    self._nnn_forward[i] = [n for n in nnn_list if n >= 0] if _even else []
+
             case 3:
+                nnn_shifts_A = [
+                    ( 0, -1, 0),
+                    (-1,  0, 0),
+                    ( 1,  1, 0),
+                ]
                 for i in range(self.Ns):
-                    x, y, z = self.get_coordinates(i)
-                    even = (i % 2 == 0)
-                    y1 = _bcfun(y - 2 if even else y + 2, self.Ly, self.bc == LatticeBC.PBC)
-                    y2 = _bcfun(y, self.Ly, self.bc == LatticeBC.PBC)
-                    x1 = _bcfun(x - 1, self.Lx, self.bc == LatticeBC.PBC)
-                    x2 = _bcfun(x + 1, self.Lx, self.bc == LatticeBC.PBC)
-                    z1 = _bcfun(z + 1, self.Lz, self.bc == LatticeBC.PBC)
-                    z2 = _bcfun(z - 1, self.Lz, self.bc == LatticeBC.PBC)
-                    self._nnn[i] = [
-                        (y1 * self.Lx + x) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x1) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x2) * 2 + (0 if even else 1),
-                        z1 * self.Lx * self.Ly + y * self.Lx + x,
-                        z2 * self.Lx * self.Ly + y * self.Lx + x
-                    ]
+                    n       = i // 2
+                    r       = i % 2
+                    X       = n % self.Lx
+                    Y       = (n // self.Lx) % self.Ly
+                    Z       = n // (self.Lx * self.Ly)
+                    _even   = (r == 0)
+                    
+                    nnn_list = []
+                    for dX, dY, dZ in nnn_shifts_A:
+                        if not _even:
+                            dX, dY, dZ = -dX, -dY, -dZ
+                        Xn = _bcfun(X + dX, self.Lx, pbcx)
+                        Yn = _bcfun(Y + dY, self.Ly, pbcy)
+                        Zn = _bcfun(Z + dZ, self.Lz, pbcz)
+                        if Xn == -1 or Yn == -1 or Zn == -1:
+                            nnn_list.append(-1)
+                        else:
+                            nnn_list.append((Zn * self.Ly * self.Lx + Yn * self.Lx + Xn) * 2 + r)
+                    # Add z-direction NNN (same sublattice, next layer)
+                    Zp = _bcfun(Z + 1, self.Lz, pbcz)
+                    Zm = _bcfun(Z - 1, self.Lz, pbcz)
+                    nnn_list.append((Zp * self.Ly * self.Lx + Y * self.Lx + X) * 2 + r if Zp != -1 else -1)
+                    nnn_list.append((Zm * self.Ly * self.Lx + Y * self.Lx + X) * 2 + r if Zm != -1 else -1)
+                    self._nnn[i]         = nnn_list
+                    self._nnn_forward[i] = [n for n in nnn_list if n >= 0] if _even else []
 
     def calculate_norm_sym(self):
         """Uses base implementation."""
