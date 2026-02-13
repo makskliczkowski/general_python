@@ -1,4 +1,4 @@
-"""
+r"""
 Lattice Point-Group and Space-Group Symmetry Utilities
 ======================================================
 
@@ -103,9 +103,9 @@ def generate_point_group_perms_square(Lx: int, Ly: int) -> np.ndarray:
 
     # C4 rotations
     for rot_fn in [
-        lambda x, y: (L - 1 - y, x),          # 90°
-        lambda x, y: (L - 1 - x, L - 1 - y),  # 180°
-        lambda x, y: (y, L - 1 - x),           # 270°
+        lambda x, y: (L - 1 - y, x),            # 90°
+        lambda x, y: (L - 1 - x, L - 1 - y),    # 180°
+        lambda x, y: (y, L - 1 - x),            # 270°
     ]:
         p = np.zeros(Ns, dtype=np.int32)
         for s in range(Ns):
@@ -114,10 +114,10 @@ def generate_point_group_perms_square(Lx: int, Ly: int) -> np.ndarray:
 
     # Mirrors
     for mir_fn in [
-        lambda x, y: (L - 1 - x, y),           # m_x
-        lambda x, y: (x, L - 1 - y),           # m_y
-        lambda x, y: (y, x),                   # m_{d1}
-        lambda x, y: (L - 1 - y, L - 1 - x),  # m_{d2}
+        lambda x, y: (L - 1 - x, y),            # m_x
+        lambda x, y: (x, L - 1 - y),            # m_y
+        lambda x, y: (y, x),                    # m_{d1}
+        lambda x, y: (L - 1 - y, L - 1 - x),    # m_{d2}
     ]:
         p = np.zeros(Ns, dtype=np.int32)
         for s in range(Ns):

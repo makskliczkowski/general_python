@@ -47,7 +47,7 @@ class TriangularLattice(Lattice):
         self.init(**kwargs)
 
     def __str__(self):
-        return f"TRI,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"TRI,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}{self._flux_suffix}"
 
     def __repr__(self):
         return self.__str__()

@@ -355,6 +355,6 @@ def choose_lattice(typek    : Optional[str]         = 'square',
     _class          = _handle_type(typek)
     if issubclass(_class, GraphLattice):
         return _class(bc=_bc, flux=flux, **kwargs)
-    return _class(dim, lx, ly, lz, _bc, flux=flux, **kwargs)
+    return _class(dim=dim, lx=lx, ly=ly, lz=lz, bc=_bc, flux=flux, **kwargs)
 
 ####################################################################################################

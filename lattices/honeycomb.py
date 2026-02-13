@@ -16,7 +16,7 @@ import  numpy   as np
 from    typing  import Optional
 
 try:
-    from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+    from .                      import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
     from ..maths.math_utils     import mod_euc
     from .tools.lattice_kspace  import HighSymmetryPoints
 except ImportError:
@@ -103,7 +103,7 @@ class HoneycombLattice(Lattice):
         self.init(**kwargs)
         
     def __str__(self):
-        return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}{self._flux_suffix}"
 
     def __repr__(self):
         return self.__str__()
@@ -128,16 +128,6 @@ class HoneycombLattice(Lattice):
             Default path: Γ -> K -> M -> Γ
         """
         return HighSymmetryPoints.honeycomb_2d()
-
-    ################################### 
-    
-    def sublattice(self, site: int) -> int:
-        """
-        Return the sublattice index for a given site.
-        By default, returns 0 for all sites (single sublattice).
-        Override in subclasses for multi-sublattice lattices.
-        """
-        return site % self.multipartity
 
     ###################################
 
@@ -354,21 +344,10 @@ class HoneycombLattice(Lattice):
                     ]
 
     def calculate_norm_sym(self):
-        """
-        Calculates a symmetry normalization for each site.
-        
-        Here we simply use the Euclidean norm of the coordinate as a symmetry measure.
-        In a more advanced implementation, this might account for sublattice or other symmetries.
-        """
-        self.norm_sym = { i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns) }
+        """Uses base implementation."""
+        self._spatial_norm = { i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns) }
 
     ################################### SYMMETRY & INDEXING #######################################
-
-    def site_index(self, x, y, z):
-        """
-        Convert (x, y, z) coordinates to a unique site index.
-        """
-        return z * (self.Lx * self.Ly) + y * self.Lx + x
 
     def get_sym_pos(self, x, y, z):
         """
@@ -382,32 +361,8 @@ class HoneycombLattice(Lattice):
         """
         return (x - (self.Lx - 1), y - (2 * self.Ly - 1), z - (self.Lz - 1))
 
-    def symmetry_checker(self, x, y, z):
-        """
-        Placeholder for symmetry checking.
-        """
-        return True
-    
-    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
-        """
-        Returns high-symmetry points for the honeycomb lattice Brillouin zone.
-        
-        The honeycomb lattice has a hexagonal BZ with high-symmetry points:
-        - Γ (Gamma): zone center (0, 0, 0)
-        - K: Dirac point at (2/3, 1/3, 0) - hosts linear band crossings
-        - K': other Dirac point at (1/3, 2/3, 0)
-        - M: edge midpoint (1/2, 0, 0)
-        
-        Default path: Γ → K → M → Γ
-        """
-        return HighSymmetryPoints.honeycomb_2d()
-    
-    def default_bz_path(self):
-        """Returns default Brillouin zone path for band structure plots."""
-        hs = self.high_symmetry_points()
-        return hs.get_default_path_points() if hs else None
-    
     def bond_type(self, s1: int, s2: int) -> int:
+        """Return directional bond type (X_BOND_NEI, Y_BOND_NEI, Z_BOND_NEI) or -1."""
         if s2 == self._nn[s1][X_BOND_NEI]: return X_BOND_NEI
         if s2 == self._nn[s1][Y_BOND_NEI]: return Y_BOND_NEI
         if s2 == self._nn[s1][Z_BOND_NEI]: return Z_BOND_NEI

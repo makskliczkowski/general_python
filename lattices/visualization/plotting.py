@@ -673,7 +673,7 @@ def plot_lattice_structure(
         else: # 1D
             axis.plot([start[0], end[0]], [0.0, 0.0], **line_args)
 
-    # 3. Node Coloring
+    # Node Coloring
     node_face_colors    = [node_color] * lattice.Ns
     
     if partition_colors:
@@ -682,7 +682,7 @@ def plot_lattice_structure(
             palette = partition_colors
             node_face_colors = [palette[partitions[i] % len(palette)] for i in range(lattice.Ns)]
 
-    # --- 4. Draw Nodes ---
+    # Draw Nodes
     scatter_defaults = dict(s=node_size, zorder=3, **scatter_kwargs)
     
     if dim == 1:
@@ -694,7 +694,7 @@ def plot_lattice_structure(
     else:
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], c=node_face_colors, **scatter_defaults)
 
-    # --- 5. Boundary Highlight ---
+    # Boundary Highlight
     boundary_mask, _ = _boundary_masks(coords, lattice)
     if highlight_boundary and np.any(boundary_mask):
         b_coords = coords[boundary_mask]
@@ -707,7 +707,7 @@ def plot_lattice_structure(
         else:
             axis.scatter(b_coords[:, 0], np.zeros_like(b_coords[:, 0]), **b_args)
 
-    # --- 6. Axes & Titles ---
+    # Axes & Titles
     if not show_axes:
         if dim == 1:
             axis.get_yaxis().set_visible(False)
@@ -726,7 +726,7 @@ def plot_lattice_structure(
         if title_kwargs: kw.update(title_kwargs)
         axis.set_title(title, **kw)
 
-    # --- 7. Indices & Annotations ---
+    # Indices & Annotations
     node_label_positions = {}
     
     if show_indices:
@@ -753,14 +753,14 @@ def plot_lattice_structure(
                 
             node_label_positions[idx] = label_pos
 
-    # --- 8. Boundary Annotations (2D only) ---
+    # Boundary Annotations (2D only)
     if dim == 2:
         _draw_boundary_annotations(axis, coords, lattice,
                                    periodic_color=periodic_color,
                                    open_color=open_color,
                                    offset_fraction=boundary_offset)
 
-    # --- 9. Periodic Connections Text ---
+    # Periodic Connections Text
     if show_periodic_connections and periodic_neighbors:
         diag_extent = np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)) or 1.0
         base_offset = label_padding * diag_extent * 0.6
@@ -793,11 +793,13 @@ def plot_lattice_structure(
             else:
                 axis.text(pos[0], shift, label, **txt_args)
 
-    # --- 10. Primitive Cell ---
+    # Primitive Cell
     if show_primitive_cell:
         # Try to find basis vectors
         basis_vectors = []
+        
         for attr in ("a1", "a2", "a3"):
+            
             vec = getattr(lattice, attr, None)
             if vec is not None:
                 vec = np.asarray(vec).flatten()

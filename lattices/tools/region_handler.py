@@ -20,6 +20,30 @@ Date    : 2025-12-30
 
 import  numpy   as np
 from    typing  import List, Optional, Union, Dict, Any, TYPE_CHECKING
+from    enum    import Enum, auto
+
+class RegionType(Enum):
+    HALF            = auto()    # Half-system cut
+    HALF_X          = auto()    # Half-system cut along X direction
+    HALF_Y          = auto()    # Half-system cut along Y direction
+    HALF_Z          = auto()    # Half-system cut along Z direction
+    # Other geometric regions
+    DISK            = auto()    # Disk/circular region
+    SUBLATTICE      = auto()    # Sublattice selection
+    GRAPH           = auto()    # Graph-distance ball
+    PLAQUETTE       = auto()    # Plaquette-based region
+    # Topological sectors
+    KITAEV_PRESKIL  = auto()    # Kitaev-Preskill sectors
+    LEVIN_WEN       = auto()    # Levin-Wen annular sectors
+    # Custom region
+    CUSTOM          = auto()    # Custom list of sites
+    
+    def __str__(self):
+        return self.name.lower()
+    
+    def __repr__(self):
+        return f"RegionType.{self.name}"
+
 if TYPE_CHECKING:
     from general_python.lattices.lattice import Lattice
 
@@ -28,7 +52,18 @@ class LatticeRegionHandler:
     Handles region definitions and extractions for a Lattice instance.
     
     This class isolates the logic for selecting subsets of sites based on
-    geometric or topological criteria.
+    geometric or topological criteria. We want to be able to extract the following types of regions:
+    - Half-system cuts (e.g. left half of the lattice)
+    - Disk/circular regions defined by a center and radius
+    - Graph-distance balls (sites within a certain graph distance from a center)
+    - Sublattice selections (e.g. all sites belonging to a specific sublattice)
+    - Plaquette-based regions (sites belonging to specified plaquettes)
+    - Topological sectors:
+        - Kitaev-Preskill regions A, B, C defined by angular sectors around a point
+        - Levin-Wen regions defined by concentric annuli around a point
+        
+    The main method is `get_region()`, which takes a `kind` argument to specify the type of region and additional parameters as needed.
+    The output is a list of site indices that belong to the defined region.
     """
     
     def __init__(self, lattice: "Lattice"):
@@ -50,9 +85,9 @@ class LatticeRegionHandler:
         """
         Compute the shortest displacement vector r_j - r_i respecting PBC.
         """
-        n_i = self.lattice.fracs[i]
-        n_j = self.lattice.fracs[j]
-        dn  = np.array(n_j - n_i, dtype=float)
+        n_i         = self.lattice.fracs[i]
+        n_j         = self.lattice.fracs[j]
+        dn          = np.array(n_j - n_i, dtype=float)
         
         dims        = [self.lattice.Lx, max(self.lattice.Ly, 1), max(self.lattice.Lz, 1)]
         pbc_flags   = self.lattice.periodic_flags()
@@ -72,7 +107,7 @@ class LatticeRegionHandler:
 
     def get_region(
         self,
-        kind        : str = "half",
+        kind        : Union[str, RegionType] = RegionType.HALF,
         *,
         origin      : Optional[Union[int, List[float]]] = None,
         radius      : Optional[float]                   = None,
@@ -83,14 +118,14 @@ class LatticeRegionHandler:
         plaquettes  : Optional[List[int]]               = None,
         **kwargs
     ) -> List[int]:
-        """
+        r"""
         Return a list of site indices defining a spatial region.
         
         Parameters
         ----------
-        kind : str
+        kind : str or RegionType
             Type of region: 'half', 'disk', 'sublattice', 'graph', 'plaquette', 
-            'kitaev_preskill', 'custom'.
+            'kitaev_preskill', 'custom'. We also support specific half cuts like 'half_x', 'half_y', 'half_z'.
         origin : int or list[float], optional
             Center of the region. Can be a site index or coordinate vector.
         radius : float, optional
@@ -110,11 +145,65 @@ class LatticeRegionHandler:
         -------
         list[int]
             Sorted list of site indices belonging to the region.
+            
+        Examples
+        --------
+        >>> half_x_sites = lattice.regions.get_region(kind='half_x')
+        ... [10, 11, 12, 13, 14, 15, ...]  # sites in the left half of the lattice
+        >>> disk_sites = lattice.regions.get_region(
+        ...                 kind="disk",
+        ...                 origin=10,          # center at site index 10
+        ...                 radius=2.5          # radius of 2.5 units
+        ...             )
+        ... [5, 6, 10, 11, 15, ...]  # sites within the disk region
+        >>> graph_sites = lattice.regions.get_region(
+        ...                 kind="graph",
+        ...                 origin=10,          # center at site index 10
+        ...                 depth=2            # sites within graph distance 2
+        ...             )
+        ... [10, 5, 6, 11, 15, 20, ...]  # sites within graph distance 2 from site 10
+        >>> sublattice_sites = lattice.regions.get_region(
+        ...                     kind="sublattice",
+        ...                     sublattice=0       # all sites in sublattice 0
+        ...                 )
+        ... [0, 2, 4, 6, 8, ...]  # sites belonging to sublattice 0
+        >>> plaquette_sites = lattice.regions.get_region(
+        ...                     kind="plaquette",
+        ...                     plaquettes=[0, 1]  # sites belonging to plaquettes 0 and 1
+        ...                 )
+        ... [0, 1, 2, 3, 4, 5, ...]  # sites belonging to the specified plaquettes
+        >>> kp_regions = lattice.regions.get_region(
+        ...                 kind="kitaev_preskill",
+        ...                 origin=10,          # center point for defining A, B, C
+        ...                 radius=5.0          # radius of the disk containing A, B, C
+        ...             )
+        ... {'A': [5, 6, 10, ...], 'B': [11, 15, ...], 'C': [20, 25, ...], 'AB': [...], 'BC': [...], 'AC': [...], 'ABC': [...]} # sites in Kitaev-Preskill regions
+        >>> lw_regions = lattice.regions.get_region(
+        ...                 kind="levin_wen",
+        ...                 origin=10,          # center point for defining A, B, C
+        ...                 inner_radius=2.0,   # inner radius for region A
+        ...                 outer_radius=5.0    # outer radius for region C
+        ...             )
+        ... {'A': [5, 6, 10, ...], 'B': [11, 15, ...], 'C': [20, 25, ...], 'AB': [...], 'BC': [...], 'AC': [...], 'ABC': [...]} # sites in Levin-Wen regions
         """
-        kind = kind.lower()
+        if isinstance(kind, str):
+            kind = kind.lower()
+        elif isinstance(kind, RegionType):
+            kind = kind.value
+        else:
+            raise ValueError("kind must be a string or RegionType enum")
         
         if kind == "half":
             return self.region_half(direction or "x")
+        
+        elif kind == "half_x":
+            return self.region_half("x")
+        
+        elif kind == "half_y":
+            return self.region_half("y")
+        
+        elif kind == "half_z":
+            return self.region_half("z")
         
         elif kind == "disk":
             if origin is None or radius is None:
@@ -154,7 +243,7 @@ class LatticeRegionHandler:
     # ------------------------------------------------------------------------------
 
     def region_half(self, direction: str = "x") -> List[int]:
-        """
+        r"""
         Half-system cut along a cardinal direction.
         
         Useful for area law scaling. Handles PBC by cutting based on coordinates relative to median.
@@ -167,6 +256,11 @@ class LatticeRegionHandler:
         -------
         list[int]
             Sorted list of site indices in the half-region.
+            
+        Example
+        -------
+        >>> half_x_sites = lattice.regions.get_region(kind='half_x')
+        ... [10, 11, 12, 13, 14, 15, ...]  # sites in the left half of the lattice
         """
         coords      = self.lattice.rvectors
         direction   = direction.lower()
@@ -179,15 +273,20 @@ class LatticeRegionHandler:
             axis = 2
         else:
             raise ValueError("direction must be 'x', 'y', or 'z'")
-            
+        
+        # Use median coordinate to define half cut, which is more robust for PBC than mean
         cut_val = np.median(coords[:, axis])
+
+        # Return sites with coordinate less than cut_val along the specified axis
         return sorted(np.where(coords[:, axis] < cut_val)[0].tolist())
 
     # ------------------------------------------------------------------------------
 
     def region_disk(self, center: Union[int, List[float]], radius: float) -> List[int]:
-        """
-        Spherical/Circular region based on Euclidean distance (PBC-aware).
+        r"""
+        Spherical/Circular region based on Euclidean distance (PBC-aware). We take
+        the center point on the lattice and include all sites within a specified radius, accounting for PBC.
+        To do this, we compute the shortest displacement vectors from the center to all sites, and include those within the radius.
         
         Parameters
         ----------
@@ -226,7 +325,7 @@ class LatticeRegionHandler:
         for d in range(3):
             if pbc_flags[d]:
                 L               = dims[d]
-                dn_all[:, d]    = dn_all[:, d] - L * np.round(dn_all[:, d] / L)
+                dn_all[:, d]    = dn_all[:, d] - L * np.round(dn_all[:, d] / L) # PBC adjustment for each coordinate direction
         
         # Calculate total displacements, including basis offsets
         R_disp          = np.outer(dn_all[:, 0], self.lattice.a1) + np.outer(dn_all[:, 1], self.lattice.a2) + np.outer(dn_all[:, 2], self.lattice.a3)
@@ -360,6 +459,66 @@ class LatticeRegionHandler:
         regions['ABC']  = sorted(list(set(regions['A']) | set(regions['B']) | set(regions['C'])))
         
         return regions
+    
+    # ---------------------------------------------------------------------------
+    
+    def region_levin_wen(self, origin: Optional[Union[int, List[float]]] = None, inner_radius: Optional[float] = None, outer_radius: Optional[float] = None) -> Dict[str, List[int]]:
+        r"""
+        Define Levin-Wen annular regions around a point (origin).
+        
+        The regions are defined as:
+        - A: sites with distance < inner_radius
+        - B: sites with inner_radius <= distance < outer_radius
+        - C: sites with distance >= outer_radius
+        
+        Parameters
+        ----------
+        origin : int or list[float], optional
+            Center point for defining regions. Can be a site index or coordinate vector.
+        inner_radius : float, optional
+            Inner radius of the annulus. Defaults to 1.0 if not provided.
+        outer_radius : float, optional
+            Outer radius of the annulus. Defaults to slightly less than half the system size if not provided.
+        
+        Returns
+        -------
+        dict[str, list[int]]
+            Dictionary with keys 'A', 'B', 'C' and their site indices.
+            Also includes combinations 'AB', 'BC', 'AC', 'ABC'.
+        """
+        coords = self.lattice.rvectors
+        if origin is None:
+            r0 = np.mean(coords, axis=0)
+        elif isinstance(origin, int):
+            r0 = coords[origin]
+        else:
+            r0 = np.array(origin)
+        
+        # Default radii if not provided
+        if inner_radius is None:
+            inner_radius = 1.0  # Minimal inner radius
+        if outer_radius is None:
+            min_L       = min(self.lattice.Lx, self.lattice.Ly if self.lattice.dim >= 2 else self.lattice.Lx)
+            outer_radius = (min_L / 2.0) - 0.5
+        
+        dr      = coords - r0
+        dists   = np.linalg.norm(dr, axis=1)
+        
+        A_mask  = dists < inner_radius
+        B_mask  = (dists >= inner_radius) & (dists < outer_radius)
+        C_mask  = dists >= outer_radius
+        
+        regions = {
+            'A': np.where(A_mask)[0].tolist(),
+            'B': np.where(B_mask)[0].tolist(),
+            'C': np.where(C_mask)[0].tolist()
+        }
+        
+        # combinations
+        regions['AB']   = sorted(list(set(regions['A']) | set(regions['B'])))
+        regions['BC']   = sorted(list(set(regions['B']) | set(regions['C'])))
+        regions['AC']   = sorted(list(set(regions['A']) | set(regions['C'])))
+        regions['ABC']  = sorted(list(set(regions['A']) | set(regions['B']) | set(regions['C'])))
         
 # -------------------------------------------------------------------------------
 #! End of region_handler.py
