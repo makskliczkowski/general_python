@@ -157,7 +157,7 @@ def extend_kspace_data(
 
 @dataclass
 class HighSymmetryPoint:
-    """
+    r"""
     A high-symmetry point in the Brillouin zone.
     
     Attributes
@@ -375,7 +375,14 @@ class BlochTransformCache:
     lattice_hash    : int
 
 def _get_lattice_hash(lattice: 'Lattice') -> int:
-    """Generate a hash from lattice parameters to detect changes."""
+    """Generate a hash from lattice parameters to detect changes.
+    
+    Includes boundary flux so the cache is invalidated when flux changes.
+    """
+    flux_hash = ()
+    if hasattr(lattice, '_flux') and lattice._flux is not None:
+        flux_hash = tuple(lattice._flux.as_array())
+        
     return hash((
         lattice._lx, lattice._ly, lattice._lz,
         len(lattice._basis),
@@ -385,6 +392,7 @@ def _get_lattice_hash(lattice: 'Lattice') -> int:
         tuple(lattice._k1.flatten()),
         tuple(lattice._k2.flatten()),
         tuple(lattice._k3.flatten()),
+        flux_hash,
     ))
 
 # Global cache dictionary: lattice_id -> BlochTransformCache
@@ -430,21 +438,28 @@ def _get_bloch_transform_cache(lattice: 'Lattice', unitary_norm: bool = True) ->
     frac_y          = np.linspace(0.0, 1.0, Ly, endpoint=False)
     frac_z          = np.linspace(0.0, 1.0, Lz, endpoint=False)
 
-    kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
-    kgrid_frac      = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)            # (Lx,Ly,Lz,3)
+    # Apply flux-induced shift when boundary fluxes are present
+    if hasattr(lattice, '_flux_frac_shift'):
+        dfx, dfy, dfz   = lattice._flux_frac_shift()
+        frac_x          = frac_x + dfx
+        frac_y          = frac_y + dfy
+        frac_z          = frac_z + dfz
+
+    kx_frac, ky_frac, kz_frac   = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
+    kgrid_frac                  = np.stack([kx_frac, ky_frac, kz_frac], axis=-1)    # (Lx,Ly,Lz,3)
 
     kgrid           = (kx_frac[..., None] * b1
                      + ky_frac[..., None] * b2
-                     + kz_frac[..., None] * b3)                                 # (Lx,Ly,Lz,3)
+                     + kz_frac[..., None] * b3)                                     # (Lx,Ly,Lz,3)
 
-    kpoints         = kgrid.reshape(-1, 3)                                      # (Nc,3)
+    kpoints         = kgrid.reshape(-1, 3)                                          # (Nc,3)
 
     # 4. real-space Bravais vectors and sublattice indices
-    R_cells         = np.asarray(lattice.cells, float)                          # (Ns,3)
+    R_cells         = np.asarray(lattice.cells, float)                              # (Ns,3)
     if R_cells.shape[0] != Ns:
         raise ValueError("Mismatch in number of sites and lattice.cells.")
 
-    sub_idx         = np.asarray(lattice.subs, dtype=int)                      # (Ns,)
+    sub_idx         = np.asarray(lattice.subs, dtype=int)                           # (Ns,)
     if sub_idx.shape[0] != Ns:
         raise ValueError("Mismatch in number of sites and lattice.subs.")
 
@@ -453,11 +468,11 @@ def _get_bloch_transform_cache(lattice: 'Lattice', unitary_norm: bool = True) ->
     S[np.arange(Ns), sub_idx] = 1.0
 
     # 5. Bloch projectors: W[k,i,alpha] = exp(-i k·R_i) / sqrt(Nc) * S[i,alpha]
-    phases          = np.exp(-1j * (kpoints @ R_cells.T))                      # (Nc,Ns)
+    phases          = np.exp(-1j * (kpoints @ R_cells.T))                           # (Nc,Ns)
     if unitary_norm:
         phases     /= np.sqrt(Nc)
 
-    W               = phases[:, :, None] * S[None, :, :]                       # (Nc,Ns,Nb)
+    W               = phases[:, :, None] * S[None, :, :]                            # (Nc,Ns,Nb)
     W_conj          = W.conj()
 
     cache = BlochTransformCache(

@@ -102,7 +102,7 @@ def plot_static_structure_factor(
         # Add high-symmetry separators
         if path_info is not None:
             label_positions = path_info.get('label_positions', [])
-            label_texts = path_info.get('label_texts', [])
+            label_texts     = path_info.get('label_texts', [])
             
             if len(label_positions) > 0:
                 for xv in label_positions:

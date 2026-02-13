@@ -47,7 +47,7 @@ class TriangularLattice(Lattice):
         self.init(**kwargs)
 
     def __str__(self):
-        return f"TRI,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"TRI,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}{self._flux_suffix}"
 
     def __repr__(self):
         return self.__str__()
@@ -81,16 +81,114 @@ class TriangularLattice(Lattice):
     def calculate_nn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
         """
         Calculates the nearest neighbors (NN) for the triangular lattice.
-        Each site has 6 nearest neighbors in 2D.
+
+        Each site has 6 nearest neighbors in 2D corresponding to the six
+        lattice-vector displacements::
+
+            +a1, -a1, +a2, -a2, +(a1-a2), -(a1-a2)
+
+        i.e. cell-coordinate offsets:
+            (+1,0), (-1,0), (0,+1), (0,-1), (+1,-1), (-1,+1)
+
+        Forward bonds are those connecting to a site with *strictly higher*
+        index so that each bond is counted exactly once.
+
+        Parameters
+        ----------
+        pbcx, pbcy, pbcz : bool
+            Whether periodic boundary conditions apply along each direction.
         """
-        self._nn            = [[] for _ in range(self.Ns)]
-        self._nn_forward    = [[] for _ in range(self.Ns)]
+        Lx, Ly, Lz = self._lx, self._ly, self._lz
+        Ns          = self._ns
+
+        self._nn            = [[] for _ in range(Ns)]
+        self._nn_forward    = [[] for _ in range(Ns)]
+
+        def _bc(val, L, pbc):
+            if pbc:
+                return val % L
+            return val if 0 <= val < L else -1
+
+        def _idx(cx, cy, cz):
+            return (cz * Ly + cy) * Lx + cx
+
+        # Six NN offsets (dx, dy) in cell coordinates
+        nn_offsets = [
+            (+1,  0),   # +a1
+            (-1,  0),   # -a1
+            ( 0, +1),   # +a2
+            ( 0, -1),   # -a2
+            (+1, -1),   # +(a1 - a2)
+            (-1, +1),   # -(a1 - a2)
+        ]
+
+        for i in range(Ns):
+            cx =  i               % Lx
+            cy = (i // Lx)        % Ly
+            cz =  i // (Lx * Ly)
+
+            for dx, dy in nn_offsets:
+                nx = _bc(cx + dx, Lx, pbcx)
+                ny = _bc(cy + dy, Ly, pbcy)
+                if nx == -1 or ny == -1:
+                    j = -1
+                else:
+                    j = _idx(nx, ny, cz)
+                self._nn[i].append(j)
+
+            # Forward: only neighbours with strictly higher index
+            self._nn_forward[i] = [j for j in self._nn[i] if j > i]
+
+        return self._nn
 
     def calculate_nnn_in(self, pbcx: bool, pbcy: bool, pbcz: bool):
         """
         Calculates the next-nearest neighbors (NNN) for the triangular lattice.
+
+        NNN are at cell-coordinate offsets::
+
+            (+2,0), (-2,0), (0,+2), (0,-2), (+2,-2), (-2,+2),
+            (+1,+1), (-1,-1), (+2,-1), (-2,+1), (+1,-2), (-1,+2)
         """
-        self._nnn           = [[] for _ in range(self.Ns)]
+        Lx, Ly, Lz = self._lx, self._ly, self._lz
+        Ns          = self._ns
+
+        self._nnn           = [[] for _ in range(Ns)]
+        self._nnn_forward   = [[] for _ in range(Ns)]
+
+        def _bc(val, L, pbc):
+            if pbc:
+                return val % L
+            return val if 0 <= val < L else -1
+
+        def _idx(cx, cy, cz):
+            return (cz * Ly + cy) * Lx + cx
+
+        nnn_offsets = [
+            (+2,  0), (-2,  0),
+            ( 0, +2), ( 0, -2),
+            (+2, -2), (-2, +2),
+            (+1, +1), (-1, -1),
+            (+2, -1), (-2, +1),
+            (+1, -2), (-1, +2),
+        ]
+
+        for i in range(Ns):
+            cx =  i               % Lx
+            cy = (i // Lx)        % Ly
+            cz =  i // (Lx * Ly)
+
+            for dx, dy in nnn_offsets:
+                nx = _bc(cx + dx, Lx, pbcx)
+                ny = _bc(cy + dy, Ly, pbcy)
+                if nx == -1 or ny == -1:
+                    self._nnn[i].append(-1)
+                else:
+                    self._nnn[i].append(_idx(nx, ny, cz))
+
+            self._nnn_forward[i] = [j for j in self._nnn[i] if j > i]
+
+        return self._nnn
 
     def site_index(self, x, y, z):
         return z * (self.Lx * self.Ly) + y * self.Lx + x

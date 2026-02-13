@@ -8,25 +8,39 @@ Square Lattice Class...
 from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
 from .tools.lattice_kspace import HighSymmetryPoints
 
-import sys, os 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from maths import MathMod
 import numpy as np
+from ..maths import MathMod
 from typing import Optional
 
 #######################################################################################
 
 class SquareLattice(Lattice):
     '''
-    Square Lattice Class for 1D, 2D, and 3D lattices. The lattice vectors are defined as:
+    Square Lattice Class for 1D, 2D, and 3D lattices.
+
+    The lattice vectors are defined as:
     - a = [1, 0, 0],
     - b = [0, 1, 0],
     - c = [0, 0, 1]
+
     and the reciprocal lattice vectors are:
     - a* = [2*pi, 0, 0], 
     - b* = [0, 2*pi, 0], 
     - c* = [0, 0, 2*pi]
     
+    Input/output contracts
+    ----------------------
+    - Constructor expects integer dimensions `lx`, `ly`, `lz` (as applicable to `dim`).
+    - `bc` must be a `LatticeBC` enum or compatible string/int identifier.
+    - Coordinates are returned as floating-point arrays of shape `(Ns, dim)`.
+    - Neighbor lists are lists of lists, where `neighbors[i]` contains indices of neighbors of site `i`.
+
+    Shape and dtype expectations
+    ----------------------------
+    - `coordinates`: Real-valued array of shape `(Ns, dim)`.
+    - `kvectors`: Real-valued array of shape `(Ns, 3)` (or `dim`).
+    - Neighbor indices are integers in range `[0, Ns)`.
+
     High-symmetry points in the Brillouin zone:
     - 1D: Γ (0) -> X (Pi) -> Γ (2Pi)
     - 2D: Γ (0,0) -> X (Pi,0) -> M (Pi,Pi) -> Γ (0,0)  
@@ -83,7 +97,7 @@ class SquareLattice(Lattice):
     # ---------------------------------------------------------------------------------
     
     def __str__(self):
-        return f"SQ,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"SQ,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}{self._flux_suffix}"
 
     def __repr__(self):
         return self.__str__()

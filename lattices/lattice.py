@@ -6,103 +6,83 @@ utility routines for boundary handling and symmetry metadata.
 
 Currently, up to 3-spatial dimensions are supported...
 
+------------------------------------------------------------------------------
 File    : general_python/lattices/lattice.py
 Author  : Maksymilian Kliczkowski
 Date    : 2025-02-01
+Version : 2.0
+------------------------------------------------------------------------------
 """
 
 from    __future__  import annotations
-from    dataclasses import dataclass
 from    abc         import ABC, abstractmethod
-from    enum        import Enum, auto, unique
-from    typing      import Dict, List, Mapping, Optional, Tuple, Union, Any
+from    typing      import Dict, List, Mapping, Optional, Tuple, Union
+import  numpy       as np
 
-import  numpy as np
-import  scipy.sparse as sp
+from .tools.lattice_tools   import (
+                                LatticeDirection, LatticeBC, LatticeType, 
+                                handle_boundary_conditions, handle_boundary_conditions_detailed, handle_dim
+                            )
+from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
+from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path,
+                                reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
+                                build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
+                                KPathResult, find_nearest_kpoints
+                            )
+from .tools.region_handler  import LatticeRegionHandler, RegionType
+from ..common               import hdf5man as HDF5Mod
 
-try:
-    from .tools.lattice_tools   import LatticeDirection, LatticeBC, LatticeType, handle_boundary_conditions, handle_dim
-    from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
-    from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path, 
-                                        reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
-                                        build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
-                                        KPathResult, find_nearest_kpoints)
-    from .tools.region_handler  import LatticeRegionHandler
-    from ..common               import hdf5man as HDF5Mod
-except ImportError:
-    raise ImportError("Failed to import modules from parent package. Ensure proper package structure.")
-
-############################################## GENERAL LATTICE ##############################################
+################################################################################
 
 Backend = np
 class Lattice(ABC):
-    """
-    General Lattice class. This class contains the general lattice model.
-    It is an abstract class and is not meant to be instantiated. It is meant to be inherited by other classes.
+    r"""
+    Abstract Base Class for defining lattice structures.
 
-    The lattice sites, no matter the lattice type, are indexed from 0 to Ns - 1. Importantly,
-    it can include multiple topologies.
+    This class serves as the foundation for all lattice implementations in the `lattices` module.
+    It handles geometry, connectivity, boundary conditions, and k-space properties.
 
-    Key Features:
-    -------------
-    - **Geometry**: Real-space coordinates, reciprocal vectors, neighbor connectivity (NN, NNN).
-    - **Boundaries**: Supports PBC, OBC, MBC, SBC boundary conditions.
-    - **K-Space**: Brillouin zone paths, high-symmetry points, band structure utilities.
-    - **Visualisation**: Built-in plotting helpers for structure and reciprocal space via `.plot`.
+    Indexing Convention
+    -------------------
+    Lattice sites are indexed linearly from ``0`` to ``Ns - 1``.
+    The mapping from spatial coordinates to linear index depends on the concrete implementation,
+    but typically follows a row-major (lexicographic) order:
 
-    Plotting Usage:
-    ---------------
-    Access plotting methods via the `.plot` property:
-    >>> lattice.plot.real_space(show_indices=True)
-    >>> lattice.plot.reciprocal_space()
-    >>> lattice.plot.brillouin_zone()
-    >>> lattice.plot.structure(highlight_boundary=True)
+    *   **1D**: Left to right.
+    *   **2D**: Bottom-left to top-right (x varies fastest).
+    *   **3D**: Front-bottom-left to back-top-right.
 
-    Connectivity Convention:
-    ------------------------
-    Sites are indexed 0 to Ns-1. Neighbors are typically ordered:
-    - 1D: left -> right
-    - 2D: bottom-left -> top-right (snake-like or row-major depending on implementation)
-    
-    Example:
-    1D:
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 and 9 (PBC)
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 (OBC)
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 and 9 (MBC)
-        - 1D lattice with 10 sites, site 0 has nearest neighbors 1 (SBC)
-    2D:
-        - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3, 8, 6 (PBC)
-        - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3 (OBC)
-        - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3, 8, 6 (MBC)
-    - 2D lattice with 9 sites, site 0 has nearest neighbors 1, 3 (SBC)
-    This means that no matter of the lattice types, the sites are counted from the left
-    to the right and from the bottom to the top. The nearest neighbors are calculated like a 
-    snake (reversed in reality, bigger numbers are on the top)
-    - 1D:   
-            0 -> 1 -> 2 -> 3 -> 4 -> 5 -> 6 -> 7 -> 8 -> 9
-    
-    - 2D:   
-            0 -> 1 -> 2
-            |    |    |
-            3 -> 4 -> 5
-            |    |    |
-            6 -> 7 -> 8
-            
-    - 3D:   
-            0 -> 1 -> 2 ---- 9  -> 10 -> 11
-            |    |    |      |     |     |
-            3 -> 4 -> 5 ---- 12 -> 13 -> 14
-            |    |    |      |     |     |
-            6 -> 7 -> 8 ---- 15 -> 16 -> 17    
-            
-    Example: 
-        1) Square lattice with 3x3 sites and PBC:
-        
-            0 -> 1 -> 2
-            |    |    |
-            3 -> 4 -> 5
-            |    |    |
-            6 -> 7 -> 8
+    Features
+    --------
+    *   **Geometry**: Calculation of real-space coordinates, unit vectors, and basis vectors.
+    *   **Connectivity**: Automatic identification of Nearest Neighbors (NN) and Next-Nearest Neighbors (NNN).
+    *   **Boundaries**: Support for various boundary conditions:
+        *   ``PBC``: Periodic Boundary Conditions (torus topology).
+            * X-direction periodic, Y-direction periodic, Z-direction periodic
+        *   ``OBC``: Open Boundary Conditions (hard edges).
+            * X-direction open, Y-direction open, Z-direction open
+        *   ``MBC``: Mixed Boundary Conditions (e.g., cylinder topology).
+            * X-direction periodic, Y-direction open, Z-direction open
+        *   ``SBC``: Switched Boundary Conditions (e.g. twisted cylinder).
+            * X-direction open, Y-direction periodic, Z-direction open
+        *   **TWISTED**: Twisted Boundary Conditions with specified fluxes.
+    *   **Reciprocal Space**: Automatic calculation of reciprocal lattice vectors and Brillouin Zone paths.
+    *   **Visualization**: Integration with plotting utilities via ``.plot``.
+
+    Attributes
+    ----------
+    Ns : int
+        Total number of sites in the lattice.
+    dim : int
+        Spatial dimension of the lattice (1, 2, or 3).
+    Lx, Ly, Lz : int
+        Linear dimensions of the lattice.
+    bc : LatticeBC
+        Active boundary condition.
+    coordinates : np.ndarray
+        Array of shape ``(Ns, 3)`` containing real-space coordinates of all sites.
+    nn : List[List[int]]
+        Adjacency list for nearest neighbors. ``nn[i]`` is a list of neighbors for site ``i``.
     """
     
     _BAD_LATTICE_SITE   = None
@@ -130,10 +110,10 @@ class Lattice(ABC):
                 lz      : int           = 1,
                 bc      : str           = None,             # boundary conditions
                 adj_mat : np.ndarray    = None,             # can be controlled by the user for generic graphs
-                flux    : np.ndarray    = None,             # flux piercing the boundaries
+                flux    : np.ndarray    = None,             # flux piercing the boundaries - for each direction - for topological models
                 *args,
                 **kwargs):
-        '''
+        r'''
         General Lattice class. This class contains the general lattice model.
         
         Parameters
@@ -151,11 +131,22 @@ class Lattice(ABC):
         adj_mat : np.ndarray, optional
             Adjacency matrix for the lattice.
         flux : np.ndarray, optional
-            Flux piercing the boundaries.
+            Flux piercing the boundaries. This can be a dictionary specifying the
+            flux in each direction, or a single value applied to all directions. Importantly, 
+            this automatically implies **TWISTED** boundary conditions, so the `bc` parameter can be left as None or set to 'TWISTED' for clarity.
         '''
         
         self._dim           = handle_dim(lx, ly, lz)[0] if dim is None else dim
-        self._bc            = handle_boundary_conditions(bc)
+        self._bc            = handle_boundary_conditions(bc, flux=flux)  # Normalize boundary conditions and handle flux
+        
+        # flux piercing the boundaries - for topological models
+        _raw_flux           = None
+        if isinstance(self._bc, tuple):
+            # If we have a tuple, it means we have TWISTED BCs with flux information
+            self._bc, _raw_flux = self._bc
+        self._flux          = _normalize_flux_dict(_raw_flux if _raw_flux is not None else flux)
+        self._raw_flux      = _raw_flux if _raw_flux is not None else flux
+
         self._lx            = lx
         self._ly            = ly
         self._lz            = lz
@@ -166,9 +157,6 @@ class Lattice(ABC):
         self._ns            = lx * ly * lz                  # Number of sites - set only initially as it is implemented in the children
         self._type          = LatticeType.SQUARE
         self._adj_mat       = adj_mat
-        
-        # flux piercing the boundaries - for topological models
-        self._flux          = _normalize_flux_dict(flux)
         
         # Region handler
         self.regions        = LatticeRegionHandler(self)
@@ -229,7 +217,16 @@ class Lattice(ABC):
         
     def __repr__(self):
         ''' Representation of the lattice '''
+        if self._bc is LatticeBC.TWISTED:
+            return f"{self._type.name},{self._bc.name},flux={self._flux},d={self._dim},Ns={self._ns},Lx={self._lx},Ly={self._ly},Lz={self._lz}"
         return f"{self._type.name},{self._bc.name},d={self._dim},Ns={self._ns},Lx={self._lx},Ly={self._ly},Lz={self._lz}"
+
+    @property
+    def _flux_suffix(self) -> str:
+        """Return a suffix string for ``__str__`` / ``__repr__`` that includes flux info."""
+        if self._flux is not None and self._flux.is_nontrivial:
+            return f",flux={self._flux}"
+        return ""
     
     def __len__(self):
         ''' Length of the lattice (number of sites) '''
@@ -252,7 +249,7 @@ class Lattice(ABC):
 
     # -----------------------------------------------------------------------------
     
-    def init(self, verbose: bool = False, *, force_dft: bool = False):
+    def init(self, verbose: bool = False, *, force_dft: bool = False, **kwargs):
         """
         Initializes the lattice object by calculating coordinates, reciprocal vectors, and neighbor lists.
         
@@ -341,7 +338,7 @@ class Lattice(ABC):
 
     def get_region(
         self,
-        kind                : str = "half",
+        kind                : Union[str, RegionType]            = RegionType.HALF,
         *,
         origin              : Optional[Union[int, List[float]]] = None,
         radius              : Optional[float]                   = None,
@@ -352,13 +349,14 @@ class Lattice(ABC):
         plaquettes          : Optional[List[int]]               = None,
         **kwargs
     ) -> List[int]:
-        """
+        r"""
         Return a list of site indices defining a spatial region.
         
         Parameters
         ----------
-        kind : str
+        kind : str or RegionType
             Type of region: 'half', 'disk', 'sublattice', 'graph', 'plaquette', 'custom'.
+            We also support specific half cuts like 'half_x', 'half_y', 'half_z' for convenience.
         origin : int or list[float], optional
             Center of the region. Can be a site index or coordinate vector.
         radius : float, optional
@@ -379,200 +377,17 @@ class Lattice(ABC):
         list[int]
             Sorted list of site indices belonging to the region.
         """
-        kind = kind.lower()
-        
-        if kind == "half":
-            return self.region_half(direction or "x")
-        
-        elif kind == "disk":
-            if origin is None or radius is None:
-                raise ValueError("region_disk requires 'origin' and 'radius'.")
-            return self.region_disk(origin, radius)
-        
-        elif kind == "graph":
-            if origin is None or depth is None:
-                raise ValueError("region_graph requires 'origin' (center site) and 'depth'.")
-            if not isinstance(origin, int):
-                 raise ValueError("region_graph 'origin' must be a site index.")
-            return self.region_graph_ball(origin, depth)
-        
-        elif kind == "sublattice":
-            if sublattice is None:
-                raise ValueError("region_sublattice requires 'sublattice' index.")
-            return self.region_sublattice(sublattice)
-        
-        elif kind == "plaquette":
-            if plaquettes is None:
-                raise ValueError("region_plaquette requires 'plaquettes' list.")
-            return self.region_plaquettes(plaquettes)
-        
-        elif kind == "kitaev_preskill":
-            regions     = self.region_kitaev_preskill(origin=origin)
-            region_id   = kwargs.get('region', 'A').upper()
-            return regions.get(region_id, [])
-
-        elif kind == "custom":
-            return sorted(list(set(sites))) if sites else []
-        
-        else:
-            raise ValueError(f"Unknown region type: {kind}")
-
-    def region_half(self, direction: str = "x") -> List[int]:
-        """
-        Half-system cut along a cardinal direction.
-        
-        Useful for area law scaling. Handles PBC by cutting based on coordinates relative to median.
-        
-        Example
-        -------
-        For direction 'x', returns all sites with x-coordinate less than the median x-coordinate.
-        
-        Parameters
-        ----------
-        direction : str
-            Direction to cut ('x', 'y', or 'z').
-        Returns
-        -------
-        list[int]
-            Sorted list of site indices in the half-region.
-        """
-        coords      = self.rvectors
-        direction   = direction.lower()
-        
-        if direction == "x":
-            axis = 0
-        elif direction == "y":
-            axis = 1
-        elif direction == "z":
-            axis = 2
-        else:
-            raise ValueError("direction must be 'x', 'y', or 'z'")
-            
-        cut_val = np.median(coords[:, axis])
-        return sorted(np.where(coords[:, axis] < cut_val)[0].tolist())
-
-    def region_kitaev_preskill(self, origin: Optional[Union[int, List[float]]] = None) -> Dict[str, List[int]]:
-        r"""
-        Divide the lattice into three regions A, B, C meeting at a point (origin).
-        Uses azimuthal angles from the origin to define sectors.
-        
-        The three regions are defined as:
-        - A: angles in [-Pi, -Pi/3)
-        - B: angles in [-Pi/3, Pi/3)
-        - C: angles in [Pi/3, Pi]
-        
-        Parameters
-        ----------
-        origin : int or list[float], optional
-            Center point for defining regions. Can be a site index or coordinate vector.
-        
-        Ultimately, this method returns a dictionary with keys 'A', 'B', 'C' and their site indices.
-        It allows for easy extraction of combined regions like 'AB', 'BC', 'AC', and 'ABC'.
-        This is useful for entanglement entropy calculations in topological phases.
-        
-        Returns
-        -------
-        dict[str, list[int]]
-            Dictionary with keys 'A', 'B', 'C' and their site indices.
-            Also includes combinations 'AB', 'BC', 'AC', 'ABC'.
-        """
-        coords = self.rvectors
-        if origin is None:
-            r0  = np.mean(coords, axis=0)
-        elif isinstance(origin, int):
-            r0  = coords[origin]
-        else:
-            r0  = np.array(origin)
-            
-        # relative coords
-        dr      = coords - r0
-        angles  = np.arctan2(dr[:, 1], dr[:, 0]) # -pi to pi
-        
-        # sectors: divide 2pi into 3 equal parts
-        # A: [-pi, -pi/3), B: [-pi/3, pi/3), C: [pi/3, pi]
-        A_mask  = (angles >= -np.pi)    & (angles < -np.pi/3)
-        B_mask  = (angles >= -np.pi/3)  & (angles <  np.pi/3)
-        C_mask  = (angles >= np.pi/3)   & (angles <= np.pi  )
-        
-        regions = {
-            'A': np.where(A_mask)[0].tolist(),
-            'B': np.where(B_mask)[0].tolist(),
-            'C': np.where(C_mask)[0].tolist()
-        }
-        # combinations
-        regions['AB']   = sorted(list(set(regions['A']) | set(regions['B'])))
-        regions['BC']   = sorted(list(set(regions['B']) | set(regions['C'])))
-        regions['AC']   = sorted(list(set(regions['A']) | set(regions['C'])))
-        regions['ABC']  = sorted(list(set(regions['A']) | set(regions['B']) | set(regions['C'])))
-        
-        return regions
-
-    def get_shortest_displacement(self, i: int, j: int) -> np.ndarray:
-        """
-        Compute the shortest displacement vector r_j - r_i respecting PBC.
-        """
-        n_i         = self._fracs[i]
-        n_j         = self._fracs[j]
-        dn          = np.array(n_j - n_i, dtype=float)
-        
-        dims        = [self.Lx, max(self.Ly, 1), max(self.Lz, 1)]
-        pbc_flags   = self.periodic_flags()
-        
-        for d in range(3):
-            if pbc_flags[d]:
-                L       = dims[d]
-                dn[d]   = dn[d] - L * np.round(dn[d] / L)
-                
-        disp    = dn[0] * self.a1 + dn[1] * self.a2 + dn[2] * self.a3
-        disp   += self.basis[self._subs[j]] - self.basis[self._subs[i]]
-        return disp
-
-    def region_disk(self, center: Union[int, List[float]], radius: float) -> List[int]:
-        ""
-
-    def region_sublattice(self, sub: int) -> List[int]:
-        """
-        Return all sites belonging to a specific sublattice.
-        """
-        return [i for i in range(self.Ns) if self.sublattice(i) == sub]
-
-    def region_graph_ball(self, center: int, depth: int) -> List[int]:
-        """
-        Graph-distance ball (breadth-first search).
-        
-        Returns all sites within `depth` bonds from `center` (inclusive).
-        """
-        visited = {center}
-        frontier = {center}
-
-        for _ in range(depth):
-            new_nodes = set()
-            for s in frontier:
-                for n in self.neighbors(s, order=1):
-                    if n is not None and n >= 0 and n not in visited and n != self._BAD_LATTICE_SITE:
-                        new_nodes.add(n)
-            visited |= new_nodes
-            frontier = new_nodes
-
-        return sorted(list(visited))
-
-    def region_plaquettes(self, plaquette_ids: List[int], use_obc: bool = True) -> List[int]:
-        """
-        Region defined by a union of plaquettes.
-        
-        Requires the lattice to implement `calculate_plaquettes()` and store `_plaquettes`.
-        """
-        if not hasattr(self, "_plaquettes") or self._plaquettes is None:
-            try:
-                self.calculate_plaquettes(use_obc=use_obc)
-            except NotImplementedError:
-                raise ValueError("Plaquettes are not defined for this lattice.")
-
-        sites = set()
-        for pid in plaquette_ids:
-            if 0 <= pid < len(self._plaquettes):
-                sites.update(self._plaquettes[pid])
-        return sorted(list(sites))
+        return self.regions.get_region(
+            kind=kind,
+            origin=origin,
+            radius=radius,
+            direction=direction,
+            sublattice=sublattice,
+            sites=sites,
+            depth=depth,
+            plaquettes=plaquettes,
+            **kwargs
+        )
 
     ################################### GETTERS ###################################
     
@@ -640,6 +455,126 @@ class Lattice(ABC):
     # -----------------------------------------------------------------------------
     #! Physical 
     # -----------------------------------------------------------------------------
+
+    @property
+    def sites_per_cell(self) -> int:
+        """Sites per unit cell (1 for Bravais, 2 for honeycomb, etc.)."""
+        n_cells = max(1, self._lx * self._ly * self._lz)
+        return max(1, self._ns // n_cells)
+
+    def symmetry_perms(self, point_group: str = "full") -> np.ndarray:
+        """
+        Generate space-group permutation table for this lattice.
+
+        Delegates to :func:`~.tools.lattice_symmetry.generate_space_group_perms`.
+
+        When TWISTED boundary conditions are active, the point-group part is
+        disabled (only translations are returned) because a generic flux
+        breaks point-group symmetry unless the flux respects it.
+
+        Parameters
+        ----------
+        point_group : str
+            ``'full'`` for maximal point group, ``'translations'`` for translations only.
+
+        Returns
+        -------
+        ndarray, shape (|G|, Ns)
+        """
+        from .tools.lattice_symmetry import generate_space_group_perms
+        # Flux generically breaks point-group symmetry → translations only
+        if self.is_twisted and point_group == "full":
+            point_group = "translations"
+        return generate_space_group_perms(self.Lx, self.Ly, self.sites_per_cell, point_group)
+    
+    # ------------------------------------------------------------------
+    #! Lattice symmetry information
+    # ------------------------------------------------------------------
+
+    def lattice_symmetries(self) -> Dict[str, object]:
+        """
+        Return a dictionary describing the spatial symmetries of this lattice.
+
+        The information is consistent for both single-particle and many-body
+        representations.  When TWISTED boundary conditions are present the
+        point-group part is absent (flux generically breaks it).
+
+        Returns
+        -------
+        dict
+            Keys:
+            - ``'lattice_type'``        : :class:`LatticeType` enum
+            - ``'sites_per_cell'``      : int
+            - ``'n_cells'``             : number of unit cells
+            - ``'dim'``                 : spatial dimension
+            - ``'bc'``                  : boundary condition enum
+            - ``'is_periodic'``         : (bool, bool, bool) per direction
+            - ``'is_twisted'``          : bool
+            - ``'translation_group'``   : ZL_x x ZL_y (as tuple ``(Lx, Ly)``)
+            - ``'point_group'``         : str or None (``'D4'`` for square Lx==Ly, etc.)
+            - ``'space_group_order'``   : total number of space-group elements
+            - ``'flux'``                : :class:`BoundaryFlux` or None
+        """
+        # Get periodicity flags for each direction
+        pbc_flags   = self.periodic_flags()
+        
+        # Determine point group
+        pg          = None
+        if not self.is_twisted:
+            if hasattr(self, '_type') and self._type == LatticeType.SQUARE:
+                if self._lx == self._ly and pbc_flags[0] and pbc_flags[1]:
+                    pg = 'D4'
+                elif pbc_flags[0] and pbc_flags[1]:
+                    pg = 'D2'
+            elif hasattr(self, '_type') and self._type in (LatticeType.HONEYCOMB, LatticeType.HEXAGONAL):
+                if self._lx == self._ly and pbc_flags[0] and pbc_flags[1]:
+                    pg = 'C6v'          # full hexagonal point group for the lattice
+
+        n_cells     = max(1, self._lx * self._ly * self._lz)
+        n_trans     = self._lx * (self._ly if pbc_flags[1] else 1) * (self._lz if pbc_flags[2] else 1) if pbc_flags[0] else 1
+        pg_order    = {'D4': 8, 'D2': 4, 'C6v': 12}.get(pg, 1) if pg else 1
+        
+        return {
+            'lattice_type':         self._type if hasattr(self, '_type') else None,
+            'sites_per_cell':       self.sites_per_cell,
+            'n_cells':              n_cells,
+            'dim':                  self._dim,
+            'bc':                   self._bc,
+            'is_periodic':          pbc_flags,
+            'is_twisted':           self.is_twisted,
+            'translation_group':    (self._lx, self._ly if self._dim >= 2 else 1),
+            'point_group':          pg,
+            'space_group_order':    n_trans * pg_order,
+            'flux':                 self._flux,
+        }
+
+    def symmetry_info(self) -> str:
+        """
+        Return a human-readable summary of the lattice symmetries.
+
+        Consistent for both single-particle (band-structure / Bloch) and
+        many-body (Hilbert-space symmetry sectors) viewpoints.
+
+        Returns
+        -------
+        str
+        """
+        d = self.lattice_symmetries()
+        lines = [
+            f"Lattice symmetry info ({d['lattice_type']})",
+            f"  dim               = {d['dim']}",
+            f"  sites / cell      = {d['sites_per_cell']}",
+            f"  unit cells        = {d['n_cells']}",
+            f"  boundary cond.    = {d['bc']}",
+            f"  periodic (x,y,z)  = {d['is_periodic']}",
+        ]
+        if d['is_twisted']:
+            lines.append(f"  twisted = True  (flux breaks point-group!)")
+            lines.append(f"  flux    = {d['flux']}")
+        lines.append(f"  translation group = Z_{d['translation_group'][0]} x Z_{d['translation_group'][1]}")
+        lines.append(f"  point group       = {d['point_group'] or 'trivial'}")
+        lines.append(f"  |space group|     = {d['space_group_order']}")
+        return "\n".join(lines)
     
     @property
     def a1(self):           return self._a1
@@ -731,62 +666,90 @@ class Lattice(ABC):
     # ------------------------------------------------------------------
     
     @property
-    def dft(self):                  return self._dft
+    def dft(self):
+        ''' Return the discrete Fourier transform (DFT) matrix for the lattice. '''
+        return self._dft
     @dft.setter
     def dft(self, value):           self._dft = value
     
     @property
-    def nn(self):                   return self._nn
+    def nn(self):
+        ''' Return the nearest-neighbor connectivity matrix for the lattice. '''
+        return self._nn
     @nn.setter
     def nn(self, value):            self._nn = value
 
     @property
-    def bonds(self):                return self._bonds
+    def bonds(self):
+        ''' Return the bond connectivity matrix for the lattice. '''
+        return self._bonds
     @bonds.setter
     def bonds(self, value):         self._bonds = value
 
     @property
-    def nn_forward(self):           return self._nn_forward
+    def nn_forward(self):           
+        ''' Return the forward nearest-neighbor connectivity matrix for the lattice. '''
+        return self._nn_forward
     @nn_forward.setter
     def nn_forward(self, value):    self._nn_forward = value
 
     @property
-    def nnn(self):                  return self._nnn
+    def nnn(self):                  
+        ''' Return the next-nearest-neighbor connectivity matrix for the lattice. '''
+        return self._nnn
     @nnn.setter
     def nnn(self, value):           self._nnn = value
     
     @property
-    def nnn_forward(self):          return self._nnn_forward
+    def nnn_forward(self):
+        ''' Return the forward next-nearest-neighbor connectivity matrix for the lattice. '''
+        return self._nnn_forward
     @nnn_forward.setter
     def nnn_forward(self, value):   self._nnn_forward = value
     
     @property
-    def coordinates(self):          return self._coordinates
+    def coordinates(self):
+        ''' Return the real-space coordinates of the lattice sites. '''
+        return self._coordinates
     @coordinates.setter
     def coordinates(self, value):   self._coordinates = value
     
     @property
-    def subs(self):                 return self._subs
+    def subs(self):
+        ''' Return the sublattice indices of the lattice sites. 
+        For a Bravais lattice, this would simply be an array of zeros.
+        For a non-Bravais lattice, this would indicate which sublattice each site belongs to. '''
+        return self._subs
     @subs.setter
     def subs(self, value):          self._subs = value
     
     @property
-    def cells(self):                return self._cells
+    def cells(self):
+        ''' Return the unit cell coordinates of the lattice sites. For a Bravais lattice, 
+        this would simply be the integer coordinates of the unit cells. 
+        For a non-Bravais lattice, this would include the basis vectors as well. '''
+        return self._cells
     @cells.setter
     def cells(self, value):         self._cells = value
     
     @property
-    def fracs(self):                return self._fracs
+    def fracs(self):                
+        ''' Return fractional coordinates of the lattice sites. Example: for a square lattice, these would be (x/Lx, y/Ly, z/Lz) for each site. '''
+        return self._fracs
     @fracs.setter
     def fracs(self, value):         self._fracs = value
 
     @property
-    def kvectors(self):             return self._kvectors
+    def kvectors(self):
+        ''' Return the allowed k-vectors in reciprocal space for the lattice. '''
+        return self._kvectors   
     @kvectors.setter
     def kvectors(self, value):      self._kvectors = value
     
     @property
-    def rvectors(self):             return self._rvectors
+    def rvectors(self):
+        ''' Return the allowed r-vectors in real space for the lattice. '''
+        return self._rvectors
     @rvectors.setter
     def rvectors(self, value):      self._rvectors = value
     
@@ -794,6 +757,13 @@ class Lattice(ABC):
     def bc(self):                   return self._bc
     @bc.setter
     def bc(self, value):            self._bc = value
+    
+    @property
+    def bc_x(self):                 return handle_boundary_conditions_detailed(self._bc, self._raw_flux).get('x', False)
+    @property
+    def bc_y(self):                 return handle_boundary_conditions_detailed(self._bc, self._raw_flux).get('y', False)
+    @property
+    def bc_z(self):                 return handle_boundary_conditions_detailed(self._bc, self._raw_flux).get('z', False)
     
     @property
     def cardinality(self):          return self.get_nn_forward_num_max()
@@ -1042,6 +1012,63 @@ class Lattice(ABC):
     @flux.setter
     def flux(self, value: Optional[Union[float, Mapping[Union[str, LatticeDirection], float]]]):
         self._flux = _normalize_flux_dict(value)
+        # When flux changes the BC becomes TWISTED (if non-trivial)
+        if self._flux is not None and self._flux.is_nontrivial:
+            self._bc = LatticeBC.TWISTED
+
+    def set_flux(self, value: Optional[Union[float, Mapping[Union[str, LatticeDirection], float]]], *, reinit: bool = True) -> None:
+        """
+        Set boundary flux and optionally recalculate k-vectors, DFT, and neighbors.
+
+        Parameters
+        ----------
+        value : float, Mapping, or None
+            New flux specification (see :func:`_normalize_flux_dict`).
+        reinit : bool
+            If ``True`` (default), recalculate reciprocal vectors, k-vectors,
+            DFT matrix, and neighbor lists to be consistent with the new flux.
+        """
+        self.flux = value   # use the property setter
+        if reinit:
+            self.calculate_k_vectors()
+            if self.Ns < Lattice._DFT_LIMIT_SITES:
+                self.calculate_dft_matrix()
+            self.calculate_nn()
+            self.calculate_nnn()
+
+    @property
+    def has_flux(self) -> bool:
+        """``True`` when a non-trivial boundary flux is attached."""
+        return self._flux is not None and bool(self._flux)
+
+    @property
+    def is_twisted(self) -> bool:
+        """``True`` when the boundary conditions are TWISTED."""
+        return self._bc is LatticeBC.TWISTED
+
+    @property
+    def is_topological(self) -> bool:
+        r"""
+        ``True`` when the lattice carries a non-trivial boundary flux.
+
+        A non-trivial flux (mod :math:`2\pi`) introduces a measurable Aharonov-Bohm
+        phase and may change the topological sector of the ground state.
+        """
+        return self.has_flux
+
+    def flux_summary(self) -> str:
+        """Return a human-readable summary of the boundary-flux configuration."""
+        if self._flux is None:
+            return "No boundary flux (standard BC)"
+        parts = []
+        for d in LatticeDirection:
+            phi     = self._flux.get(d)
+            phase   = self._flux.phase(d)
+            parts.append(f"  {d.name}: phi={phi:.4f} rad  ->  exp(i*phi)={phase:.4f}")
+        trivial = "TRIVIAL" if self._flux.is_trivial else "NON-TRIVIAL"
+        return f"Boundary fluxes ({trivial}):\n" + "\n".join(parts)
+
+    # ------------------------------------------------------------------
 
     def boundary_phase(self, direction: LatticeDirection, winding: int = 1) -> complex:
         """
@@ -1058,19 +1085,27 @@ class Lattice(ABC):
         complex
             The complex phase factor e^{i * flux * winding}.
         """
+        if self._flux is None:
+            return 1.0
         return self._flux.phase(direction, winding=winding)
     
-    def boundary_phases(self) -> dict[LatticeDirection, complex]:
+    def boundary_phases(self) -> np.ndarray:
         """
-        Return a dictionary of complex boundary phases for each lattice direction.
-        It creates a table for precalculated phases
+        Return a lookup table of complex boundary phases.
+
+        Returns
+        -------
+        table : np.ndarray, shape ``(3, Ns+1)``
+            ``table[d, w]`` is ``exp(i * w * phi_d)`` for direction *d* and
+            winding number *w*.
         """
         ndirs   = 3
         ns      = self.ns
         table   = np.ones((ndirs, ns + 1), dtype=np.complex128)
-        for d in LatticeDirection:
-            for w in range(ns + 1):
-                table[d.value, w] = self.boundary_phase(d, winding=w)
+        if self._flux is not None:
+            for d in LatticeDirection:
+                for w in range(ns + 1):
+                    table[d.value, w] = self.boundary_phase(d, winding=w)
         return table
 
     def boundary_phase_from_winding(self, wx: int, wy: int, wz: int) -> complex:
@@ -1108,6 +1143,7 @@ class Lattice(ABC):
         tuple[int, int, int]
             A tuple indicating the winding numbers (wx, wy, wz) for the bond from site i to site j.
         """
+        i, j        = int(i), int(j)
         x1, y1, z1  = self.get_coordinates(i)
         x2, y2, z2  = self.get_coordinates(j)
         wx          = 0
@@ -1124,12 +1160,77 @@ class Lattice(ABC):
 
         return (wx, wy, wz)
 
+    def bond_phase(self, i: int, j: int) -> complex:
+        r"""
+        Return the complex hopping phase factor for the bond :math:`i \to j`.
+
+        For bonds that do **not** cross a periodic boundary, this is 1.
+        For boundary-crossing bonds under TWISTED BC, the phase is
+        :math:`\exp(i\,\phi_\mu)` for each direction :math:`\mu` in which
+        the bond wraps.
+
+        This is the factor that should multiply the bare hopping amplitude
+        in real-space Hamiltonian construction.
+
+        Parameters
+        ----------
+        i, j : int
+            Source and target site indices.
+
+        Returns
+        -------
+        complex
+            Phase factor (unit modulus).
+        """
+        if self._flux is None:
+            return 1.0
+        wx, wy, wz = self.bond_winding(i, j)
+        return self.boundary_phase_from_winding(wx, wy, wz)
+
+    def hopping_matrix_with_flux(self, *, include_nnn: bool = False) -> np.ndarray:
+        r"""
+        Build an :math:`N_s \times N_s` matrix of complex hopping amplitudes
+        that includes the Peierls phases from boundary fluxes.
+
+        Diagonal is zero.  Off-diagonal ``H[i,j] = t_{ij} * phase(i->j)``
+        where ``t_{ij} = 1`` for all connected pairs and ``phase`` is the
+        product of boundary phases along directions that the bond wraps.
+
+        Parameters
+        ----------
+        include_nnn : bool
+            If ``True``, include next-nearest-neighbor hoppings as well.
+
+        Returns
+        -------
+        H : np.ndarray, shape ``(Ns, Ns)``
+            Complex hopping matrix.
+        """
+        Ns  = self.Ns
+        H   = np.zeros((Ns, Ns), dtype=complex)
+        for i in range(Ns):
+            for j in self._nn[i]:
+                if self.wrong_nei(j):
+                    continue
+                j = int(j)
+                if 0 <= j < Ns:
+                    H[i, j] = self.bond_phase(i, j)
+                    
+        if include_nnn and self._nnn is not None:
+            for i in range(Ns):
+                for j in self._nnn[i]:
+                    if self.wrong_nei(j):
+                        continue
+                    j = int(j)
+                    if 0 <= j < Ns:
+                        H[i, j] += self.bond_phase(i, j)
+        return H
+
     # ------------------------------------------------------------------
     #! Chirality helpers
     # ------------------------------------------------------------------
     
-    def get_nnn_middle_sites(self, i: int, j: int,
-                             orientation: Optional[str] = None) -> list[int]:
+    def get_nnn_middle_sites(self, i: int, j: int, orientation: Optional[str] = None) -> list[int]:
         """
         Return the list of 'middle' sites l that are nearest neighbors
         of both i and j - i.e., sites forming two-step NNN paths i-l-j.
@@ -1215,6 +1316,10 @@ class Lattice(ABC):
 
         return int(sign)
 
+    # ------------------------------------------------------------------
+    #! Bond type helper
+    # ------------------------------------------------------------------
+
     def bond_type(self, i: int, j: int) -> str:
         """
         Determine the bond type between sites i and j.
@@ -1243,6 +1348,9 @@ class Lattice(ABC):
     def periodic_flags(self) -> Tuple[bool, bool, bool]:
         """
         Return booleans indicating whether (x, y, z) directions are periodic.
+
+        TWISTED boundary conditions are topologically equivalent to PBC
+        (the lattice is still a torus), so all three directions are periodic.
         """
         match self._bc:
             case LatticeBC.PBC:
@@ -1253,6 +1361,9 @@ class Lattice(ABC):
                 return True, False, False
             case LatticeBC.SBC:
                 return False, True, False
+            case LatticeBC.TWISTED:
+                # Twisted BCs are periodic with extra phases on boundary hops
+                return True, True, True
             case _:
                 raise ValueError(f"Unsupported boundary condition {self._bc!r}")
 
@@ -1276,8 +1387,13 @@ class Lattice(ABC):
 
     # -----------------------------------------------------------------------------
     
-    @abstractmethod
-    def site_index(self, x : int, y : int, z : int): pass
+    def site_index(self, x : int, y : int, z : int):
+        """Convert (x, y, z) coordinates to a unique site index (row-major).
+        
+        Default implementation uses standard lexicographic ordering.
+        Override in subclasses if a different indexing convention is needed.
+        """
+        return z * (self._lx * self._ly) + y * self._lx + x
 
     # -----------------------------------------------------------------------------
     #! SITE HELPERS
@@ -1346,6 +1462,11 @@ class Lattice(ABC):
         where Ns = Nc * Nb is the total number of sites, Nc is the number of
         unit cells, and Nb is the number of sublattices.
         
+        IMPORTANT:
+            When boundary fluxes are present (TWISTED BC), the k-grid used to
+            build the DFT matrix is shifted by ``phi_mu / (2 pi L_mu)`` in each
+            direction, exactly as in :meth:`calculate_k_vectors`.
+        
         Note that this DFT matrix does not include basis-dependent phases
         (i.e., exp(-i k . r_basis)).
         
@@ -1365,17 +1486,22 @@ class Lattice(ABC):
         Nb              = len(self._basis) if (self._basis is not None and len(self._basis) > 0) else 1  # Avoid division by zero
         
         # Get site coordinates
-        # r_vectors       = np.asarray(self.coordinates, dtype=float)  # (Ns, 3)
         cells           = np.asarray(self._cells, dtype=float)  # (Ns, 3)
         if not cells.shape[0] == Ns:
             raise ValueError("Mismatch in number of sites and coordinates.")
 
         sub_idx         = self.subs # (Ns,)
 
-        # Generate k-vectors
+        # Generate k-vectors (with flux-induced shift when applicable)
         frac_x          = np.linspace(0, 1, Lx, endpoint=False)
         frac_y          = np.linspace(0, 1, Ly, endpoint=False)
         frac_z          = np.linspace(0, 1, Lz, endpoint=False)
+
+        # Apply flux-induced shift to k-grid fractions
+        dfx, dfy, dfz   = self._flux_frac_shift()
+        frac_x          = frac_x + dfx
+        frac_y          = frac_y + dfy
+        frac_z          = frac_z + dfz
         
         kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing='ij')
         
@@ -1676,7 +1802,6 @@ class Lattice(ABC):
         '''
         return len(self.nn_forward[site])
     
-    @abstractmethod
     def get_nn_forward(self, site : int, num : int = -1):
         '''
         Returns the forward nearest neighbors of a given site.
@@ -1687,7 +1812,11 @@ class Lattice(ABC):
         Returns:
             - list of nearest neighbors        
         '''
-        pass
+        if not hasattr(self, '_nn_forward') or self._nn_forward is None:
+            return [] if num < 0 else -1
+        if num < 0:
+            return self._nn_forward[site]
+        return self._nn_forward[site][num] if num < len(self._nn_forward[site]) else -1
     
     # -----------------------------------------------------------------------------
     #! FORWARD NEXT NEAREST NEIGHBORS HELPERS
@@ -1704,7 +1833,6 @@ class Lattice(ABC):
         '''
         return len(self.nnn_forward[site])
     
-    @abstractmethod
     def get_nnn_forward(self, site : int, num : int = -1):
         '''
         Returns the forward next nearest neighbors of a given site.
@@ -1715,7 +1843,11 @@ class Lattice(ABC):
         Returns:
             - list of next nearest neighbors        
         '''
-        pass
+        if not hasattr(self, '_nnn_forward') or self._nnn_forward is None:
+            return [] if num < 0 else -1
+        if num < 0:
+            return self._nnn_forward[site]
+        return self._nnn_forward[site][num] if num < len(self._nnn_forward[site]) else -1
     
     # -----------------------------------------------------------------------------
     #! GENERAL NEIGHBORS HELPERS
@@ -1762,6 +1894,141 @@ class Lattice(ABC):
         '''Return any forward neighbor (first) of given order or None.'''
         neigh = self.neighbors_forward(site, order)
         return neigh[0] if neigh else Lattice._BAD_LATTICE_SITE
+
+    # =========================================================================
+    #! NetKet-inspired convenience API
+    # =========================================================================
+
+    @property
+    def n_nodes(self) -> int:
+        """Number of nodes (sites) in the lattice — alias for ``Ns``."""
+        return self._ns
+
+    @property
+    def n_edges(self) -> int:
+        """Number of unique undirected nearest-neighbour edges."""
+        return len(self.edges())
+
+    @property
+    def positions(self) -> np.ndarray:
+        """Real-space position vectors (same as ``rvectors``)."""
+        return self.rvectors
+
+    @property
+    def site_offsets(self) -> np.ndarray:
+        """Position offsets of sites inside the unit cell (same as ``basis``)."""
+        return self._basis
+
+    @property
+    def basis_coords(self) -> np.ndarray:
+        """
+        Integer basis coordinates ``[nx, ny, nz, sub]`` for every site.
+
+        Shape ``(Ns, 4)`` — the first three columns are the cell-index
+        triplet and the last column is the sublattice label.
+        """
+        if self._fracs is None or self._subs is None:
+            return None
+        return np.column_stack([self._fracs, self._subs])
+
+    @property
+    def ndim(self) -> int:
+        """Spatial dimensionality of the lattice."""
+        return self._dim
+
+    @property
+    def extent(self) -> Tuple[int, ...]:
+        """Number of unit cells in each direction ``(Lx, Ly, Lz)``."""
+        return (self._lx, self._ly, self._lz)
+
+    @property
+    def pbc(self) -> Tuple[bool, bool, bool]:
+        """Per-axis periodicity flags (alias for ``periodic_flags()``)."""
+        return self.periodic_flags()
+
+    # Edge / bond queries
+
+    def edges(self, *, filter_color: Optional[int] = None,
+              return_color: bool = False) -> List:
+        """
+        Return list of nearest-neighbour edges.
+
+        Parameters
+        ----------
+        filter_color : int, optional
+            If given, return only edges whose ``bond_type`` equals this colour.
+        return_color : bool
+            If *True* each element is ``(i, j, color)``; otherwise ``(i, j)``.
+
+        Returns
+        -------
+        list[tuple]
+            Unique undirected edges ``(i, j)`` with ``i < j``.
+        """
+        if not hasattr(self, '_bonds') or not self._bonds:
+            self.calculate_bonds()
+
+        result = []
+        for i, j in self._bonds:
+            a, b = (i, j) if i < j else (j, i)
+            c = self.bond_type(a, b)
+            if filter_color is not None and c != filter_color:
+                continue
+            if return_color:
+                result.append((a, b, c))
+            else:
+                result.append((a, b))
+        # Deduplicate (forward list may still have symmetric pairs)
+        if not return_color:
+            result = sorted(set(result))
+        return result
+
+    @property
+    def edge_colors(self) -> List[int]:
+        """
+        Sequence of bond-type colours for every edge in ``edges()``,
+        matching the order returned by ``edges()``.
+        """
+        return [c for (_, _, c) in self.edges(return_color=True)]
+
+    # -- Displacement helpers -----------------------------------------------
+
+    def displacement(self, i: int, j: int, *, minimum_image: bool = True) -> np.ndarray:
+        """
+        Real-space displacement vector from site *i* to site *j*.
+
+        Parameters
+        ----------
+        i, j : int
+            Site indices.
+        minimum_image : bool
+            If *True* (default) and the lattice is periodic, return the
+            shortest displacement under periodic boundary conditions.
+
+        Returns
+        -------
+        np.ndarray  shape (3,)
+        """
+        i, j    = int(i), int(j)
+        dr      = self.rvectors[j] - self.rvectors[i]
+        if not minimum_image:
+            return dr
+
+        # Minimum-image convention using fractional coordinates
+        flags   = self.periodic_flags()
+        dims    = [self._lx, max(self._ly, 1), max(self._lz, 1)]
+        dn      = np.array(self._fracs[j], dtype=float) - np.array(self._fracs[i], dtype=float)
+        for d in range(3):
+            if flags[d]:
+                L       = dims[d]
+                dn[d]   -= L * np.round(dn[d] / L)
+        dr      = dn[0] * self._a1 + dn[1] * self._a2 + dn[2] * self._a3
+        dr      += self._basis[self._subs[j]] - self._basis[self._subs[i]]
+        return dr
+
+    def distance(self, i: int, j: int, *, minimum_image: bool = True) -> float:
+        """Euclidean distance between sites *i* and *j* (PBC-aware by default)."""
+        return float(np.linalg.norm(self.displacement(i, j, minimum_image=minimum_image)))
     
     # -----------------------------------------------------------------------------
     #! Standard getters
@@ -1907,23 +2174,52 @@ class Lattice(ABC):
         self.rvectors = rv
         return self.rvectors
 
+    def _flux_frac_shift(self) -> Tuple[float, float, float]:
+        r"""
+        Return the fractional k-grid shift induced by boundary fluxes.
+
+        If the flux in direction :math:`\mu` is :math:`\phi_\mu`, the standard
+        fractional coordinate :math:`f_\mu = n_\mu / L_\mu` is shifted to
+        :math:`f_\mu + \phi_\mu / (2\pi\,L_\mu)`.
+
+        Returns
+        -------
+        (dfx, dfy, dfz) : tuple[float, float, float]
+        """
+        if self._flux is None:
+            return (0.0, 0.0, 0.0)
+        Ly = self._ly if self._dim >= 2 else 1
+        Lz = self._lz if self._dim >= 3 else 1
+        return self._flux.k_shift_fractions(self._lx, Ly, Lz)
+
     def calculate_k_vectors(self):
         """
         Calculates the allowed reciprocal-space k-vectors (momentum grid)
         consistent with the lattice size and primitive reciprocal vectors.
+
+        When boundary fluxes are present (TWISTED BC), the fractional
+        coordinates are shifted by :math:`\\phi_\\mu / (2\\pi L_\\mu)` in
+        each direction, so that the Bloch condition matches the twisted
+        boundary.
 
         The sampling follows the same fftfreq ordering used by the Bloch
         transform (Γ at index [0,0,0], followed by positive frequencies and
         finally the negative branch).  This keeps the analytic grids aligned
         with the numerically constructed H(k) blocks.
         """
-        Lx      = self.Lx
-        Ly      = self.Ly if self._dim >= 2 else 1
-        Lz      = self.Lz if self._dim >= 3 else 1
+        Lx              = self.Lx
+        Ly              = self.Ly if self._dim >= 2 else 1
+        Lz              = self.Lz if self._dim >= 3 else 1
 
-        frac_x  = np.fft.fftfreq(Lx)
-        frac_y  = np.fft.fftfreq(Ly)
-        frac_z  = np.fft.fftfreq(Lz)
+        frac_x          = np.fft.fftfreq(Lx)
+        frac_y          = np.fft.fftfreq(Ly)
+        frac_z          = np.fft.fftfreq(Lz)
+
+        # Apply flux-induced shift to k-grid fractions
+        dfx, dfy, dfz   = self._flux_frac_shift()
+        frac_x          = frac_x + dfx
+        frac_y          = frac_y + dfy
+        frac_z          = frac_z + dfz
 
         kx_frac, ky_frac, kz_frac = np.meshgrid(frac_x, frac_y, frac_z, indexing="ij")
 
@@ -1972,8 +2268,14 @@ class Lattice(ABC):
     #! Spatial norm calculators
     # -----------------------------------------------------------------------------
 
-    @abstractmethod
-    def calculate_norm_sym(self):       pass
+    def calculate_norm_sym(self):
+        """
+        Calculate a symmetry-normalization measure for each site.
+
+        Default: Euclidean norm of the coordinate vector.
+        Override in subclasses for lattice-specific behaviour.
+        """
+        self._spatial_norm = { i: np.linalg.norm(self._coordinates[i]) for i in range(self._ns) }
     
     # -----------------------------------------------------------------------------
     #! Nearest neighbors
@@ -1989,12 +2291,11 @@ class Lattice(ABC):
 
     def calculate_nn(self):
         '''
-        Calculates the nearest neighbors
-        
-        Args:
-        - pbcx : periodic boundary conditions in the x direction
-        - pbcy : periodic boundary conditions in the y direction
-        - pbcz : periodic boundary conditions in the z direction
+        Calculates the nearest neighbors.
+
+        For TWISTED boundary conditions the neighbor *connectivity* is
+        identical to PBC — the flux phases are applied separately when
+        building the Hamiltonian or the DFT matrix.
         '''
         
         match (self._bc):
@@ -2006,6 +2307,9 @@ class Lattice(ABC):
                 self._calculate_nn_mbc()
             case LatticeBC.SBC:
                 self._calculate_nn_sbc()
+            case LatticeBC.TWISTED:
+                # Twisted BC: same neighbor connectivity as PBC
+                self._calculate_nn_pbc()
             case _:
                 raise ValueError("The boundary conditions are not implemented.")
 
@@ -2049,23 +2353,25 @@ class Lattice(ABC):
     
     def calculate_nnn(self):
         '''
-        Calculates the next nearest neighbors
-        
-        Args:
-        - pbcx : periodic boundary conditions in the x direction
-        - pbcy : periodic boundary conditions in the y direction
-        - pbcz : periodic boundary conditions in the z direction
+        Calculates the next nearest neighbors.
+
+        Like :meth:`calculate_nn`, each ``calculate_nnn_in`` implementation
+        is expected to set ``self._nnn`` (and optionally ``self._nnn_forward``)
+        directly.  The return value—if any—is stored as a fallback.
         '''
         
         match (self._bc):
             case LatticeBC.PBC:
-                self._nnn = self._calculate_nnn_pbc()
+                self._calculate_nnn_pbc()
             case LatticeBC.OBC:
-                self._nnn = self._calculate_nnn_obc()
+                self._calculate_nnn_obc()
             case LatticeBC.MBC:
-                self._nnn = self._calculate_nnn_mbc()
+                self._calculate_nnn_mbc()
             case LatticeBC.SBC:
-                self._nnn = self._calculate_nnn_sbc()
+                self._calculate_nnn_sbc()
+            case LatticeBC.TWISTED:
+                # Twisted BC: same neighbor connectivity as PBC
+                self._calculate_nnn_pbc()
             case _:
                 raise ValueError("The boundary conditions are not implemented.")
 

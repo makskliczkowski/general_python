@@ -16,7 +16,7 @@ import  numpy   as np
 from    typing  import Optional
 
 try:
-    from . import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
+    from .                      import Lattice, LatticeBackend, LatticeBC, LatticeDirection, LatticeType
     from ..maths.math_utils     import mod_euc
     from .tools.lattice_kspace  import HighSymmetryPoints
 except ImportError:
@@ -85,7 +85,7 @@ class HoneycombLattice(Lattice):
         # self._a2        = np.array([-np.sqrt(3) * self.a / 2.0, 3 * self.a / 2.0, 0])
         # self._a3        = np.array([0, 0, self.c])
         self._a1        = np.array([3 * self.a / 2.0,  +np.sqrt(3) * self.a / 2.0, 0])
-        self._a2        = np.array([0,  3 * self.a / 2.0, 0])
+        self._a2        = np.array([0,  np.sqrt(3) * self.a, 0])
         self._a3        = np.array([0, 0, self.c])
         
         self._basis     = np.array([
@@ -103,7 +103,7 @@ class HoneycombLattice(Lattice):
         self.init(**kwargs)
         
     def __str__(self):
-        return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}"
+        return f"HON,{self.bc},d={self.dim},Ns={self.Ns},Lx={self.Lx},Ly={self.Ly},Lz={self.Lz}{self._flux_suffix}"
 
     def __repr__(self):
         return self.__str__()
@@ -128,16 +128,6 @@ class HoneycombLattice(Lattice):
             Default path: Γ -> K -> M -> Γ
         """
         return HighSymmetryPoints.honeycomb_2d()
-
-    ################################### 
-    
-    def sublattice(self, site: int) -> int:
-        """
-        Return the sublattice index for a given site.
-        By default, returns 0 for all sites (single sublattice).
-        Override in subclasses for multi-sublattice lattices.
-        """
-        return site % self.multipartity
 
     ###################################
 
@@ -307,68 +297,97 @@ class HoneycombLattice(Lattice):
         """
         Calculates the next-nearest neighbors (NNN) of the honeycomb lattice.
         
-        NNN are defined as the second-nearest (diagonal) neighbors within the same sublattice.
+        NNN are second-nearest neighbors, connecting sites on the *same* sublattice.
+        For sublattice A (even sites), the three NNN directions are obtained by
+        composing two consecutive NN hops:
+            NNN_1: Y-bond then X-bond^{-1}  → cell shift  (0, -1)   [down in y]
+            NNN_2: Z-bond then Y-bond^{-1}  → cell shift  (-1, 0)   [left in x]
+            NNN_3: X-bond then Z-bond^{-1}  → cell shift  (+1, +1)  [diagonal]
+        For sublattice B (odd sites), the shifts are inverted.
         """
         def _bcfun(_i, _L, _pbc):
             if _pbc:
                 return mod_euc(_i, _L)
             return _i if 0 <= _i < _L else -1
 
-        self._nnn = [[] for _ in range(self.Ns)]
+        self._nnn           = [[] for _ in range(self.Ns)]
+        self._nnn_forward   = [[] for _ in range(self.Ns)]
+        
         match self.dim:
             case 1:
                 for i in range(self.Ns):
                     self._nnn[i] = [
-                        _bcfun(i + 2, self.Lx, self.bc == LatticeBC.PBC),
-                        _bcfun(i - 2, self.Lx, self.bc == LatticeBC.PBC)
+                        _bcfun(i + 2, self.Ns, pbcx),
+                        _bcfun(i - 2, self.Ns, pbcx)
                     ]
+                    self._nnn_forward[i] = [_bcfun(i + 2, self.Ns, pbcx)]
             case 2:
+                # NNN shifts (dX, dY) for sublattice A (even sites)
+                # These connect A→A via two NN hops
+                nnn_shifts_A = [
+                    ( 0, -1),   # down   : Y→X^{-1}
+                    (-1,  0),   # left   : Z→Y^{-1}
+                    ( 1,  1),   # diag   : X→Z^{-1}
+                ]
                 for i in range(self.Ns):
-                    x, y, z = self.get_coordinates(i)
-                    even = (i % 2 == 0)
-                    y1 = _bcfun(y - 2 if even else y + 2, self.Ly, self.bc == LatticeBC.PBC)
-                    y2 = _bcfun(y, self.Ly, self.bc == LatticeBC.PBC)
-                    x1 = _bcfun(x - 1, self.Lx, self.bc == LatticeBC.PBC)
-                    x2 = _bcfun(x + 1, self.Lx, self.bc == LatticeBC.PBC)
-                    self._nnn[i] = [
-                        (y1 * self.Lx + x) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x1) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x2) * 2 + (0 if even else 1)
-                    ]
+                    n       = i // 2
+                    r       = i % 2
+                    X       = n % self.Lx
+                    Y       = n // self.Lx
+                    _even   = (r == 0)
+                    
+                    nnn_list = []
+                    for dX, dY in nnn_shifts_A:
+                        if not _even:
+                            dX, dY = -dX, -dY       # invert for B sublattice
+                        Xn = _bcfun(X + dX, self.Lx, pbcx)
+                        Yn = _bcfun(Y + dY, self.Ly, pbcy)
+                        if Xn == -1 or Yn == -1:
+                            nnn_list.append(-1)
+                        else:
+                            nnn_list.append((Yn * self.Lx + Xn) * 2 + r)
+                    self._nnn[i] = nnn_list
+                    # Forward: only the positive-direction hops (for even: all three, for odd: reversed)
+                    self._nnn_forward[i] = [n for n in nnn_list if n >= 0] if _even else []
+
             case 3:
+                nnn_shifts_A = [
+                    ( 0, -1, 0),
+                    (-1,  0, 0),
+                    ( 1,  1, 0),
+                ]
                 for i in range(self.Ns):
-                    x, y, z = self.get_coordinates(i)
-                    even = (i % 2 == 0)
-                    y1 = _bcfun(y - 2 if even else y + 2, self.Ly, self.bc == LatticeBC.PBC)
-                    y2 = _bcfun(y, self.Ly, self.bc == LatticeBC.PBC)
-                    x1 = _bcfun(x - 1, self.Lx, self.bc == LatticeBC.PBC)
-                    x2 = _bcfun(x + 1, self.Lx, self.bc == LatticeBC.PBC)
-                    z1 = _bcfun(z + 1, self.Lz, self.bc == LatticeBC.PBC)
-                    z2 = _bcfun(z - 1, self.Lz, self.bc == LatticeBC.PBC)
-                    self._nnn[i] = [
-                        (y1 * self.Lx + x) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x1) * 2 + (0 if even else 1),
-                        (y2 * self.Lx + x2) * 2 + (0 if even else 1),
-                        z1 * self.Lx * self.Ly + y * self.Lx + x,
-                        z2 * self.Lx * self.Ly + y * self.Lx + x
-                    ]
+                    n       = i // 2
+                    r       = i % 2
+                    X       = n % self.Lx
+                    Y       = (n // self.Lx) % self.Ly
+                    Z       = n // (self.Lx * self.Ly)
+                    _even   = (r == 0)
+                    
+                    nnn_list = []
+                    for dX, dY, dZ in nnn_shifts_A:
+                        if not _even:
+                            dX, dY, dZ = -dX, -dY, -dZ
+                        Xn = _bcfun(X + dX, self.Lx, pbcx)
+                        Yn = _bcfun(Y + dY, self.Ly, pbcy)
+                        Zn = _bcfun(Z + dZ, self.Lz, pbcz)
+                        if Xn == -1 or Yn == -1 or Zn == -1:
+                            nnn_list.append(-1)
+                        else:
+                            nnn_list.append((Zn * self.Ly * self.Lx + Yn * self.Lx + Xn) * 2 + r)
+                    # Add z-direction NNN (same sublattice, next layer)
+                    Zp = _bcfun(Z + 1, self.Lz, pbcz)
+                    Zm = _bcfun(Z - 1, self.Lz, pbcz)
+                    nnn_list.append((Zp * self.Ly * self.Lx + Y * self.Lx + X) * 2 + r if Zp != -1 else -1)
+                    nnn_list.append((Zm * self.Ly * self.Lx + Y * self.Lx + X) * 2 + r if Zm != -1 else -1)
+                    self._nnn[i]         = nnn_list
+                    self._nnn_forward[i] = [n for n in nnn_list if n >= 0] if _even else []
 
     def calculate_norm_sym(self):
-        """
-        Calculates a symmetry normalization for each site.
-        
-        Here we simply use the Euclidean norm of the coordinate as a symmetry measure.
-        In a more advanced implementation, this might account for sublattice or other symmetries.
-        """
-        self.norm_sym = { i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns) }
+        """Uses base implementation."""
+        self._spatial_norm = { i: np.linalg.norm(self.rvectors[i]) for i in range(self.Ns) }
 
     ################################### SYMMETRY & INDEXING #######################################
-
-    def site_index(self, x, y, z):
-        """
-        Convert (x, y, z) coordinates to a unique site index.
-        """
-        return z * (self.Lx * self.Ly) + y * self.Lx + x
 
     def get_sym_pos(self, x, y, z):
         """
@@ -382,32 +401,8 @@ class HoneycombLattice(Lattice):
         """
         return (x - (self.Lx - 1), y - (2 * self.Ly - 1), z - (self.Lz - 1))
 
-    def symmetry_checker(self, x, y, z):
-        """
-        Placeholder for symmetry checking.
-        """
-        return True
-    
-    def high_symmetry_points(self) -> Optional[HighSymmetryPoints]:
-        """
-        Returns high-symmetry points for the honeycomb lattice Brillouin zone.
-        
-        The honeycomb lattice has a hexagonal BZ with high-symmetry points:
-        - Γ (Gamma): zone center (0, 0, 0)
-        - K: Dirac point at (2/3, 1/3, 0) - hosts linear band crossings
-        - K': other Dirac point at (1/3, 2/3, 0)
-        - M: edge midpoint (1/2, 0, 0)
-        
-        Default path: Γ → K → M → Γ
-        """
-        return HighSymmetryPoints.honeycomb_2d()
-    
-    def default_bz_path(self):
-        """Returns default Brillouin zone path for band structure plots."""
-        hs = self.high_symmetry_points()
-        return hs.get_default_path_points() if hs else None
-    
     def bond_type(self, s1: int, s2: int) -> int:
+        """Return directional bond type (X_BOND_NEI, Y_BOND_NEI, Z_BOND_NEI) or -1."""
         if s2 == self._nn[s1][X_BOND_NEI]: return X_BOND_NEI
         if s2 == self._nn[s1][Y_BOND_NEI]: return Y_BOND_NEI
         if s2 == self._nn[s1][Z_BOND_NEI]: return Z_BOND_NEI

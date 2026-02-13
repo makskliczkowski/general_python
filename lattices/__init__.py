@@ -1,15 +1,26 @@
-"""
-Factory utilities and registry for lattice classes.
+"""Lattice factory and registry for geometry-aware simulations.
 
-This module exposes the core lattice classes and a registry-based factory that
-enables third-party extensions (e.g. custom graph lattices) to integrate with
-the rest of the general_python stack.
+The package provides canonical lattice classes (square, triangular, honeycomb,
+hexagonal, graph) together with registry helpers for custom lattices.
 
---------------------------------
-Author          : Maksymilian Kliczkowski
-Date            : 2025-12-30
-License         : MIT
---------------------------------
+Input/output contracts
+----------------------
+Factory functions return subclasses of :class:`Lattice` with explicit geometry
+metadata (dimensions, boundary conditions, primitive vectors, and neighbor maps).
+Typical constructor inputs are integer sizes ``(lx, ly, lz)``, a boundary mode,
+and optional flux or graph descriptors.
+
+Shape and dtype expectations
+----------------------------
+Coordinate arrays are expected as real-valued arrays with shape ``(ns, dim)``.
+Index-based neighbor structures are integer arrays or lists over site ids in
+``[0, ns)``. Plotting helpers consume NumPy-compatible arrays.
+
+Numerical stability and determinism
+-----------------------------------
+Topology construction is deterministic for fixed parameters. Floating-point
+roundoff can affect reciprocal-space formatting or plotting labels but should not
+change connectivity.
 """
 
 from collections                import OrderedDict
@@ -344,6 +355,6 @@ def choose_lattice(typek    : Optional[str]         = 'square',
     _class          = _handle_type(typek)
     if issubclass(_class, GraphLattice):
         return _class(bc=_bc, flux=flux, **kwargs)
-    return _class(dim, lx, ly, lz, _bc, flux=flux, **kwargs)
+    return _class(dim=dim, lx=lx, ly=ly, lz=lz, bc=_bc, flux=flux, **kwargs)
 
 ####################################################################################################

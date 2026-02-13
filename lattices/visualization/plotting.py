@@ -561,6 +561,7 @@ def plot_lattice_structure(
     boundary_node_color         : str                           = "tab:red",
     periodic_color              : str                           = "tab:orange",
     open_color                  : str                           = "tab:green",
+    bond_colors                 : dict                          = { 0 : "tab:red", 1 : "tab:blue", 2: "tab:green" },
     node_size                   : int                           = 30,
     edge_alpha                  : float                         = 0.7,
     label_padding               : float                         = 0.05,
@@ -618,14 +619,14 @@ def plot_lattice_structure(
         current_azim = azim if azim is not None else getattr(axis, "azim", None)
         axis.view_init(elev=current_elev, azim=current_azim)
 
-    # --- 1. Compute Connectivity ---
+    # Compute Connectivity
     edges       = _gather_nn_edges(lattice)
     adjacency   = [[] for _ in range(lattice.Ns)]
     for i, j in edges:
         adjacency[i].append(j)
         adjacency[j].append(i)
 
-    # --- 2. Periodic Edges Detection ---
+    # Periodic Edges Detection
     periodic_neighbors      = defaultdict(list)
     periodic_label_counts   = defaultdict(int)
     typical_distance        = None
@@ -639,9 +640,10 @@ def plot_lattice_structure(
 
     # Draw edges
     for i, j in edges:
-        start   = coords[i]
-        end     = coords[j]
-        dist    = np.linalg.norm(end - start)
+        start       = coords[i]
+        end         = coords[j]
+        dist        = np.linalg.norm(end - start)
+        bond_type   = lattice.bond_type(i, j)
         
         # Check if this edge wraps around the boundary
         is_periodic = False
@@ -658,7 +660,11 @@ def plot_lattice_structure(
             periodic_neighbors[j].append(i)
         
         # Plot the line
-        line_args = dict(color=edge_color, alpha=edge_alpha, linestyle=linestyle, linewidth=1.0, zorder=2)
+        line_args = dict(color      =   bond_colors.get(bond_type, edge_color), 
+                         alpha      =   edge_alpha,
+                         linestyle  =   linestyle, 
+                         linewidth  =   1.0,
+                         zorder     =   2)
         
         if dim == 3:
             axis.plot([start[0], end[0]], [start[1], end[1]], [start[2], end[2]], **line_args)
@@ -667,7 +673,7 @@ def plot_lattice_structure(
         else: # 1D
             axis.plot([start[0], end[0]], [0.0, 0.0], **line_args)
 
-    # --- 3. Node Coloring ---
+    # Node Coloring
     node_face_colors    = [node_color] * lattice.Ns
     
     if partition_colors:
@@ -676,7 +682,7 @@ def plot_lattice_structure(
             palette = partition_colors
             node_face_colors = [palette[partitions[i] % len(palette)] for i in range(lattice.Ns)]
 
-    # --- 4. Draw Nodes ---
+    # Draw Nodes
     scatter_defaults = dict(s=node_size, zorder=3, **scatter_kwargs)
     
     if dim == 1:
@@ -688,7 +694,7 @@ def plot_lattice_structure(
     else:
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], c=node_face_colors, **scatter_defaults)
 
-    # --- 5. Boundary Highlight ---
+    # Boundary Highlight
     boundary_mask, _ = _boundary_masks(coords, lattice)
     if highlight_boundary and np.any(boundary_mask):
         b_coords = coords[boundary_mask]
@@ -701,7 +707,7 @@ def plot_lattice_structure(
         else:
             axis.scatter(b_coords[:, 0], np.zeros_like(b_coords[:, 0]), **b_args)
 
-    # --- 6. Axes & Titles ---
+    # Axes & Titles
     if not show_axes:
         if dim == 1:
             axis.get_yaxis().set_visible(False)
@@ -720,7 +726,7 @@ def plot_lattice_structure(
         if title_kwargs: kw.update(title_kwargs)
         axis.set_title(title, **kw)
 
-    # --- 7. Indices & Annotations ---
+    # Indices & Annotations
     node_label_positions = {}
     
     if show_indices:
@@ -747,14 +753,14 @@ def plot_lattice_structure(
                 
             node_label_positions[idx] = label_pos
 
-    # --- 8. Boundary Annotations (2D only) ---
+    # Boundary Annotations (2D only)
     if dim == 2:
         _draw_boundary_annotations(axis, coords, lattice,
                                    periodic_color=periodic_color,
                                    open_color=open_color,
                                    offset_fraction=boundary_offset)
 
-    # --- 9. Periodic Connections Text ---
+    # Periodic Connections Text
     if show_periodic_connections and periodic_neighbors:
         diag_extent = np.linalg.norm(coords.max(axis=0) - coords.min(axis=0)) or 1.0
         base_offset = label_padding * diag_extent * 0.6
@@ -787,11 +793,13 @@ def plot_lattice_structure(
             else:
                 axis.text(pos[0], shift, label, **txt_args)
 
-    # --- 10. Primitive Cell ---
+    # Primitive Cell
     if show_primitive_cell:
         # Try to find basis vectors
         basis_vectors = []
+        
         for attr in ("a1", "a2", "a3"):
+            
             vec = getattr(lattice, attr, None)
             if vec is not None:
                 vec = np.asarray(vec).flatten()
@@ -807,6 +815,31 @@ def plot_lattice_structure(
         
     return fig, axis
 
+def _region_palette(n: int) -> List:
+    """
+    Return *n* high-contrast, distinguishable colours for region plots.
+
+    Uses a hand-picked palette for small *n* (≤8) and falls back to the
+    ``tab20`` colour-map for larger numbers.
+    """
+    # High-contrast hand-picked palette (colour-blind friendly order)
+    _BASE = [
+        "#1f77b4",  # blue
+        "#d62728",  # red
+        "#2ca02c",  # green
+        "#ff7f0e",  # orange
+        "#9467bd",  # purple
+        "#8c564b",  # brown
+        "#e377c2",  # pink
+        "#17becf",  # cyan
+    ]
+    if n <= len(_BASE):
+        return _BASE[:n]
+    import matplotlib.cm as cm
+    cmap = cm.get_cmap("tab20", max(n, 20))
+    return [cmap(i) for i in range(n)]
+
+
 def plot_regions(
     lattice             : Lattice,
     regions             : Dict[str, List[int]],
@@ -814,232 +847,445 @@ def plot_regions(
     ax                  : Optional[Axes]                = None,
     show_indices        : bool                          = False,
     show_system         : bool                          = True,
-    show_complement     : bool                          = True,
+    show_complement     : bool                          = False,
     show_labels         : bool                          = True,
     show_connections    : bool                          = False,
     show_overlaps       : bool                          = True,
+    show_bonds          : bool                          = False,
     system_color        : str                           = 'lightgray',
-    system_alpha        : float                         = 0.3,
-    complement_color    : str                           = 'wheat',
-    complement_alpha    : float                         = 0.6,
+    system_alpha        : float                         = 0.25,
+    complement_color    : str                           = 'lightgray',
+    complement_alpha    : float                         = 0.3,
     overlap_color       : str                           = 'red',
     cmap                : str                           = 'Set2',
     fill                : bool                          = False,
     fill_alpha          : float                         = 0.2,
-    marker_size         : int                           = 100,
-    edge_width          : float                         = 2.0,
+    blob_radius         : Optional[float]               = None,
+    blob_alpha          : float                         = 0.12,
+    marker_size         : int                           = 60,
+    edge_width          : float                         = 1.5,
     figsize             : Optional[Tuple[float, float]] = None,
     title               : Optional[str]                 = None,
     title_kwargs        : Optional[Dict[str, object]]   = None,
     tight_layout        : bool                          = True,
     elev                : Optional[float]               = None,
     azim                : Optional[float]               = None,
+    region_descriptions : Optional[Dict[str, str]]      = None,
+    legend_loc          : str                           = 'best',
+    legend_fontsize     : int                           = 9,
+    label_fontsize      : int                           = 11,
+    label_offset        : float                         = 1.2,
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
     """
-    Plot specific regions on the lattice with enhanced visualization.
+    Plot labelled lattice regions with distinct colours and informative legend.
 
-    This function provides comprehensive region visualization including:
-    - Individual regions with distinct colors
-    - Complement region (sites not in any region)
-    - Overlap detection and highlighting
-    - Region labels and statistics
-    - Optional connectivity between regions
+    Features
+    --------
+    - High-contrast colours that are distinguishable for every region.
+    - Labels placed *radially outward* from the plot centre so they never
+      overlap even for Kitaev-Preskill-style pie-slice sectors.
+    - Legend entries include the region name, site count, and optional
+      human-readable description.
+    - Optional convex-hull fill, translucent per-site blobs, and intra-region
+      bond drawing.
 
     Parameters
     ----------
     lattice : Lattice
         The lattice object.
     regions : Dict[str, List[int]]
-        Dictionary mapping region names to lists of site indices.
-    ax : Axes, optional
-        Matplotlib axes.
-    show_indices : bool
-        If True, annotate sites with indices.
-    show_system : bool
-        If True, plot all lattice sites faintly in the background.
-    show_complement : bool
-        If True, highlight sites not in any region.
-    show_labels : bool
-        If True, add text labels for each region.
-    show_connections : bool
-        If True, draw lines between adjacent regions.
-    show_overlaps : bool
-        If True, highlight sites belonging to multiple regions.
-    system_color : str
-        Color for background system sites.
-    system_alpha : float
-        Alpha for background system sites.
-    complement_color : str
-        Color for complement region.
-    complement_alpha : float
-        Alpha for complement region.
-    overlap_color : str
-        Color to highlight overlapping sites.
-    cmap : str
-        Colormap name for distinct regions.
-    fill : bool
-        If True and dim=2, fill the region with a polygon (requires scipy).
-    fill_alpha : float
-        Transparency of filled regions.
-    marker_size : int
-        Size of region markers.
-    edge_width : float
-        Width of marker edges.
-    ... other args mirror plot_real_space ...
+        Region name → sorted site-index list.
+    region_descriptions : dict[str, str], optional
+        Optional human-readable description per region key that is appended
+        to the legend entry (e.g. ``{'A': 'sector 0°–120°'}``).
+    legend_loc : str
+        Matplotlib legend location string (default ``'best'``).
+    legend_fontsize : int
+        Font size for legend entries (default 9).
+    label_fontsize : int
+        Font size for region labels drawn on the plot (default 11).
+    label_offset : float
+        Controls how far the label is pushed radially outward from the
+        region centroid (default 1.2 ×  distance from plot centre to
+        centroid).  Values > 1 push the label outside the region.
+    show_bonds : bool
+        Draw NN bonds coloured by region.
+    blob_radius, blob_alpha : float
+        Per-site circle patches (2D only).
+    fill, fill_alpha : bool, float
+        Convex-hull polygon fill (2D, requires scipy).
+    (other parameters identical to previous version)
     """
     coords      = _ensure_numpy(lattice.rvectors)
     target_dim  = lattice.dim if lattice.dim else coords.shape[1]
     dim         = max(1, min(coords.shape[1], target_dim, 3))
     coords      = coords[:, :dim]
-    
+
     fig, axis   = _init_axes(ax, dim)
-    
+
     if figsize is not None and axis is fig.axes[0]:
         fig.set_size_inches(*figsize, forward=True)
-        
+
     if dim == 3 and (elev is not None or azim is not None):
-        current_elev = elev if elev is not None else getattr(axis, "elev", None)
-        current_azim = azim if azim is not None else getattr(axis, "azim", None)
-        axis.view_init(elev=current_elev, azim=current_azim)
+        axis.view_init(
+            elev=elev if elev is not None else getattr(axis, "elev", None),
+            azim=azim if azim is not None else getattr(axis, "azim", None),
+        )
 
-    # Plot full system background
+    # background: all system sites
     if show_system:
-        bg_args = dict(color=system_color, alpha=system_alpha, marker='o', s=30, label='System')
-        if dim == 1:
-            axis.scatter(coords[:, 0], np.zeros_like(coords[:, 0]), **bg_args)
-        elif dim == 2:
-            axis.scatter(coords[:, 0], coords[:, 1], **bg_args)
+        _sc = dict(color=system_color, alpha=system_alpha, marker='o', s=30, zorder=0)
+        if dim <= 2:
+            y = coords[:, 1] if dim == 2 else np.zeros(len(coords))
+            axis.scatter(coords[:, 0], y, **_sc)
         else:
-            axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **bg_args)
+            axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **_sc)
 
-    # Compute complement and overlaps
+    # site membership bookkeeping 
     all_region_sites    = set()
-    site_counts         = {}
+    site_counts: Dict[int, int] = {}
     for indices in regions.values():
         for idx in indices:
             all_region_sites.add(idx)
             site_counts[idx] = site_counts.get(idx, 0) + 1
-    
-    complement_sites    = [i for i in range(len(coords)) if i not in all_region_sites]
-    overlap_sites       = [i for i, count in site_counts.items() if count > 1]
-    
-    # Plot complement region
-    if show_complement and complement_sites:
-        comp_coords = coords[complement_sites]
-        comp_args   = dict(color=complement_color, alpha=complement_alpha, marker='x', 
-                        s=marker_size*0.8, edgecolors='black', linewidths=edge_width*0.5, 
-                        label='Complement')
-        if dim == 1:
-            axis.scatter(comp_coords[:, 0], np.zeros_like(comp_coords[:, 0]), **comp_args)
-        elif dim == 2:
-            axis.scatter(comp_coords[:, 0], comp_coords[:, 1], **comp_args)
-        else:
-            axis.scatter(comp_coords[:, 0], comp_coords[:, 1], comp_coords[:, 2], **comp_args)
-    
-    # Plot regions
-    try:
-        import matplotlib.cm as cm
-        colormap = cm.get_cmap(cmap, max(len(regions), 10))
-    except ImportError:
-        def colormap(i): return f"C{i}"
 
+    complement_sites = [i for i in range(len(coords)) if i not in all_region_sites]
+    overlap_sites    = [i for i, c in site_counts.items() if c > 1]
+
+    # complement — small faint dots (no distracting 'x' markers)
+    if show_complement and complement_sites:
+        cc = coords[complement_sites]
+        _ca = dict(color=complement_color, alpha=complement_alpha, marker='o',
+                   s=marker_size * 0.25, edgecolors='none', zorder=0)
+        if dim <= 2:
+            y = cc[:, 1] if dim == 2 else np.zeros(len(cc))
+            axis.scatter(cc[:, 0], y, **_ca)
+        else:
+            axis.scatter(cc[:, 0], cc[:, 1], cc[:, 2], **_ca)
+
+    # colour palette
+    palette = _region_palette(len(regions))
+
+    # Global centroid (used for radial label placement)
+    global_com = np.mean(coords, axis=0)
+
+    region_descriptions = region_descriptions or {}
+
+    # draw each region
     for i, (name, indices) in enumerate(regions.items()):
-        if not indices: continue
-        
-        region_coords = coords[indices]
-        color_val = colormap(i)
-        
-        # 1. Fill polygon (2D only)
-        if fill and dim == 2 and ConvexHull is not None and len(region_coords) >= 3:
+        if not indices:
+            continue
+
+        rc    = coords[indices]
+        color = palette[i % len(palette)]
+        n_pts = len(indices)
+
+        # Build informative legend text
+        desc  = region_descriptions.get(name, "")
+        lbl   = f"{name}: {n_pts} sites"
+        if desc:
+            lbl += f" — {desc}"
+
+        # 1. Convex-hull fill (2D)
+        if fill and dim == 2 and ConvexHull is not None and len(rc) >= 3:
             try:
-                hull = ConvexHull(region_coords)
-                hull_points = region_coords[hull.vertices]
-                axis.fill(hull_points[:, 0], hull_points[:, 1], color=color_val, 
-                         alpha=fill_alpha, label=f'{name} (Area)')
+                hull   = ConvexHull(rc)
+                hp     = rc[hull.vertices]
+                axis.fill(hp[:, 0], hp[:, 1], color=color, alpha=fill_alpha, zorder=1)
             except Exception:
                 pass
 
-        # 2. Scatter points
-        sc_args = dict(color=color_val, marker='o', s=marker_size, edgecolors='black', 
-                      linewidths=edge_width, label=f'{name}', **scatter_kwargs)
-        
-        if dim == 1:
-            axis.scatter(region_coords[:, 0], np.zeros_like(region_coords[:, 0]), **sc_args)
-        elif dim == 2:
-            axis.scatter(region_coords[:, 0], region_coords[:, 1], **sc_args)
-        else:
-            axis.scatter(region_coords[:, 0], region_coords[:, 1], region_coords[:, 2], **sc_args)
-            
-        # 3. Label center of region
-        if show_labels and len(region_coords) > 0:
-            com = np.mean(region_coords, axis=0)
-            txt_args = dict(fontsize=12, fontweight='bold', color='black', ha='center', va='center', 
-                           bbox=dict(facecolor='white', alpha=0.7, edgecolor='black', pad=1.0))
-            if dim == 1:
-                axis.text(com[0], 0, name, **txt_args)
-            elif dim == 2:
-                axis.text(com[0], com[1], name, **txt_args)
-            else:
-                axis.text(com[0], com[1], com[2], name, **txt_args)
-    
-    # Highlight overlapping sites
-    if show_overlaps and overlap_sites:
-        overlap_coords  = coords[overlap_sites]
-        overlap_args    = dict(color='none', edgecolors=overlap_color, marker='o', 
-                           s=marker_size*1.5, linewidths=edge_width*2, 
-                           label=f'Overlaps ({len(overlap_sites)})')
-        if dim == 1:
-            axis.scatter(overlap_coords[:, 0], np.zeros_like(overlap_coords[:, 0]), **overlap_args)
-        elif dim == 2:
-            axis.scatter(overlap_coords[:, 0], overlap_coords[:, 1], **overlap_args)
-        else:
-            axis.scatter(overlap_coords[:, 0], overlap_coords[:, 1], overlap_coords[:, 2], **overlap_args)
+        # 2. Per-site blobs (2D)
+        if blob_radius is not None and dim == 2:
+            from matplotlib.patches import Circle as _Circle
+            from matplotlib.collections import PatchCollection as _PC
+            circles = [_Circle((x, y), blob_radius) for x, y in rc[:, :2]]
+            pc = _PC(circles, facecolors=color, edgecolors='none',
+                     alpha=blob_alpha, zorder=1)
+            axis.add_collection(pc)
 
-    # Axis setup
+        # 3. Intra-region NN bonds (2D)
+        if show_bonds and dim == 2:
+            idx_set = set(indices)
+            for si in indices:
+                for nj in lattice.get_nn(si):
+                    if lattice.wrong_nei(nj):
+                        continue
+                    nj = int(nj)
+                    if nj in idx_set and nj > si:
+                        ri, rj = coords[si, :2], coords[nj, :2]
+                        axis.plot([ri[0], rj[0]], [ri[1], rj[1]],
+                                  color=color, lw=1.2, alpha=0.55, zorder=2)
+
+        # 4. Scatter markers
+        sc_kw = dict(color=color, marker='o', s=marker_size, edgecolors='black',
+                     linewidths=edge_width * 0.5, label=lbl, zorder=3)
+        sc_kw.update(scatter_kwargs)
+        if dim <= 2:
+            y = rc[:, 1] if dim == 2 else np.zeros(len(rc))
+            axis.scatter(rc[:, 0], y, **sc_kw)
+        else:
+            axis.scatter(rc[:, 0], rc[:, 1], rc[:, 2], **sc_kw)
+
+        # 5. Region label — placed radially outward from global centroid
+        if show_labels and dim == 2 and len(rc) > 0:
+            com    = np.mean(rc[:, :2], axis=0)
+            direc  = com - global_com[:2]
+            norm   = np.linalg.norm(direc)
+            if norm < 1e-9:
+                direc = np.array([0.0, 1.0])
+            else:
+                direc = direc / norm
+            lbl_pos = com + direc * norm * (label_offset - 1.0) + direc * 0.6
+
+            axis.annotate(
+                name,
+                xy=com, xytext=lbl_pos,
+                fontsize=label_fontsize, fontweight='bold', color=color,
+                ha='center', va='center',
+                arrowprops=dict(arrowstyle='->', color=color, lw=1.2),
+                bbox=dict(boxstyle='round,pad=0.25', fc='white', ec=color,
+                          alpha=0.85, lw=1.0),
+                zorder=5,
+            )
+        elif show_labels and dim != 2 and len(rc) > 0:
+            com = np.mean(rc, axis=0)
+            txt_kw = dict(fontsize=label_fontsize, fontweight='bold', color=color,
+                          ha='center', va='center',
+                          bbox=dict(fc='white', ec=color, alpha=0.8, pad=1.0))
+            if dim == 1:
+                axis.text(com[0], 0, name, **txt_kw)
+            else:
+                axis.text(com[0], com[1], com[2], name, **txt_kw)
+
+    # overlap highlight
+    if show_overlaps and overlap_sites:
+        oc = coords[overlap_sites]
+        _oa = dict(color='none', edgecolors=overlap_color, marker='o',
+                   s=marker_size * 1.5, linewidths=edge_width * 1.5,
+                   label=f'Overlaps ({len(overlap_sites)})', zorder=4)
+        if dim <= 2:
+            y = oc[:, 1] if dim == 2 else np.zeros(len(oc))
+            axis.scatter(oc[:, 0], y, **_oa)
+        else:
+            axis.scatter(oc[:, 0], oc[:, 1], oc[:, 2], **_oa)
+
+    # site-index annotations
+    if show_indices:
+        _annotate_indices(axis, coords)
+
+    # axis formatting
     if dim == 1:
-        axis.set_ylim(-0.5, 0.5)
-        axis.set_yticks([])
-        axis.set_xlabel("x")
+        axis.set_ylim(-0.5, 0.5); axis.set_yticks([]); axis.set_xlabel("x")
     elif dim == 2:
         axis.set_aspect("equal", adjustable="datalim")
-        axis.set_xlabel("x")
-        axis.set_ylabel("y")
+        axis.set_xlabel("x"); axis.set_ylabel("y")
     else:
-        axis.set_zlabel("z")
-        axis.set_ylabel("y")
-        axis.set_xlabel("x")
+        axis.set_xlabel("x"); axis.set_ylabel("y"); axis.set_zlabel("z")
 
-    # Build informative title
+    # title
     if title:
         kw = {"pad": 12}
-        if title_kwargs: kw.update(title_kwargs)
+        if title_kwargs:
+            kw.update(title_kwargs)
         axis.set_title(title, **kw)
-    elif not title and ax is None:
-        n_total         = len(coords)
-        n_covered       = len(all_region_sites)
-        n_complement    = len(complement_sites)
-        n_overlaps      = len(overlap_sites)
-        coverage_pct    = (n_covered / n_total * 100) if n_total > 0 else 0
-        
-        title_parts     = [f"Lattice Regions ({len(regions)} regions)"]
-        title_parts.append(f"\nCoverage: {n_covered}/{n_total} ({coverage_pct:.1f}%)")
-        if n_complement > 0:
-            title_parts.append(f", Complement: {n_complement}")
-        if n_overlaps > 0:
-            title_parts.append(f", Overlaps: {n_overlaps}")
-        
-        axis.set_title(''.join(title_parts), fontsize=10, pad=12)
+    elif ax is None:
+        n_total    = len(coords)
+        n_covered  = len(all_region_sites)
+        cov_pct    = n_covered / n_total * 100 if n_total else 0
+        parts      = [f"Regions ({len(regions)})  —  {n_covered}/{n_total} sites ({cov_pct:.0f}%)"]
+        if overlap_sites:
+            parts.append(f",  {len(overlap_sites)} overlaps")
+        axis.set_title("".join(parts), fontsize=10, pad=12)
 
-    # Deduplicate legend labels
+    # legend (deduplicated, compact)
     handles, labels = axis.get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
-    axis.legend(by_label.values(), by_label.keys(), loc='best')
+    if by_label:
+        axis.legend(
+            by_label.values(), by_label.keys(),
+            loc=legend_loc, fontsize=legend_fontsize,
+            framealpha=0.90, edgecolor='lightgray', fancybox=True,
+            handletextpad=0.3, labelspacing=0.25,
+            borderpad=0.4, handlelength=1.2,
+            markerscale=0.7,
+        )
 
     if tight_layout:
         _finalise_figure(fig)
-        
+
     return fig, axis
+
+
+# ==============================================================================
+# K-space / Brillouin-zone with High-Symmetry Points
+# ==============================================================================
+
+def plot_bz_high_symmetry(
+    lattice             : Lattice,
+    *,
+    ax                  : Optional[Axes]                = None,
+    show_kpoints        : bool                          = True,
+    show_bz             : bool                          = True,
+    show_path           : bool                          = True,
+    bz_facecolor        : str                           = "lavender",
+    bz_edgecolor        : str                           = "slategrey",
+    bz_alpha            : float                         = 0.20,
+    kpoint_color        : str                           = "C0",
+    kpoint_alpha        : float                         = 0.35,
+    kpoint_size         : int                           = 15,
+    path_color          : str                           = "crimson",
+    path_linewidth      : float                         = 1.8,
+    hs_marker_size      : int                           = 90,
+    hs_font_size        : int                           = 13,
+    n_path_points       : int                           = 200,
+    figsize             : Optional[Tuple[float, float]] = None,
+    title               : Optional[str]                 = None,
+    title_kwargs        : Optional[Dict[str, object]]   = None,
+    tight_layout        : bool                          = True,
+) -> Tuple[Figure, Axes]:
+    r"""
+    Plot the first Brillouin zone with high-symmetry points and the
+    default k-path overlaid on the sampled k-point grid.
+
+    Parameters
+    ----------
+    lattice : Lattice
+        Lattice object (must have ``kvectors``, reciprocal basis, and
+        ``high_symmetry_points()``).
+    show_kpoints : bool
+        If *True*, scatter-plot the discrete k-point mesh.
+    show_bz : bool
+        If *True*, shade the first BZ polygon.
+    show_path : bool
+        If *True*, draw the default high-symmetry path (e.g.
+        ``\Gamma \to K \to M \to \Gamma``).
+    bz_facecolor, bz_edgecolor, bz_alpha
+        Appearance of the BZ polygon.
+    kpoint_color, kpoint_alpha, kpoint_size
+        Appearance of the k-point mesh dots.
+    path_color, path_linewidth
+        Appearance of the high-symmetry path line.
+    hs_marker_size, hs_font_size
+        Size of the high-symmetry markers and labels.
+    n_path_points : int
+        Number of interpolation points between successive high-symmetry
+        points (higher = smoother path).
+    figsize : tuple, optional
+        Figure size.
+    title : str, optional
+        Plot title.
+
+    Returns
+    -------
+    fig, ax : Figure, Axes
+    """
+    from ..tools.lattice_kspace import ws_bz_mask
+
+    # ---- k-point mesh ----
+    kvecs       = _ensure_numpy(lattice.kvectors)
+    dim         = max(1, min(kvecs.shape[1], lattice.dim if lattice.dim else 2, 3))
+    kvecs2      = kvecs[:, :2] if dim >= 2 else kvecs[:, :1]
+
+    fig, axis   = _init_axes(ax, min(dim, 2))          # stay 2-D
+    if figsize is not None and axis is fig.axes[0]:
+        fig.set_size_inches(*figsize, forward=True)
+
+    # ---- reciprocal basis ----
+    b1 = np.asarray(lattice.k1, float).ravel()
+    b2 = np.asarray(lattice.k2, float).ravel()
+    b3 = np.asarray(getattr(lattice, 'k3', np.zeros(3)), float).ravel()
+
+    # ---- WS BZ outline (2-D) ----
+    if show_bz and dim >= 2:
+        # Dense grid for WS mask
+        pad = 1.3
+        kmax = max(np.linalg.norm(b1[:2]), np.linalg.norm(b2[:2])) * pad
+        gx  = np.linspace(-kmax, kmax, 500)
+        gy  = np.linspace(-kmax, kmax, 500)
+        GX, GY = np.meshgrid(gx, gy)
+        mask = ws_bz_mask(GX, GY, b1, b2, shells=2)
+        axis.contourf(GX, GY, mask.astype(float), levels=[0.5, 1.5],
+                      colors=[bz_facecolor], alpha=bz_alpha)
+        axis.contour(GX, GY, mask.astype(float), levels=[0.5],
+                     colors=[bz_edgecolor], linewidths=1.5)
+
+    # ---- k-point scatter ----
+    if show_kpoints and dim >= 2:
+        axis.scatter(kvecs2[:, 0], kvecs2[:, 1], s=kpoint_size,
+                     color=kpoint_color, alpha=kpoint_alpha, marker='o',
+                     edgecolors='none', label='k-mesh', zorder=2)
+
+    # ---- high-symmetry points + path ----
+    try:
+        hs = lattice.high_symmetry_points()
+    except Exception:
+        hs = None
+
+    if hs is not None and dim >= 2:
+        path_labels = hs.default_path
+
+        # Convert to Cartesian
+        hs_cart = {}
+        for lbl in set(path_labels):
+            pt = hs.get(lbl)
+            if pt is None:
+                continue
+            kc = pt.to_cartesian(b1, b2, b3)
+            hs_cart[lbl] = kc[:2]
+
+        # Draw path segments
+        if show_path and len(path_labels) >= 2:
+            for i in range(len(path_labels) - 1):
+                lbl_a, lbl_b = path_labels[i], path_labels[i + 1]
+                if lbl_a in hs_cart and lbl_b in hs_cart:
+                    ka, kb = hs_cart[lbl_a], hs_cart[lbl_b]
+                    axis.plot([ka[0], kb[0]], [ka[1], kb[1]],
+                              color=path_color, linewidth=path_linewidth,
+                              zorder=4, solid_capstyle='round')
+
+        # Mark and label each unique high-symmetry point
+        plotted = set()
+        for lbl in path_labels:
+            if lbl in plotted or lbl not in hs_cart:
+                continue
+            plotted.add(lbl)
+            kc = hs_cart[lbl]
+            pt = hs.get(lbl)
+            latex = pt.latex_label if pt else f'${lbl}$'
+            axis.scatter(kc[0], kc[1], s=hs_marker_size, color='white',
+                         edgecolors='black', linewidths=1.5, zorder=5, marker='o')
+            axis.annotate(latex, xy=(kc[0], kc[1]),
+                          textcoords='offset points', xytext=(8, 8),
+                          fontsize=hs_font_size, fontweight='bold',
+                          ha='left', va='bottom', zorder=6,
+                          bbox=dict(boxstyle='round,pad=0.15', fc='white',
+                                    ec='none', alpha=0.75))
+
+    # ---- styling ----
+    axis.set_xlabel(r'$k_x$')
+    axis.set_ylabel(r'$k_y$')
+    axis.set_aspect('equal', adjustable='datalim')
+    axis.axhline(0, color='grey', lw=0.4, zorder=0)
+    axis.axvline(0, color='grey', lw=0.4, zorder=0)
+
+    # ---- title ----
+    if title:
+        kw = {"pad": 12}
+        if title_kwargs:
+            kw.update(title_kwargs)
+        axis.set_title(title, **kw)
+
+    handles, labels_ = axis.get_legend_handles_labels()
+    if handles:
+        axis.legend(loc='best', fontsize=8)
+
+    if tight_layout:
+        _finalise_figure(fig)
+
+    return fig, axis
+
 
 # ==============================================================================
 # Plotter Class
@@ -1142,10 +1388,31 @@ class LatticePlotter:
             Color for background system sites.
         cmap : str
             Colormap name for distinct regions.
+        blob_radius : float, optional
+            If given, draw a translucent circle around each site.
+        show_bonds : bool
+            If True, draw intra-region NN bonds.
         ... other args mirror plot_real_space ...
         """
         kwargs.setdefault("figsize", (6.0, 6.0))
         return plot_regions(self.lattice, regions, **kwargs)
+
+    def bz_high_symmetry(self, **kwargs) -> Tuple[Figure, Axes]:
+        """
+        Plot the first Brillouin zone with high-symmetry points and path.
+
+        Parameters
+        ----------
+        show_kpoints : bool
+            Show sampled k-mesh dots.
+        show_bz : bool
+            Show the WS BZ polygon.
+        show_path : bool
+            Draw the default high-symmetry k-path.
+        ... see ``plot_bz_high_symmetry`` for full options ...
+        """
+        kwargs.setdefault("figsize", (5.5, 5.5))
+        return plot_bz_high_symmetry(self.lattice, **kwargs)
 
 # ------------------------------------------------------------------------------
 #! EOF
