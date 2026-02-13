@@ -15,10 +15,10 @@ except ImportError:
     JAX_AVAILABLE   = False
     Array           = None
     
-from typing import Optional, Union
-from functools import partial
-from enum import Enum, unique
-from math import log2
+from typing     import Optional, Union
+from functools  import partial
+from enum       import Enum, unique
+from math       import log2
 
 # ------------------------------------------------------------------------
 

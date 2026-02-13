@@ -351,8 +351,12 @@ ADDITIONAL_LINESTYLES       =   {
 # Set the font dictionaries (for plot title and axis titles)
 try:
     plt.style.use(['science', 'no-latex', 'colors5-light'])
-except Exception as e:
-    plt.style.use(['science', 'no-latex'])
+except Exception:
+    try:
+        plt.style.use(['science', 'no-latex'])
+    except Exception:
+        # Fallback to default if science styles are missing
+        pass
     
 # Safely set additional rcParams (for compatibility with documentation build systems)
 try:
@@ -3351,7 +3355,7 @@ class Plotter:
                     # Style
                     fontsize: int = None,
                     **kwargs):
-        """
+        r"""
         Configure axis visibility, spines, ticks, and labels in one call.
         
         This is a convenience function for common axis customizations.
@@ -3651,7 +3655,7 @@ class Plotter:
     
     @staticmethod
     def power_law_guide(ax, x_range, exponent, *, add_label: bool = True, label=None, position='lower right', color='gray', ls='--', lw=1.5, offset_log=0, zorder=3, **kwargs):
-        """
+        r"""
         Add a power-law guide line to a log-log plot.
         
         Useful for showing scaling behavior (e.g., y ~ x^{-2}).
@@ -3916,15 +3920,16 @@ class Plotter:
     ######### S U B A X S #########
 
     @staticmethod
-    def get_subplots(   nrows       =   1,
-                        ncols       =   1,
-                        sizex       =   10.,                    # total width [in] OR list of per-col ratios
-                        sizey       =   10.,                    # total height [in] OR list of per-row ratios
-                        sizex_def   =   3,                      # inches per unit of sizex ratio (if sizex is a sequence)
-                        sizey_def   =   3,                      # inches per unit of sizey ratio (if sizey is a sequence)
-                        annot_x_pos =   None,                   # position for annotation - x
-                        annot_y_pos =   None,                   # position for annotation - y
-                        panel_labels=   False,
+    def get_subplots(   nrows           =   1,
+                        ncols           =   1,
+                        sizex           =   10.,                    # total width [in] OR list of per-col ratios
+                        sizey           =   10.,                    # total height [in] OR list of per-row ratios
+                        sizex_def       =   3,                      # inches per unit of sizex ratio (if sizex is a sequence)
+                        sizey_def       =   3,                      # inches per unit of sizey ratio (if sizey is a sequence)
+                        annot_x_pos     =   None,                   # position for annotation - x
+                        annot_y_pos     =   None,                   # position for annotation - y
+                        panel_labels    =   False,
+                        single_if_1     =   False,                  # if True, return ax instead of [ax] when nrows=ncols=1
                         **kwargs) -> Tuple[plt.Figure, List[plt.Axes]]:
         """
         Flexible subplot factory that *always* returns (fig, flat_axes_list).
@@ -3941,7 +3946,7 @@ class Plotter:
         - post_hook=<callable(fig, axes_list)> for custom last-mile tweaks
         """
 
-        # ---- Extract utility kwargs (do not pass to plt.subplots)
+        #! Extract utility kwargs (do not pass to plt.subplots)
         gridspec_kw   = dict(kwargs.pop('gridspec_kw', {}) or {})
         subplot_kw    = dict(kwargs.pop('subplot_kw', {}) or {})
         panel_labels  = kwargs.pop('panel_labels', None)         # True or list/tuple of labels
@@ -4053,8 +4058,8 @@ class Plotter:
         #! Final user hook (receives fig and the flat list of axes)
         if callable(post_hook):
             post_hook(fig, axes_list)
-
-        return fig, axes_list
+        
+        return fig, axes_list if not (single_if_1 and len(axes_list) == 1) else axes_list[0]
 
     ######### S A V I N G #########
 

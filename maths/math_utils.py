@@ -25,7 +25,10 @@ from scipy.stats import poisson, norm, expon, gaussian_kde
 from scipy.special import gamma
 
 # fit the functions
-import pandas as pd
+try:
+    import pandas as pd
+except ImportError:
+    pd = None
 
 import math
 import numpy as np
@@ -49,7 +52,7 @@ def find_maximum_idx(x):
     Find maximum index in a DataFrame, numpy array, or JAX array
     - x : DataFrame, numpy array, or JAX array
     '''
-    if isinstance(x, pd.DataFrame):
+    if pd is not None and isinstance(x, pd.DataFrame):
         return x.idxmax(axis=1)
     elif isinstance(x, np.ndarray):
         return np.argmax(x, axis=1)
@@ -68,7 +71,7 @@ def find_nearest_val(x, val, col):
     - val   : a scalar
     - col   : a string on which column to find the nearest
     '''
-    if isinstance(x, pd.DataFrame):
+    if pd is not None and isinstance(x, pd.DataFrame):
         return x.loc[(x[col]-val).abs().idxmin()]
     elif isinstance(x, np.ndarray):
         return np.array((np.abs(x - val)).argmin())
@@ -88,7 +91,7 @@ def find_nearest_idx(x, val : float, **kwargs):
     - col   : a string on which column to find the nearest
     Returns the index of the nearest value to the given value
     '''
-    if isinstance(x, pd.DataFrame):
+    if pd is not None and isinstance(x, pd.DataFrame):
         col = kwargs.get('col', None)
         if col is None:
             raise ValueError("Column name must be provided for DataFrame.")

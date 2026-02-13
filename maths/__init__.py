@@ -1,23 +1,25 @@
-"""
-Mathematics utilities for the `general_python` toolkit.
+"""Mathematical helper package with statistics and random tools.
 
-The package aggregates mathematical helpers, high-quality random number
-generators, and statistical analysis routines.  Submodules are imported lazily
-to keep top-level imports lightweight and consistent with the modular general_python
-design.
+This package collects utility functions used by physics, algebra, and ML modules.
+Submodules are lazy-loaded to keep top-level import overhead low.
 
-Available submodule aliases
----------------------------
-- ``math_utils``   : General mathematical functions and utilities.
-- ``random``       : High-quality pseudorandom number generators and CUE matrices.
-- ``statistics``   : Statistical functions and data analysis utilities.
+Scope
+-----
+* ``math_utils``: numerical helper routines.
+* ``statistics``: smoothing, aggregation, and summary statistics.
+* ``random``: random-matrix-oriented helpers; for backend-wide RNG streams use
+  ``general_python.algebra.ran_wrapper``.
 
----------------------------------------------------------------------------
-File        : general_python/maths/__init__.py
-Author      : Maksymilian Kliczkowski
-License     : MIT
-Copyright   : (c) 2021-2024 general_python Group
----------------------------------------------------------------------------
+Input/output, dtype, and shape guidance
+---------------------------------------
+Most routines accept NumPy array-like inputs and return NumPy arrays or scalars.
+APIs typically operate on 1D or 2D arrays where axis conventions are documented
+per function. Use floating dtypes for interpolation and filtering paths.
+
+Determinism and stability
+-------------------------
+Pure algebraic or statistical transforms are deterministic for fixed inputs.
+Randomized routines require explicit seeding to be reproducible.
 """
 
 import  sys

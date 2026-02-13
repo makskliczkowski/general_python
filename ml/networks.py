@@ -301,6 +301,9 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     -------
     GeneralNet
         An initialized or wrapped network instance compatible with the general_python framework.
+        The returned object is callable with signature:
+        ``log_psi = net(params, inputs)`` where inputs has shape ``(batch, features)``
+        and output has shape ``(batch,)``.
     """
 
     # 1. Handle Strings and Enums (Lazy Load Path)

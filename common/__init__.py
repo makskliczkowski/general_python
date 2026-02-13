@@ -1,35 +1,22 @@
-"""
-Common utilities for file handling, plotting, logging, binary operations, and data management.
+"""Shared utilities for IO, plotting, logging, and runtime helpers.
 
-This module provides essential utility functions and classes for general-purpose tasks including:
+The ``common`` package contains cross-cutting infrastructure used by all major
+subpackages, including directory management, plotting, HDF5 helpers, timers,
+and low-level binary utilities.
 
-**File and Directory Management:**
-- Directory operations and path management
-- File I/O utilities and data handling
+Input/output contracts
+----------------------
+Utilities are intentionally lightweight: they accept standard Python objects or
+NumPy-compatible arrays and return plain Python or NumPy outputs where possible.
+Plotting helpers expect Matplotlib-compatible inputs.
 
-**Plotting and Visualization:**
-- Advanced plotting utilities with customizable styles
-- Matrix printing and data visualization tools
-- Color schemes, line styles, and marker collections
+Determinism and stability
+-------------------------
+Most helpers are deterministic for fixed inputs. Logging or timing output may
+vary with runtime scheduling. Binary helper functions operate on integer bit
+patterns and are deterministic by construction.
 
-**Data Processing:**
-- Data handling utilities for scientific computing
-- Matrix operations and data transformation
-- Statistical analysis tools
-
-**Binary Operations:**
-- Binary data manipulation and conversion utilities
-- Bit-level operations for quantum computing applications
-
-**Logging and Monitoring:**
-- Advanced logging systems with multiple output formats
-- Performance monitoring and debugging tools
-
-Example:
-    >>> from general_python.common import Plotter, DataHandler, Directories
-    >>> plotter = Plotter()
-    >>> data_handler = DataHandler()
-    >>> dirs = Directories()
+Submodules are loaded lazily on first access to reduce import overhead.
 """
 
 import  importlib
@@ -44,7 +31,12 @@ if TYPE_CHECKING:
                             linestylesCycle, linestylesCycleExtended, linestylesList,
                             markersCycle, markersList
                         )
-    from .datah         import DataHandler, complement_indices, indices_from_mask
+    from .datah         import DataHandler
+    from .binary        import (
+                            ctz64, popcount64,
+                            mask_from_indices, indices_from_mask,
+                            complement_mask, complement_indices
+                        )
     from .hdf5man       import HDF5Manager
     from .flog          import Logger, get_global_logger
     from .memory        import log_memory_status, check_memory_for_operation
@@ -69,8 +61,13 @@ _LAZY_IMPORTS = {
     'markersList'               : ('.plot', 'markersList'),
     # datah
     'DataHandler'               : ('.datah', 'DataHandler'),
-    'complement_indices'        : ('.datah', 'complement_indices'),
-    'indices_from_mask'         : ('.datah', 'indices_from_mask'),
+    # binary - Numba-safe bit operations
+    'ctz64'                     : ('.binary', 'ctz64'),
+    'popcount64'                : ('.binary', 'popcount64'),
+    'mask_from_indices'         : ('.binary', 'mask_from_indices'),
+    'indices_from_mask'         : ('.binary', 'indices_from_mask'),
+    'complement_mask'           : ('.binary', 'complement_mask'),
+    'complement_indices'        : ('.binary', 'complement_indices'),  # alias
     # hdf5
     'HDF5Manager'               : ('.hdf5man', 'HDF5Manager'),
     # logging

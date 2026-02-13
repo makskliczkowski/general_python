@@ -1,3 +1,25 @@
+"""
+NumPy-based utility functions for neural network operations.
+
+This module provides backend-agnostic implementations (using NumPy and Numba) for:
+- Batch creation and padding.
+- Batched evaluation of functions.
+- Gradient computation (analytical and numerical via Autograd).
+- Local energy estimation helpers (apply_callable).
+
+Input/Output Contracts
+----------------------
+Functions generally expect NumPy arrays as input.
+Batching functions return arrays with shape (n_batches, batch_size, ...).
+Gradient functions return flattened arrays or dictionaries matching the parameter structure.
+
+Dependencies
+------------
+- numpy
+- numba (for JIT compilation)
+- autograd (optional, for numerical gradients)
+"""
+
 import numpy as np
 import numba
 from typing import Union, Callable, Optional, Any
@@ -347,7 +369,7 @@ def apply_callable_np(func, states, sample_probas, logprobas_in, logproba_fun, p
         new_logprobas           = logproba_fun(parameters, new_states)
         weights                 = np.exp(new_logprobas - logp)   
         # compute the weighted sum of the new logprobas
-        weighted_sum            = np.sum(new_vals * weights, axis=0)
+        weighted_sum            = np.sum(np.conj(new_vals) * weights, axis=0)
         values[i]               = np.sum(weighted_sum * sample_p, axis=0)
         
     return values, np.mean(values, axis = 0), np.std(values, axis = 0)
@@ -393,7 +415,7 @@ def apply_callable_np_uniform(func, states, logprobas_in, logproba_fun, paramete
         
         # compute the weighted sum of the new logprobas
         weights                 = np.exp(new_logprobas - logp)
-        weighted_sum            = np.sum(new_vals * weights, axis=0)
+        weighted_sum            = np.sum(np.conj(new_vals) * weights, axis=0)
         values[i]               = np.sum(weighted_sum, axis=0)
         
     return values, np.mean(values, axis=0), np.std(values, axis=0)
@@ -402,37 +424,7 @@ def apply_callable_np_uniform(func, states, logprobas_in, logproba_fun, paramete
 def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logproba_fun, parameters, batch_size: int):
     """
     Batched version of apply_callable_np with sample probabilities.
-    
-    Applies a transformation function to each state and computes a locally
-    weighted estimate as motivated in [2108.08631]. For each state x, a modified
-    set of states S and corresponding values V is produced by `func(x)`. Then,
-    the local estimate is computed as:
-    
-        estimate(x) = sum_i { V[i] * (sample_proba * exp(new_logproba[i] - logprobas_in(x)) ) }
-    
-    Parameters:
-        func:
-            Callable that accepts a state (vector) and returns a tuple (S, V)
-            where S is an array of modified states (M x state_size) and V is an
-            array of corresponding values (M,).
-        states:
-            Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
-        sample_probas:
-            Array of sampling probabilities (with the same leading dimensions as states).
-        logprobas_in:
-            Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
-        logproba_fun:
-            Callable that computes the log-probabilities for given states S.
-        batch_size:
-            Integer size for batching the evaluation.
-    
-    Returns:
-        values:
-            Array of per-state estimates.
-        mean:
-            Mean of the estimates.
-        std:
-            Standard deviation of the estimates.
+    ...
     """
     # Reshape inputs if provided in 3D.
     if states.ndim == 3:
@@ -464,7 +456,7 @@ def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logprob
             new_logprobas           = logproba_fun(parameters, new_states)
             
             weights                 = np.exp(new_logprobas[:,0] - logp)
-            weighted_sum            = np.dot(new_vals, weights)
+            weighted_sum            = np.dot(np.conj(new_vals), weights)
             estimates[index]        = weighted_sum * sample_p
             
             # Compute weighted sum: sample_p * exp(new_logprobas - logp) scales new_vals.
@@ -482,27 +474,7 @@ def apply_callable_batched_np(func, states, sample_probas, logprobas_in, logprob
 def apply_callable_batched_np_uniform(func, states, logprobas_in, logproba_fun, parameters, batch_size: int):
     """
     Batched version of apply_callable_np for the uniform case (without sample probabilities).
-    
-    For each state x, this function applies a transformation `func` to obtain modified
-    states S and corresponding values V. The local estimate is computed as:
-    
-        estimate(x) = sum_i { V[i] * exp(new_logproba[i] - logprobas_in(x)) }
-    
-    which is equivalent to assuming that sample probabilities are uniform.
-    
-    Parameters:
-        func         : Callable that accepts a state (vector) and returns a tuple (S, V)
-                        where S is an array of modified states (M x state_size) and V is an
-                        array of corresponding values (M,).
-        states       : Array of states with shape (n_samples, n_chains, state_size) or (n_states, state_size).
-        logprobas_in : Array of original log-probabilities (shape (n_samples, n_chains, 1) or (n_states, 1)).
-        logproba_fun : Callable that computes the log-probabilities for given states S.
-        batch_size   : Integer size for batching the evaluation.
-    
-    Returns:
-        values : Array of per-state estimates.
-        mean   : Mean of the estimates.
-        std    : Standard deviation of the estimates.
+    ...
     """
     # Reshape inputs if provided in 3D.
     if states.ndim == 3:
@@ -528,7 +500,7 @@ def apply_callable_batched_np_uniform(func, states, logprobas_in, logproba_fun, 
             new_states, new_vals    = func(batch_states[j])
             new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = np.exp(new_logprobas - logp)
-            weighted_sum            = np.sum(new_vals * weights, axis=0)
+            weighted_sum            = np.sum(np.conj(new_vals) * weights, axis=0)
             estimates[index]        = weighted_sum
             index                   += 1
             

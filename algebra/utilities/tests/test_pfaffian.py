@@ -3,7 +3,7 @@ import pytest
 import numpy as np
 import jax
 import jax.numpy as jnp
-from algebra.utilities.pfaffian_jax import Pfaffian
+from general_python.algebra.utilities.pfaffian_jax import Pfaffian
 
 class TestPfaffianJax:
     def test_scherman_morrison_skew_jax_correctness(self):

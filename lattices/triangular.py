@@ -193,6 +193,28 @@ class TriangularLattice(Lattice):
     def site_index(self, x, y, z):
         return z * (self.Lx * self.Ly) + y * self.Lx + x
 
+    @staticmethod
+    def dispersion(k, a=1.0):
+        """
+        Simple triangular-lattice dispersion approximation:
+        ω(k) = 2J * [3 - cos(k·a1) - cos(k·a2) - cos(k·(a1 - a2))]
+        where a1=(a,0), a2=(a/2, √3 a/2).
+        Accepts k as (2,) or (...,2).
+        """
+        k   = np.asarray(k)
+        a1  = np.array([a, 0.0])
+        a2  = np.array([a/2.0, np.sqrt(3.0) * a / 2.0])
+        a3  = a1 - a2
+        def _omega(kx, ky):
+            return 2.0 * (3.0 - np.cos(kx * a1[0] + ky * a1[1]) - np.cos(kx * a2[0] + ky * a2[1]) - np.cos(kx * a3[0] + ky * a3[1]))
+        if k.ndim == 1:
+            kx, ky = k[0], k[1]
+            return _omega(kx, ky)
+        else:
+            kx = k[..., 0]
+            ky = k[..., 1]
+            return _omega(kx, ky)
+
 # ---------------------------------------------------------------------------
 #! EOF
 # -------------------------------------------------------------------------

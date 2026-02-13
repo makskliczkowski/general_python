@@ -639,35 +639,41 @@ class Solver(ABC):
 
         Parameters:
         -----------
-            matvec:
+            matvec : Callable[[Array], Array]
                 Function implementing the matrix-vector product A @ x.
-                Must be compatible with `backend_module`.
-            b:
-                Right-hand side vector (as `backend_module` array).
-            x0:
-                Initial guess vector (as `backend_module` array).
-            tol:
+                It must accept a vector of shape (N,) and return a vector of shape (N,).
+                Must be compatible with `backend_module` (NumPy or JAX).
+            b : Array
+                Right-hand side vector of shape (N,). Must be a `backend_module` array.
+            x0 : Array
+                Initial guess vector of shape (N,). Must be a `backend_module` array.
+            tol : float
                 Relative convergence tolerance (||Ax - b|| / ||b||).
-            maxiter:
-                Maximum number of iterations.
-            precond_apply:
-                Function applying the preconditioner M^{-1} (optional).
-                Takes `r` and returns `M^{-1}r`. Must be compatible
-                with `backend_module`.
-            backend_module:
-                The numerical backend module (e.g., `numpy` or `jax.numpy`).
-            **kwargs:
-                Additional solver-specific keyword arguments.
+            maxiter : int
+                Maximum number of iterations allowed.
+            precond_apply : Callable[[Array], Array], optional
+                Function applying the preconditioner M^{-1}.
+                Takes a vector `r` of shape (N,) and returns `M^{-1}r` of shape (N,).
+                Must be compatible with `backend_module`.
+            backend_module : module
+                The numerical backend module to use for array operations (e.g., `numpy` or `jax.numpy`).
+                This allows the solver logic to be backend-agnostic.
+            **kwargs : Any
+                Additional solver-specific keyword arguments (e.g., `restart` for GMRES).
 
         Returns:
             SolverResult:
-                Named tuple with solution, convergence status, iterations, residual norm.
+                A named tuple containing:
+                - `x` (Array): The computed solution vector of shape (N,).
+                - `converged` (bool): True if the solver reached the desired tolerance.
+                - `iterations` (int): The number of iterations performed.
+                - `residual_norm` (float): The norm of the final residual (||b - Ax||).
 
         Raises:
             NotImplementedError:
                 If a subclass hasn't implemented this method.
             SolverError:
-                If convergence fails or inputs are invalid within implementation.
+                If convergence fails catastrophically or inputs are invalid.
         """
         raise NotImplementedError(str(SolverErrorMsg.METHOD_NOT_IMPL))
 
@@ -1020,11 +1026,20 @@ class Solver(ABC):
 def _sym_ortho(a, b, backend):
     '''
     Performs a stable symmetric Householder (Givens) reflection for complex numbers.
-    Parameters:
+
+    Parameters
+    ----------
     a : scalar
         The first element of the two-vector [a; b].
     b : scalar
         The second element of the two-vector [a; b].
+    backend : module
+        The numerical backend module (numpy or jax.numpy).
+
+    Returns
+    -------
+    c, s, r : scalar
+        The rotation coefficients and the norm.
     '''
     _absa   = backend.abs(a)
     _absb   = backend.abs(b)
@@ -1058,20 +1073,28 @@ def sym_ortho(a, b, backend: str = "default"):
     For complex inputs, r preserves the phase of a (if b==0) or b (if a==0),
     and the reflectors are computed in a stable manner.
     
-    Parameters:
-        a : scalar (real or complex)
-            The first element of the two-vector [a; b].
-        b : scalar (real or complex)
-            The second element of the two-vector [a; b].
-        backend : str, optional (default "default")
-            Specifies which backend to use. If set to "jax", the function uses
-            jax.numpy and is jitted for speed.
+    Parameters
+    ----------
+    a : scalar (real or complex)
+        The first element of the two-vector [a; b].
+    b : scalar (real or complex)
+        The second element of the two-vector [a; b].
+    backend : str, optional (default "default")
+        Specifies which backend to use. If set to "jax", the function uses
+        jax.numpy and is jitted for speed.
     
-    Returns:
-        (c, s, r) : tuple of scalars
-            The computed reflection parameters satisfying:
-                c = a / r   and   s = b / r,
-            with r = sqrt(a^2 + b^2) for real numbers (or the appropriately phased value for complex).
+    Returns
+    -------
+    (c, s, r) : tuple of scalars
+        The computed reflection parameters satisfying:
+            c = a / r   and   s = b / r,
+        with r = sqrt(a^2 + b^2) for real numbers (or the appropriately phased value for complex).
+
+    Numerical stability
+    -------------------
+    This function avoids overflow and underflow by scaling by the larger magnitude component
+    (either `|a|` or `|b|`). This ensures that the intermediate calculations of `tau`
+    and the hypotenuse do not exceed floating-point range limits unnecessarily.
     """
     # Select the numerical backend: jax.numpy if "jax" is chosen; otherwise, NumPy.
     

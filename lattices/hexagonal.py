@@ -138,6 +138,30 @@ class HexagonalLattice(Lattice):
         """
         return HighSymmetryPoints.hexagonal_2d()
 
+    @staticmethod
+    def dispersion(k, a=1.0):
+        """
+        Hexagonal/honeycomb (armchair) nearest-neighbour dispersion magnitude.
+        Uses the three NN vectors defined in the hexagonal geometry.
+        """
+        k = np.asarray(k)
+        s3 = np.sqrt(3.0)
+        d1 = np.array([0.0, a])
+        d2 = np.array([-s3 * a / 2.0, -a / 2.0])
+        d3 = np.array([ s3 * a / 2.0, -a / 2.0])
+        def _f(kx, ky):
+            z1 = np.exp(-1j * (kx * d1[0] + ky * d1[1]))
+            z2 = np.exp(-1j * (kx * d2[0] + ky * d2[1]))
+            z3 = np.exp(-1j * (kx * d3[0] + ky * d3[1]))
+            return np.abs(z1 + z2 + z3)
+        if k.ndim == 1:
+            kx, ky = k[0], k[1]
+            return _f(kx, ky)
+        else:
+            kx = k[..., 0]
+            ky = k[..., 1]
+            return _f(kx, ky)
+
     # ------------------------------------------------------------------
     #! Geometry helpers
     # ------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""
+r"""
 Random matrix generators (GOE, GUE, COE/CRE, CUE) with robust fallbacks.
 
 If TenPy is available, we use its implementations; otherwise we fall back to

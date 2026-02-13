@@ -1,3 +1,18 @@
+"""
+Statistical analysis tools and data aggregation utilities.
+
+This module contains:
+- Binning and averaging routines (`bin_avg`, `rebin`).
+- Histogram classes with support for merging and weighted averages.
+- Statistical moments, fluctuations, and distribution fitting.
+- Helpers for spectral function analysis (fractional statistics).
+
+Numerical Stability
+-------------------
+Numba-optimized routines (`_bin_avg_numba`) are provided for performance on large datasets.
+Robust handling of NaN values and empty bins is included in averaging functions.
+"""
+
 import sys
 from numpy.lib.stride_tricks import sliding_window_view
 from numba import int64, float64, njit
@@ -22,6 +37,36 @@ import pandas as pd
 
 @njit
 def _bin_avg_numba(data, x, centers, delta, cutoffNum, typical):
+    """
+    Numba-optimized implementation of bin averaging.
+
+    This function computes the average of `data` values that fall into bins centered at `centers`
+    with width `2*delta`. It handles multiple realizations (rows in `data`).
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Input data array of shape (n_realizations, n_points).
+    x : np.ndarray
+        Corresponding x-coordinates of shape (n_realizations, n_points).
+    centers : np.ndarray
+        Array of bin centers.
+    delta : float
+        Half-width of the bin.
+    cutoffNum : int
+        Minimum number of points required in a bin to compute a valid average.
+        If fewer points are found, the window is expanded.
+    typical : bool
+        If True, computes the typical average (exp(mean(log(data)))).
+        Assumes `data` is already log-transformed if passed from `Statistics.bin_avg` with typical=True.
+
+    Returns
+    -------
+    averages : np.ndarray
+        Calculated averages for each bin center.
+    valid : np.ndarray
+        Boolean mask (0 or 1) indicating if the bin had valid data.
+    """
     n_centers = len(centers)
     n_realizations = data.shape[0]
     n_points = data.shape[1]
@@ -121,17 +166,47 @@ class Statistics:
     ##########################################################
     @staticmethod 
     def bin_avg(data, x, centers, delta = 0.05, typical = False, cutoffNum = 10, func = _DEFAULT_BIN_AVG_FUNC, verbose = False):
-        '''
-        Bin average of the data
-        - data      : data to average - first axis is realizations!
-        - x         : values to bin - first axis is realizations!
-        - centers   : centers of the bins
-        - delta     : width of the bin
-        - typical   : if True, apply log transformation to data
-        - cutoffNum : minimum number of values in a bin
-        - func      : function to apply to bin values (default: np.mean)
-        - verbose   : if True, print additional information
-        '''
+        """
+        Compute the bin average of data over multiple realizations.
+
+        This method aggregates data points that fall within ``[center - delta, center + delta]``
+        for each specified center. It supports both arithmetic mean and typical average (geometric mean).
+
+        Parameters
+        ----------
+        data : np.ndarray
+            Input data array.
+            Shape: ``(n_realizations, n_points)``.
+        x : np.ndarray
+            X-coordinates corresponding to the data.
+            Shape: ``(n_realizations, n_points)``, matching ``data``.
+        centers : np.ndarray
+            Array of bin centers to compute averages at.
+            Shape: ``(n_centers,)``.
+        delta : float, default=0.05
+            Half-width of the bin interval. Bins are ``[c - delta, c + delta]``.
+        typical : bool, default=False
+            If True, computes the typical average (geometric mean).
+            Process: ``exp(mean(log(data)))``.
+            The input `data` is assumed to be positive if this is set.
+        cutoffNum : int, default=10
+            Minimum number of data points required in a bin to consider it valid without expansion.
+            If the count is lower, the method attempts to expand the window to find nearest neighbors.
+        func : callable, optional
+            Aggregation function to apply to values in a bin.
+            Signature: ``func(values: array) -> scalar``.
+            Defaults to ``np.mean``.
+            **Note**: The Numba optimized path is only used if ``func`` is the default.
+        verbose : bool, default=False
+            If True, prints debug information (currently unused).
+
+        Returns
+        -------
+        np.ndarray
+            Array of averaged values corresponding to each center.
+            Shape: ``(n_valid_centers,)``.
+            Note: Invalid centers (where no data could be found even after expansion) are skipped in the output logic of the Numba path, but `np.nan_to_num` is applied at the end.
+        """
         # Check for fast path eligibility
         # 1. func is default
         is_default_func = func is _DEFAULT_BIN_AVG_FUNC
@@ -183,13 +258,34 @@ class Statistics:
     ##########################################################
     @staticmethod
     def rebin(arr, av_num : int, d : int, rng = None):
-        '''
-        Calculates a bin average of an array. Does so by computing the new shape of the array.
-        - arr    : array to rebin
-        - av_num : average number
-        - d      : dimensionality of the array
-        - rng    : random number generator (default: None)
-        ''' 
+        """
+        Re-bin an array by averaging blocks of data.
+
+        This method reshapes the input array and computes the mean over blocks of size `av_num`.
+        It randomly shuffles the array before binning to ensure unbiased sampling if the data
+        is ordered.
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            Input array to rebin.
+            Shape depends on `d`.
+        av_num : int
+            Number of elements to average into a single bin.
+        d : int
+            Dimensionality of the array (1, 2, or 3).
+            If d=1: expects shape ``(N,)``.
+            If d=2: expects shape ``(N, M)``.
+            If d=3: expects shape ``(N, M, K)``.
+        rng : np.random.Generator, optional
+            Random number generator for shuffling. If None, a default generator is used.
+
+        Returns
+        -------
+        np.ndarray
+            Re-binned array.
+            The first dimension size is divided by `av_num`.
+        """
         
         if rng is None:
             rng = np.random.default_rng()
@@ -210,11 +306,21 @@ class Statistics:
     ##########################################################
     @staticmethod
     def permute(*args, rng = None):
-        '''
-        Apply a random permutation to arrays - any number really
-        - args : arrays to permute
-        - rng  : random number generator (default: None)
-        '''
+        """
+        Apply the same random permutation to multiple arrays simultaneously.
+
+        Parameters
+        ----------
+        *args : np.ndarray
+            One or more arrays to permute. All arrays must have the same length along the first dimension.
+        rng : np.random.Generator, optional
+            Random number generator.
+
+        Returns
+        -------
+        tuple
+            Tuple of permuted arrays.
+        """
         if sys.version_info[1] >= 10:
             if rng is None:
                 rng = np.random.default_rng()

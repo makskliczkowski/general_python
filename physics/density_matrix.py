@@ -58,18 +58,29 @@ def _split_dims(state : Array, size_a: int, L: int | None) -> Tuple[int,int]:
 def rho_numpy(state : Array, dimA: int, dimB: int) -> Array:
     r"""
     Computes the reduced density matrix \rho from a pure state vector using NumPy.
+
     Given a state vector representing a bipartite quantum system of dimensions (dimA, dimB),
     this function reshapes the state into a matrix of shape (dimA, dimB) using column-major
-    order (Fortran order), and then computes the density matrix \rho = \psi  \psi \dag.
+    order (Fortran order), and then computes the density matrix :math:`\rho = \psi \psi^\dagger`.
+
+    Backend
+    -------
+    **NumPy Only**. This function expects and returns NumPy arrays.
+    For JAX-compatible versions, see ``physics.density_matrix_jax``.
+
     Args:
         state (Array):
             The state vector of the composite quantum system.
+            Shape: ``(dimA * dimB,)``.
         dimA (int):
             Dimension of subsystem A.
         dimB (int):
             Dimension of subsystem B.
+
     Returns:
-        Array: The density matrix \rho of shape (dimA, dimA).
+        Array:
+            The reduced density matrix of subsystem A.
+            Shape: ``(dimA, dimA)``.
     """
     
     # reshape as (dimA, dimB) and call BLAS gemm \rho = \psi  \psi \dag
@@ -127,9 +138,30 @@ def schmidt_numpy( state : Array,
                     eig             : bool,
                     *,
                     return_square   : bool = True           # shall return squared Schmidt coefficients to be consistent with density matrix eigenvalues?
-                    ) -> Tuple[np.ndarray, np.ndarray]:
+                    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray | None]:
     r"""
     Schmidt decomposition for a bipartite pure state |\psi > \in H_A \otimes H_B.
+
+    Parameters
+    ----------
+    state : (dA*dB,)
+        State vector of the full system.
+    dimA : int
+        Dimension of subsystem A.
+    dimB : int
+        Dimension of subsystem B.
+    eig : bool
+        If True, use eigenvalue decomposition of the reduced density matrix; 
+        if False, use singular value decomposition (SVD).
+    return_square : bool, optional
+        If True, return squared Schmidt coefficients (eigenvalues of the reduced density matrix).
+        
+    Note
+    -----
+    - If `eig=True`, we diagonalize the reduced density matrix of the smaller subsystem.
+    - If `eig=False`, we take SVD of the reshaped state and square singular values.
+    - The dimensions are reshaped with order="F", treated as consequtive columns. This corresponds to 
+    subsystems A being consecutive qubits 0,1,...,size_a-1 in the full system of L=log2(dimA*dimB) qubits.
 
     Returns
     -------
@@ -155,14 +187,14 @@ def schmidt_numpy( state : Array,
     if eig:
         # Reduced density matrix of the smaller subsystem
         rho         = psi @ psi.conj().T
-        vals, vecs  = np.linalg.eigh(rho)                 # ascending eigenvalues
-        vals        = np.clip(vals.real, 0.0, None)       # numerical safety
-        vals        = vals[::-1]                          # descending
+        vals, vecs  = np.linalg.eigh(rho)                   # ascending eigenvalues
+        vals        = np.clip(np.real(vals), 0.0, None)     # numerical safety
+        vals        = vals[::-1]                            # descending
         vecs        = vecs[:, ::-1]
     else:
         # SVD: psi = U S V\dag ; U are Schmidt vectors of the smaller subsystem
         vecs, s, _  = np.linalg.svd(psi, full_matrices=False)
-        vals        = (s * s).real if return_square else s.real
+        vals        = np.real(s * s) if return_square else np.real(s)
     return vals, vecs, rho
 
 # -----------------------------------------------------------------------------

@@ -27,19 +27,19 @@ correlation matrix C_A is given by:
 
 References
 ----------
-
+...
 
 ----------------
 File            : general_python/physics/sp/correlation_matrix.py
 Author          : Maksymilian Kliczkowski
+Version         : 1.1.0
 ----------------
 """
 
-import numpy as np
-from typing import Literal, Sequence, Tuple, Optional, Dict, Literal, TYPE_CHECKING
+import  numba
+import  numpy as np
+from    typing import Literal, Sequence, Tuple, Optional, Dict, Literal, TYPE_CHECKING
 
-import numpy as np
-import numba
 
 if TYPE_CHECKING:
     from ...algebra.utils import Array
@@ -58,12 +58,13 @@ def _corr_single_slater_raw_kernel(W_A: np.ndarray, occ_bool: np.ndarray, C: np.
     W_A : np.ndarray
         Eigenvector matrix (Ls, La).
     occ_bool : np.ndarray
-        Boolean occupation mask (Ls,).
+        Boolean occupation mask (Ls,). Example: occ_bool[q] = True if orbital q is occupied, False otherwise - one-hot encoding of the occupation vector.
     C : np.ndarray
         Output correlation matrix (La, La), modified in-place.
     """
-    Ls, La  = W_A.shape
+    
     # Extract occupied rows - manual extraction for Numba
+    Ls, La  = W_A.shape
     nocc    = 0
     for i in range(Ls):
         if occ_bool[i]:
@@ -100,13 +101,16 @@ def _compute_orbital_weights(
 ) -> np.ndarray:
     r"""
     Compute orbital weights :math:`s_q = \sum_{k:\,q\in\mathrm{occ}_k} |a_k|^2`.
+    Those weights come from the diagonal contributions to the correlation matrix of a superposition of Slater determinants.
+    See the mathematical expression in the docstring of ``_corr_superposition_diagonal`` for details.
     
     Returns
     -------
     s : ndarray (Ls,) float64
     """
-    gamma, Ls = occ_packed.shape
-    s = np.zeros(Ls, dtype=np.float64)
+    
+    gamma, Ls   = occ_packed.shape
+    s           = np.zeros(Ls, dtype=np.float64)
     for k in range(gamma):
         w = coeffs_abs_sq[k]
         for q in range(Ls):
@@ -142,18 +146,27 @@ def _corr_superposition_diagonal(
     W_s = W_A * s[:, np.newaxis]                                # (Ls, La)
     C  += 2.0 * (W_A_CT @ W_s)                                  # (La, La)
 
+###################################
+
 @numba.njit(cache=True, fastmath=True)
 def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, int, int]:
-    """
-    Find if two occupations differ by exactly one hop.
+    r"""
+    Find if two occupations differ by exactly one hop. This is crucial 
+    for identifying off-diagonal contributions to the correlation matrix of a superposition of Slater determinants.
+    Namely, for second order correlations, only pairs of configurations that differ by a single hop (one occupied orbital in one configuration is empty in the other, and vice versa) contribute to the off-diagonal terms.
+    
+    Mathematically, this corresponds to non-zero matrix elements of the form <m_k| c_i^\dag c_j |m_l> where |m_k> and |m_l> are Slater determinants that differ by a single hop from orbital q_from to orbital q_to.
     
     Returns
     -------
     Tuple[int, int, int]
         (status, q_from, q_to) where:
-        - status: 0 if not single hop, 1 if valid single hop
-        - q_from: orbital occupied in a, empty in b
-        - q_to: orbital empty in a, occupied in b
+        - status:   
+            0 if not single hop, 1 if valid single hop
+        - q_from: 
+            orbital occupied in a, empty in b
+        - q_to: 
+            orbital empty in a, occupied in b
     """
     Ls          = occ_a.shape[0]
     diff_count  = 0
@@ -182,7 +195,7 @@ def _find_single_hop_pairs(occ_a: np.ndarray, occ_b: np.ndarray) -> Tuple[int, i
         return (0, -1, -1)
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Hash-optimised off-diagonal kernel  O(gamma * V^2)  instead of  O(gamma^2·V)
+# Hash-optimised off-diagonal kernel  O(gamma * V^2)  instead of  O(gamma^2*V)
 # ─────────────────────────────────────────────────────────────────────────────
 
 @numba.njit(cache=True, fastmath=True)
@@ -195,6 +208,16 @@ def _occ_to_bitmask(occ: np.ndarray) -> np.uint64:
     return mask
 
 @numba.njit(cache=True, fastmath=True)
+def _occ_to_bitmask_batch(occ_packed: np.ndarray, out: np.ndarray) -> None:
+    """Convert many occupation vectors to uint64 bitmasks."""
+    for k in range(occ_packed.shape[0]):
+        mask = np.uint64(0)
+        for i in range(occ_packed.shape[1]):
+            if occ_packed[k, i] != 0:
+                mask |= np.uint64(1) << np.uint64(i)
+        out[k] = mask
+
+@numba.njit(cache=True, fastmath=True)
 def _fermionic_sign(occ: np.ndarray, q_from: int, q_to: int) -> float:
     r"""
     Compute the fermionic exchange sign for a single-hop transition.
@@ -202,9 +225,9 @@ def _fermionic_sign(occ: np.ndarray, q_from: int, q_to: int) -> float:
     Returns :math:`(-1)^N` where *N* is the number of occupied orbitals
     strictly between ``q_from`` and ``q_to``.
     """
-    lo = min(q_from, q_to)
-    hi = max(q_from, q_to)
-    parity = 0
+    lo      = min(q_from, q_to)
+    hi      = max(q_from, q_to)
+    parity  = 0
     for k in range(lo + 1, hi):
         if occ[k] != 0:
             parity += 1
@@ -225,26 +248,86 @@ def _corr_offdiag_hash_accumulate(
     for them in the sorted bitmask array.  Accumulate weighted coefficient products
     into ``P[q_from, q_to]`` so that the caller only needs :math:`\le V^2` rank-1
     outer-product updates.
+    
+    Parameters
+    ----------
+    bitmasks : ndarray (gamma,) uint64
+        Bitmask representation of occupations. Example: if Ls=4 and occ=[1,0,1,0], then bitmask = 0b1010 = 10 in decimal.
+    sorted_bitmasks : ndarray (gamma,) uint64
+        Sorted version of bitmasks for binary search. Must be precomputed by the caller. Sorted bitmasks are used to efficiently find single-hop neighbours in O(log gamma) time instead of O(gamma).
+    sorted_orig_idx : ndarray (gamma,) int64
+        Index mapping from sorted_bitmasks back to original ordering. Example: if bitmasks = [10, 5, 3] and sorted_bitmasks = [3, 5, 10], then sorted_orig_idx = [2, 1, 0].
+    occ_packed : ndarray (gamma, Ls) uint8
+        Packed occupation numbers for each configuration. Example: if gamma=2, Ls=4, and the configurations are occ[0] = [1,0,1,0] and occ[1] = [0,1,0,1], then occ_packed = [[1,0,1,0], [0,1,0,1]].
+        Same information as bitmasks but in unpacked form for easy access to occupation of specific orbitals. Example: occ_packed[a, q] gives the occupation of orbital q in configuration a.
+        Bitmasks are computd from occ_packed by the caller using _occ_to_bitmask.
+    coeff : ndarray (gamma,) complex128
+        Coefficients for each configuration. Example: if gamma=2 and the state is |\psi> = a_0 |m_0> + a_1 |m_1>, then coeff = [a_0, a_1].
+    Ls : int
+        Number of single-particle states.
+    P : ndarray (Ls, Ls) complex128
+        Output array to accumulate the results.
+        
+    Example
+    -------
+    
+    # a) 2 configurations, 4 orbitals
+    Suppose we have gamma=2 configurations for Ls=4 orbitals:
+    - Configuration 0: occ[0] = [1,0,1,0] (bitmask = 0b1010 = 10)
+    - Configuration 1: occ[1] = [0,1,0,1] (bitmask = 0b0101 = 5)
+    Then:
+    - bitmasks = [10, 5]
+    - sorted_bitmasks = [5, 10]
+    - sorted_orig_idx = [1, 0]
+    - occ_packed = [[1,0,1,0], [0,1,0,1]]
+    - coeff = [a_0, a_1]
+    The function will find that configuration 0 and configuration 1 differ by two hops (from orbital 0 to 1 and from orbital 2 to 3), so it will identify the single-hop neighbours and accumulate the corresponding contributions to P[q_from, q_to] 
+    based on the coefficients a_0 and a_1 and the fermionic sign.
+    Namely, it will find that configuration 0 can hop from orbital 0 to 1 (q_from=0, q_to=1) and from orbital 2 to 3 (q_from=2, q_to=3), and configuration 1 can hop from orbital 1 to 0 (q_from=1, q_to=0) and from orbital 3 to 2 (q_from=3, q_to=2).
+    For the first case, the fermionic sign is (-1)^(number of occupied orbitals between 0 and 1 in configuration 0) = (-1)^0 = 1, and the contribution to P[0, 1] is 2 * sign * conj(a_0) * a_1.
+    For the second case, the fermionic sign is (-1)^(number of occupied orbitals between 2 and 3 in configuration 0) = (-1)^0 = 1, and the contribution to P[2, 3] is 2 * sign * conj(a_0) * a_1.
+    
+    # b) 3 configurations, 5 orbitals
+    Suppose we have gamma=3 configurations for Ls=5 orbitals:
+    - Configuration 0: occ[0] = [1,0,1,0,0] (bitmask = 0b10100 = 20)
+    - Configuration 1: occ[1] = [0,1,0,1,0] (bitmask = 0b01010 = 10)
+    - Configuration 2: occ[2] = [0,0,1,0,1] (bitmask = 0b00101 = 5)
+    Then:
+    - bitmasks = [20, 10, 5]
+    - sorted_bitmasks = [5, 10, 20]
+    - sorted_orig_idx = [2, 1, 0]
+    - occ_packed = [[1,0,1,0,0], [0,1,0,1,0], [0,0,1,0,1]]
+    - coeff = [a_0, a_1, a_2]
+    The function will find the single-hop neighbours among these configurations and accumulate the contributions to P[q_from, q_to] accordingly.
+    1. Configuration 0 can hop from orbital 0 to 1 (q_from=0, q_to=1) and from orbital 2 to 3 (q_from=2, q_to=3).
+    2. ...
     """
     gamma = bitmasks.shape[0]
 
     for a in range(gamma):
+        
+        # For each configuration a, we want to find all configurations b that differ by a single hop.
         mask_a = bitmasks[a]
 
         for q_from in range(Ls):
             if occ_packed[a, q_from] == 0:
-                continue                            # not occupied → skip
+                continue                            # not occupied -> skip, we can only hop from occupied to empty
+            
             for q_to in range(Ls):
                 if occ_packed[a, q_to] != 0:
-                    continue                        # already occupied → skip
+                    continue                        # already occupied -> skip - we can only hop to empty
 
-                # Bitmask of the single-hop neighbour
-                mask_b = mask_a ^ (np.uint64(1) << np.uint64(q_from)) ^ (np.uint64(1) << np.uint64(q_to))
+                # Bitmask of the single-hop neighbour - using XOR to flip the bits at q_from and q_to
+                mask_b  = mask_a ^ (np.uint64(1) << np.uint64(q_from)) ^ (np.uint64(1) << np.uint64(q_to))
 
                 # Binary search in sorted_bitmasks
                 lo_s    = np.int64(0)
                 hi_s    = np.int64(gamma)
                 b_orig  = np.int64(-1)
+                
+                # Standard binary search loop
+                # This is a critical part of the algorithm, as it allows us to find the single-hop neighbour in O(log gamma) time instead of O(gamma).
+                # We compare the target mask_b with the middle element of the sorted array, and narrow down the search range accordingly.
                 while lo_s < hi_s:
                     mid = (lo_s + hi_s) >> 1
                     if sorted_bitmasks[mid] < mask_b:
@@ -255,7 +338,7 @@ def _corr_offdiag_hash_accumulate(
                         b_orig = sorted_orig_idx[mid]
                         break
 
-                if b_orig <= a:                     # not found (-1) or already counted
+                if b_orig <= a: # not found (-1) or already counted
                     continue
 
                 # Fermionic exchange sign
@@ -279,17 +362,16 @@ def _corr_superposition_offdiag_fast(
     1.  Convert each occupation vector to a ``uint64`` bitmask.
     2.  Sort bitmasks and keep an index map back to the original ordering.
     3.  For each configuration *a* enumerate all possible single-hop neighbours
-        (of which there are ``nocc × (V − nocc)``), binary-search the sorted
+        (of which there are ``nocc x (V - nocc)``), binary-search the sorted
         array to find matches, and accumulate signed coefficient products into
         a ``(V, V)`` matrix ``P[q_from, q_to]``.
     4.  Apply at most :math:`V^2` rank-1 outer-product updates to *C*.
     """
-    gamma, Ls = occ_packed.shape
+    gamma, Ls   = occ_packed.shape
 
-    # 1) Occupation → bitmask
-    bitmasks = np.empty(gamma, dtype=np.uint64)
-    for k in range(gamma):
-        bitmasks[k] = _occ_to_bitmask(occ_packed[k])
+    # 1) Occupation -> bitmask
+    bitmasks    = np.empty(gamma, dtype=np.uint64)
+    _occ_to_bitmask_batch(occ_packed, bitmasks)
 
     # 2) Sort for binary search
     order           = np.argsort(bitmasks)
@@ -297,20 +379,22 @@ def _corr_superposition_offdiag_fast(
     sorted_orig_idx = order.astype(np.int64)
 
     # 3) Accumulate coefficient products per hop channel (q_from, q_to)
-    P = np.zeros((Ls, Ls), dtype=coeff.dtype)
+    P               = np.zeros((Ls, Ls), dtype=coeff.dtype)
     _corr_offdiag_hash_accumulate(
-        bitmasks, sorted_bitmasks, sorted_orig_idx,
-        occ_packed, coeff, Ls, P,
-    )
+                        bitmasks, sorted_bitmasks, sorted_orig_idx,
+                        occ_packed, coeff, Ls, P,
+                    )
 
     # 4) Apply outer-product updates — at most V² of them
-    for q_from in range(Ls):
-        for q_to in range(Ls):
-            p = P[q_from, q_to]
-            if p == 0.0:
-                continue
-            C += p * np.outer(W_A_CT[:, q_from], W_A[q_to, :])
-            C += np.conjugate(p) * np.outer(W_A_CT[:, q_to], W_A[q_from, :])
+    # for q_from in range(Ls):
+    #     for q_to in range(Ls):
+    #         p   = P[q_from, q_to]
+    #         if p == 0.0:
+    #             continue
+    #         C  += p * np.outer(W_A_CT[:, q_from], W_A[q_to, :])
+    #         C  += np.conjugate(p) * np.outer(W_A_CT[:, q_to], W_A[q_from, :])
+    # 4) Apply outer-product updates via BLAS: C += W_A_CT @ (P + P^H) @ W_A
+    C              += W_A_CT @ (P + P.conj().T) @ W_A
 
 #################################### 
 #! 1) Single Slater determinant
@@ -320,11 +404,11 @@ def _corr_superposition_offdiag_fast(
 def corr_single(
     W_A                 : np.ndarray,   # shape (Ls, La)
     occ                 : np.ndarray,   # boolean / 0-1 vector, shape (Ls,)
-    subtract_identity   : bool = True,
-    W_A_CT              : Optional[np.ndarray] = None,
-    raw                 : bool = True,
+    subtract_identity   : bool                  = True,
+    W_A_CT              : Optional[np.ndarray]  = None,
+    raw                 : bool                  = True,
     mode                : Literal["slater", "bdg-normal", "bdg-full"] = "slater",
-    stacked_uv          : bool = False # if True and mode starts with "bdg", W_A is stacked [U; V] with shape (2*Ls, La)
+    stacked_uv          : bool                  = False # if True and mode starts with "bdg", W_A is stacked [U; V] with shape (2*Ls, La)
     ) -> np.ndarray:
     r"""
     Correlation matrix C_A of a single Slater determinant.
@@ -341,6 +425,9 @@ def corr_single(
         - "slater": 
             occupations n_q \in {0,1}.
         - "bdg-*": quasiparticle occupations f_q \in [0,1] (T=0 vacuum -> f=0).
+        Example: 
+            a) for a Slater determinant with occupied orbitals q=0,2 and Ls=4, occ = [1,0,1,0].
+            b) for a BdG state at finite temperature with quasiparticle occupations f_q, e.g. f = [0.0, 0.5, 1.0, 0.0] for Ls=4.
     subtract_identity : bool
         For "slater" and "bdg-normal":
             subtract I on the (La\times La) normal block.

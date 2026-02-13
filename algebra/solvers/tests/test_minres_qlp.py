@@ -8,9 +8,7 @@ including shift handling and preconditioner support.
 import numpy as np
 import sys
 import os
-
-# Add path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
+import pytest
 
 from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
 
@@ -79,18 +77,12 @@ def test_minres_qlp_indefinite():
     print("(ok)  PASSED\n")
 
 
+@pytest.mark.xfail(strict=True, reason="Shift parameter handling is broken in library")
 def test_minres_qlp_with_shift():
     """Test MINRES-QLP with non-zero shift (sigma)."""
     print("="*60)
-    print("TEST 3: MINRES-QLP with shift [SKIPPED - shift handling needs fix]")
+    print("TEST 3: MINRES-QLP with shift [XFAIL - shift handling broken]")
     print("="*60)
-    print("(warning) Shift parameter interacts with matvec creation; needs API refinement")
-    print("(ok)  SKIPPED\n")
-    return
-    
-    # NOTE: This test is skipped because the current API applies shift twice:
-    # once when creating matvec from A with sigma, and once in the solver logic.
-    # The shift should only be applied in the solver, not when creating matvec.
     
     # Create symmetric system
     n = 30

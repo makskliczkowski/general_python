@@ -952,7 +952,7 @@ if JAX_AVAILABLE:
             new_logprobas           = logproba_fun(parameters, new_states)
             # weights                 = jnp.exp(mu * (new_logprobas - logp))
             weights                 = jnp.exp(new_logprobas - logp)
-            weighted_sum            = jnp.sum(new_vals * weights, axis=0)
+            weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             
             # Return the weighted sum.
             return weighted_sum * sample_p
@@ -1001,7 +1001,7 @@ if JAX_AVAILABLE:
             new_states, new_vals    = func(state)
             new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = jnp.exp(mu * (new_logprobas - logp))
-            weighted_sum            = jnp.sum(new_vals * weights, axis=0)
+            weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             return weighted_sum
         
         applied = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
@@ -1057,15 +1057,18 @@ if JAX_AVAILABLE:
         # Per–state estimator
         # ----------------------------------------------------------------------
         def _estimate_one(state, logp0, p_sample, *args):
-            new_states, new_vals = func(state, *args) if args else func(state)
-            new_states           = jnp.asarray(new_states)
-            new_vals             = jnp.asarray(new_vals)
+            if not args:
+                    new_states, new_vals = func(state)
+            else:
+                new_states, new_vals = func(state, *args)
+            
+            new_states = jnp.asarray(new_states)
+            new_vals   = jnp.asarray(new_vals)
 
-            logp_new             = logproba_fun(parameters, new_states)
-            w                    = jnp.exp(logp_new - logp0)      # same shape as new_vals
+            logp_new   = logproba_fun(parameters, new_states)
+            w          = jnp.exp(logp_new - logp0)
 
-            # scalar for this original state
-            return p_sample * jnp.sum(new_vals * w)
+            return p_sample * jnp.sum(jnp.conj(new_vals) * w)
 
         in_axes      = (0, 0, 0) + (None,) * len(op_args)
         batch_kernel = jax.vmap(_estimate_one, in_axes=in_axes, out_axes=0)
@@ -1134,7 +1137,7 @@ if JAX_AVAILABLE:
             new_states, new_vals    = func(state)
             new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = jnp.exp((new_logprobas - logp))
-            weighted_sum            = jnp.sum(new_vals * weights, axis=0)
+            weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             # Return the weighted sum.
             return jnp.sum(weighted_sum, axis=0)
         

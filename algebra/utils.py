@@ -52,15 +52,15 @@ Email           : maksymilian.kliczkowski@pwr.edu.pl
 """
 
 # Import the required modules
-import os
-import inspect
-import logging
-import random as py_random
-import multiprocessing
-from functools import wraps
-from contextlib import contextmanager
-from typing import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List, Dict, Literal, TYPE_CHECKING
-from dataclasses import dataclass
+import  os
+import  inspect
+import  logging
+import  multiprocessing
+import  random      as py_random
+from    functools   import wraps
+from    contextlib  import contextmanager
+from    typing      import Union, Optional, TypeAlias, Type, Tuple, Any, Callable, List, Dict, Literal, TYPE_CHECKING
+from    dataclasses import dataclass
 
 # ---------------------------------------------------------------------
 #! Global logger placeholder (resolved lazily through qes_globals)
@@ -751,7 +751,10 @@ class BackendManager:
                 A JAX PRNG key if JAX is available, otherwise None.
         """
         if JAX_AVAILABLE and jrn:
-            return jrn.PRNGKey(seed)
+            try:
+                return jrn.PRNGKey(seed)
+            except Exception as e:
+                log.warning(f"Failed to create JAX PRNGKey with seed {seed}: {e}")
         return None
 
     # ---------------------------------------------------------------------
@@ -1224,7 +1227,17 @@ def _qes_initialize_utils():
     if JAX_AVAILABLE:
         # Type aliases for JAX
         PRNGKey     = jrn.PRNGKey
-        JaxDevice   = jax.lib.xla_client.Device if hasattr(jax.lib, 'xla_client') and hasattr(jax.lib.xla_client, 'Device') else Any
+        
+        # Modern JAX (>=0.4.0): Device is at jax.Device
+        if hasattr(jax, 'Device'):
+            JaxDevice = jax.Device
+        # Older JAX: Device is at jax.lib.xla_client.Device
+        elif hasattr(jax, 'lib') and hasattr(jax.lib, 'xla_client') and hasattr(jax.lib.xla_client, 'Device'):
+            JaxDevice = jax.lib.xla_client.Device
+        else:
+            JaxDevice = Any
+            
+        # Type alias for arrays
         Array       = Union[np.ndarray, jnp.ndarray]
         if PREFER_32BIT:
             jcfg.update("jax_enable_x64", False)

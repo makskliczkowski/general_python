@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name            = "general-python-utils"
-version         = "0.1.0"
+version         = "1.1.0"
 description     = "A comprehensive Python library for mathematical computations, machine learning, and physics simulations"
 authors         = [{ name = "Maksymilian Kliczkowski", email = "maxgrom97@gmail.com" }]
 license         = {text = "MIT"}
@@ -28,6 +28,8 @@ dependencies = [
     "numpy",
     "scipy",
     "matplotlib",
+    "numba",
+    "h5py",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +37,14 @@ ml = [
     "tensorflow",
     "scikit-learn",
     "pandas",
+    "jax",
+    "jaxlib",
+    "flax",
+]
+jax = [
+    "jax",
+    "jaxlib",
+    "flax",
 ]
 docs = [
     "sphinx",
@@ -53,8 +63,36 @@ Repository          = "https://github.com/yourusername/general_python.git"
 Issues              = "https://github.com/yourusername/general_python/issues"
 
 [tool.setuptools]
+include-package-data = true
 py-modules          = []
-packages            = ["general_python"]
+packages            = [
+    "general_python",
+    "general_python.algebra",
+    "general_python.algebra.eigen",
+    "general_python.algebra.solvers",
+    "general_python.algebra.utilities",
+    "general_python.common",
+    "general_python.common.embedded",
+    "general_python.common.plotters",
+    "general_python.lattices",
+    "general_python.lattices.tools",
+    "general_python.lattices.visualization",
+    "general_python.maths",
+    "general_python.ml",
+    "general_python.ml.keras",
+    "general_python.ml.net_impl",
+    "general_python.ml.net_impl.networks",
+    "general_python.ml.net_impl.utils",
+    "general_python.physics",
+    "general_python.physics.response",
+    "general_python.physics.response.examples",
+    "general_python.physics.sp",
+    "general_python.physics.spectral",
+    "general_python.physics.spectral.krylov",
+    "general_python.physics.spectral.quadratic",
+    "general_python.run_scripts",
+    "general_python.tests",
+]
 
 [tool.setuptools.package-dir]
 general_python      = "."

@@ -6,17 +6,21 @@
 import os
 import numpy as np
 import time
-from typing import Dict, List, Optional, Union
-from pathlib import Path
+from typing     import Dict, List, Optional, Union, TYPE_CHECKING
+from pathlib    import Path
+
+if TYPE_CHECKING:
+    from ..common.flog import Logger
 
 #########################################################
+
 try:
     import psutil
     import argparse
-    def cpu_count(logical: bool = True): return psutil.cpu_count(logical)
+    def _cpu_count_psutil(logical: bool = True): return psutil.cpu_count(logical)
 except ImportError:
     print("Psutil is not available for CPU handling...")
-    def cpu_count(logical: bool = True): return 1
+    def _cpu_count_psutil(logical: bool = True): return 1
 
 import subprocess
 from typing         import Callable
@@ -29,12 +33,10 @@ except ImportError:
     raise ImportError("Failed to import set_global_seed from algebra.ran_wrapper")
 
 #########################################################
-
-############################################################
 #! Validators
-#############################################################
+#########################################################
 
-def calculate_optimal_workers(params, available_memory: int, memory_per_worker: int, max_cores: Optional[int] = None, logger: Optional[Logger] = None):
+def calculate_optimal_workers(params, available_memory: int, memory_per_worker: int, max_cores: Optional[int] = None, logger: Optional['Logger'] = None):
     """
     Calculate optimal number of workers based on available resources
     Parameters
@@ -91,7 +93,7 @@ def calculate_optimal_workers(params, available_memory: int, memory_per_worker: 
 
 def calculate_realisations_per_parameter(parameters     : List[str], 
                                         n_realisations  : str,
-                                        logger          : Optional[Logger] = None) -> Dict[str, int]:
+                                        logger          : Optional['Logger'] = None) -> Dict[str, int]:
     """
     Calculate the number of realizations per parameter.
 
@@ -176,7 +178,7 @@ def validate_realisations_against_time(
     parameters_reals    : Optional[List[str]] = None,
     parameters_multiple : Optional[Dict[str, int]] = None,
     *,
-    logger              : Optional[Logger] = None) -> Dict[str, int]:
+    logger              : Optional['Logger'] = None) -> Dict[str, int]:
     """
     Validate and adjust number of realizations per parameter against total available time.
     If total required time > t_total, scale down realizations proportionally.
@@ -298,7 +300,7 @@ def validate_realisations_against_time(
 
     return adjusted
 
-def initialize_random_seed(args_seed: Optional[int], logger: Optional[Logger] = None):
+def initialize_random_seed(args_seed: Optional[int], logger: Optional['Logger'] = None):
     """
     Initialize a random seed for reproducibility.
 
@@ -369,7 +371,10 @@ class SimulationParams:
         ap: argparse.ArgumentParser,
         *,
         include_directory: bool     = True,
+        # logging and reproducibility
         include_verbose: bool       = True,
+        include_verbose_every: bool = True,
+        # random seed
         include_seed: bool          = True,
         # hardware constraints
         include_maxcores: bool      = True,
@@ -407,6 +412,14 @@ class SimulationParams:
                 choices = [0, 1, 2, 3],
                 help    = 'Verbosity level (0 = silent, 3 = very detailed logging).'
             )
+            
+        if include_verbose_every:
+            ap.add_argument(
+                '-ve', '--verbose_every',
+                type    = float,
+                default = 0.1,
+                help    = 'Log progress every N realizations (default: 0.1). If >= 1, logs every N realizations. If < 1, logs every fraction of total realizations.'
+            )
 
         # Reproducibility
         if include_seed:
@@ -422,7 +435,7 @@ class SimulationParams:
             ap.add_argument(
                 '-mc', '--max_cores',
                 type    = int,
-                default = cpu_count(),
+                default = _cpu_count_psutil(),
                 help    = 'Maximum number of CPU cores to use (default: all available cores).'
             )
 
@@ -462,11 +475,50 @@ class SimulationParams:
             )
     
     #########################################################
+    
+    @staticmethod
+    def is_verbose(verbose: bool, verbose_every: float, current_realiz: int, total_realiz: int) -> bool:
+        """
+        Determine if logging should occur based on verbosity settings.
+        
+        Parameters
+        ----------
+        verbose : bool
+            Whether verbose logging is enabled.
+        verbose_every : float
+            Frequency of logging. If >= 1, log every N realizations. If < 1, log every fraction of total realizations.
+        current_realiz : int
+            The current realization index (0-based).
+        total_realiz : int
+            The total number of realizations.
+        Returns
+        -------
+        bool
+            True if logging should occur at the current realization, False otherwise.        
+        """
+        
+        if not verbose:
+            return False
+        
+        if verbose_every is None or verbose_every <= 0:
+            return True
+
+        if verbose_every >= 1:
+            return (current_realiz % int(verbose_every)) == 0
+        
+        if verbose_every and total_realiz > 0:
+            interval = max(1, int(total_realiz * verbose_every))
+            return (current_realiz % interval) == 0
+        
+        return True
+    
+    
+    #########################################################
 
     @staticmethod
     def random_identifier(rng = None, seed = None, max_int = 1000000):
         if rng is None:
-            np.random.default_rng(seed)    
+            rng = np.random.default_rng(seed)    
         return f"{rng.integers(0, max_int)}"
     
     #########################################################
@@ -477,7 +529,7 @@ class SlurmMonitor:
     """SLURM job monitoring utilities"""
     
     try:
-        from ..common.flog  import Logger, get_global_logger
+        from ..common.flog  import get_global_logger
         logger              = get_global_logger()
     except ImportError:
         import logging
@@ -491,7 +543,7 @@ class SlurmMonitor:
     #####################################################
     
     @staticmethod
-    def get_memory_used(logger: Optional[Logger] = None):
+    def get_memory_used(logger: Optional['Logger'] = None):
         try:
             mem_info = psutil.Process().memory_info()
             if logger: logger.info(f"Memory: {mem_info.rss / 1024**3:.2f} GB", lvl=3, color='red')
@@ -601,30 +653,36 @@ class SlurmMonitor:
     #####################################################
     
     @staticmethod
-    def is_overtime(limit=1000, start_time=None, job_time=None):
+    def is_overtime(limit=1000, start_time=None, job_time=None, logger: Optional['Logger'] = None, verbose: bool = False, **kwargs):
         """Check if remaining time is less than limit seconds"""
         if not SlurmMonitor.is_slurm() and (start_time is None or job_time is None):
             return False
+        
+        # Take logger from kwargs if provided, otherwise use class logger
+        logger = logger or SlurmMonitor.logger
         
         # 1) Local stopwatch path
         if start_time is not None and job_time is not None:
             elapsed     = time.perf_counter() - start_time
             remaining   = job_time - elapsed
-            SlurmMonitor.logger.info(f"Elapsed={elapsed:.1f}s, remaining={remaining:.1f}s, limit={limit:.1f}s", lvl=3)
+            if verbose:
+                logger.info(f"Elapsed={elapsed:.1f}s, remaining={remaining:.1f}s, limit={limit:.1f}s", lvl=3, **kwargs)
             if remaining < limit:
-                SlurmMonitor.logger.warning(f"Remaining time {remaining:.1f}s is below limit {limit:.1f}s", lvl=3)
+                logger.warning(f"Remaining time {remaining:.1f}s is below limit {limit:.1f}s", lvl=3, **kwargs)
                 return True
             return False
 
         # 2) SLURM path
         remaining = SlurmMonitor.get_remaining_time()  # expected to return seconds, -1 on failure
         if remaining == -1:
-            SlurmMonitor.logger.warning("Failed to get remaining time from SLURM", lvl=3)
+            logger.warning("Failed to get remaining time from SLURM", lvl=3, **kwargs)
             return False
 
-        SlurmMonitor.logger.info(f"Remaining time in SLURM job: {remaining:.1f}s", lvl=3)
+        if verbose:
+            logger.info(f"Remaining time in SLURM job: {remaining:.1f}s", lvl=3, **kwargs)
+        
         if remaining < limit:
-            SlurmMonitor.logger.warning(f"Remaining time {remaining:.1f}s is below limit {limit:.1f}s", lvl=3)
+            logger.warning(f"Remaining time {remaining:.1f}s is below limit {limit:.1f}s", lvl=3, **kwargs)
             return True
         return False
 
@@ -636,7 +694,10 @@ class SlurmMonitor:
                         *,
                         slurm_poll_interval     : float             = 30.0,
                         on_trigger              : Callable | None   = None,
-                        raise_on_trigger        : bool              = False):
+                        raise_on_trigger        : bool              = False,
+                        logger                  : Optional['Logger']= None,
+                        **kwargs
+                        ):
         """
         Yield a callable `should_stop()` to poll inside your loops.
         - Caches SLURM remaining time for `slurm_poll_interval` seconds to avoid hammering scontrol.
@@ -658,8 +719,9 @@ class SlurmMonitor:
             raise_on_trigger (bool):
                 Whether to raise SystemExit when overtime is detected.
         """
-        last_slurm_check = -1e30
-        cached_remaining = None
+        last_slurm_check    = -1e30
+        cached_remaining    = None
+        logger              = logger or SlurmMonitor.logger
 
         def _check_once() -> bool:
             nonlocal last_slurm_check, cached_remaining
@@ -677,16 +739,16 @@ class SlurmMonitor:
                 # check SLURM
                 remaining = cached_remaining
                 if remaining == -1:
-                    SlurmMonitor.logger.warning("Failed to get remaining time from SLURM", lvl=3)
+                    logger.warning("Failed to get remaining time from SLURM", lvl=3, **kwargs)
                     return False
 
             if remaining < limit:
-                SlurmMonitor.logger.warning(f"Remaining time {remaining:.1f}s < limit {limit:.1f}s", lvl=3)
+                logger.warning(f"Remaining time {remaining:.1f}s < limit {limit:.1f}s", lvl=3, **kwargs)
                 if on_trigger:
                     try:
                         on_trigger()
                     except Exception as e:
-                        SlurmMonitor.logger.error(f"on_trigger() failed: {e}", lvl=2)
+                        logger.error(f"on_trigger() failed: {e}", lvl=2, **kwargs)
                 if raise_on_trigger:
                     raise SystemExit(0)
                 return True

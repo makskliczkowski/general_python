@@ -1,27 +1,28 @@
-"""
-A module for algebraic operations and utilities.
-This module provides various linear algebra functions,
-preconditioners, and solvers.
-It supports both dense and sparse matrix computations and leverages different
-backends like NumPy and JAX to offer flexibility in performance and execution environments.
+"""Backend-aware linear algebra interfaces and solver entry points.
 
-Key functionalities provided include:
-    - Change-of-basis transformations for vectors and matrices.
-    - Outer and Kronecker product computations.
-    - Creation and handling of ket-bra operations.
-    - Integration with preconditioners for iterative solvers.
-    - Testing facilities for algebraic operations and linear solvers.
+This package exposes numerical kernels used across the project:
 
-This module uses lazy imports to minimize startup overhead. Heavy dependencies
-like backend_linalg, test classes, and submodules are only loaded when accessed.
+* Krylov and direct linear solvers.
+* Preconditioner abstractions.
+* Backend helpers for NumPy/JAX interoperability.
+* Random wrappers used in reproducible scientific workflows.
 
-# -----------------------------------------------------------------------------------------------
-Author          : Maksymilian Kliczkowski
-Email           : maksymilian.kliczkowski@pwr.edu.pl
-Date            : 2025-02-01
-Version         : 1.1
-Description     : General Algebra Module with Lazy Imports
-# -----------------------------------------------------------------------------------------------
+Input/output and dtype contracts
+--------------------------------
+Most public APIs accept array-like vectors and matrices that are converted to the
+active backend where possible. Shapes follow linear-algebra conventions, for
+example ``A`` has shape ``(n, n)`` and ``b`` has shape ``(n,)`` or ``(n, k)``.
+Dtype promotion follows backend rules; explicit ``float64`` or ``complex128`` is
+recommended for ill-conditioned problems.
+
+Numerical stability and determinism
+-----------------------------------
+Stability depends on solver choice, conditioning, and preconditioning quality.
+For reproducibility, set random seeds via ``algebra.ran_wrapper`` and keep backend
+selection fixed in a run. NumPy and JAX results should agree up to floating-point
+roundoff; small differences can appear due to kernel fusion and reduction order.
+
+The module uses lazy imports to keep import time low.
 """
 
 from typing import TYPE_CHECKING
@@ -73,12 +74,10 @@ _LAZY_IMPORTS = {
 
 # For type checking, import types without runtime overhead
 if TYPE_CHECKING:
-    from .solvers import SolverType, choose_solver
-    from .solvers.backend_ops import get_backend_ops, BackendOps, default_ops
-    from .preconditioners import choose_precond
-    from . import backend_linalg as LinalgModule
-    from ..common.plot import MatrixPrinter
-    from ..common.flog import get_global_logger as get_logger
+    from .solvers               import SolverType, choose_solver
+    from .solvers.backend_ops   import get_backend_ops, BackendOps, default_ops
+    from .preconditioners       import choose_precond
+    from .                      import backend_linalg as LinalgModule
 
 # Initialize LazyImporter
 _importer = LazyImporter(__name__, _LAZY_IMPORTS)
