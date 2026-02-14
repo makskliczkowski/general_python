@@ -583,7 +583,7 @@ def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e, threshold: floa
         log /= np.log(base)
     return log / (1.0 - q)
 
-# @numba.njit(cache=True)
+@numba.njit(cache=True)
 def tsallis_entropy(lam: np.ndarray, q: float, threshold: float = 1e-12) -> float:
     r"""
     Compute the Tsallis entropy for a given probability distribution.
@@ -762,7 +762,7 @@ class Entanglement(Enum):
     PARTIC      = 5
 
 def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
-        typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> float:
+        typek: Entanglement = Entanglement.RENYI, backend: str = "numpy", **kwargs) -> float:
     """
     Calculates the entropy of a probability distribution using the specified entanglement entropy type.
 
@@ -816,7 +816,7 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
     else:
         raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
 
-def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> float:
+def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.RENYI, backend: str = "numpy", **kwargs) -> float:
     r"""
     Calculate the mutual information between two single sites in a quantum state.
     Parameters:
@@ -850,7 +850,7 @@ def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, *, typ
     
     return Si + Sj - Sij, (Si, Sj, Sij)
 
-def topological_entropy(psi, regions: dict, ns: int, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.VN, backend: str = "numpy", **kwargs) -> tuple:
+def topological_entropy(psi, regions: dict, ns: int, q: float = 1.0, base: float = np.e, *, typek: Entanglement = Entanglement.RENYI, backend: str = "numpy", **kwargs) -> tuple:
     r"""
     Calculate the topological entanglement entropy (TEE) \gamma.
     
@@ -881,50 +881,45 @@ def topological_entropy(psi, regions: dict, ns: int, q: float = 1.0, base: float
     Notes:
         Regions can be generated using `Lattice.region_kitaev_preskill()` or similar methods.
     """
-    from .density_matrix import rho_numba_mask, schmidt_numba_mask
+    
+    from .density_matrix import rho_numba_mask, schmidt_numba_mask, mask_subsystem
     
     entropies = {}
     
     for name, indices in regions.items():
-        indices     = np.asarray(indices, dtype=np.int64)
-        size_a      = len(indices)
+        indices         = np.asarray(indices, dtype=np.int64)
+        size_a          = len(indices)
         
         if size_a == 0 or size_a == ns:
             entropies[name] = 0.0
             continue
             
-        # Complement indices
-        mask            = np.ones(ns, dtype=bool)
-        mask[indices]   = False
-        indices_b       = np.arange(ns)[mask]
+        (va, vb), order = mask_subsystem(indices, ns)
         
         # Calculate entropy of region
-        if rho_numba_mask is not None:
-            order           = tuple(indices) + tuple(indices_b)
-            psi_reshaped    = rho_numba_mask(psi, order, size_a)
-            vals, _         = schmidt_numba_mask(psi_reshaped, order, size_a, eig=False)
-        else:
-            # Numpy fallback
-            order          = tuple(indices) + tuple(indices_b)
-            psi_nd         = psi.reshape((2,)*ns, order='F')
-            psi_reshaped   = psi_nd.transpose(order).reshape((1 << size_a, -1))
-            # SVD
-            s              = np.linalg.svd(psi_reshaped, compute_uv=False)
-            vals           = s*s
-             
+        psi_reshaped    = rho_numba_mask(psi, order, size_a)
+        vals, _         = schmidt_numba_mask(psi_reshaped, order, size_a, eig=False)
         S               = entropy(vals, q, base, typek=typek, backend=backend, **kwargs)
         entropies[name] = S
         
     # Calculate Gamma
     gamma = 0.0
-    if all(k in entropies for k in ['A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC']):
+    if kwargs.get('topological', 'kitaev_preskill') == 'kitaev_preskill':
+        
+        if not all(k in entropies for k in ['A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC']):
+            raise ValueError("For Kitaev-Preskill, regions must include 'A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC'.")
+        
         # Kitaev-Preskill
         gamma   = (entropies['A'] + entropies['B'] + entropies['C'] 
                 - entropies['AB'] - entropies['BC'] - entropies['AC'] 
                 + entropies['ABC'])
-    elif all(k in entropies for k in ['inner', 'outer', 'inner_outer']):
-         # Levin-Wen
-         gamma  = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
+    elif kwargs.get('topological', 'kitaev_preskill') == 'levin_wen': 
+        
+        if not all(k in entropies for k in ['inner', 'outer', 'inner_outer']):
+            raise ValueError("For Levin-Wen, regions must include 'inner', 'outer', 'inner_outer'.")
+        
+        # Levin-Wen
+        gamma  = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
          
     return {
         'gamma'     : gamma,

@@ -13,7 +13,7 @@ except ImportError as e:
     numba   = None
     
 from scipy.linalg import svd, eigh
-from typing import Callable, Tuple
+from typing import Callable, Tuple, Union, List, Optional
 
 try:
     from ..algebra.utils import Array
@@ -52,6 +52,48 @@ def _split_dims(state : Array, size_a: int, L: int | None) -> Tuple[int,int]:
     if state.size != dimA * dimB:
         raise ValueError("state length incompatible with size_a and L")
     return dimA, dimB
+
+###############################################################################
+
+def mask_subsystem(va: Union[int, np.ndarray, List[int]], ns: int, local_dim: int=2, contiguous: bool=False) -> Tuple[Union[int, np.ndarray], Union[np.ndarray, None]]:
+    """
+    Process the subsystem specification `va` to determine if it is contiguous and to extract the relevant site indices.
+    Args:
+        va (Union[int, np.ndarray, List[int]]):
+            - can be a binary mask (integer) indicating the occupied sites as bits (e.g., 0b101 for sites 0 and 2),
+            - can be an array-like of site indices (e.g., [0, 2]),
+            - can be an integer specifying the number of contiguous sites starting from 0 (e.g., 3 for sites [0, 1, 2]).
+        
+        ns (int):
+            The total number of sites in the system.
+        local_dim (int, optional):
+            The local Hilbert space dimension per site (default: 2 for qubits).
+
+    Returns:
+        Tuple[Union[int, np.ndarray], Union[np.ndarray, None]]:
+            A tuple containing:
+                - The number of sites in subsystem A if `va` is an integer, or the array of site indices if `va` is an array-like.
+                - If `va` is an integer and contiguous, returns None for the second element. Otherwise, returns an array of site indices in subsystem B.    
+    """
+    if isinstance(va, (int, np.integer)):
+        if contiguous:
+            order_a = tuple(range(va))
+            order_b = tuple(range(va, ns))
+            return (va, ns - va), order_a + order_b
+        else:
+            sites_a = np.where([(va >> i) & 1 for i in range(ns)])[0]
+            sites_b = np.setdiff1d(np.arange(ns), sites_a)
+            order_a = tuple(sites_a)
+            order_b = tuple(sites_b)
+            return (len(sites_a), len(sites_b)), order_a + order_b            
+    else:
+        sites_a = np.sort(np.asarray(va, dtype=np.int64))
+        sites_b = np.setdiff1d(np.arange(ns), sites_a)
+        order_a = tuple(sites_a)
+        order_b = tuple(sites_b)
+        return (len(sites_a), len(sites_b)), order_a + order_b
+    
+###############################################################################
 
 #! Numpy
 
@@ -295,7 +337,6 @@ def rho_spectrum(rho: np.ndarray, eps: float = 1e-13):
     
 # -----------------------------------------------------------------------------
 
-#! Numba
 if numba:
     
     # @numba.njit
