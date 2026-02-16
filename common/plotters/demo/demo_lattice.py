@@ -241,7 +241,7 @@ def _levin_wen_regions(inner_radius=2.0, outer_radius=3.5):
             fill_alpha          =0.12,
             blob_radius         =0.22,
             blob_alpha          =0.10,
-            show_bonds          =False,
+            show_bonds          =True,
             show_complement     =False,
             label_offset        =1.5,
             region_descriptions =LW_DESCS,
@@ -253,7 +253,7 @@ def _levin_wen_regions(inner_radius=2.0, outer_radius=3.5):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  5. Disk regions — all lattice types
+#  5.  Disk regions — all lattice types
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _disk_regions():
@@ -263,16 +263,14 @@ def _disk_regions():
     axes_dk         = axes_dk.ravel()
 
     for idx, ltype in enumerate(_LATTICE_TYPES):
-        lat         = choose_lattice(ltype, dim=2, lx=sizes[ltype][0], ly=sizes[ltype][1], bc=bcs[ltype])
-        origin      = lat.get_coordinates(lat.ns//4)  # choose a site near the center for better visualization
-        disk        = lat.regions.get_region("disk", origin=origin, radius=1.5)
+        lat     = choose_lattice(ltype, dim=2, lx=sizes[ltype][0], ly=sizes[ltype][1], bc=bcs[ltype])
+        disk    = lat.regions.get_region("disk", origin=0, radius=3.5)
 
         lat.plot.regions(
             {"Disk": disk},
             ax=axes_dk[idx],
             blob_radius=0.22, blob_alpha=0.14,
-            origin=origin,
-            show_bonds=False, show_complement=False,
+            show_bonds=True, show_complement=False,
             region_descriptions={"Disk": f"r=3.5, {len(disk)} sites"},
             title=f"{ltype.capitalize()} Disk  ({len(disk)} sites)",
             legend_loc="upper right", legend_fontsize=7,
@@ -316,7 +314,7 @@ def _half_system_cuts():
     savefig(fig_hf, "demo_half_cuts_all.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  7. All lattice structures side-by-side (PBC)
+#  7.  All lattice structures side-by-side (PBC)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _all_structures():
@@ -339,96 +337,69 @@ def _all_structures():
     savefig(fig_all, "demo_all_structures.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
-
 #  8.  Brillouin zone and High-symmetry Path Analysis
-
 # ═══════════════════════════════════════════════════════════════════════════
 
-
-
 def _bz_path_comprehensive_demo():
-
-    logger.title("8. Brillouin Zones and Path Coordinates Analysis")
-
+    logger.title("8. Brillouin Zones and Path Coordinates Analysis (Per Lattice)")
     
-
     from general_python.lattices.tools.lattice_kspace import brillouin_zone_path
-
     
-
-    # 4 rows (lattices) x 2 columns (BZ and Coordinates)
-
-    fig, axes = plt.subplots(4, 2, figsize=(16, 22))
-
-    
-
     for idx, ltype in enumerate(_LATTICE_TYPES):
-
         lat = choose_lattice(ltype, dim=2, lx=8, ly=8, bc="pbc")
-
         
-
+        # One figure per lattice: 1 row x 2 columns
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6), 
+                                 gridspec_kw={'width_ratios': [1, 1.5], 'wspace': 0.2})
+        
         # Panel A: 2D BZ plot
-
-        ax_bz = axes[idx, 0]
-
-        lat.plot.bz_high_symmetry(ax=ax_bz, title=f"{ltype.capitalize()} BZ & Path", show_kpoints=True)
-
+        ax_bz = axes[0]
+        lat.plot.bz_high_symmetry(ax=ax_bz, title=f"{ltype.capitalize()} BZ", 
+                                  show_kpoints=True, tight_layout=False)
         
-
+        # Fix BZ scaling
+        b1_norm = np.linalg.norm(lat.k1[:2])
+        b2_norm = np.linalg.norm(lat.k2[:2])
+        kmax    = max(b1_norm, b2_norm) * 1.1
+        ax_bz.set_xlim(-kmax, kmax)
+        ax_bz.set_ylim(-kmax, kmax)
+        
         # Panel B: Path coordinates components
-
-        ax_path = axes[idx, 1]
-
+        ax_path = axes[1]
         hs = lat.high_symmetry_points()
-
-        if hs is None: continue
-
+        if hs is None: 
+            plt.close(fig)
+            continue
         
-
         k_path, k_dist, labels, k_frac = brillouin_zone_path(lat, hs.get_default_path_points(), points_per_seg=100)
-
         
-
         # Plot kx and ky components
-
-        ax_path.plot(k_dist, k_path[:, 0], label=r'$k_x$ (Cartesian)', lw=2.5, color='C0')
-        ax_path.plot(k_dist, k_path[:, 1], label=r'$k_y$ (Cartesian)', lw=2.5, color='C2')
-
+        ax_path.plot(k_dist, k_path[:, 0], label=r'$k_x$', lw=2.5, color='C0')
+        ax_path.plot(k_dist, k_path[:, 1], label=r'$k_y$', lw=2.5, color='C2')
         
-
         # Highlight and annotate high-symmetry points
-
         for i_pt, lbl in labels:
+            idx_p = min(i_pt, len(k_path)-1)
+            dist = k_dist[idx_p]
+            kx, ky = k_path[idx_p][:2]
+            
+            ax_path.axvline(dist, color='gray', linestyle=':', alpha=0.4)
+            ax_path.scatter([dist, dist], [kx, ky], color=['C0', 'C2'], s=40, zorder=5, edgecolors='white')
+            
+            # Coordinate text annotation
+            ax_path.text(dist, kx + 0.1, f"{kx:.2f}", fontsize=9, ha='center', va='bottom', color='C0', fontweight='bold')
+            ax_path.text(dist, ky - 0.15, f"{ky:.2f}", fontsize=9, ha='center', va='top', color='C2', fontweight='bold')
 
-            idx_p   = min(i_pt, len(k_path)-1)
-            dist    = k_dist[idx_p]
-            kx, ky  = k_path[idx_p][:2]
-
-            # Vertical reference line
-
-            ax_path.axvline(dist, color='gray', linestyle='--', alpha=0.3)
-            # Dots at the actual component values
-            ax_path.scatter([dist, dist], [kx, ky], color=['C0', 'C2'], s=50, zorder=5, edgecolors='white')
-
-            # Coordinate text annotation (kx, ky)
-            coord_str = f"({kx:.2f}, {ky:.2f})"
-            y_max = max(kx, ky)
-            ax_path.annotate(coord_str, xy=(dist, y_max), xytext=(3, 10),
-                           textcoords='offset points', rotation=45, fontsize=9,
-                           fontweight='bold', ha='left', va='bottom')
         ax_path.set_xticks([k_dist[min(i, len(k_dist)-1)] for i, _ in labels])
-        ax_path.set_xticklabels([lbl for _, lbl in labels], fontsize=13, fontweight='bold')
-        ax_path.set_title(f"{ltype.capitalize()} Momentum Components vs. Path", fontsize=15)
+        ax_path.set_xticklabels([lbl for _, lbl in labels], fontsize=13)
+        ax_path.set_title(f"Momentum Components along Path: {ltype.capitalize()}", fontsize=15)
         ax_path.set_ylabel("Momentum (1/A)", fontsize=12)
-        ax_path.legend(loc='lower left', frameon=True, framealpha=0.9)
-        ax_path.grid(True, alpha=0.15)
-    
-
-    fig.suptitle("Lattice K-Space Analysis: Brillouin Zones and High-Symmetry Path Components", fontsize=22, fontweight='bold', y=0.99)
-    fig.tight_layout(rect=[0, 0, 1, 0.98])
-    savefig(fig, "demo_bz_path_analysis_comprehensive.png")
-
+        ax_path.legend(loc='best', fontsize=10)
+        ax_path.grid(True, alpha=0.2)
+        
+        fig.suptitle(f"K-Space Analysis: {ltype.capitalize()} Lattice", fontsize=18, fontweight='bold', y=0.98)
+        fig.tight_layout(rect=[0, 0, 1, 0.95])
+        savefig(fig, f"demo_bz_path_analysis_{ltype}.png")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
