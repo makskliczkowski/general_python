@@ -139,7 +139,6 @@ dmypy.json
 
 # plots
 */demo_*.png
-*/demo*
 */tmp
 */__pycache__/
 *demo*.png

@@ -75,7 +75,7 @@ class HoneycombLattice(Lattice):
         """
         super().__init__(dim, lx, ly, lz, bc, **kwargs)
 
-        self._type = LatticeType.HONEYCOMB  # Lattice type
+        self._type      = LatticeType.HONEYCOMB  # Lattice type
 
         # For the honeycomb lattice there are two sites per unit cell.
         self._ns        = 2 * self.Lx * self.Ly * self.Lz
