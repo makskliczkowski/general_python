@@ -412,19 +412,18 @@ def topological_entropy(
         
     # Calculate Gamma
     gamma = 0.0
-    if topo_kind.startswith('kitaev'):
+    if topo_kind.startswith('kitaev') or topo_kind.startswith('levin'):
+        # Both KP and LW can use the 7-region formula if regions are defined that way
         keys = ['A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC']
-        if not all(k in entropies for k in keys):
-            # Fallback for subsets
-            pass
-        else:
+        if all(k in entropies for k in keys):
             gamma = (entropies['A'] + entropies['B'] + entropies['C'] 
                    - entropies['AB'] - entropies['BC'] - entropies['AC'] 
                    + entropies['ABC'])
-    elif topo_kind.startswith('levin'):
-        keys = ['inner', 'outer', 'inner_outer']
-        if all(k in entropies for k in keys):
-            gamma = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
+        elif topo_kind.startswith('levin'):
+            # Fallback for old concentric annuli formula
+            keys = ['inner', 'outer', 'inner_outer']
+            if all(k in entropies for k in keys):
+                gamma = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
          
     return {
         'gamma'     : gamma,

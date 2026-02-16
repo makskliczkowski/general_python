@@ -22,6 +22,7 @@ Usage:
 import  sys, os
 import  numpy as np
 import  matplotlib as mpl
+import  matplotlib.pyplot as plt
 
 # Set the plotting style to a clean, publication-ready style using the 'science'
 try:
@@ -68,25 +69,12 @@ if "--show" not in sys.argv:
 import  matplotlib.pyplot as plt
 from    pathlib import Path
 
-# get the QES path from the environment variable if set
-gen_python_path = Path(os.environ.get("QES_PYPATH_GEN_PYTHON", "/usr/local/QES/Python/general_python")).resolve()
-if not gen_python_path.exists() or not gen_python_path.is_dir():
-    raise FileNotFoundError(f"QES QES_PYPATH_GEN_PYTHON '{gen_python_path}' does not exist or is not a directory. "
-                            f"If QES is installed, please set the QES_PYPATH_GEN_PYTHON environment variable.")
-
-print(f"Using QES path: {gen_python_path}")
-cwd         = Path.cwd()
-file_path   = file_path = cwd
-mod_path    = file_path.parent.resolve()
-lib_path    = gen_python_path.parent
-gen_python  = gen_python_path
-extra_paths = [file_path, mod_path, lib_path, gen_python]
-for p, label in zip(extra_paths, ["file_path", "mod_path", "lib_path", "gen_python"]):
-    if not p.exists() or not p.is_dir():
-        raise FileNotFoundError(f"Required path '{p}' does not exist or is not a directory. "
-                                f"Please ensure QES is installed correctly.")
-    print(f"-> Adding to sys.path - {label}: {p}")
-    sys.path.insert(0, str(p))
+#! project import
+# Add project root to sys.path
+_CWD        = Path(__file__).resolve().parent
+_QES_ROOT   = _CWD.parents[3]
+if str(_QES_ROOT) not in sys.path:
+    sys.path.insert(0, str(_QES_ROOT))
 
 # ----------------------------------------------------------------------------
 
@@ -168,7 +156,7 @@ def _hexagonal_vs_honeycomb_demo():
     savefig(fig, "demo_lattice_structure_comparison.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  2.  Bond-length validation across all lattices
+#  2. Bond-length validation across all lattices
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _bond_length_check():
@@ -187,7 +175,7 @@ def _bond_length_check():
         logger.info(f"{ltype:12s}  bonds={len(bonds):4d} dist=[{dmin:.4f}, {dmax:.4f}]  mean={dmean:.4f}  {status}", color="green" if status == "OK" else "red", lvl=1)
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  3.  Kitaev-Preskill regions — all lattice types
+#  3. Kitaev-Preskill regions — all lattice types
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _kitaev_preskill_sectors(radius=3.0):
@@ -214,7 +202,7 @@ def _kitaev_preskill_sectors(radius=3.0):
             fill                    =   True, 
             fill_alpha              =   0.05,
             blob_radius             =   0.22, blob_alpha=0.10,
-            show_bonds              =   True, 
+            show_bonds              =   False, 
             show_complement         =   False,
             region_descriptions     =   KP_DESCS,
             title                   =   f"{ltype.capitalize()} KP ({n_str})",
@@ -253,9 +241,9 @@ def _levin_wen_regions(inner_radius=2.0, outer_radius=3.5):
             fill_alpha          =0.12,
             blob_radius         =0.22,
             blob_alpha          =0.10,
-            show_bonds          =True,
+            show_bonds          =False,
             show_complement     =False,
-            label_offset        =10,
+            label_offset        =1.5,
             region_descriptions =LW_DESCS,
             title               =f"{ltype.capitalize()} LW  ({n_str})",
             legend_loc="upper right", legend_fontsize=7,
@@ -265,7 +253,7 @@ def _levin_wen_regions(inner_radius=2.0, outer_radius=3.5):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  5.  Disk regions — all lattice types
+#  5. Disk regions — all lattice types
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _disk_regions():
@@ -275,14 +263,16 @@ def _disk_regions():
     axes_dk         = axes_dk.ravel()
 
     for idx, ltype in enumerate(_LATTICE_TYPES):
-        lat     = choose_lattice(ltype, dim=2, lx=sizes[ltype][0], ly=sizes[ltype][1], bc=bcs[ltype])
-        disk    = lat.regions.get_region("disk", origin=0, radius=3.5)
+        lat         = choose_lattice(ltype, dim=2, lx=sizes[ltype][0], ly=sizes[ltype][1], bc=bcs[ltype])
+        origin      = lat.get_coordinates(lat.ns//4)  # choose a site near the center for better visualization
+        disk        = lat.regions.get_region("disk", origin=origin, radius=1.5)
 
         lat.plot.regions(
             {"Disk": disk},
             ax=axes_dk[idx],
             blob_radius=0.22, blob_alpha=0.14,
-            show_bonds=True, show_complement=False,
+            origin=origin,
+            show_bonds=False, show_complement=False,
             region_descriptions={"Disk": f"r=3.5, {len(disk)} sites"},
             title=f"{ltype.capitalize()} Disk  ({len(disk)} sites)",
             legend_loc="upper right", legend_fontsize=7,
@@ -292,36 +282,41 @@ def _disk_regions():
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  6.  Half-system cuts — all lattice types
+# 6. Half-system cuts — all lattice types
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _half_system_cuts():
-    logger.title("6. Half-system cuts (x and y) across all lattice types (PBC-wrapped distances)")
+    logger.title("6. Half-system cuts (x, y, xy, yx) across all lattice types")
 
-    fig_hf, axes_hf = plt.subplots(2, 2, figsize=(14, 13))
-    axes_hf         = axes_hf.ravel()
+    fig_hf, axes_hf = plt.subplots(4, 4, figsize=(20, 18))
+    cuts            = ["half_x", "half_y", "half_xy", "half_yx"]
+    cut_labels      = ["half-x", "half-y", "half-xy", "half-yx"]
 
-    for idx, ltype in enumerate(_LATTICE_TYPES):
-        lat         = choose_lattice(ltype, dim=2, lx=8, ly=8, bc="pbc")
-        half_x      = lat.regions.get_region("half_x")
-        half_y      = lat.regions.get_region("half_y")
-
-        lat.plot.regions(
-            {"Half-x": half_x, "Half-y": half_y},
-            ax=axes_hf[idx],
-            fill=True, fill_alpha=0.08,
-            show_bonds=False, show_complement=False,
-            region_descriptions={"Half-x": f"x<med ({len(half_x)} sites)",
-                                "Half-y": f"y<med ({len(half_y)} sites)"},
-            title=f"{ltype.capitalize()} Half-cuts",
-            legend_loc="upper right", legend_fontsize=7,
-            marker_size=40,
-        )
+    for row, ltype in enumerate(_LATTICE_TYPES):
+        lat = choose_lattice(ltype, dim=2, lx=8, ly=8, bc="pbc")
+        
+        for col, (cut_key, cut_lbl) in enumerate(zip(cuts, cut_labels)):
+            ax      = axes_hf[row, col]
+            indices = lat.regions.get_region(cut_key)
+            
+            lat.plot.regions(
+                {cut_lbl: indices},
+                ax              =ax,
+                fill            =True, 
+                fill_alpha      =0.1,
+                show_bonds      =False, 
+                show_complement =True,
+                title           =f"{ltype.capitalize()} {cut_lbl}" if row == 0 else cut_lbl,
+                legend_loc      ="lower center",
+                legend_fontsize =8,
+                legend_bbox     =(0.5, -0.15),
+                marker_size     =30,
+            )
 
     savefig(fig_hf, "demo_half_cuts_all.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  7.  All lattice structures side-by-side (PBC)
+#  7. All lattice structures side-by-side (PBC)
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _all_structures():
@@ -344,28 +339,151 @@ def _all_structures():
     savefig(fig_all, "demo_all_structures.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
-#  8.  Brillouin zone with high-symmetry points
+
+#  8.  Brillouin zone and High-symmetry Path Analysis
+
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _brillouin_zones():
-    logger.title("8. First Brillouin zones with high-symmetry points across all lattice types")
 
-    fig_bz, axes_bz = plt.subplots(2, 2, figsize=(13, 12))
-    axes_bz         = axes_bz.ravel()
+
+def _bz_path_comprehensive_demo():
+
+    logger.title("8. Brillouin Zones and Path Coordinates Analysis")
+
+    
+
+    from general_python.lattices.tools.lattice_kspace import brillouin_zone_path
+
+    
+
+    # 4 rows (lattices) x 2 columns (BZ and Coordinates)
+
+    fig, axes = plt.subplots(4, 2, figsize=(16, 22))
+
+    
 
     for idx, ltype in enumerate(_LATTICE_TYPES):
-        L = 10 if ltype in ("square", "triangular") else 8
+
+        lat = choose_lattice(ltype, dim=2, lx=8, ly=8, bc="pbc")
+
+        
+
+        # Panel A: 2D BZ plot
+
+        ax_bz = axes[idx, 0]
+
+        lat.plot.bz_high_symmetry(ax=ax_bz, title=f"{ltype.capitalize()} BZ & Path", show_kpoints=True)
+
+        
+
+        # Panel B: Path coordinates components
+
+        ax_path = axes[idx, 1]
+
+        hs = lat.high_symmetry_points()
+
+        if hs is None: continue
+
+        
+
+        k_path, k_dist, labels, k_frac = brillouin_zone_path(lat, hs.get_default_path_points(), points_per_seg=100)
+
+        
+
+        # Plot kx and ky components
+
+        ax_path.plot(k_dist, k_path[:, 0], label=r'$k_x$ (Cartesian)', lw=2.5, color='C0')
+
+        ax_path.plot(k_dist, k_path[:, 1], label=r'$k_y$ (Cartesian)', lw=2.5, color='C2')
+
+        
+
+        # Highlight and annotate high-symmetry points
+
+                for i_pt, lbl in labels:
+
+                    idx_p = min(i_pt, len(k_path)-1)
+
+                    dist = k_dist[idx_p]
+
+                    kx, ky = k_path[idx_p][:2]
+
+                    
+
+                    # Vertical reference line
+
+            ax_path.axvline(dist, color='gray', linestyle='--', alpha=0.3)
+
+            # Dots at the actual component values
+
+            ax_path.scatter([dist, dist], [kx, ky], color=['C0', 'C2'], s=50, zorder=5, edgecolors='white')
+
+            
+
+            # Coordinate text annotation (kx, ky)
+
+            coord_str = f"({kx:.2f}, {ky:.2f})"
+
+            y_max = max(kx, ky)
+
+            ax_path.annotate(coord_str, xy=(dist, y_max), xytext=(3, 10),
+
+                           textcoords='offset points', rotation=45, fontsize=9,
+
+                           fontweight='bold', ha='left', va='bottom')
+
+
+
+        ax_path.set_xticks([k_dist[min(i, len(k_dist)-1)] for i, _ in labels])
+
+        ax_path.set_xticklabels([lbl for _, lbl in labels], fontsize=13, fontweight='bold')
+
+        ax_path.set_title(f"{ltype.capitalize()} Momentum Components vs. Path", fontsize=15)
+
+        ax_path.set_ylabel("Momentum (1/A)", fontsize=12)
+
+        ax_path.legend(loc='lower left', frameon=True, framealpha=0.9)
+
+        ax_path.grid(True, alpha=0.15)
+
+        
+
+    fig.suptitle("Lattice K-Space Analysis: Brillouin Zones and High-Symmetry Path Components", 
+
+                 fontsize=22, fontweight='bold', y=0.99)
+
+    fig.tight_layout(rect=[0, 0, 1, 0.98])
+
+    savefig(fig, "demo_bz_path_analysis_comprehensive.png")
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  9. Extended Brillouin zones
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _extended_brillouin_zones():
+    logger.title("9. Extended Brillouin zones with background copies across all lattice types")
+    fig_bz, axes_bz = plt.subplots(2, 2, figsize=(13, 12))
+    axes_bz         = axes_bz.ravel()
+    
+    for idx, ltype in enumerate(_LATTICE_TYPES):
+        L   = 6 if ltype in ("square", "triangular") else 4
         lat = choose_lattice(ltype, dim=2, lx=L, ly=L, bc="pbc")
         lat.plot.bz_high_symmetry(
             ax=axes_bz[idx],
-            title=f"{ltype.capitalize()} BZ",
+            extend=True,
+            nx=1, ny=1,
+            show_background_bz=True,
+            title=f"{ltype.capitalize()} Extended BZ",
         )
-
-    savefig(fig_bz, "demo_brillouin_zones.png")
+    savefig(fig_bz, "demo_extended_brillouin_zones.png")
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Summary
-# ═══════════════════════════════════════════════════════════════════════════
+# ══==═══════════════════════════════════════════════════════════════════════
+
+
 
 if __name__ == "__main__":
     logger.title("Lattice Visualization Demo - Summary of Plots")
@@ -378,4 +496,9 @@ if __name__ == "__main__":
     _disk_regions()
     _half_system_cuts()
     _all_structures()
-    _brillouin_zones()
+    _bz_path_comprehensive_demo()
+    _extended_brillouin_zones()
+    
+# --------------------------------------------------------------------------
+#! EOF
+# --------------------------------------------------------------------------

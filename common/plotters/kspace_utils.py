@@ -329,9 +329,9 @@ def label_high_sym_points(ax, lattice: "Lattice", bz_copies: int = 2, show_label
         k2_2d   = k2_vec[:2]
         
         # Plot high-symmetry points - ONLY in center BZ to avoid clutter
-        # When showing extended zones, only mark center (m=0, n=0)
-        m_range = range(0, 1) if bz_copies > 0 else range(0, 1)
-        n_range = range(0, 1) if bz_copies > 0 else range(0, 1)
+        # unless specifically requested by setting bz_copies > 0
+        m_range = range(-bz_copies, bz_copies + 1)
+        n_range = range(-bz_copies, bz_copies + 1)
         
         for m in m_range:
             for n in n_range:
@@ -353,8 +353,9 @@ def label_high_sym_points(ax, lattice: "Lattice", bz_copies: int = 2, show_label
                         zorder          =   25
                     )
                     
-                    # Add label - always show for center BZ
-                    if show_labels:
+                    # Add label - show for center BZ, and others only if explicitly requested
+                    # To avoid clutter, we usually only label the first BZ
+                    if show_labels and (m == 0 and n == 0):
                         ax.text(
                             kx - kwargs.get('label_offset_x', 0.5), 
                             ky - kwargs.get('label_offset_y', 0.5),

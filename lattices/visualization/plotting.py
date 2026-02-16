@@ -96,6 +96,74 @@ def _finalise_figure(fig: Figure, *, top_padding: float = 0.88) -> None:
     except Exception:
         pass
 
+def _apply_spatial_limits(
+    axis        : Axes, 
+    coords      : np.ndarray, 
+    dim         : int, 
+    show_axes   : bool, 
+    margin      : float = 0.08,
+    labels      : Optional[Tuple[str, ...]] = None
+) -> None:
+    """ 
+    Uniformly apply spatial limits with padding and aspect ratio. 
+    Ensures that nodes and annotations near the edges are not clipped.
+    """
+    if coords.size == 0:
+        return
+
+    # Calculate data bounds
+    mins    = coords.min(axis=0)
+    maxs    = coords.max(axis=0)
+    
+    # Calculate span-based padding
+    spans   = maxs - mins
+    
+    # 1D case
+    if dim == 1:
+        span    = spans[0]
+        pad     = margin * (span if span > 0 else 1.0)
+        axis.set_xlim(mins[0] - pad, maxs[0] + pad)
+        axis.set_ylim(-0.5, 0.5)
+        
+    # 2D case
+    elif dim == 2:
+        diag    = np.sqrt(spans[0]**2 + spans[1]**2)
+        pad     = margin * (diag if diag > 0 else 1.0)
+        
+        axis.set_xlim(mins[0] - pad, maxs[0] + pad)
+        axis.set_ylim(mins[1] - pad, maxs[1] + pad)
+        axis.set_aspect("equal", adjustable="datalim")
+        
+    # 3D case
+    else:
+        diag    = np.sqrt(np.sum(spans[:3]**2))
+        pad     = margin * (diag if diag > 0 else 1.0)
+        
+        axis.set_xlim(mins[0] - pad, maxs[0] + pad)
+        axis.set_ylim(mins[1] - pad, maxs[1] + pad)
+        axis.set_zlim(mins[2] - pad, maxs[2] + pad)
+
+    # Handle axis visibility
+    if not show_axes:
+        if dim == 1:
+            axis.get_yaxis().set_visible(False)
+            for sp in axis.spines.values(): sp.set_visible(False)
+        else:
+            # Instead of set_axis_off(), we hide spines and ticks to keep 
+            # the axes object useful for layout engines (like constrained_layout)
+            axis.set_xticks([])
+            axis.set_yticks([])
+            if hasattr(axis, 'set_zticks'):
+                axis.set_zticks([])
+            for sp in axis.spines.values():
+                sp.set_visible(False)
+            axis.patch.set_alpha(0.0) # Hide background patch
+    else:
+        lbls = labels or ("x", "y", "z")
+        axis.set_xlabel(lbls[0])
+        if dim >= 2: axis.set_ylabel(lbls[1])
+        if dim >= 3: axis.set_zlabel(lbls[2])
+
 # ==============================================================================
 # Plotting Functions
 # ==============================================================================
@@ -105,6 +173,7 @@ def plot_real_space(
     *,
     ax              : Optional[Axes]                = None,
     show_indices    : bool                          = False,
+    show_axes       : bool                          = True,
     color           : str                           = "C0",
     marker          : str                           = "o",
     figsize         : Optional[Tuple[float, float]] = None,
@@ -126,6 +195,8 @@ def plot_real_space(
         Matplotlib axes to plot on. If None, a new figure is created.
     show_indices : bool, default=False
         If True, annotate each site with its index.
+    show_axes : bool, default=True
+        If False, hides the coordinate axes.
     color : str, default="C0"
         Color of the site markers.
     marker : str, default="o"
@@ -162,21 +233,13 @@ def plot_real_space(
     # Plotting based on dimension
     if dim == 1:
         axis.scatter(coords[:, 0], np.zeros_like(coords[:, 0]), color=color, marker=marker, **scatter_kwargs)
-        axis.set_ylim(-0.5, 0.5)
-        axis.set_ylabel("y (projected)")
-        axis.set_xlabel("x")
-        
     elif dim == 2:
         axis.scatter(coords[:, 0], coords[:, 1], color=color, marker=marker, **scatter_kwargs)
-        axis.set_ylabel("y")
-        axis.set_xlabel("x")
-        axis.set_aspect("equal", adjustable="datalim")
-        
     else:
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], color=color, marker=marker, **scatter_kwargs)
-        axis.set_zlabel("z")
-        axis.set_ylabel("y")
-        axis.set_xlabel("x")
+
+    # Spatial Limits & Visibility
+    _apply_spatial_limits(axis, coords, dim, show_axes)
 
     # Title
     if title:
@@ -198,6 +261,7 @@ def plot_reciprocal_space(
     *,
     ax              : Optional[Axes]                = None,
     show_indices    : bool                          = False,
+    show_axes       : bool                          = True,
     color           : str                           = "C1",
     marker          : str                           = "o",
     figsize         : Optional[Tuple[float, float]] = None,
@@ -230,21 +294,14 @@ def plot_reciprocal_space(
 
     if dim == 1:
         axis.scatter(coords[:, 0], np.zeros_like(coords[:, 0]), color=color, marker=marker, **scatter_kwargs)
-        axis.set_ylim(-0.5, 0.5)
-        axis.set_ylabel(r"$k_y$ (projected)")
-        axis.set_xlabel(r"$k_x$")
-        
     elif dim == 2:
         axis.scatter(coords[:, 0], coords[:, 1], color=color, marker=marker, **scatter_kwargs)
-        axis.set_ylabel(r"$k_y$")
-        axis.set_xlabel(r"$k_x$")
-        axis.set_aspect("equal", adjustable="datalim")
-        
     else:
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], color=color, marker=marker, **scatter_kwargs)
-        axis.set_zlabel(r"$k_z$")
-        axis.set_ylabel(r"$k_y$")
-        axis.set_xlabel(r"$k_x$")
+
+    # Spatial Limits & Visibility
+    k_labels = (r"$k_x$", r"$k_y$", r"$k_z$")
+    _apply_spatial_limits(axis, coords, dim, show_axes, labels=k_labels)
 
     if title:
         kw = {"pad": 12}
@@ -556,6 +613,7 @@ def plot_lattice_structure(
     node_size                   : int                           = 30,
     edge_alpha                  : float                         = 0.7,
     label_padding               : float                         = 0.05,
+    label_fontsize              : int                           = 8,
     boundary_offset             : float                         = 0.05,
     # general plot settings
     figsize                     : Optional[Tuple[float, float]] = None,
@@ -699,19 +757,13 @@ def plot_lattice_structure(
         else:
             axis.scatter(b_coords[:, 0], np.zeros_like(b_coords[:, 0]), **b_args)
 
-    # Axes & Titles
-    if not show_axes:
-        if dim == 1:
-            axis.get_yaxis().set_visible(False)
-            for sp in axis.spines.values(): sp.set_visible(False)
-        elif dim == 2:
-            axis.set_axis_off()
-        else:
-            axis.set_axis_off()
-    else:
-        axis.set_xlabel("x")
-        if dim >= 2: axis.set_ylabel("y")
-        if dim >= 3: axis.set_zlabel("z")
+    # Spatial Limits & Visibility
+    # Use a larger margin if we have boundary annotations or periodic labels
+    margin = 0.08
+    if dim == 2:
+        margin = max(margin, boundary_offset * 1.5)
+    
+    _apply_spatial_limits(axis, coords, dim, show_axes, margin=margin)
 
     if title:
         kw = {"pad": 15}
@@ -733,7 +785,7 @@ def plot_lattice_structure(
             if dim >= 2: label_pos[1] += offset
             if dim >= 3: label_pos[2] += offset
             
-            txt_args = dict(ha="center", va="center", color="black", 
+            txt_args = dict(ha="center", va="center", color="black", fontsize=label_fontsize,
                             bbox=dict(facecolor="white", edgecolor="none", alpha=0.7, pad=1), zorder=6)
             
             if dim == 3:
@@ -846,6 +898,7 @@ def plot_regions(
     show_labels         : bool                          = True,
     show_overlaps       : bool                          = True,
     show_bonds          : bool                          = False,
+    origin              : Optional[np.ndarray]          = None,
     system_color        : str                           = 'lightgray',
     system_alpha        : float                         = 0.25,
     complement_color    : str                           = 'lightgray',
@@ -869,6 +922,7 @@ def plot_regions(
     legend_bbox         : tuple                         = (1.05, 1),
     label_fontsize      : int                           = 11,
     label_offset        : float                         = 1.2,
+    show_axes           : bool                          = False,
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
     """
@@ -910,6 +964,8 @@ def plot_regions(
     fill, fill_alpha : bool, float
         Convex-hull polygon fill (2D, requires scipy).
     (other parameters identical to previous version)
+    show_axes : bool
+        If False (default), hides the coordinate axes for a cleaner diagram.
     """
     coords      = _ensure_numpy(lattice.rvectors)
     target_dim  = lattice.dim if lattice.dim else coords.shape[1]
@@ -936,6 +992,14 @@ def plot_regions(
             axis.scatter(coords[:, 0], y, **_sc)
         else:
             axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **_sc)
+
+    if origin is not None:
+        _sc = dict(color='black', alpha=0.8, marker='X', s=100, zorder=5)
+        if dim <= 2:
+            y = origin[1] if dim == 2 else 0.0
+            axis.scatter(origin[0], y, **_sc)
+        else:
+            axis.scatter(origin[0], origin[1], origin[2], **_sc)
 
     # site membership bookkeeping 
     all_region_sites            = set()
@@ -1024,14 +1088,19 @@ def plot_regions(
         # Region label — placed radially outward from global centroid
         # Place near one of the first sites, not in centroid
         if show_labels and dim == 2 and len(rc) > 0:
-            com    = np.mean(rc[:, :2], axis=0)
-            direc  = com - global_com[:2]
-            norm   = np.linalg.norm(direc)
+            # Determine system scale for relative padding
+            spans       = rc.max(axis=0) - rc.min(axis=0)
+            diag        = np.sqrt(np.sum(spans**2))
+            rel_pad     = 0.15 * (diag if diag > 1e-9 else 1.0)
+            
+            com         = np.mean(rc[:, :2], axis=0)
+            direc       = com - global_com[:2]
+            norm        = np.linalg.norm(direc)
             if norm < 1e-9:
                 direc   = np.array([0.0, 1.0])
             else:
                 direc   = direc / norm
-            lbl_pos = com + direc * norm * (label_offset - 1.0) + direc * 0.6
+            lbl_pos = com + direc * norm * (label_offset - 1.0) + direc * rel_pad
 
             axis.annotate(
                 name,
@@ -1071,14 +1140,14 @@ def plot_regions(
     if show_indices:
         _annotate_indices(axis, coords)
 
-    # axis formatting
-    if dim == 1:
-        axis.set_ylim(-0.5, 0.5); axis.set_yticks([]); axis.set_xlabel("x")
-    elif dim == 2:
-        axis.set_aspect("equal", adjustable="datalim")
-        axis.set_xlabel("x"); axis.set_ylabel("y")
-    else:
-        axis.set_xlabel("x"); axis.set_ylabel("y"); axis.set_zlabel("z")
+    # Spatial Limits & Visibility
+    # Use a larger margin if we have region labels to avoid clipping
+    margin = 0.08
+    if show_labels:
+        # Increase margin to accommodate labels and their leader lines
+        margin = max(margin, (label_offset - 1.0) * 0.4 + 0.1)
+    
+    _apply_spatial_limits(axis, coords, dim, show_axes, margin=margin)
 
     # title
     if title:
@@ -1094,7 +1163,6 @@ def plot_regions(
         parts      = [f"Regions ({len(regions)})  —  {n_covered}/{n_total} sites ({cov_pct:.0f}%)"]
         if overlap_sites:
             parts.append(f",  {len(overlap_sites)} overlaps")
-        axis.set_title("".join(parts), fontsize=10, pad=12)
 
     # legend (deduplicated, compact)
     handles, labels = axis.get_legend_handles_labels()
@@ -1147,6 +1215,13 @@ def plot_bz_high_symmetry(
     title               : Optional[str]                 = None,
     title_kwargs        : Optional[Dict[str, object]]   = None,
     tight_layout        : bool                          = True,
+    # Extended options
+    extend              : bool                          = False,
+    nx                  : int                           = 1,
+    ny                  : int                           = 1,
+    extended_kpoint_color : str                         = "gray",
+    extended_kpoint_alpha : float                       = 0.15,
+    show_background_bz  : bool                          = False,
 ) -> Tuple[Figure, Axes]:
     r"""
     Plot the first Brillouin zone with high-symmetry points and the
@@ -1179,12 +1254,22 @@ def plot_bz_high_symmetry(
         Figure size.
     title : str, optional
         Plot title.
+    extend : bool
+        If True, plot k-points in multiple BZ copies.
+    nx, ny : int
+        Number of BZ copies in x and y directions.
+    extended_kpoint_color : str
+        Color for k-points in extended zones.
+    extended_kpoint_alpha : float
+        Transparency for k-points in extended zones.
+    show_background_bz : bool
+        If True, show BZ outlines for all extended copies.
 
     Returns
     -------
     fig, ax : Figure, Axes
     """
-    from ..tools.lattice_kspace import ws_bz_mask
+    from ..tools.lattice_kspace import ws_bz_mask, extend_kspace_data
 
     # ---- k-point mesh ----
     kvecs       = _ensure_numpy(lattice.kvectors)
@@ -1201,26 +1286,64 @@ def plot_bz_high_symmetry(
     b3 = np.asarray(getattr(lattice, 'k3', np.zeros(3)), float).ravel()
 
     # ---- WS BZ outline (2-D) ----
+    def _draw_bz_outline(ax_obj, b1_vec, b2_vec, face_c, edge_c, alpha_val, hatch=None, offset=None):
+        pad     = 1.3
+        kmax    = max(np.linalg.norm(b1_vec[:2]), np.linalg.norm(b2_vec[:2])) * pad
+        gx      = np.linspace(-kmax, kmax, 500)
+        gy      = np.linspace(-kmax, kmax, 500)
+        
+        if offset is not None:
+            gx += offset[0]
+            gy += offset[1]
+            
+        GX, GY  = np.meshgrid(gx, gy)
+        
+        # ws_bz_mask is centered at origin, so we shift coordinates back
+        mask_coords_x = GX
+        mask_coords_y = GY
+        if offset is not None:
+            mask_coords_x = GX - offset[0]
+            mask_coords_y = GY - offset[1]
+            
+        mask = ws_bz_mask(mask_coords_x, mask_coords_y, b1_vec, b2_vec, shells=2)
+        ax_obj.contourf(GX, GY, mask.astype(float), levels=[0.5, 1.5], colors=[face_c], alpha=alpha_val)
+        ax_obj.contour(GX, GY, mask.astype(float), levels=[0.5], colors=[edge_c], linewidths=1.0 if hatch else 1.5)
+
     if show_bz and dim >= 2:
-        # Dense grid for WS mask
-        pad = 1.3
-        kmax = max(np.linalg.norm(b1[:2]), np.linalg.norm(b2[:2])) * pad
-        gx  = np.linspace(-kmax, kmax, 500)
-        gy  = np.linspace(-kmax, kmax, 500)
-        GX, GY = np.meshgrid(gx, gy)
-        mask = ws_bz_mask(GX, GY, b1, b2, shells=2)
-        axis.contourf(GX, GY, mask.astype(float), levels=[0.5, 1.5],
-                      colors=[bz_facecolor], alpha=bz_alpha)
-        axis.contour(GX, GY, mask.astype(float), levels=[0.5],
-                     colors=[bz_edgecolor], linewidths=1.5)
+        _draw_bz_outline(axis, b1, b2, bz_facecolor, bz_edgecolor, bz_alpha)
+        
+        if show_background_bz and extend:
+            for m in range(-nx, nx + 1):
+                for n in range(-ny, ny + 1):
+                    if m == 0 and n == 0: continue
+                    G = m * b1[:2] + n * b2[:2]
+                    _draw_bz_outline(axis, b1, b2, bz_facecolor, bz_edgecolor, bz_alpha * 0.5, offset=G)
 
     # ---- k-point scatter ----
     if show_kpoints and dim >= 2:
-        axis.scatter(kvecs2[:, 0], kvecs2[:, 1], s=kpoint_size,
-                     color=kpoint_color, alpha=kpoint_alpha, marker='o',
-                     edgecolors='none', label='k-mesh', zorder=2)
+        if extend:
+            # Extended k-points
+            ext_k, _        = extend_kspace_data(kvecs2, np.arange(len(kvecs2)), b1[:2], b2[:2], nx=nx, ny=ny)
+            
+            # Mask out the original points to color them differently
+            gx_all, gy_all  = ext_k[:, 0], ext_k[:, 1]
+            mask_orig       = ws_bz_mask(gx_all, gy_all, b1, b2, shells=2)
+            
+            # Plot extended copies
+            axis.scatter(ext_k[~mask_orig, 0], ext_k[~mask_orig, 1], s=kpoint_size,
+                         color=extended_kpoint_color, alpha=extended_kpoint_alpha, marker='o',
+                         edgecolors='none', label='extended mesh', zorder=1)
+            
+            # Plot original zone
+            axis.scatter(ext_k[mask_orig, 0], ext_k[mask_orig, 1], s=kpoint_size,
+                         color=kpoint_color, alpha=kpoint_alpha, marker='o',
+                         edgecolors='none', label='k-mesh', zorder=2)
+        else:
+            axis.scatter(kvecs2[:, 0], kvecs2[:, 1], s=kpoint_size,
+                         color=kpoint_color, alpha=kpoint_alpha, marker='o',
+                         edgecolors='none', label='k-mesh', zorder=2)
 
-    # ---- high-symmetry points + path ----
+    # high-symmetry points + path
     try:
         hs = lattice.high_symmetry_points()
     except Exception:
@@ -1266,14 +1389,14 @@ def plot_bz_high_symmetry(
                           bbox=dict(boxstyle='round,pad=0.15', fc='white',
                                     ec='none', alpha=0.75))
 
-    # ---- styling ----
+    # styling
     axis.set_xlabel(r'$k_x$')
     axis.set_ylabel(r'$k_y$')
     axis.set_aspect('equal', adjustable='datalim')
     axis.axhline(0, color='grey', lw=0.4, zorder=0)
     axis.axvline(0, color='grey', lw=0.4, zorder=0)
 
-    # ---- title ----
+    # title
     if title:
         kw = {"pad": 12}
         if title_kwargs:
@@ -1397,6 +1520,10 @@ class LatticePlotter:
         ... other args mirror plot_real_space ...
         """
         kwargs.setdefault("figsize", (6.0, 6.0))
+        
+        if isinstance(regions, str):
+            regions = {regions: self.lattice.get_region(regions, **kwargs)}
+        
         return plot_regions(self.lattice, regions, **kwargs)
 
     def bz_high_symmetry(self, **kwargs) -> Tuple[Figure, Axes]:

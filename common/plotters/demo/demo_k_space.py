@@ -59,25 +59,12 @@ import  matplotlib.pyplot as plt
 from    typing import Optional, Tuple, List, Callable
 from    pathlib import Path
 
-# get the QES path from the environment variable if set
-gen_python_path = Path(os.environ.get("QES_PYPATH_GEN_PYTHON", "/usr/local/QES/Python/general_python")).resolve()
-if not gen_python_path.exists() or not gen_python_path.is_dir():
-    raise FileNotFoundError(f"QES QES_PYPATH_GEN_PYTHON '{gen_python_path}' does not exist or is not a directory. "
-                            f"If QES is installed, please set the QES_PYPATH_GEN_PYTHON environment variable.")
-
-print(f"Using QES path: {gen_python_path}")
-cwd         = Path.cwd()
-file_path   = file_path = cwd
-mod_path    = file_path.parent.resolve()
-lib_path    = gen_python_path.parent
-gen_python  = gen_python_path
-extra_paths = [file_path, mod_path, lib_path, gen_python]
-for p, label in zip(extra_paths, ["file_path", "mod_path", "lib_path", "gen_python"]):
-    if not p.exists() or not p.is_dir():
-        raise FileNotFoundError(f"Required path '{p}' does not exist or is not a directory. "
-                                f"Please ensure QES is installed correctly.")
-    print(f"-> Adding to sys.path - {label}: {p}")
-    sys.path.insert(0, str(p))
+#! project import
+# Add project root to sys.path
+_CWD        = Path(__file__).resolve().parent
+_QES_ROOT   = _CWD.parents[3]
+if str(_QES_ROOT) not in sys.path:
+    sys.path.insert(0, str(_QES_ROOT))
     
 try:
     from    general_python.lattices                         import choose_lattice, Lattice

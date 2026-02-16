@@ -61,6 +61,8 @@ class RegionType(Enum):
     HALF_X          = "half_x"
     HALF_Y          = "half_y"
     HALF_Z          = "half_z"
+    HALF_XY         = "half_xy"
+    HALF_YX         = "half_yx"
     DISK            = "disk"
     SUBLATTICE      = "sublattice"
     GRAPH           = "graph"
@@ -259,12 +261,16 @@ class LatticeRegionHandler:
             raise ValueError("kind must be a string or RegionType enum")
 
         # ------- half-system cuts -------
-        if kind in ("half", "half_x"):
+        if kind in ("half", "half_x", "half-x"):
             return self.region_half(direction or "x")
-        if kind == "half_y":
+        if kind in ("half_y", "half-y"):
             return self.region_half("y")
-        if kind == "half_z":
+        if kind in ("half_z", "half-z"):
             return self.region_half("z")
+        if kind in ("half_xy", "half-xy"):
+            return self.region_half("xy")
+        if kind in ("half_yx", "half-yx"):
+            return self.region_half("yx")
 
         # ------- disk -------
         if kind == "disk":
@@ -293,13 +299,13 @@ class LatticeRegionHandler:
             return self.region_plaquettes(plaquettes)
 
         # ------- Kitaev-Preskill -------
-        if kind == "kitaev_preskill":
+        if kind.startswith("kitaev") or kind.startswith("kp"):
             regions = self.region_kitaev_preskill(
                 origin      = origin,
                 radius      = radius,
-                n_sectors   = kwargs.get("n_sectors", 3),
-                rotation    = kwargs.get("rotation", 0.0),
-                use_pbc     = kwargs.get("use_pbc", False),
+                n_sectors   = kwargs.get("n_sectors",   3),
+                rotation    = kwargs.get("rotation",    0.0),
+                use_pbc     = kwargs.get("use_pbc",     False),
             )
             region_id = kwargs.get("region")
             if region_id is not None:
@@ -307,7 +313,7 @@ class LatticeRegionHandler:
             return regions
 
         # ------- Levin-Wen -------
-        if kind == "levin_wen":
+        if kind.startswith("levin") or kind.startswith("lw"):
             regions = self.region_levin_wen(
                 origin          = origin,
                 inner_radius    = kwargs.get("inner_radius", radius),
@@ -331,14 +337,15 @@ class LatticeRegionHandler:
 
     def region_half(self, direction: str = "x") -> List[int]:
         r"""
-        Half-system cut along a cardinal direction.
+        Half-system cut along a cardinal or tilted direction.
         
         Useful for area law scaling. Handles PBC by cutting based on coordinates relative to median.
         
         Parameters
         ----------
         direction : str
-            Direction to cut ('x', 'y', or 'z').
+            Direction to cut ('x', 'y', 'z', 'xy', or 'yx').
+            'xy' is a diagonal cut along x+y, 'yx' is along x-y.
         Returns
         -------
         list[int]
@@ -353,23 +360,27 @@ class LatticeRegionHandler:
         direction   = direction.lower()
         
         if direction == "x":
-            axis = 0
+            vals = coords[:, 0]
         elif direction == "y":
-            axis = 1
+            vals = coords[:, 1]
         elif direction == "z":
-            axis = 2
+            vals = coords[:, 2]
+        elif direction in ("xy", "half-xy", "half_xy"):
+            vals = coords[:, 0] + coords[:, 1]
+        elif direction in ("yx", "half-yx", "half_yx"):
+            vals = coords[:, 0] - coords[:, 1]
         else:
-            raise ValueError("direction must be 'x', 'y', or 'z'")
+            raise ValueError("direction must be 'x', 'y', 'z', 'xy', or 'yx'")
         
         # Use median coordinate to define half cut, which is more robust for PBC than mean
-        cut_val = np.median(coords[:, axis])
+        cut_val = np.median(vals)
 
         # Return sites with coordinate less than cut_val along the specified axis
-        return sorted(np.where(coords[:, axis] < cut_val)[0].tolist())
+        return sorted(np.where(vals < cut_val)[0].tolist())
 
     # ------------------------------------------------------------------------------
 
-    def region_disk(self, center: Union[int, List[float]], radius: float) -> List[int]:
+    def region_disk(self, center: Union[int, List[float]], radius: float, pbc: bool = False) -> List[int]:
         """
         Spherical / circular region (PBC-aware).
 
@@ -380,8 +391,11 @@ class LatticeRegionHandler:
         radius : float
             Inclusion radius.
         """
-        r0 = self._resolve_origin(center)
-        _, dists = self._pbc_displacements(r0)
+        r0          = self._resolve_origin(center)
+        if pbc:
+            disps, dists = self._pbc_displacements(r0)
+        else:
+            disps, dists = self._displacements(r0)
         return sorted(np.where(dists <= radius)[0].tolist())
 
     # ------------------------------------------------------------------------------

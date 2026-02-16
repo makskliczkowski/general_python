@@ -138,7 +138,7 @@ dmypy.json
 .pyre/
 
 # plots
-*/demo_*.png
+*/*demo_*.png
 */tmp
 */__pycache__/
 *demo*.png

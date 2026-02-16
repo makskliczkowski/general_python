@@ -75,8 +75,9 @@ def ws_bz_mask(KX, KY, b1, b2, shells=1):
     G           = np.asarray(G, dtype=float)  # (Ng, 2)
 
     # Wigner-Seitz condition: 2k*G <= G^2 for all G
-    # Broadcasting: k_vec[..., None, :] @ G.T -> shape (*KX.shape, Ng)
-    k_dot_G     = np.sum(k_vec[..., None, :] * G[None, None, :, :], axis=-1)  # (..., Ng)
+    # Using matrix multiplication for robust broadcasting over any input shape
+    # k_vec shape: (..., 2), G.T shape: (2, Ng) -> k_dot_G shape: (..., Ng)
+    k_dot_G     = k_vec @ G.T
     G_squared   = np.sum(G**2, axis=1)  # (Ng,)
     
     # Point is inside WS cell if it satisfies the condition for all G
@@ -172,7 +173,6 @@ class HighSymmetryPoint:
     description : str, optional
         Description of the point
     """
-    name        : str
     label       : str
     frac_coords : Tuple[float, float, float]
     latex_label : str = ""
@@ -331,10 +331,10 @@ class HighSymmetryPoints:
     def honeycomb_2d(cls) -> 'HighSymmetryPoints':
         """High-symmetry points for honeycomb/graphene lattice."""
         pts = cls(_default_path=['Gamma', 'K', 'M', 'Gamma'])
-        pts.add(HighSymmetryPoint('Gamma', 'Gamma', (0.0, 0.0, 0.0),            r'$\Gamma$',    'BZ center'))
-        pts.add(HighSymmetryPoint('K', 'K',         (2.0/3.0, 1.0/3.0, 0.0),    r'$K$',         'Dirac point'))
-        pts.add(HighSymmetryPoint('Kp', "K'",       (1.0/3.0, 2.0/3.0, 0.0),    r"$K'$",        'Other Dirac point'))
-        pts.add(HighSymmetryPoint('M', 'M',         (0.5, 0.0, 0.0),            r'$M$',         'Edge midpoint'))
+        pts.add(HighSymmetryPoint('Gamma', (0.0, 0.0, 0.0),            r'$\Gamma$',    'BZ center'))
+        pts.add(HighSymmetryPoint('K',     (2.0/3.0, 1.0/3.0, 0.0),    r'$K$',         'Dirac point'))
+        pts.add(HighSymmetryPoint('Kp',    (1.0/3.0, 2.0/3.0, 0.0),    r"$K'$",        'Other Dirac point'))
+        pts.add(HighSymmetryPoint('M',     (0.5, 0.0, 0.0),            r'$M$',         'Edge midpoint'))
         return pts
         
     @classmethod
@@ -588,14 +588,17 @@ def generate_kgrid(lattice: Lattice, n_k: Iterable[int]) -> np.ndarray:
 
 # -----------------------------------------------------------------------------------------------------------
 
-def _resolve_path_input(path: Iterable[tuple[str, Iterable[float]]] | StandardBZPath | str) -> list[tuple[str, list[float]]]:
+def _resolve_path_input(path: Iterable[tuple[str, Iterable[float]]] | StandardBZPath | str | List[str] | HighSymmetryPoints, lattice: Optional[Lattice] = None) -> list[tuple[str, list[float]]]:
     """
     Resolve path input to a list of (label, fractional_coord) pairs.
 
     Parameters
     ----------
-    path : list[(label, coords)], StandardBZPath, or str
-        Path definition (fractional coordinates), standard enum, or enum name string.
+    path : list[(label, coords)], StandardBZPath, str, List[str], or HighSymmetryPoints
+        Path definition (fractional coordinates), standard enum, enum name string, 
+        list of point labels, or HighSymmetryPoints object.
+    lattice : Lattice, optional
+        Lattice object used to resolve labels if path is a list of strings.
 
     Returns
     -------
@@ -612,12 +615,24 @@ def _resolve_path_input(path: Iterable[tuple[str, Iterable[float]]] | StandardBZ
         path = StandardBZPath[path.upper()].value
     elif isinstance(path, StandardBZPath):
         path = path.value
+    elif isinstance(path, HighSymmetryPoints):
+        path = path.get_default_path_points()
+    elif isinstance(path, list) and len(path) > 0 and isinstance(path[0], str):
+        # List of strings, resolve via lattice if available
+        if lattice is not None and hasattr(lattice, 'high_symmetry_points'):
+            hs = lattice.high_symmetry_points()
+            if hs is not None:
+                path = hs.get_path_points(path)
+            else:
+                raise ValueError(f"Cannot resolve path labels {path} as lattice has no high-symmetry points defined.")
+        else:
+            raise ValueError(f"Cannot resolve path labels {path} without a lattice providing high-symmetry points.")
     
     return [(label, list(map(float, frac))) for label, frac in path]
 
 def brillouin_zone_path(
         lattice         : Lattice,
-        path            : Iterable[tuple[str, Iterable[float]]] | StandardBZPath,
+        path            : Iterable[tuple[str, Iterable[float]]] | StandardBZPath | List[str] | HighSymmetryPoints,
         *,
         points_per_seg  : int = 40,
     ) -> tuple[np.ndarray, np.ndarray, list[tuple[int, str]], np.ndarray]:
@@ -650,8 +665,9 @@ def brillouin_zone_path(
     ----------
     lattice : Lattice
         Lattice object with reciprocal lattice vectors (_k1, _k2, _k3).
-    path : list[(label, coords)] or StandardBZPath
-        Path definition (fractional coordinates) or one of the standard enums.
+    path : list[(label, coords)], StandardBZPath, List[str], or HighSymmetryPoints
+        Path definition (fractional coordinates), one of the standard enums,
+        list of symmetry point labels, or HighSymmetryPoints object.
     points_per_seg : int
         Number of interpolated points between labels.
     Returns
@@ -664,7 +680,7 @@ def brillouin_zone_path(
         Indices and labels for symmetry points.
     """
     
-    path = _resolve_path_input(path)
+    path = _resolve_path_input(path, lattice=lattice)
 
     # Reciprocal lattice matrix: columns = b1, b2, b3
     b1 = np.asarray(lattice._k1, float).reshape(3)

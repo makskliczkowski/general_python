@@ -1334,9 +1334,10 @@ class Lattice(ABC):
         str
             'nn' for nearest neighbor, 'nnn' for next-nearest neighbor, 'none' otherwise.
         """
-        if j in self.nn[i]:
+        i, j = int(i), int(j)
+        if int(j) in self.nn[i]:
             return 'nn'
-        elif j in self.nnn[i]:
+        elif int(j) in self.nnn[i]:
             return 'nnn'
         else:
             return 'none'
@@ -1970,8 +1971,8 @@ class Lattice(ABC):
 
         result = []
         for i, j in self._bonds:
-            a, b = (i, j) if i < j else (j, i)
-            c = self.bond_type(a, b)
+            a, b    = (i, j) if i < j else (j, i)
+            c       = self.bond_type(a, b)
             if filter_color is not None and c != filter_color:
                 continue
             if return_color:
