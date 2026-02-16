@@ -132,7 +132,7 @@ def _apply_spatial_limits(
         
         axis.set_xlim(mins[0] - pad, maxs[0] + pad)
         axis.set_ylim(mins[1] - pad, maxs[1] + pad)
-        axis.set_aspect("equal", adjustable="datalim")
+        axis.set_aspect("equal", adjustable="box")
         
     # 3D case
     else:
@@ -350,7 +350,7 @@ def _plot_2d_bz(axis: Axes, points: np.ndarray, *, facecolor: str, edgecolor: st
     # close the loop
     axis.plot([polygon[-1, 0], polygon[0, 0]], [polygon[-1, 1], polygon[0, 1]], color=edgecolor, linewidth=1.5)
     
-    axis.set_aspect("equal", adjustable="datalim")
+    axis.set_aspect("equal", adjustable="box")
     axis.set_xlabel(r"$k_x$")
     axis.set_ylabel(r"$k_y$")
 
@@ -740,7 +740,7 @@ def plot_lattice_structure(
         axis.set_ylim(-0.5, 0.5)
     elif dim == 2:
         axis.scatter(coords[:, 0], coords[:, 1], c=node_face_colors, **scatter_defaults)
-        axis.set_aspect("equal", adjustable="datalim")
+        axis.set_aspect("equal", adjustable="box")
     else:
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], c=node_face_colors, **scatter_defaults)
 
@@ -1392,7 +1392,7 @@ def plot_bz_high_symmetry(
     # styling
     axis.set_xlabel(r'$k_x$')
     axis.set_ylabel(r'$k_y$')
-    axis.set_aspect('equal', adjustable='datalim')
+    axis.set_aspect('equal', adjustable='box')
     axis.axhline(0, color='grey', lw=0.4, zorder=0)
     axis.axvline(0, color='grey', lw=0.4, zorder=0)
 

@@ -393,67 +393,40 @@ def _bz_path_comprehensive_demo():
         # Plot kx and ky components
 
         ax_path.plot(k_dist, k_path[:, 0], label=r'$k_x$ (Cartesian)', lw=2.5, color='C0')
-
         ax_path.plot(k_dist, k_path[:, 1], label=r'$k_y$ (Cartesian)', lw=2.5, color='C2')
 
         
 
         # Highlight and annotate high-symmetry points
 
-                for i_pt, lbl in labels:
+        for i_pt, lbl in labels:
 
-                    idx_p = min(i_pt, len(k_path)-1)
+            idx_p   = min(i_pt, len(k_path)-1)
+            dist    = k_dist[idx_p]
+            kx, ky  = k_path[idx_p][:2]
 
-                    dist = k_dist[idx_p]
-
-                    kx, ky = k_path[idx_p][:2]
-
-                    
-
-                    # Vertical reference line
+            # Vertical reference line
 
             ax_path.axvline(dist, color='gray', linestyle='--', alpha=0.3)
-
             # Dots at the actual component values
-
             ax_path.scatter([dist, dist], [kx, ky], color=['C0', 'C2'], s=50, zorder=5, edgecolors='white')
 
-            
-
             # Coordinate text annotation (kx, ky)
-
             coord_str = f"({kx:.2f}, {ky:.2f})"
-
             y_max = max(kx, ky)
-
             ax_path.annotate(coord_str, xy=(dist, y_max), xytext=(3, 10),
-
                            textcoords='offset points', rotation=45, fontsize=9,
-
                            fontweight='bold', ha='left', va='bottom')
-
-
-
         ax_path.set_xticks([k_dist[min(i, len(k_dist)-1)] for i, _ in labels])
-
         ax_path.set_xticklabels([lbl for _, lbl in labels], fontsize=13, fontweight='bold')
-
         ax_path.set_title(f"{ltype.capitalize()} Momentum Components vs. Path", fontsize=15)
-
         ax_path.set_ylabel("Momentum (1/A)", fontsize=12)
-
         ax_path.legend(loc='lower left', frameon=True, framealpha=0.9)
-
         ax_path.grid(True, alpha=0.15)
+    
 
-        
-
-    fig.suptitle("Lattice K-Space Analysis: Brillouin Zones and High-Symmetry Path Components", 
-
-                 fontsize=22, fontweight='bold', y=0.99)
-
+    fig.suptitle("Lattice K-Space Analysis: Brillouin Zones and High-Symmetry Path Components", fontsize=22, fontweight='bold', y=0.99)
     fig.tight_layout(rect=[0, 0, 1, 0.98])
-
     savefig(fig, "demo_bz_path_analysis_comprehensive.png")
 
 
