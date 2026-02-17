@@ -1103,7 +1103,7 @@ class HDF5Manager:
         else:
             if target_ndim == 1:
                 if unpack:
-                    result = np.array([x for arr in arrays for x in arr], dtype=target_dtype)
+                    result = np.concatenate(arrays).astype(target_dtype, copy=False)
                 else:
                     result = np.array(arrays, dtype=target_dtype)
             else:  # target_ndim == 2
