@@ -60,7 +60,7 @@ class SquareRegionConfigurator(RegionConfigurator):
             LatticeType.SQUARE, 3, 3, 1, "kitaev_preskill", 1,
             KitaevPreskillRegion(
                 A=[0, 1, 2, 3, 6],
-                B=[
+                B=[2, 3, 4, 5, 8],
                 C=[3, 4, 6, 7],
                 AB=[0, 1, 2, 3, 4, 5],
                 AC=[0, 1, 3, 4, 6, 7],
