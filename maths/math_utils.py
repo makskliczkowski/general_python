@@ -72,12 +72,15 @@ def find_nearest_val(x, val, col):
     - col   : a string on which column to find the nearest
     '''
     if pd is not None and isinstance(x, pd.DataFrame):
-        return x.loc[(x[col]-val).abs().idxmin()]
+        idx = (x[col]-val).abs().idxmin()
+        return x.at[idx, col]
     elif isinstance(x, np.ndarray):
-        return np.array((np.abs(x - val)).argmin())
+        idx = (np.abs(x - val)).argmin()
+        return x.flat[idx]
     elif _JAX_AVAILABLE:
         try:
-            return jnp.array((jnp.abs(x - val)).argmin())
+            idx = (jnp.abs(x - val)).argmin()
+            return x.ravel()[idx]
         except Exception:
             raise TypeError("Unsupported JAX array type for nearest value computation")
     else:

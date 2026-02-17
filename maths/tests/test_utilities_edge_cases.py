@@ -15,20 +15,18 @@ class TestMathUtilities:
         arr = np.array([1.0, 2.0, 5.0, 10.0])
 
         # Nearest to 4.9 is index 2 (value 5.0)
-        # Note: find_nearest_val returns index for ndarray in current implementation (bug?)
-        # It returns an np.array(index)
         val = find_nearest_val(arr, 4.9, None)
-        assert val == 2
+        assert val == 5.0
         assert find_nearest_idx(arr, 4.9) == 2
 
         # Nearest to 1.6 is index 1 (value 2.0)
         val = find_nearest_val(arr, 1.6, None)
-        assert val == 1
+        assert val == 2.0
         assert find_nearest_idx(arr, 1.6) == 1
 
         # Exact match
         val = find_nearest_val(arr, 10.0, None)
-        assert val == 3
+        assert val == 10.0
         assert find_nearest_idx(arr, 10.0) == 3
 
     def test_powers(self):
