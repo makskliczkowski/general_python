@@ -19,16 +19,15 @@ class TestMathUtilsNew:
         # |nan - 3.1| = nan
         # |3 - 3.1| = 0.1
 
-        # np.argmin usually propagates NaN if it appears (depending on version)
-        # or ignores it?
-        # Actually np.argmin(np.array([2.1, np.nan, 0.1])) -> often returns index of nan.
+        # np.argmin behavior with NaNs:
+        # np.argmin(np.array([2.1, np.nan, 0.1]))
+        # In many numpy versions, it returns the index of the first NaN if NaNs are present,
+        # but here the distances are [2.1, nan, 0.1].
+        # Actually np.argmin([2.1, np.nan, 0.1]) returns 2 in recent numpy because nan is "greater" than everything.
 
-        # If it returns index 1 (NaN), that's expected for standard numpy argmin.
-        # If it returns index 2, that's better.
-
-        idx = find_nearest_val(arr, 3.1, None)
-        # Just ensure it doesn't crash
-        assert idx in [0, 1, 2]
+        val = find_nearest_val(arr, 3.1, None)
+        # Just ensure it doesn't crash and returns one of the values in the array
+        assert val in [1.0, 3.0] or np.isnan(val)
 
     def test_mod_round_negative(self):
         """Verify mod_round behavior for negative inputs."""
