@@ -16,6 +16,7 @@ Version : 2.0
 
 from    __future__  import annotations
 from    abc         import ABC, abstractmethod
+from token import OP
 from    typing      import Dict, List, Mapping, Optional, Tuple, Union
 import  numpy       as np
 
@@ -1368,10 +1369,13 @@ class Lattice(ABC):
             case _:
                 raise ValueError(f"Unsupported boundary condition {self._bc!r}")
 
-    def is_periodic(self, direction: LatticeDirection) -> bool:
+    def is_periodic(self, direction: Optional[LatticeDirection] = None, allow_twisted: bool = True) -> bool:
         """
         Check if a given direction has periodic boundary conditions.
         """
+        if direction is None:
+            return self.bc == LatticeBC.PBC or (allow_twisted and self.bc == LatticeBC.TWISTED)
+        
         flags = self.periodic_flags()
         index = {LatticeDirection.X: 0, LatticeDirection.Y: 1, LatticeDirection.Z: 2}[direction]
         return bool(flags[index])
