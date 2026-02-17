@@ -86,8 +86,8 @@ def check_job_success(result):
     if result.returncode != 0:
         return False
     
-    stdout = result.stdout.decode('utf-8').strip()
-    stderr = result.stderr.decode('utf-8').strip()
+    stdout = result.stdout.strip() if isinstance(result.stdout, str) else result.stdout.decode('utf-8').strip()
+    stderr = result.stderr.strip() if isinstance(result.stderr, str) else result.stderr.decode('utf-8').strip()
     
     # Check for common success indicators
     if 'Submitted batch job' in stdout:
@@ -121,11 +121,18 @@ def run_job_runner(ini_file, runmode):
     log_message(f"Starting job runner for: {ini_file}", log_file)
     log_message(f"Output will be logged to: {output_file}", log_file)
     
+    # Get submission delay from environment variable
+    try:
+        delay = float(os.getenv("JOB_SUBMISSION_DELAY", "0.1"))
+    except ValueError:
+        log_message("Warning: JOB_SUBMISSION_DELAY is not a valid float. Using default 0.1s.")
+        delay = 0.1
+
     jobs_run        = 0
     jobs_failed     = 0
     
     # Read and process jobs
-    with open(init_file_base, "r") as f:
+    with open(ini_file, "r") as f:
         lines = f.readlines()
     
     remaining_lines = []
@@ -169,7 +176,8 @@ def run_job_runner(ini_file, runmode):
                     jobs_run += 1
                     
                     # Add a small delay between submissions
-                    time.sleep(1)
+                    if delay > 0:
+                        time.sleep(delay)
                     
                 else:
                     log_message(f"Job {jobs_run + 1}: Submission failed", log_file)
