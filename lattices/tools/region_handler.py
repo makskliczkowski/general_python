@@ -1,4 +1,4 @@
-"""
+r"""
 Region handler for lattice geometries.
 
 This module provides the :class:`LatticeRegionHandler` class, which
@@ -183,15 +183,16 @@ class LatticeRegionHandler:
 
     def get_region(
         self,
-        kind        : Union[str, RegionType] = RegionType.HALF,
+        kind            : Union[str, RegionType] = RegionType.HALF,
         *,
-        origin      : Optional[Union[int, List[float]]] = None,
-        radius      : Optional[float]                   = None,
-        direction   : Optional[str]                     = None,
-        sublattice  : Optional[int]                     = None,
-        sites       : Optional[List[int]]               = None,
-        depth       : Optional[int]                     = None,
-        plaquettes  : Optional[List[int]]               = None,
+        origin          : Optional[Union[int, List[float]]] = None,
+        radius          : Optional[float]                   = None,
+        direction       : Optional[str]                     = None,
+        sublattice      : Optional[int]                     = None,
+        sites           : Optional[List[int]]               = None,
+        depth           : Optional[int]                     = None,
+        plaquettes      : Optional[List[int]]               = None,
+        configuration   : Optional[int]                    = None,
         **kwargs
     ) -> Union[List[int], Dict[str, List[int]]]:
         r"""
@@ -217,6 +218,8 @@ class LatticeRegionHandler:
             Hop-distance for ``'graph'`` balls.
         plaquettes : list[int], optional
             Plaquette indices for ``'plaquette'`` regions.
+        configuration : int, optional
+            Predefined configuration index for the given lattice and kind.
 
         Keyword-only (forwarded)
         ------------------------
@@ -245,61 +248,88 @@ class LatticeRegionHandler:
         [0, 1, 2, ...]
         >>> lat.regions.get_region('disk', origin=10, radius=2.5)
         [5, 6, 10, 11, 15]
-        >>> lat.regions.get_region('kitaev_preskill', radius=5.0)
-        {'A': [...], 'B': [...], 'C': [...], 'AB': [...], ...}
-        >>> lat.regions.get_region('kitaev_preskill', radius=5.0, region='A')
-        [5, 6, 10, ...]
-        >>> lat.regions.get_region('levin_wen', inner_radius=2.0, outer_radius=5.0)
+        >>> lat.regions.get_region('kitaev_preskill', configuration=1)
         {'A': [...], 'B': [...], 'C': [...], 'AB': [...], ...}
         """
         # Normalise kind to lowercase string
         if isinstance(kind, str):
-            kind = kind.strip().lower()
+            kind_str = kind.strip().lower()
         elif isinstance(kind, RegionType):
-            kind = kind.value
+            kind_str = kind.value
         else:
             raise ValueError("kind must be a string or RegionType enum")
 
-        # ------- half-system cuts -------
-        if kind in ("half", "half_x", "half-x"):
+        # handle predefined configurations
+        if configuration is not None:
+            
+            try:
+                from .regions.predefined import get_predefined_region
+            except ImportError:
+                raise ImportError("Predefined regions module not found. Make sure 'regions/predefined.py' exists and is in the correct location.")
+            
+            predefined = get_predefined_region(
+                self.lattice._type, self.lattice.Lx, self.lattice.Ly, self.lattice.Lz, kind_str, configuration
+            )
+            
+            # If a predefined configuration is found, it already contains site indices
+            if predefined is not None:
+                region_id = kwargs.get("region")
+                if region_id is not None:
+                    return predefined.get(region_id.upper(), [])
+                
+                # For predefined KP/LW, return the full structured dictionary
+                if kind_str.startswith(("kitaev", "kp", "levin", "lw")):
+                    return predefined.to_dict()
+                
+                # For simple regions (disk, half, etc.), return just region 'A' by default
+                # This matches the behavior of non-predefined simple regions.
+                if kind_str in ("half", "disk", "sublattice", "graph", "plaquette", "custom"):
+                    return predefined.A
+                
+                return predefined.to_dict()
+            else:
+                raise ValueError(f"Predefined configuration {configuration} not found for {self.lattice._type} {self.lattice.Lx}x{self.lattice.Ly}x{self.lattice.Lz} {kind_str}")
+
+        # a) half-system cuts
+        if kind_str in ("half", "half_x", "half-x"):
             return self.region_half(direction or "x")
-        if kind in ("half_y", "half-y"):
+        if kind_str in ("half_y", "half-y"):
             return self.region_half("y")
-        if kind in ("half_z", "half-z"):
+        if kind_str in ("half_z", "half-z"):
             return self.region_half("z")
-        if kind in ("half_xy", "half-xy"):
+        if kind_str in ("half_xy", "half-xy"):
             return self.region_half("xy")
-        if kind in ("half_yx", "half-yx"):
+        if kind_str in ("half_yx", "half-yx"):
             return self.region_half("yx")
 
-        # ------- disk -------
-        if kind == "disk":
+        # b) disk
+        if kind_str == "disk":
             if origin is None or radius is None:
                 raise ValueError("'disk' requires 'origin' and 'radius'.")
             return self.region_disk(origin, radius)
 
-        # ------- graph-distance ball -------
-        if kind == "graph":
+        # c) graph-distance ball
+        if kind_str == "graph":
             if origin is None or depth is None:
                 raise ValueError("'graph' requires 'origin' (int) and 'depth'.")
             if not isinstance(origin, (int, np.integer)):
                 raise ValueError("'graph' origin must be a site index.")
             return self.region_graph_ball(int(origin), depth)
 
-        # ------- sublattice -------
-        if kind == "sublattice":
+        # d) sublattice
+        if kind_str == "sublattice":
             if sublattice is None:
                 raise ValueError("'sublattice' requires 'sublattice' index.")
             return self.region_sublattice(sublattice)
 
-        # ------- plaquette union -------
-        if kind == "plaquette":
+        # e) plaquette union 
+        if kind_str == "plaquette":
             if plaquettes is None:
                 raise ValueError("'plaquette' requires 'plaquettes' list.")
             return self.region_plaquettes(plaquettes)
 
-        # ------- Kitaev-Preskill -------
-        if kind.startswith("kitaev") or kind.startswith("kp"):
+        # f) Kitaev-Preskill
+        if kind_str.startswith("kitaev") or kind_str.startswith("kp"):
             regions = self.region_kitaev_preskill(
                 origin      = origin,
                 radius      = radius,
@@ -312,8 +342,8 @@ class LatticeRegionHandler:
                 return regions.get(region_id.upper(), [])
             return regions
 
-        # ------- Levin-Wen -------
-        if kind.startswith("levin") or kind.startswith("lw"):
+        # g) Levin-Wen
+        if kind_str.startswith("levin") or kind_str.startswith("lw"):
             regions = self.region_levin_wen(
                 origin          = origin,
                 inner_radius    = kwargs.get("inner_radius", radius),
@@ -325,11 +355,32 @@ class LatticeRegionHandler:
                 return regions.get(region_id.upper(), [])
             return regions
 
-        # ------- custom -------
-        if kind == "custom":
+        # h) custom 
+        if kind_str == "custom":
             return sorted(list(set(sites))) if sites else []
 
-        raise ValueError(f"Unknown region type: {kind!r}")
+        raise ValueError(f"Unknown region type: {kind_str!r}")
+
+    def _coords_to_index(self, x: int, y: int, z: int = 0, sub: int = 0) -> int:
+        """Helper to map coordinates to a linear site index."""
+        from .lattice_tools import LatticeType
+        if self.lattice._type == LatticeType.SQUARE:
+            # Row-major: z varies slowest, x fastest
+            return int(z * self.lattice.Lx * self.lattice.Ly + y * self.lattice.Lx + x)
+        elif self.lattice._type == LatticeType.HONEYCOMB:
+            # Each unit cell (x,y) has 2 sites: index = (y * Lx + x) * 2 + sub
+            return int((z * self.lattice.Ly * self.lattice.Lx + y * self.lattice.Lx + x) * 2 + sub)
+        elif self.lattice._type == LatticeType.TRIANGULAR:
+            return int(z * self.lattice.Lx * self.lattice.Ly + y * self.lattice.Lx + x)
+        else:
+            # Fallback for other lattices if they implement site_index or similar
+            if hasattr(self.lattice, "site_index"):
+                try:
+                    return self.lattice.site_index(x, y, z)
+                except TypeError:
+                    pass
+            raise NotImplementedError(f"Coordinate mapping not implemented for lattice type {self.lattice._type}")
+
 
     # ------------------------------------------------------------------------------
     # Specific region definitions

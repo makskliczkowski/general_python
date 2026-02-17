@@ -401,7 +401,6 @@ def _bz_path_comprehensive_demo():
         fig.tight_layout(rect=[0, 0, 1, 0.95])
         savefig(fig, f"demo_bz_path_analysis_{ltype}.png")
 
-
 # ═══════════════════════════════════════════════════════════════════════════
 #  9. Extended Brillouin zones
 # ═══════════════════════════════════════════════════════════════════════════

@@ -141,7 +141,13 @@ class SquareLattice(Lattice):
         elif self.dim == 2:
             all_momenta = [(qx, qy) for qx in range(self.Lx) for qy in range(self.Ly)]
             if sym:
-                momenta = [(i, j) for i in range(self.Lx // 2 + 1) for j in range(i, self.Ly // 2 + 1)]
+                pbc_x, pbc_y, _ = self.periodic_flags()
+                can_swap        = (self.Lx == self.Ly) and pbc_x and pbc_y
+                
+                if can_swap:
+                    momenta = [(i, j) for i in range(self.Lx // 2 + 1) for j in range(i, self.Ly // 2 + 1)]
+                else:
+                    momenta = [(i, j) for i in range(self.Lx // 2 + 1) for j in range(self.Ly // 2 + 1)]
                 return [i for i, mom in enumerate(all_momenta) if mom in momenta]
             else:
                 return LatticeBackend.arange(self.Ns).tolist()
@@ -157,20 +163,37 @@ class SquareLattice(Lattice):
         Calculates the normalization factors considering symmetric momenta.
         """
         try:
-            self.sym_map = {}
+            self.sym_norm   = {}
+            self.sym_map    = {}
             if self.dim == 2:
-                for i in range(self.Lx // 2 + 1):
-                    for j in range(i, self.Ly // 2 + 1):
-                        self.sym_norm[(i, j)] = 0
+                pbc_x, pbc_y, _ = self.periodic_flags()
+                
+                # We can swap kx and ky only if Lx == Ly and both directions are periodic (D4 symmetry)
+                can_swap        = (self.Lx == self.Ly) and pbc_x and pbc_y
+                
+                # Initialize sym_norm with all possible irreducible momenta
+                if can_swap:
+                    for i in range(self.Lx // 2 + 1):
+                        for j in range(i, self.Ly // 2 + 1):
+                            self.sym_norm[(i, j)] = 0
+                else:
+                    for i in range(self.Lx // 2 + 1):
+                        for j in range(self.Ly // 2 + 1):
+                            self.sym_norm[(i, j)] = 0
 
                 for y in range(self.Ly):
-                    ky = y if y <= self.Ly // 2 else (-(y - self.Ly // 2)) % (self.Ly // 2)
+                    ky = min(y, self.Ly - y) if pbc_y else y
                     for x in range(self.Lx):
-                        kx = x if x <= self.Lx // 2 else (-(x - self.Lx // 2)) % (self.Lx // 2)
+                        kx = min(x, self.Lx - x) if pbc_x else x
+                        
                         mom = (kx, ky)
-                        if kx > ky:
+                        if can_swap and kx > ky:
                             mom = (ky, kx)
-                        self.sym_norm[mom]      += 1
+                        
+                        if mom not in self.sym_norm:
+                            self.sym_norm[mom] = 0
+                            
+                        self.sym_norm[mom]     += 1
                         self.sym_map[(x, y)]    = mom
         except Exception as e:
             print(f"Error in calculate_norm_sym: {e}")

@@ -92,6 +92,7 @@ class ResNetBlock(nn.Module):
     act_fn      : Callable = log_cosh_jnp
     periodic    : bool = True
     init_fn     : Callable = nn.initializers.lecun_normal()
+    use_norm    : bool = True
     
     @nn.compact
     def __call__(self, x):
@@ -107,6 +108,8 @@ class ResNetBlock(nn.Module):
             
         h = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
                     padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, kernel_init=self.init_fn)(h)
+        if self.use_norm:
+            h = nn.LayerNorm(dtype=self.dtype, param_dtype=self.param_dtype)(h)
         h = self.act_fn(h)
         
         # Layer 2
@@ -118,6 +121,8 @@ class ResNetBlock(nn.Module):
             
         h = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
                     padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, kernel_init=self.init_fn)(h)
+        if self.use_norm:
+            h = nn.LayerNorm(dtype=self.dtype, param_dtype=self.param_dtype)(h)
         h = self.act_fn(h)
 
         # Scale down initialization to start close to Identity
