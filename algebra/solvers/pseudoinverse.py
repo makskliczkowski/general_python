@@ -72,16 +72,20 @@ if JAX_AVAILABLE:
     
     def _pinv_jax_core(matrix_a     : jnp.ndarray, 
                        b            : jnp.ndarray, 
-                       tol          : float) -> Tuple[jnp.ndarray, float]:
+                       tol          : float,
+                       sigma        : float = 0.0,
+                       hermitian    : bool = False) -> Tuple[jnp.ndarray, float]:
         """
         JAX implementation of (A + sigma*I)^+ b.
         """
+        sigma_val = 0.0 if sigma is None else sigma
+        matrix_a = matrix_a + sigma_val * jnp.eye(matrix_a.shape[0], dtype=matrix_a.dtype)
         
         # Compute Pseudo-Inverse
         # rcond     =   tol ensures we filter small singular values
         # hermitian =   False is safer generally, but could be True for Fisher matrices.
         # We leave it False to be general-purpose.
-        a_pinv      = jnp.linalg.pinv(matrix_a, rcond=tol)
+        a_pinv      = jnp.linalg.pinv(matrix_a, rcond=tol, hermitian=hermitian)
         x           = jnp.dot(a_pinv, b)
         
         # Compute Residual (for reporting)
@@ -139,27 +143,31 @@ class PseudoInverseSolver(Solver):
         
         if backend_module is jnp:
             if not JAX_AVAILABLE: raise ImportError("JAX not installed.")
+            sigma_default = 0.0 if sigma is None else float(sigma)
 
             # Static arguments for JIT: tol, maxiter, precond_apply (ignored but present in signature)
             static_argnames = ('tol', 'maxiter', 'precond_apply')
 
             # Fisher Mode: (S, Sp) -> Form Matrix -> Pinv
             if use_fisher:
-                def wrapper_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, **ignored_kwargs):
+                def wrapper_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **ignored_kwargs):
                     
                     # Form Gram Matrix: A = S^H @ S / N
                     # Optimize contraction: (params, samples) @ (samples, params)
                     n_samples   = s.shape[0]
                     matrix_a    = jnp.dot(s_p, s) / n_samples
-                    x, res      = _pinv_jax_core(matrix_a, b, tol)
+                    sigma_val   = sigma_default if sigma is None else sigma
+                    # Fisher/Gram matrix is Hermitian by construction.
+                    x, res      = _pinv_jax_core(matrix_a, b, tol, sigma=sigma_val, hermitian=True)
                     return SolverResult(x, True, 1, res)
                 
                 return jax.jit(wrapper_fisher, static_argnames=static_argnames)
 
             # Matrix Mode: A -> Pinv
             elif use_matrix:
-                def wrapper_matrix(a, b, x0, tol, maxiter, precond_apply=None, **ignored_kwargs):
-                    x, res  = _pinv_jax_core(a, b, tol)
+                def wrapper_matrix(a, b, x0, tol, maxiter, precond_apply=None, sigma=None, **ignored_kwargs):
+                    sigma_val = sigma_default if sigma is None else sigma
+                    x, res  = _pinv_jax_core(a, b, tol, sigma=sigma_val, hermitian=False)
                     return SolverResult(x, True, 1, res)
 
                 return jax.jit(wrapper_matrix, static_argnames=static_argnames)
@@ -169,10 +177,11 @@ class PseudoInverseSolver(Solver):
 
         #! NumPy Backend
         elif backend_module is np:
+            sigma_default = 0.0 if sigma is None else float(sigma)
             
             if use_fisher:
-                def wrapper_np_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma_dyn=None, **kwargs):
-                    reg         = sigma_dyn if sigma_dyn is not None else (sigma if sigma else 0.0)
+                def wrapper_np_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                    reg         = sigma_default if sigma is None else sigma
                     n           = s.shape[0]
                     matrix_a    = (s_p @ s) / n
                     x, res      = _pinv_numpy_core(matrix_a, b, tol, reg)
@@ -180,8 +189,8 @@ class PseudoInverseSolver(Solver):
                 return wrapper_np_fisher
             
             else:
-                def wrapper_np_matrix(a, b, x0, tol, maxiter, precond_apply=None, sigma_dyn=None, **kwargs):
-                    reg         = sigma_dyn if sigma_dyn is not None else (sigma if sigma else 0.0)
+                def wrapper_np_matrix(a, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                    reg         = sigma_default if sigma is None else sigma
                     x, res      = _pinv_numpy_core(a, b, tol, reg)
                     return SolverResult(x, True, 1, res)
                 return wrapper_np_matrix

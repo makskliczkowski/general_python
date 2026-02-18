@@ -111,7 +111,9 @@ class _FlaxPP(nn.Module):
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         # Ensure batch dimension
-        if s.ndim == 1: s = s[jnp.newaxis, :]
+        needs_batch = s.ndim == 1
+        if needs_batch:
+            s = s[jnp.newaxis, :]
         
         # 1. Cast Input to Indices (0, 1)
         s_idx           = (s > 0).astype(jnp.int32)
@@ -121,21 +123,13 @@ class _FlaxPP(nn.Module):
         F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
         
         # 3. Construct X Matrices (Vectorized)
-        i_idx = self._i_idx[:, None]
-        j_idx = self._i_idx[None, :]
-        
-        def build_X_for_single(config):
-            # config: (N,)
-            si              = config[:, None]
-            sj              = config[None, :]
-            
-            return F_sym[i_idx, j_idx, si, sj]
-
-        # X_batch: (Batch, N, N)
-        X_batch = jax.vmap(build_X_for_single)(s_idx)
+        i_idx = self._i_idx[None, :, None]  # (1, N, 1)
+        j_idx = self._i_idx[None, None, :]  # (1, 1, N)
+        X_batch = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
         
         # 4. Compute Log Pfaffian
-        return log_pfaffian_proxy(X_batch)
+        out = log_pfaffian_proxy(X_batch)
+        return out[0] if needs_batch else out
 
 # ----------------------------------------------------------------------
 # RBM + PP Module
@@ -177,7 +171,9 @@ class _FlaxRBMPP(nn.Module):
 
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
-        if s.ndim == 1: s = s[jnp.newaxis, :]
+        needs_batch = s.ndim == 1
+        if needs_batch:
+            s = s[jnp.newaxis, :]
         
         # --- RBM Part ---
         v_rbm           = s.astype(self.dtype)
@@ -189,18 +185,13 @@ class _FlaxRBMPP(nn.Module):
         s_idx           = (s > 0).astype(jnp.int32)
         F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
         F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
-        i_idx = self._i_idx[:, None]
-        j_idx = self._i_idx[None, :]
-        
-        def build_X_for_single(config):
-            si          = config[:, None]
-            sj          = config[None, :]
-            return F_sym[i_idx, j_idx, si, sj]
-
-        X_batch         = jax.vmap(build_X_for_single)(s_idx)
+        i_idx = self._i_idx[None, :, None]  # (1, N, 1)
+        j_idx = self._i_idx[None, None, :]  # (1, 1, N)
+        X_batch = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
         log_pp          = log_pfaffian_proxy(X_batch)
-        
-        return log_rbm + log_pp
+
+        out = log_rbm + log_pp
+        return out[0] if needs_batch else out
 
 # ----------------------------------------------------------------------
 # Wrapper Class
@@ -243,10 +234,13 @@ class PairProduct(FlaxInterface):
         
         # Decide which Module to use
         if use_rbm:
+            if alpha <= 0:
+                raise ValueError("alpha must be > 0 when use_rbm=True")
+            n_hidden = max(1, int(n_sites * alpha))
             net_module = _FlaxRBMPP
             net_kwargs = dict(
                                 n_sites     = n_sites,
-                                n_hidden    = int(n_sites * alpha),
+                                n_hidden    = n_hidden,
                                 dtype       = dtype,
                                 param_dtype = p_dtype,
                                 init_scale  = init_scale

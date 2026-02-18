@@ -79,6 +79,19 @@ def circular_pad(x, kernel_sizes):
     
     return jnp.pad(x, pads, mode='wrap')
 
+
+def _resolve_activation(act: Optional[Any]) -> Optional[Callable]:
+    """
+    Resolve activation specs produced by ``get_activation_jnp``.
+    """
+    if act is None:
+        return None
+    if callable(act):
+        return act
+    if isinstance(act, (list, tuple)) and len(act) > 0 and callable(act[0]):
+        return act[0]
+    raise ValueError(f"Invalid activation specification: {act!r}")
+
 ##########################################################
 
 class _FlaxCNN(nn.Module):
@@ -122,7 +135,10 @@ class _FlaxCNN(nn.Module):
         # Resolve Computation Dtypes
         if self.split_complex:
             # Force Real Arithmetic
-            comp_dtype  = jnp.float32 if jnp.iscomplexobj(self.param_dtype) else jnp.float64
+            if jnp.issubdtype(self.param_dtype, jnp.complexfloating):
+                comp_dtype = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
+            else:
+                comp_dtype = self.param_dtype
             # Ensure input is real
             s_proc      = s.real if jnp.iscomplexobj(s) else s
         else:
@@ -138,9 +154,9 @@ class _FlaxCNN(nn.Module):
             x           = x * 2 - 1
 
         # Input Activation
-        if self.in_act is not None:
-            act_fn      = self.in_act[0] if isinstance(self.in_act, (list, tuple)) else self.in_act
-            x           = act_fn(x)
+        in_act = _resolve_activation(self.in_act)
+        if in_act is not None:
+            x = in_act(x)
 
         # ------------
         # Convolutions
@@ -174,7 +190,9 @@ class _FlaxCNN(nn.Module):
             )(x)
             
             # Activation
-            x = act_fn[0](x)
+            act = _resolve_activation(act_fn)
+            if act is not None:
+                x = act(x)
 
         # Pooling
         if self.use_sum_pool:
@@ -214,9 +232,9 @@ class _FlaxCNN(nn.Module):
             out_val         = out_val.reshape((batch_size,))
 
         # Output
-        if self.out_act is not None:
-            act_fn          = self.out_act[0] if isinstance(self.out_act, (list, tuple)) else self.out_act
-            out_val         = act_fn(out_val)
+        out_act = _resolve_activation(self.out_act)
+        if out_act is not None:
+            out_val = out_act(out_val)
 
         # Final Scale
         if not self.islog:
@@ -277,40 +295,64 @@ class CNN(FlaxInterface):
 
         n_visible   = input_shape[0]
         n_dim       = len(reshape_dims)
+        n_layers    = len(features)
+        if n_layers == 0:
+            raise ValueError("features must contain at least one layer")
         
         if math.prod(reshape_dims) != n_visible:
             raise ValueError(f"reshape_dims {reshape_dims} product != input length {n_visible}")
 
-        # Args Normalization
-        def _as_tuple(v, name):
-            out = []
-            for item in v:
-                if isinstance(item, int):
-                    out.append((item,) * n_dim)
-                elif isinstance(item, tuple) and len(item) == n_dim:
-                    out.append(item)
-                else:
-                    raise ValueError(f"{name} {item} must be int or tuple of length {n_dim}")
-            return tuple(out)
+        # Args normalization
+        def _normalize_per_layer(spec, name):
+            if isinstance(spec, int):
+                return [spec] * n_layers
+            if isinstance(spec, tuple) and len(spec) == n_dim and all(isinstance(k, int) for k in spec):
+                return [spec] * n_layers
+            if isinstance(spec, (list, tuple)):
+                items = list(spec)
+                if len(items) == 0:
+                    raise ValueError(f"{name} cannot be empty")
+                if len(items) == 1 and n_layers > 1:
+                    items = items * n_layers
+                elif len(items) != n_layers:
+                    raise ValueError(f"{name} must have length 1 or match len(features)={n_layers}")
+                return items
+            raise ValueError(f"{name} must be int, tuple[int,...], or sequence")
 
-        kernels     = _as_tuple(kernel_sizes, "kernel_size")
-        
-        if strides is None: strides = (1,) * len(features)
-        strides_t   = _as_tuple(strides, "stride")
+        def _as_spatial_tuple(item, name):
+            if isinstance(item, int):
+                return (item,) * n_dim
+            if isinstance(item, (list, tuple)) and len(item) == n_dim and all(isinstance(k, int) for k in item):
+                return tuple(int(k) for k in item)
+            raise ValueError(f"{name} entry {item} must be int or tuple/list of length {n_dim}")
+
+        kernels = tuple(_as_spatial_tuple(item, "kernel_sizes") for item in _normalize_per_layer(kernel_sizes, "kernel_sizes"))
+        stride_spec = 1 if strides is None else strides
+        strides_t = tuple(_as_spatial_tuple(item, "strides") for item in _normalize_per_layer(stride_spec, "strides"))
 
         # Activations
         if isinstance(activations, (str, Callable)):
-            acts = (get_activation_jnp(activations),) * len(features)
+            acts = (get_activation_jnp(activations),) * n_layers
         elif isinstance(activations, (Sequence, List)):
-            acts = tuple(get_activation_jnp(a) for a in activations[:len(features)])
+            if len(activations) == 1:
+                acts = (get_activation_jnp(activations[0]),) * n_layers
+            elif len(activations) == n_layers:
+                acts = tuple(get_activation_jnp(a) for a in activations)
+            else:
+                raise ValueError("activations list length must be 1 or match len(features)")
         else:
             raise ValueError("Invalid activation spec")
 
         # Bias
         if isinstance(use_bias, bool):
-            bias_flags  = (use_bias,) * len(features)
+            bias_flags  = (use_bias,) * n_layers
         else:
-            bias_flags  = tuple(bool(b) for b in use_bias)
+            bias_vals = list(use_bias)
+            if len(bias_vals) == 1 and n_layers > 1:
+                bias_vals = bias_vals * n_layers
+            elif len(bias_vals) != n_layers:
+                raise ValueError("use_bias list length must be 1 or match len(features)")
+            bias_flags = tuple(bool(b) for b in bias_vals)
 
         p_dtype         = param_dtype if param_dtype is not None else dtype
         output_feats    = int(np.prod(output_shape))
@@ -357,25 +399,35 @@ class CNN(FlaxInterface):
 
     def __call__(self, s: 'Array'):
         flat_output = super().__call__(s)
-        
-        if flat_output.ndim == 0:       # Single scalar
+        out_size = int(np.prod(self._out_shape))
+
+        # Scalar output (common NQS path)
+        if self._out_shape == (1,):
+            if flat_output.ndim == 0:
+                return flat_output
+            return flat_output.reshape(-1)
+
+        # Vector/tensor output path
+        if flat_output.ndim == 0:
             return flat_output
-        elif flat_output.ndim == 1:     # Batch of scalars
-            return flat_output
-        else:
-            # Flatten to (batch_size,) or scalar
-            return flat_output.reshape(-1)[:s.shape[0] if s.ndim > 1 else 1]
+        if flat_output.ndim == 1:
+            if hasattr(s, "ndim") and s.ndim > 1:
+                batch = s.shape[0]
+                return flat_output.reshape((batch,) + self._out_shape)
+            return flat_output.reshape(self._out_shape)
+        if flat_output.shape[-1] == out_size:
+            return flat_output.reshape(flat_output.shape[:-1] + self._out_shape)
+        return flat_output
 
     def __repr__(self) -> str:
         kind    = "SplitComplex" if self._split_complex else ("Complex" if self._iscpx else "Real")
-        return  (
-                    f"{kind}CNN(reshape={self._flax_module.reshape_dims}, "
-                    f"features={self._flax_module.features}, "
-                    f"kernels={self._flax_module.kernel_sizes}, "
-                    f"params={self.nparams}), "
-                    f"dtype={self.dtype}, "
-                    f"periodic={self._flax_module.periodic}, "
-                )
+        return (
+            f"{kind}CNN(reshape={self._flax_module.reshape_dims}, "
+            f"features={self._flax_module.features}, "
+            f"kernels={self._flax_module.kernel_sizes}, "
+            f"dtype={self.dtype}, periodic={self._flax_module.periodic}, "
+            f"params={self.nparams})"
+        )
 
     def __str__(self) -> str:
         return self.__repr__()

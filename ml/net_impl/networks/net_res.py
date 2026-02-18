@@ -162,14 +162,20 @@ class _FlaxResNet(nn.Module):
         if is_cplx:
             self.k_init = lambda: cplx_variance_scaling(self.init_scale, self.init_mode, self.init_dist, self.param_dtype)
         else:
-            self.k_init = lambda: nn.initializers.variance_scaling(self.init_scale, self.init_mode, self.init_dist, self.param_dtype)
+            self.k_init = lambda: nn.initializers.variance_scaling(
+                self.init_scale, self.init_mode, self.init_dist, dtype=self.param_dtype
+            )
 
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
         
         # --- 1. Input Reshaping ---
-        if s.ndim == 1:
+        needs_batch = s.ndim == 1
+        if needs_batch:
             s = s[jnp.newaxis, ...]
+
+        if self.map_input_to_spin:
+            s = 2 * s - 1
             
         batch_size   = s.shape[0]
         # (Batch, L1, L2, ..., 1)
@@ -213,8 +219,9 @@ class _FlaxResNet(nn.Module):
         # Final Dense Layer
         x = nn.Dense(features=1, dtype=self.dtype, param_dtype=self.param_dtype, 
                      kernel_init=self.k_init(), name="dense_out")(x)
-        
-        return x.reshape(-1)
+
+        out = x.reshape(-1)
+        return out[0] if needs_batch else out
 
 ##########################################################
 #! RESNET WRAPPER CLASS
@@ -288,13 +295,15 @@ class ResNet(FlaxInterface):
         
         # Validation
         if math.prod(reshape_dims) != n_visible:
-            pass # Or warning
+            raise ValueError(f"reshape_dims {reshape_dims} product != input length {n_visible}")
 
         # Normalize kernel size
         if isinstance(kernel_size, int):
             kernel_tuple = (kernel_size,) * n_dim
         else:
             kernel_tuple = kernel_size
+        if len(kernel_tuple) != n_dim:
+            raise ValueError(f"kernel_size {kernel_tuple} must have length {n_dim}")
 
         p_dtype = param_dtype if param_dtype is not None else dtype
 

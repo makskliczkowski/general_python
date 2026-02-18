@@ -93,7 +93,7 @@ class _FlaxRBM(nn.Module):
         self.dense = nn.Dense(
             features    =   self.n_hidden,
             use_bias    =   self.bias,
-            kernel_init =   cplx_variance_scaling(0.1, "fan_in", "normal", self.param_dtype) if is_complex else nn.initializers.lecun_normal(),
+            kernel_init =   cplx_variance_scaling(0.1, "fan_in", "normal", self.param_dtype) if is_complex else lecun_normal(self.param_dtype),
             bias_init   =   nn.initializers.zeros,
             dtype       =   self.dtype,
             param_dtype =   self.param_dtype,
@@ -186,7 +186,7 @@ class RBM(FlaxInterface):
         # Handle alpha if provided
         if alpha is not None:
             n_visible = np.prod(input_shape)
-            n_hidden  = int(alpha * n_visible)
+            n_hidden  = max(1, int(alpha * n_visible))
 
         # Determine dtypes
         final_dtype             = jnp.dtype(dtype)

@@ -63,6 +63,8 @@ class RegionType(Enum):
     HALF_Z          = "half_z"
     HALF_XY         = "half_xy"
     HALF_YX         = "half_yx"
+    QUARTER         = "quarter"
+    SWEEP           = "sweep"
     DISK            = "disk"
     SUBLATTICE      = "sublattice"
     GRAPH           = "graph"
@@ -202,7 +204,7 @@ class LatticeRegionHandler:
         ----------
         kind : str or RegionType
             ``'half'``, ``'half_x'``, ``'half_y'``, ``'half_z'``, ``'disk'``,
-            ``'sublattice'``, ``'graph'``, ``'plaquette'``,
+            ``'quarter'``, ``'sweep'``, ``'sublattice'``, ``'graph'``, ``'plaquette'``,
             ``'kitaev_preskill'``, ``'levin_wen'``, ``'custom'``.
         origin : int or list[float], optional
             Center of the region (site index **or** coordinate).
@@ -301,6 +303,10 @@ class LatticeRegionHandler:
             return self.region_half("xy")
         if kind_str in ("half_yx", "half-yx"):
             return self.region_half("yx")
+        if kind_str == "quarter":
+            return self.region_quarter()
+        if kind_str == "sweep":
+            return self.region_sweep(by_unit_cell=kwargs.get("by_unit_cell", None))
 
         # b) disk
         if kind_str == "disk":
@@ -360,6 +366,62 @@ class LatticeRegionHandler:
             return sorted(list(set(sites))) if sites else []
 
         raise ValueError(f"Unknown region type: {kind_str!r}")
+
+    # ------------------------------------------------------------------------------
+    # Entropy-oriented cut helpers
+    # ------------------------------------------------------------------------------
+
+    def get_entropy_cuts(
+        self,
+        cut_type: str = "all",
+        *,
+        include_sublattice: bool = True,
+        sweep_by_unit_cell: Optional[bool] = None,
+    ) -> Dict[str, List[int]]:
+        """
+        Return canonical bipartition cuts for entanglement-entropy studies.
+
+        Supported cut types:
+        - ``half_x``, ``half_y``, ``quarter``, ``sublattice_A``, ``sweep``, ``all``.
+
+        Notes
+        -----
+        - ``quarter`` is defined as the intersection of ``half_x`` and ``half_y``.
+        - ``sweep`` returns nested prefixes for scaling analyses.
+        - For non-Bravais lattices (e.g. honeycomb), ``sweep`` defaults to unit-cell
+          increments; for Bravais lattices, it defaults to site increments.
+        """
+        cut_type_norm = cut_type.strip().lower()
+        valid = {"half_x", "half_y", "quarter", "sublattice_a", "sweep", "all"}
+        if cut_type_norm not in valid:
+            raise ValueError(
+                f"Unknown cut_type '{cut_type}'. Use one of {sorted(valid)}."
+            )
+
+        cuts: Dict[str, List[int]] = {}
+
+        if cut_type_norm in ("half_x", "all"):
+            cuts["half_x"] = self.region_half("x")
+
+        if cut_type_norm in ("half_y", "all"):
+            cuts["half_y"] = self.region_half("y")
+
+        if cut_type_norm in ("quarter", "all"):
+            half_x = set(cuts.get("half_x", self.region_half("x")))
+            half_y = set(cuts.get("half_y", self.region_half("y")))
+            cuts["quarter"] = sorted(half_x & half_y)
+
+        if include_sublattice and cut_type_norm in ("sublattice_a", "all"):
+            try:
+                cuts["sublattice_A"] = self.region_sublattice(0)
+            except Exception:
+                # Some custom lattices may not expose meaningful sublattice labels.
+                pass
+
+        if cut_type_norm in ("sweep", "all"):
+            cuts.update(self.region_sweep(by_unit_cell=sweep_by_unit_cell))
+
+        return cuts
 
     def _coords_to_index(self, x: int, y: int, z: int = 0, sub: int = 0) -> int:
         """Helper to map coordinates to a linear site index."""
@@ -428,6 +490,67 @@ class LatticeRegionHandler:
 
         # Return sites with coordinate less than cut_val along the specified axis
         return sorted(np.where(vals < cut_val)[0].tolist())
+
+    # ------------------------------------------------------------------------------
+
+    def region_quarter(self) -> List[int]:
+        """
+        Return a quarter-system region as ``half_x ∩ half_y``.
+        """
+        return sorted(set(self.region_half("x")) & set(self.region_half("y")))
+
+    # ------------------------------------------------------------------------------
+
+    def region_sweep(self, *, by_unit_cell: Optional[bool] = None) -> Dict[str, List[int]]:
+        """
+        Return nested sweep cuts used for entropy scaling analyses.
+
+        Parameters
+        ----------
+        by_unit_cell : bool or None
+            - ``True``: grow by unit cells.
+            - ``False``: grow by individual sites.
+            - ``None``: auto-select (unit cells for multi-sublattice lattices).
+        """
+        Ns = int(self.lattice.Ns)
+        if Ns <= 1:
+            return {}
+
+        subs = np.asarray(getattr(self.lattice, "subs", np.zeros(Ns, dtype=int)))
+        if by_unit_cell is None:
+            by_unit_cell = len(np.unique(subs)) > 1
+
+        cuts: Dict[str, List[int]] = {}
+
+        if by_unit_cell and hasattr(self.lattice, "fracs"):
+            fracs = np.asarray(self.lattice.fracs)
+            if fracs.shape[0] != Ns:
+                by_unit_cell = False
+            else:
+                cells_to_sites: Dict[Tuple[int, int, int], List[int]] = {}
+                for i in range(Ns):
+                    cx, cy, cz = map(int, fracs[i])
+                    cells_to_sites.setdefault((cx, cy, cz), []).append(i)
+
+                ordered_cells = sorted(cells_to_sites.keys(), key=lambda c: (c[2], c[1], c[0]))
+                total_cells = len(ordered_cells)
+                if total_cells <= 1:
+                    return {}
+
+                for n_cell in range(1, total_cells):
+                    region = []
+                    for cell in ordered_cells[:n_cell]:
+                        region.extend(sorted(cells_to_sites[cell], key=lambda s: int(subs[s])))
+                    cuts[f"sweep_{n_cell}_of_{total_cells}"] = sorted(region)
+
+                return cuts
+
+        # Fallback: site-ordered sweep in real-space lexicographic order.
+        coords = np.asarray(self.lattice.rvectors)
+        order = np.lexsort((coords[:, 2], coords[:, 1], coords[:, 0]))
+        for n_site in range(1, Ns):
+            cuts[f"sweep_{n_site}_of_{Ns}"] = sorted(order[:n_site].tolist())
+        return cuts
 
     # ------------------------------------------------------------------------------
 

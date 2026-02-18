@@ -390,6 +390,24 @@ class Lattice(ABC):
             **kwargs
         )
 
+    def get_entropy_cuts(
+        self,
+        cut_type: str = "all",
+        *,
+        include_sublattice: bool = True,
+        sweep_by_unit_cell: Optional[bool] = None,
+    ) -> Dict[str, List[int]]:
+        """
+        Return canonical bipartition cuts for entanglement-entropy workflows.
+
+        This is a convenience wrapper around :meth:`self.regions.get_entropy_cuts`.
+        """
+        return self.regions.get_entropy_cuts(
+            cut_type=cut_type,
+            include_sublattice=include_sublattice,
+            sweep_by_unit_cell=sweep_by_unit_cell,
+        )
+
     ################################### GETTERS ###################################
     
     @property

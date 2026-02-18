@@ -87,7 +87,8 @@ def _cg_logic_numpy(matvec          : MatVecFunc,
                     x0              : np.ndarray,
                     tol             : float,
                     maxiter         : int,
-                    precond_apply   : Optional[Callable[[np.ndarray], np.ndarray]] = None
+                    precond_apply   : Optional[Callable[[np.ndarray], np.ndarray]] = None,
+                    **kwargs
                     ) -> SolverResult:
     r"""
     Core Conjugate Gradient (CG) algorithm implementation using NumPy.
@@ -109,6 +110,9 @@ def _cg_logic_numpy(matvec          : MatVecFunc,
             Maximum number of iterations.
         precond_apply (Optional[Callable[[np.ndarray], np.ndarray]]):
             Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+        **kwargs:
+            Ignored compatibility arguments forwarded by generic solver wrappers
+            (e.g. ``s``, ``s_p``, ``sigma`` in Gram mode).
 
     Returns:
         SolverResult:
@@ -362,7 +366,8 @@ if _NUMBA_AVAILABLE:
                                         x0,
                                         tol             : float,
                                         maxiter         : int,
-                                        precond_apply   : Callable[[np.ndarray], np.ndarray] = None):
+                                        precond_apply   : Callable[[np.ndarray], np.ndarray] = None,
+                                        **kwargs):
         r"""
         Wrapper for Numba CG: Calls no_precond or precond version. 
         Parameters:
@@ -378,6 +383,8 @@ if _NUMBA_AVAILABLE:
                 Maximum number of iterations.
             precond_apply Callable[[np.ndarray], np.ndarray]:
                 Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+            **kwargs:
+                Ignored compatibility arguments forwarded by generic solver wrappers.
         """
         # Check if matvec is a callable (function) - if so, use plain Python version
         if callable(matvec):
@@ -421,7 +428,8 @@ if JAX_AVAILABLE:
             x0              : jnp.ndarray,
             tol             : float,
             maxiter         : int,
-            precond_apply   : Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None) -> SolverResult:
+            precond_apply   : Optional[Callable[[jnp.ndarray], jnp.ndarray]] = None,
+            **kwargs) -> SolverResult:
         r"""
         Core CG algorithm implementation using JAX. See _cg_logic_numpy for math.
         
@@ -438,6 +446,8 @@ if JAX_AVAILABLE:
                 Maximum number of iterations.
             precond_apply (Optional[Callable[[jnp.ndarray], jnp.ndarray]]):
                 Function performing the preconditioning step $ r \\mapsto M^{-1}r $.
+            **kwargs:
+                Ignored compatibility arguments forwarded by generic solver wrappers.
         Returns:
             SolverResult:
                 Named tuple containing the solution $ x_k $, convergence status,
@@ -454,14 +464,13 @@ if JAX_AVAILABLE:
         # Use vdot for Hermitian inner product <r, z>
         rho0        = jnp.real(jnp.vdot(r0, z0))
 
-        # Norms for convergence check
-        norm_b      = jnp.linalg.norm(b)
-        tol_val     = tol * jnp.where(norm_b == 0, 1.0, norm_b)
+        # Use squared norms to avoid repeated sqrt in the loop body.
+        norm_b_sq   = jnp.real(jnp.vdot(b, b))
+        tol_crit_sq = jnp.where(norm_b_sq > 1e-15, (tol * tol) * norm_b_sq, tol * tol)
         
-        # Loop State: (iteration, x, r, p, rho, residual_norm)
-        # We compute initial residual norm
-        res_norm0   = jnp.linalg.norm(r0)
-        init_val    = (0, x0, r0, p0, rho0, res_norm0)
+        # Loop State: (iteration, x, r, p, rho, residual_norm_sq)
+        res_norm_sq0 = jnp.real(jnp.vdot(r0, r0))
+        init_val    = (0, x0, r0, p0, rho0, res_norm_sq0)
 
         def cond_fun(state):
             """ 
@@ -470,8 +479,8 @@ if JAX_AVAILABLE:
             Allows for early exit if the residual norm is already below the tolerance.
             Requires the state to be unpacked.
             """
-            i, _, _, _, _, res_norm = state
-            return (i < maxiter) & (res_norm > tol_val)
+            i, _, _, _, _, res_norm_sq = state
+            return (i < maxiter) & (res_norm_sq > tol_crit_sq)
 
         def body_fun(val):
             """ 
@@ -506,20 +515,20 @@ if JAX_AVAILABLE:
             # Search direction update
             p_new               = z_new + beta * p
             
-            # Residual norm for convergence check
-            res_norm_new        = jnp.linalg.norm(r_new)
+            # Residual norm^2 for convergence check
+            res_norm_new        = jnp.real(jnp.vdot(r_new, r_new))
             
             return (i + 1, x_new, r_new, p_new, rho_new, res_norm_new)
 
         final_val = lax.while_loop(cond_fun, body_fun, init_val)
-        iter_final, x_final, _, _, _, res_norm_final = final_val
-        converged = res_norm_final <= tol_val
+        iter_final, x_final, _, _, _, res_norm_sq_final = final_val
+        converged = res_norm_sq_final <= tol_crit_sq
         
         return SolverResult(
             x               =   x_final, 
             converged       =   converged, 
             iterations      =   iter_final, 
-            residual_norm   =   res_norm_final
+            residual_norm   =   jnp.sqrt(jnp.maximum(res_norm_sq_final, 0.0))
         )
 
     # Compile once. 

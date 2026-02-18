@@ -145,6 +145,25 @@ class EarlyStopping(BaseSchedulerLogger):
 
         return self._stop_training
 
+    @classmethod
+    def from_kwargs(cls, **kwargs):
+        patience = kwargs.get(
+            "patience",
+            kwargs.get(
+                "early_stopping_patience",
+                kwargs.get("es_patience", kwargs.get("early_patience", 0)),
+            ),
+        )
+        min_delta = kwargs.get(
+            "min_delta",
+            kwargs.get(
+                "early_stopping_min_delta",
+                kwargs.get("es_min_delta", kwargs.get("early_min_delta", 1e-3)),
+            ),
+        )
+        logger = kwargs.get("logger", None)
+        return cls(patience=patience, min_delta=min_delta, logger=logger)
+
     def reset(self):
         self._best_metric           = _INF
         self._epoch_since_best      = 0

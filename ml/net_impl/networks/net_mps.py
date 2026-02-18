@@ -68,15 +68,17 @@ class _FlaxMPS(nn.Module):
     def __call__(self, s):
         
         # s shape: (batch, n_sites)
-        if s.ndim == 1: 
+        needs_batch = s.ndim == 1
+        if needs_batch:
             s = s[jnp.newaxis, :]
         
-        # 1. Map inputs to indices (assuming 0/1 or similar integer-like inputs)
-        # If inputs are +/- 1 or continuous, we might need a mapping.
-        # Here we assume inputs are {0, 1} approx.
-        s_idx   = jnp.round(s).astype(jnp.int32)
-        # Ensure indices are within [0, phys_dim-1]
-        s_idx   = jnp.clip(s_idx, 0, self.phys_dim - 1)
+        # 1. Map inputs to physical indices
+        s_real = jnp.real(s)
+        if self.phys_dim == 2:
+            s_idx = (s_real > 0).astype(jnp.int32)
+        else:
+            s_idx = jnp.round(s_real).astype(jnp.int32)
+            s_idx = jnp.clip(s_idx, 0, self.phys_dim - 1)
 
         # A: (d, D, D)
         A_eff   = self.A.astype(self.dtype)
@@ -98,7 +100,8 @@ class _FlaxMPS(nn.Module):
 
         # Initial Identity matrices (Batch, D, D)
         batch_size      = s.shape[0]
-        init_carry      = jnp.eye(self.bond_dim, dtype=self.dtype)[None, ...].repeat(batch_size, axis=0)
+        eye_d           = jnp.eye(self.bond_dim, dtype=self.dtype)
+        init_carry      = jnp.broadcast_to(eye_d, (batch_size, self.bond_dim, self.bond_dim))
 
         # Scan over sites (axis 1 of s_idx)
         # s_idx.T shape is (n_sites, batch)
@@ -110,7 +113,8 @@ class _FlaxMPS(nn.Module):
         
         # Return log(psi)
         # Note: Standard MPS can vanish/explode. Log-MPS is numerically safer but harder to implement directly as trace.
-        return jnp.log(val)
+        out = jnp.log(val)
+        return out[0] if needs_batch else out
 
 # ----------------------------------------------------------------------
 # Wrapper Interface
@@ -133,6 +137,7 @@ class MPS(FlaxInterface):
                 param_dtype     : Optional[Any] = None,
                 init_scale      : float = 0.01,
                 seed            : int   = 0,
+                backend         : str   = 'jax',
                 **kwargs):
 
         if not JAX_AVAILABLE: raise ImportError("MPS requires JAX.")
@@ -150,7 +155,7 @@ class MPS(FlaxInterface):
             net_module  =   _FlaxMPS,
             net_kwargs  =   net_kwargs,
             input_shape =   input_shape,
-            backend     =   'jax',
+            backend     =   backend,
             dtype       =   dtype,
             seed        =   seed,
             **kwargs

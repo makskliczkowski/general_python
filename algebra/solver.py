@@ -242,11 +242,32 @@ class Solver(ABC):
         """ 
         Internal method to set backend attributes.
         """
-        new_backend_str                 = backend
-        if new_backend_str == 'default' and JAX_AVAILABLE:
-            new_backend_str = 'jax'
-        else:
-            new_backend_str = 'numpy'
+        backend_spec = backend
+        new_backend_str = "numpy"
+
+        if backend_spec is None:
+            new_backend_str = "jax" if JAX_AVAILABLE else "numpy"
+        elif isinstance(backend_spec, str):
+            key = backend_spec.strip().lower()
+            if key in ("default", "auto"):
+                new_backend_str = "jax" if JAX_AVAILABLE else "numpy"
+            elif key in ("jax", "jnp"):
+                new_backend_str = "jax" if JAX_AVAILABLE else "numpy"
+            elif key in ("numpy", "np"):
+                new_backend_str = "numpy"
+            else:
+                new_backend_str = "numpy"
+        elif backend_spec is np:
+            new_backend_str = "numpy"
+        elif JAX_AVAILABLE and (backend_spec is jnp or backend_spec is jax):
+            new_backend_str = "jax"
+        elif hasattr(backend_spec, "__name__"):
+            name = str(getattr(backend_spec, "__name__", "")).lower()
+            if JAX_AVAILABLE and name.startswith("jax"):
+                new_backend_str = "jax"
+            elif name.startswith("numpy"):
+                new_backend_str = "numpy"
+
         self._backend_str               = new_backend_str
         bck, (rnd, key), sp             = get_backend(self._backend_str, scipy=True, random=True)
         self._backend, self._backend_sp = bck, sp

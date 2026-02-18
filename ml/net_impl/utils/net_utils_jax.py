@@ -75,6 +75,8 @@ if JAX_AVAILABLE:
         #   ((5 + 3 - 1) // 3) =  (7 // 3) = 2 batches needed, so 2*3 = 6 samples in total.
         #   Then append_data = 6 - 5 = 1 extra sample needed.
         append_data = batch_size * ((data.shape[0] + batch_size - 1) // batch_size) - data.shape[0]
+        if append_data == 0:
+            return data.reshape((-1, batch_size) + data.shape[1:])
         
         # Create a list of padding widths.
         # First dimension: pad (0, append_data) so that we add 'append_data' rows at the end.
@@ -135,15 +137,17 @@ if JAX_AVAILABLE:
     
         # #! Create batches of data
         batches = create_batches_jax(data, batch_size)
+        vmapped_eval = jax.vmap(lambda y: func(params, y), in_axes=(0,))
         
         def scan_fun(c, x):
-            return c, jax.vmap(lambda y: func(params, y), in_axes=(0,))(x)
+            return c, vmapped_eval(x)
 
         # Evaluate the function on each batch using vmap
-        st = jax.lax.scan(scan_fun, None, jnp.array(batches))[1].reshape((-1,))
-        return st[:data.shape[0]]
+        out = jax.lax.scan(scan_fun, None, batches)[1]
+        flat = out.reshape((out.shape[0] * out.shape[1],) + out.shape[2:])
+        return flat[:data.shape[0]]
     
-    @jax.jit
+    @partial(jax.jit, static_argnums=(0, 1))
     def eval_batched_jax_simple(batch_size  : int,
                                 func        : Any,
                                 data        : jnp.ndarray):
@@ -153,7 +157,9 @@ if JAX_AVAILABLE:
         # Create batches of data
         batches = create_batches_jax(data, batch_size)
         # Evaluate the function on each batch using vmap
-        return jax.vmap(func)(batches).reshape((-1,))
+        out = jax.vmap(func)(batches)
+        flat = out.reshape((out.shape[0] * out.shape[1],) + out.shape[2:])
+        return flat[:data.shape[0]]
 
 ###########################################################################
 #! GRADIENTS
@@ -651,8 +657,11 @@ if JAX_AVAILABLE:
                 weighted            = b_grads * b_weights[:, None]
                 return carry + jnp.sum(weighted, axis=0), None
 
-            # init_val = jnp.zeros(self._n_params, dtype=jnp.complex128 if self.is_cpx[0] else jnp.float32) 
-            init_val                = jnp.zeros(self._n_params, dtype=DEFAULT_JP_CPX_TYPE)
+            # Keep accumulation dtype real when possible to avoid unnecessary
+            # complex arithmetic overhead on purely real parameter trees.
+            base_dtype              = DEFAULT_JP_CPX_TYPE if any(self.is_cpx) else DEFAULT_JP_FLOAT_TYPE
+            init_dtype              = jnp.result_type(base_dtype, weights.dtype)
+            init_val                = jnp.zeros(self._n_params, dtype=init_dtype)
 
             # Run scan
             final_sum, _            = jax.lax.scan(body_fun, init_val, (self._batches, w_batches))
@@ -1038,6 +1047,10 @@ if JAX_AVAILABLE:
 
         # N, pad, N_pad are ordinary Python ints -> OK for jnp.pad
         N             = flat_states.shape[0]
+        if N == 0:
+            empty = jnp.empty((0,), dtype=jnp.result_type(flat_logp_in.dtype, flat_samp_p.dtype))
+            return empty, jnp.asarray(0.0, dtype=empty.dtype), jnp.asarray(0.0, dtype=empty.dtype)
+
         pad           = (-N) % batch_size          # 0 … batch_size-1
         N_pad         = N + pad
         n_batches     = N_pad // batch_size
@@ -1072,6 +1085,10 @@ if JAX_AVAILABLE:
 
         in_axes      = (0, 0, 0) + (None,) * len(op_args)
         batch_kernel = jax.vmap(_estimate_one, in_axes=in_axes, out_axes=0)
+
+        if N <= batch_size:
+            estimates = batch_kernel(flat_states, flat_logp_in, flat_samp_p, *op_args)
+            return estimates, jnp.mean(estimates), jnp.std(estimates)
 
         # ----------------------------------------------------------------------
         # Scan over batches, writing directly into a length-N_pad buffer
@@ -1141,7 +1158,15 @@ if JAX_AVAILABLE:
             # Return the weighted sum.
             return jnp.sum(weighted_sum, axis=0)
         
-        # Create batches using a helper (assumed to be defined elsewhere).
+        if states.shape[0] == 0:
+            empty = jnp.empty((0,), dtype=jnp.result_type(logprobas_in.dtype, jnp.float32))
+            return empty, jnp.asarray(0.0, dtype=empty.dtype), jnp.asarray(0.0, dtype=empty.dtype)
+
+        if states.shape[0] <= batch_size:
+            estimates = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
+            return estimates, jnp.mean(estimates, axis=0), jnp.std(estimates, axis=0)
+
+        # Create batches using a helper.
         batches         = create_batches_jax(states, batch_size)
         log_batches     = create_batches_jax(logprobas_in, batch_size)
         

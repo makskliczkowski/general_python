@@ -71,12 +71,13 @@ class _FlaxMLP(nn.Module):
         else:
             c_dtype = self.dtype
             p_dtype = self.param_dtype
+        self._comp_dtype = c_dtype
 
         # Initializer
         if jnp.issubdtype(p_dtype, jnp.complexfloating):
             kernel_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', p_dtype)
         else:
-            kernel_init = nn.initializers.lecun_normal()
+            kernel_init = lecun_normal(p_dtype)
 
         # Build Hidden Layers
         self.layers = [
@@ -104,13 +105,16 @@ class _FlaxMLP(nn.Module):
     @nn.compact
     def __call__(self, x):
         # x shape: (batch, input_dim)
+        needs_batch = x.ndim == 1
+        if needs_batch:
+            x = x[jnp.newaxis, ...]
         
         # 1. Preprocessing
         if self.split_complex:
             x = x.real if jnp.iscomplexobj(x) else x
             
         # Type cast to layer dtype
-        x = x.astype(self.layers[0].dtype)
+        x = x.astype(self._comp_dtype)
 
         if self.input_trans is not None:
             x = self.input_trans(x)
@@ -127,9 +131,13 @@ class _FlaxMLP(nn.Module):
         if self.split_complex:
             # Split into Real/Imag parts
             re, im  = jnp.split(x, 2, axis=-1)
-            x       = re + 1j * im
-            
-        return x
+            c_dtype = jnp.complex64 if re.dtype == jnp.float32 else jnp.complex128
+            x       = (re + 1j * im).astype(c_dtype)
+
+        if self.output_dim == 1:
+            x = x.reshape((x.shape[0],))
+
+        return x[0] if needs_batch else x
 
 # ----------------------------------------------------------------------
 # Wrapper Interface
@@ -203,9 +211,21 @@ class MLP(FlaxInterface):
 
     def __call__(self, x):
         flat_out = super().__call__(x)
+        out_size = int(np.prod(self._output_shape))
         if self._output_shape == (1,):
+            if flat_out.ndim == 0:
+                return flat_out
             return flat_out.reshape(-1)
-        return flat_out.reshape((-1,) + self._output_shape)
+
+        if flat_out.ndim == 0:
+            return flat_out
+        if flat_out.ndim == 1:
+            if hasattr(x, "ndim") and x.ndim > 1:
+                return flat_out.reshape((x.shape[0],) + self._output_shape)
+            return flat_out.reshape(self._output_shape)
+        if flat_out.shape[-1] == out_size:
+            return flat_out.reshape(flat_out.shape[:-1] + self._output_shape)
+        return flat_out
 
     def __repr__(self) -> str:
         kind = "SplitComplex" if self._split_complex else ("Complex" if self._iscpx else "Real")
