@@ -563,9 +563,15 @@ class Solver(ABC):
                 return jax.jit(wrapper_logic, static_argnames=static_argnames)
             
             else: 
-                def wrapper_logic(matvec, b, x0, tol, maxiter, precond_apply=None, snr_tol=None):
+                def wrapper_logic(matvec, b, x0, tol, maxiter, precond_apply=None, sigma=None, snr_tol=None):
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
-                    return callable_comp(matvec, b, x0_val, tol, maxiter, precond_apply)
+
+                    effective_sigma = default_sigma if sigma is None else sigma
+
+                    def mv(v):
+                        return matvec(v) + effective_sigma * v
+
+                    return callable_comp(mv, b, x0_val, tol, maxiter, precond_apply)
                 
                 # Add 'matvec' to static args
                 return jax.jit(wrapper_logic, static_argnames=static_argnames + ('matvec',))
@@ -605,8 +611,19 @@ class Solver(ABC):
                 return wrapper_np
 
             else:
-                # Direct passthrough for matvec
-                return lambda *args, **kwargs: callable_comp(*args, **kwargs)
+                # Wrapper for matvec case to handle sigma and x0
+                def wrapper_np(matvec, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                    x0_val          = np.zeros_like(b) if x0 is None else x0
+                    effective_sigma = default_sigma if sigma is None else sigma
+
+                    if effective_sigma != 0:
+                        def mv(v): return matvec(v) + effective_sigma * v
+                        mv_to_use = mv
+                    else:
+                        mv_to_use = matvec
+
+                    return callable_comp(mv_to_use, b, x0_val, tol, maxiter, precond_apply)
+                return wrapper_np
     
     # -------------------------------------------------------------------------
     #! Static Solve Interface (Core Requirement)
@@ -841,34 +858,6 @@ class Solver(ABC):
         
         return precond_apply_func
     
-    def _check_matvec_solve(self,
-                            current_sigma       : float,
-                            current_backend_mod : Any,
-                            compile_matvec      : bool,
-                            **kwargs) -> MatVecFunc:
-        """ 
-        Internal: Determines the matvec function based on instance config.
-        If a matrix is provided, it creates a matvec function from it.
-        
-        If a Fisher matrix is provided, it creates a matvec function from it.
-        If a matvec function is already set, it uses that.
-        """
-        if self._conf_matvec_func is not None:
-            matvec_func                 = self._conf_matvec_func
-            # TODO: Consider if recompilation should happen if sigma differs?
-        elif self._conf_a is not None and not self._conf_is_gram:
-            matvec_func                 = self.create_matvec_from_matrix(
-                                                self._conf_a, current_sigma, current_backend_mod, compile_func=compile_matvec)
-        elif self._conf_s is not None and self._conf_sp is not None and self._conf_is_gram:
-            create_full                 = kwargs.get("create_full", False)
-            n_guess                     = self._conf_s.shape[0]
-            matvec_func                 = self.create_matvec_from_fisher(
-                                                self._conf_s, self._conf_sp,
-                                                n_guess, current_sigma, current_backend_mod,
-                                                compile_func=compile_matvec, create_full=create_full)
-        else:
-            raise SolverError(SolverErrorMsg.MATVEC_FUNC_NOT_SET, "Instance needs matvec func or matrices.")
-        return matvec_func
 
     # -------------------------------------------------------------------------
     #! Instance Method to Run the Solver
@@ -959,7 +948,7 @@ class Solver(ABC):
         
         # Case A: General Matvec
         if use_matvec_func:
-            result = self._cached_solver_func(self._conf_matvec_func, b, x0, tol, maxiter, precond_fn)
+            result = self._cached_solver_func(self._conf_matvec_func, b, x0, tol, maxiter, precond_fn, sigma=sigma)
             
         # Case B: NQS Fisher (Dynamic S, Sp)
         elif use_fisher:
