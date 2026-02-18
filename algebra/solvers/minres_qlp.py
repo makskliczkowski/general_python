@@ -1018,7 +1018,7 @@ class MinresQLPSolver(Solver):
         Returns:
             Compiled solver function
         """
-        if backend_module is jnp:
+        if backend_module is jnp and JAX_AVAILABLE:
             if _minres_qlp_logic_jax_compiled is None:
                 raise ImportError("JAX not available but JAX backend requested.")
             func = _minres_qlp_logic_jax
