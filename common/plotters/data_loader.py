@@ -18,10 +18,122 @@ from    pathlib import Path
 from    typing  import List, Callable, Union, TYPE_CHECKING
 import  numpy   as np
 import  re
+import  json
+import  pickle
 
 if TYPE_CHECKING:
     from general_python.common.flog     import Logger
     from general_python.common.hdf5man  import LazyHDF5Entry
+
+# --------------------------------------------------------------
+# Lazy Entry Classes for other formats
+# --------------------------------------------------------------
+
+class LazyDataEntry:
+    """Base class for lazy data entries."""
+    def __init__(self, filepath, params):
+        self.filepath   = filepath
+        self.filename   = Path(filepath).name
+        self.params     = params
+        self._cache     = {}
+
+    def __getitem__(self, key):
+        if key in self._cache:
+            return self._cache[key]
+        self._load_item(key)
+        return self._cache[key]
+
+    def _load_item(self, key):
+        # Default implementation loads everything
+        self.load_all()
+
+    def get(self, key, default=None):
+        try:
+            return self.__getitem__(key)
+        except KeyError:
+            return default
+
+    def __contains__(self, key):
+        if key in self._cache:
+            return True
+        return key in self.keys()
+
+    def keys(self):
+        if not self._cache:
+            self.load_all()
+        return self._cache.keys()
+
+    def __len__(self):
+        return len(self.keys())
+
+    def load_all(self):
+        raise NotImplementedError
+
+class LazyNpzEntry(LazyDataEntry):
+    """Lazy loader for .npz files."""
+    def _load_item(self, key):
+        try:
+            with np.load(self.filepath) as data:
+                if key in data:
+                    self._cache[key] = data[key]
+                else:
+                    raise KeyError(f"Key '{key}' not found in {self.filename}")
+        except Exception as e:
+            raise KeyError(f"Error loading {key} from {self.filename}: {e}")
+
+    def keys(self):
+        # If cache is populated, return keys from there
+        if self._cache:
+            return self._cache.keys()
+        # Otherwise peek into file
+        try:
+            with np.load(self.filepath) as data:
+                return list(data.files)
+        except Exception:
+            return []
+
+    def load_all(self):
+        with np.load(self.filepath) as data:
+            for k in data.files:
+                self._cache[k] = data[k]
+        return self
+
+class LazyPickleEntry(LazyDataEntry):
+    """Lazy loader for .pkl/.pickle files."""
+    def load_all(self):
+        try:
+            with open(self.filepath, 'rb') as f:
+                data = pickle.load(f)
+                if isinstance(data, dict):
+                    self._cache.update(data)
+                else:
+                    self._cache['default'] = data
+        except Exception as e:
+            # You might want to log this error
+            pass
+        return self
+
+class LazyJsonEntry(LazyDataEntry):
+    """Lazy loader for .json files."""
+    def load_all(self):
+        try:
+            with open(self.filepath, 'r') as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    for k, v in data.items():
+                        # Try to convert lists to numpy arrays
+                        try:
+                            self._cache[k] = np.array(v)
+                        except:
+                            self._cache[k] = v
+                else:
+                    try:
+                        self._cache['default'] = np.array(data)
+                    except:
+                        self._cache['default'] = data
+        except Exception as e:
+            pass
+        return self
 
 # --------------------------------------------------------------
 # Data loading functions
@@ -68,17 +180,17 @@ def load_results(data_dir                   : str,
                 # logging
                 logger                      : 'Logger' =   None,
                 **kwargs
-                ) -> List['LazyHDF5Entry']:
+                ) -> List[Union['LazyHDF5Entry', LazyDataEntry]]:
     r"""
-    Load all HDF5 results from directory.
+    Load all results (HDF5, NPZ, Pickle, JSON) from directory.
     
-    It searches recursively for .h5 files in data_dir, extracts parameters from filenames,
-    applies optional filters, and returns a list of LazyHDF5Entry objects.
+    It searches recursively for supported files in data_dir, extracts parameters from filenames,
+    applies optional filters, and returns a list of result objects.
     
     Parameters:
     -----------
     data_dir (str):
-        Directory containing HDF5 result files.
+        Directory containing result files.
     *
     filters (dict, optional):
         Dictionary of parameter filters to apply.    
@@ -86,7 +198,7 @@ def load_results(data_dir                   : str,
         Manual size filters to apply. These are optional and can be used to restrict
         results based on lattice dimensions or system size.
     get_params_func (callable):
-        A function f(result) -> dict that extracts parameters from a LazyHDF5Entry.
+        A function f(result) -> dict that extracts parameters from a result entry.
         Defaults to extracting the .params attribute.
     post_process_func (callable): 
         A function f(params) -> None that modifies the params dictionary in-place.
@@ -95,10 +207,11 @@ def load_results(data_dir                   : str,
         Logger for output messages.
     """
     
+    # Try to import LazyHDF5Entry, but don't fail if strictly not needed (though it's usually needed for typing)
     try:
         from general_python.common.hdf5man  import LazyHDF5Entry
-    except ImportError as e:
-        raise ImportError("Required general_python modules not found. Please ensure general_python is installed and accessible.") from e
+    except ImportError:
+        LazyHDF5Entry = None
     
     results     = []
     data_path   = Path(data_dir)
@@ -108,14 +221,32 @@ def load_results(data_dir                   : str,
             logger.error(f"Data directory {data_dir} does not exist.", color='red')
         return results
 
-    h5_files        = list(data_path.glob('**/*.h5'))
+    # Define supported extensions and their handlers
+    # For HDF5 we delay instantiation until loop
+    supported_extensions = {
+        '.h5':      'hdf5',
+        '.hdf5':    'hdf5',
+        '.npz':     'npz',
+        '.pkl':     'pickle',
+        '.pickle':  'pickle',
+        '.json':    'json'
+    }
+
+    found_files = []
+    for ext in supported_extensions.keys():
+        # globs are case sensitive usually, but here we assume standard lowercase extensions
+        found_files.extend(data_path.glob(f'**/*{ext}'))
+
+    # Remove duplicates if any (e.g. if globs overlap, though unlikely with distinct extensions)
+    found_files = sorted(list(set(found_files)))
+
     size_pattern    = re.compile(r'(Ns|Lx|Ly|Lz)=(\d+)')    # e.g., Lx=4, Ns=16
     other_pattern   = re.compile(r'(\w+)=([\d\.\-]+)')      # e.g., J=1.0, hx=0.5
     
     if logger:
-        logger.info(f"Found {len(h5_files)} HDF5 files", color='cyan')
+        logger.info(f"Found {len(found_files)} files", color='cyan')
 
-    for filepath in h5_files:
+    for filepath in found_files:
         try:
             # base params from filename
             # extract size info from any path component
@@ -151,7 +282,24 @@ def load_results(data_dir                   : str,
             if post_process_func:
                 post_process_func(params)
 
-            results.append(LazyHDF5Entry(str(filepath), params))
+            # Instantiate appropriate entry
+            suffix = filepath.suffix.lower()
+            ftype  = supported_extensions.get(suffix)
+
+            entry = None
+            if ftype == 'hdf5':
+                if LazyHDF5Entry is None:
+                     raise ImportError("LazyHDF5Entry not found. Ensure general_python is installed properly.")
+                entry = LazyHDF5Entry(str(filepath), params)
+            elif ftype == 'npz':
+                entry = LazyNpzEntry(str(filepath), params)
+            elif ftype == 'pickle':
+                entry = LazyPickleEntry(str(filepath), params)
+            elif ftype == 'json':
+                entry = LazyJsonEntry(str(filepath), params)
+
+            if entry:
+                results.append(entry)
         
         except Exception as e:
             if logger:
@@ -400,7 +548,7 @@ class PlotData:
         # size
         logger          : 'Logger'                  = None,
         **kwargs
-    ) -> List[Union['LazyHDF5Entry', 'ResultProxy']]:
+    ) -> List[Union['LazyHDF5Entry', 'ResultProxy', 'LazyDataEntry']]:
         """
         Unified result preparation from directory or direct data.
         
