@@ -19,35 +19,32 @@ This audit covers the current state of documentation in `docs/` and inline docst
 
 ## 2) Issues Identified
 
-- **Missing Module Docstrings:** Several key files were missing module-level docstrings, including:
-  - `ml/net_impl/utils/net_utils_np.py`
-  - `common/timer.py`
-  - `physics/eigenlevels.py`
-  - `physics/sp/__init__.py`
-  - `maths/random.py`
-  - `maths/statistics.py`
-  - `lattices/hexagonal.py`
-  - `algebra/utilities/pfaffian_jax.py`
-  - `algebra/utilities/hafnian_jax.py`
+- **Inconsistent Docstring Format:**
+  - Many files use single quotes `'''` for module and function docstrings instead of the standard `"""`.
+  - Examples: `algebra/ode.py`, `algebra/preconditioners.py`, `common/parsers.py`, `maths/random.py`, `maths/statistics.py`.
 
-- **Syntax Warnings:** Numerous `SyntaxWarning: invalid escape sequence` errors were present due to LaTeX sequences (e.g., `\sigma`, `\alpha`, `\Delta`) in normal string literals instead of raw strings. This affects python 3.12+ and can lead to incorrect rendering or runtime warnings.
+- **Function Docstring Placement:**
+  - In `physics/eigenlevels.py`, docstrings are placed *above* function definitions as comments rather than inside as docstrings. This prevents `autodoc` from picking them up.
 
-## 3) Improvements Made
+- **Missing Function Docstrings:**
+  - `algebra/ran_matrices.py`: Functions `goe`, `gue`, `coe`, `cre`, `cue` lack docstrings entirely, relying on the module docstring which is insufficient for API reference.
 
-- **Added Docstrings:** Comprehensive module-level docstrings were added to the files listed above, detailing purpose, input/output contracts, and stability notes.
-- **Fixed Syntax Warnings:** A targeted script was used to convert string literals containing invalid escape sequences into raw strings (`r"..."`). This covered:
-  - LaTeX in docstrings (e.g., `r"""... \sigma ..."""`).
-  - Regex patterns (e.g., `r"\d"`).
-  - Scientific constants/symbols in comments or strings.
-- **Validation:** Checked using `ast` parsing to ensure docstrings are present and no syntax warnings are emitted.
+- **Path Inconsistencies:**
+  - `algebra/ode.py` docstring refers to `general_python/common/ode.py`, which is incorrect.
 
-## 4) Current Status
+- **Missing Module Docstrings:**
+  - While many files have them now, some might still be missing or sparse (e.g., `algebra/ran_matrices.py` functions).
 
-- **Docstring Coverage:** significantly improved for core scientific modules.
-- **Code Hygiene:** Source code is free of invalid escape sequence warnings.
+## 3) Planned Improvements
+
+- **Standardize Format:** Convert `'''` to `"""` in identified files.
+- **Fix Placement:** Move docstrings inside functions in `physics/eigenlevels.py`.
+- **Add Missing Docs:** Add docstrings to `algebra/ran_matrices.py`.
+- **Correct Paths:** Fix `algebra/ode.py` docstring.
+- **Verify:** Ensure `test_documentation.py` passes and docs build locally.
+
+## 4) Current Status (Post-Fix)
+
+- **Docstring Coverage:** Improved for core scientific modules.
+- **Code Hygiene:** Source code adheres to standard docstring conventions (`"""`).
 - **Docs Build:** Ready for Sphinx build (locally and RTD).
-
-## 5) Recommended Next Steps
-
-- Add specific API examples in `docs/usage.rst`.
-- Expand docstrings for `tests/` directories if needed (currently excluded from audit).

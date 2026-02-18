@@ -159,9 +159,9 @@ _DEFAULT_BIN_AVG_FUNC = lambda x: np.mean(x, axis = 0)
 ##############################################################
 
 class Statistics:
-    '''
-    Class for statistical operations - mean, median, etc. 
-    '''
+    """
+    Class for statistical operations - mean, median, etc.
+    """
     
     ##########################################################
     @staticmethod 
@@ -556,9 +556,9 @@ def removeMean(a,
 ##################################################### DISTRIBUTIONS ##################################################
 
 def gauss(x : np.ndarray, mu, sig, *args):
-    '''
+    """
     Gaussian PDF
-    '''
+    """
     if len(args) == 0:
         return 1.0 / np.sqrt(2 * PI * sig**2) * np.exp(-(x - mu) ** 2 / (2 * sig ** 2))
     elif len(args) == 1:
@@ -1131,9 +1131,9 @@ class Fraction:
     
     @staticmethod
     def spectral_function_fraction(x, target, tolerance, tolerance_function = is_close_target):
-        '''
+        """
         Calculate the spectral function fraction based on the given target and tolerance.
-        '''
+        """
         n            = x.shape[0]
         # get the upper triangle indices
         i_idx, j_idx = np.triu_indices(n, k=1)

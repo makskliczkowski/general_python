@@ -1,6 +1,6 @@
-'''
-A collection of functions to read, write, and process HDF5 files. 
-'''
+"""
+A collection of functions to read, write, and process HDF5 files.
+"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -76,12 +76,12 @@ class LazyHDF5Entry:
 
 #! HDF5Manager
 class HDF5Manager:
-    '''
+    """
     A class encapsulating methods for reading, writing, and processing HDF5 files.
     Methods include:
         - load_file_data: Read data from a single HDF5 file.
         - stream_key_from_loaded_files: Generator to yield specific dataset from loaded data.
-    '''
+    """
     
     # ---------------------------------
     #! Data Processing Methods
@@ -415,7 +415,7 @@ class HDF5Manager:
 
     @staticmethod
     def save_data_to_file(directory: str, filename: str, data: Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]], shape: Tuple = (), keys: list = [], override: bool = True):
-        '''
+        """
         Creates and saves data to an HDF5 file. (Refactored to use robust logic).
 
         Parameters:
@@ -432,7 +432,7 @@ class HDF5Manager:
             Keys/labels for the datasets if data is a list or array (default is []).
         override : bool, optional
             If True, overwrite existing datasets (default is True).
-        '''
+        """
         if not os.path.exists(directory):
             os.makedirs(directory, exist_ok=True)
         

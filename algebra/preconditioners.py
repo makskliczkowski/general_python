@@ -1,4 +1,4 @@
-'''
+"""
 file:       general_python/algebra/preconditioners.py
 author:     Maksymilian Kliczkowski
 
@@ -19,7 +19,7 @@ favorable spectral properties (e.g., eigenvalues clustered around 1, lower
 condition number), leading to faster convergence of iterative methods like CG,
 MINRES, GMRES. The matrix M should approximate A in some sense, while the
 operation M^{-1}r should be computationally inexpensive.
-'''
+"""
 
 # Import the required modules
 from abc import ABC, abstractmethod
@@ -87,9 +87,9 @@ def preconditioner_idn(r: Array) -> Array:
 
 @unique
 class PreconditionersType(Enum):
-    '''
+    """
     Enumeration of the symmetry type of preconditioners.
-    '''
+    """
     SYMMETRIC           = auto()
     NONSYMMETRIC        = auto()
 
@@ -232,12 +232,12 @@ class Preconditioner(ABC):
     # -----------------------------------------------------------------
     
     def reset_backend(self, backend: str):
-        '''
+        """
         Resets the backend and recompiles the internal apply function.
 
         Parameters:
             backend (str): The name of the new backend ('numpy', 'jax').
-        '''
+        """
         new_backend_str = backend if backend != 'default' else 'numpy' # Resolve default
         if not hasattr(self, '_backend_str') or self._backend_str != new_backend_str:
             self.log(f"Resetting backend to: {new_backend_str}", lvl=1, color=self._dcol)
@@ -278,11 +278,11 @@ class Preconditioner(ABC):
     # -----------------------------------------------------------------
     
     def get_apply(self) -> Callable[[Array], Array]:
-        '''
+        """
         Returns the potentially JIT-compiled function `apply(r)`.
         Uses precomputed data stored by the last call to `set()`.
         Raises RuntimeError if called before `set()` to match test expectations.
-        '''
+        """
         # Ensure precomputed data exists before returning apply function
         if self._precomputed_data_instance is None:
             raise RuntimeError("Preconditioner apply function could not be initialized before set().")
@@ -295,7 +295,7 @@ class Preconditioner(ABC):
         return self._apply_func_instance
     
     def get_apply_mat(self, **default_setup_kwargs) -> Callable[[Array, Array, float], Array]:
-        '''
+        """
         Returns a potentially JIT-compiled function `apply_mat(r, A, sigma, **override_kwargs)`
         that computes preconditioner data from `A` and applies it on the fly.
 
@@ -308,7 +308,7 @@ class Preconditioner(ABC):
         Returns:
             Callable:
                 The compiled function.
-        '''
+        """
         static_setup        = self.__class__._setup_standard_kernel
         static_apply        = self.__class__._apply_kernel
         backend_mod         = self._backend
@@ -336,7 +336,7 @@ class Preconditioner(ABC):
             return wrapped_apply_mat
 
     def get_apply_gram(self, **default_setup_kwargs) -> Callable[[Array, Array, Array, float], Array]:
-        '''
+        """
         Returns a potentially JIT-compiled function `apply_gram(r, S, Sp, sigma, **override_kwargs)`
         that computes preconditioner data from `S`, `Sp` and applies it on the fly.
 
@@ -350,7 +350,7 @@ class Preconditioner(ABC):
             For JAX compatibility, kwargs are frozen at function creation time.
             The returned function does NOT accept runtime kwargs to avoid 
             dictionary operations inside JIT-traced code.
-        '''
+        """
         static_setup        = self.__class__._setup_gram_kernel
         static_apply        = self.__class__._apply_kernel
         backend_mod         = self._backend
@@ -473,7 +473,7 @@ class Preconditioner(ABC):
     
     @property
     def tol_big(self):
-        '''Tolerance for big values.'''
+        """Tolerance for big values."""
         return self._TOLERANCE_BIG
 
     @tol_big.setter
@@ -482,7 +482,7 @@ class Preconditioner(ABC):
         
     @property
     def tol_small(self):
-        '''Tolerance for small values.'''
+        """Tolerance for small values."""
         return self._TOLERANCE_SMALL
     
     @tol_small.setter
@@ -491,7 +491,7 @@ class Preconditioner(ABC):
     
     @property
     def zero(self):
-        '''Value treated as zero.'''
+        """Value treated as zero."""
         return self._zero
 
     @zero.setter
@@ -550,7 +550,7 @@ class Preconditioner(ABC):
     # -----------------------------------------------------------------
     
     def set(self, a: Array, sigma: float = 0.0, ap: Optional[Array] = None, backend: Optional[str] = None, **kwargs):
-        '''
+        """
         Sets up the preconditioner using the provided matrix A and optional parameters.
         This method computes the preconditioner data and prepares the apply function.
         
@@ -565,7 +565,7 @@ class Preconditioner(ABC):
                 The backend to use for computations. Defaults to None.
             **kwargs:
                 Additional keyword arguments for specific implementations.
-        '''
+        """
         
         if backend is not None and backend != self.backend_str:
             self.reset_backend(backend) # Will trigger _update_instance_apply_func
@@ -618,11 +618,11 @@ class Preconditioner(ABC):
     # -----------------------------------------------------------------
     
     def __repr__(self) -> str:
-        ''' Returns the name and configuration of the preconditioner. '''
+        """ Returns the name and configuration of the preconditioner. """
         return f"{self._name}(sigma={self.sigma}, backend='{self.backend_str}', type={self.type})"
 
     def __str__(self) -> str:
-        ''' Returns the name of the preconditioner. '''
+        """ Returns the name of the preconditioner. """
         return self.__repr__()
     
     # -----------------------------------------------------------------
@@ -694,9 +694,9 @@ class IdentityPreconditioner(Preconditioner):
         return self._get_precomputed_data_instance()
     
     def __repr__(self) -> str:
-        ''' 
-        Returns the name and configuration of the Identity preconditioner. 
-        '''
+        """
+        Returns the name and configuration of the Identity preconditioner.
+        """
         base_repr = super().__repr__()
         return f"{base_repr[:-1]}, type={self.type})"
 
@@ -849,7 +849,7 @@ class JacobiPreconditioner(Preconditioner):
 
     @staticmethod
     def _apply_kernel(r: Array, backend_mod: Any, sigma: float, **precomputed_data: Any) -> Array:
-        '''
+        """
         Static Apply Kernel for Jacobi using precomputed data.
         Applies the preconditioner M^{-1}r using the inverse diagonal.
         
@@ -866,7 +866,7 @@ class JacobiPreconditioner(Preconditioner):
         Returns:
             Array:
                 The preconditioned vector M^{-1}r.
-        '''
+        """
         inv_diag    = precomputed_data.get('inv_diag', None)
         if inv_diag is None:
             raise ValueError("Jacobi apply kernel requires 'inv_diag' in precomputed_data.")
@@ -897,9 +897,9 @@ class JacobiPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
     def __repr__(self) -> str:
-        ''' 
-        Returns the name and configuration of the Jacobi preconditioner. 
-        '''
+        """
+        Returns the name and configuration of the Jacobi preconditioner.
+        """
         base_repr = super().__repr__()
         return f"{base_repr[:-1]}, tol_small={self._TOLERANCE_SMALL})"
 
@@ -1207,7 +1207,7 @@ class SSORPreconditioner(Preconditioner):
     
     @property
     def omega(self) -> float:
-        ''' Relaxation parameter omega (0 < omega < 2). '''
+        """ Relaxation parameter omega (0 < omega < 2). """
         return self._omega
     
     @omega.setter
@@ -1389,7 +1389,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
     
     @property
     def fill_factor(self) -> float:
-        ''' The fill factor for ILU(0) (default 1.0). '''
+        """ The fill factor for ILU(0) (default 1.0). """
         return self._fill_factor
     
     @fill_factor.setter
@@ -1399,8 +1399,8 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
         self._fill_factor = value
 
     @property
-    def drop_tol(self) -> Optional[float]: 
-        ''' The drop tolerance for ILU(0) (default None). '''
+    def drop_tol(self) -> Optional[float]:
+        """ The drop tolerance for ILU(0) (default None). """
         return self._drop_tol
     
     @drop_tol.setter
@@ -1514,7 +1514,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
 
     @staticmethod
     def apply(r: Array, sigma: float, backend_module: Any, ilu_obj: Optional[spsla.SuperLU]) -> Array:
-        '''
+        """
         Static apply method for ILU: solves Mz = r using the LU factors.
 
         Args:
@@ -1529,7 +1529,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
 
         Returns:
             Array: The preconditioned vector M^{-1}r, or r if ilu_obj is None.
-        '''
+        """
         if backend_module is not np:
             # This check is important because spsla.SuperLU is SciPy/NumPy specific
             raise RuntimeError("IncompleteCholeskyPreconditioner.apply requires NumPy backend.")
@@ -1551,9 +1551,9 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
     
     def __repr__(self) -> str:
-        '''
+        """
         Returns the name and configuration of the Incomplete Cholesky preconditioner.
-        '''
+        """
         
         # Check if the ILU object is None (not factorized) or not
         status      = "Factorized" if self._ilu_obj is not None else "Not Factorized/Failed"
@@ -1629,7 +1629,7 @@ class ILUPreconditioner(Preconditioner):
 
     @property
     def fill_factor(self) -> float:
-        ''' The fill factor for ILU(0) (default 1.0). '''
+        """ The fill factor for ILU(0) (default 1.0). """
         return self._fill_factor
 
     @fill_factor.setter
@@ -1640,7 +1640,7 @@ class ILUPreconditioner(Preconditioner):
 
     @property
     def drop_tol(self) -> Optional[float]:
-        ''' The drop tolerance for ILU(0) (default None). '''
+        """ The drop tolerance for ILU(0) (default None). """
         return self._drop_tol
 
     @drop_tol.setter
@@ -1758,7 +1758,7 @@ class ILUPreconditioner(Preconditioner):
 
     @staticmethod
     def apply(r: Array, sigma: float, backend_module: Any, ilu_obj: Optional[spsla.SuperLU]) -> Array:
-        '''
+        """
         Static apply method for ILU: solves Mz = r using the LU factors.
 
         Args:
@@ -1773,7 +1773,7 @@ class ILUPreconditioner(Preconditioner):
 
         Returns:
             Array: The preconditioned vector M^{-1}r, or r if ilu_obj is None.
-        '''
+        """
         if backend_module is not np:
             # This check is important because spsla.SuperLU is SciPy/NumPy specific
             raise RuntimeError("ILUPreconditioner.apply requires NumPy backend.")
@@ -1804,9 +1804,9 @@ class ILUPreconditioner(Preconditioner):
     # -----------------------------------------------------------------
 
     def __repr__(self) -> str:
-        '''
+        """
         Returns the name and configuration of the Incomplete LU preconditioner.
-        '''
+        """
 
         # Check if the ILU object is None (not factorized) or not
         status      = "Factorized" if self._ilu_obj is not None else "Not Factorized/Failed"

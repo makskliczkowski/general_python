@@ -1,11 +1,11 @@
-'''
+"""
 Parsers and string utilities for general use.
 
 -------------------------
 Author : Maksymilian Kliczkowski
 Date   : 2026-01-15
 -------------------------
-'''
+"""
 from    __future__  import annotations
 
 from    dataclasses import dataclass

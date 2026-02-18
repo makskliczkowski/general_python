@@ -21,11 +21,11 @@ import numpy as np
 def CUE_QR( n       :   int,
             simple  =   True,
             rng     =   None):
-    '''
-    Create the CUE matrix using QR decomposition
+    """
+    Create the CUE matrix using QR decomposition.
     - n     : size of the matrix (n X n)
     - simple: use the straightforward method
-    '''
+    """
     if rng is None:
         rng = np.random.default_rng()
     # Complex Ginibre matrix with i.i.d. N(0, 1/2) entries for real and imaginary parts
