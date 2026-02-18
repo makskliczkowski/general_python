@@ -2132,30 +2132,22 @@ class Lattice(ABC):
         Works for any lattice with defined self._a1, _a2, _a3 and self._basis list.
         """
         n_basis             = len(self._basis)
-        coordinates         = []
-        cells               = []
-        fracs               = []
-        subs                = []
+        indices = np.arange(self.Ns)
 
-        for i in range(self.Ns):
-            cell    = i // n_basis          # integer division
-            sub     = i % n_basis           # remainder
+        cell    = indices // n_basis          # integer division
+        sub     = indices % n_basis           # remainder
 
-            nx      =  cell              % self.Lx
-            ny      = (cell // self.Lx)  % self.Ly if self._dim >= 2 else 0
-            nz      = (cell // (self.Lx  * self.Ly)) % self.Lz if self._dim >= 3 else 0
+        nx      =  cell              % self.Lx
+        ny      = (cell // self.Lx)  % self.Ly if self._dim >= 2 else np.zeros_like(cell)
+        nz      = (cell // (self.Lx  * self.Ly)) % self.Lz if self._dim >= 3 else np.zeros_like(cell)
 
-            R       = nx * self._a1 + ny * self._a2 + nz * self._a3     # lattice vector
-            r       = R + self._basis[sub]                              # add basis vector
-            coordinates.append(r)
-            cells.append(R)
-            fracs.append((nx, ny, nz))
-            subs.append(sub)
+        R       = nx[:, None] * self._a1 + ny[:, None] * self._a2 + nz[:, None] * self._a3     # lattice vector
+        r       = R + self._basis[sub]                              # add basis vector
             
-        self._coordinates   = np.array(coordinates)
-        self._cells         = np.array(cells)
-        self._fracs         = np.array(fracs)
-        self._subs          = np.array(subs)
+        self._coordinates   = r
+        self._cells         = R
+        self._fracs         = np.stack((nx, ny, nz), axis=1)
+        self._subs          = sub
         return self._coordinates
         
     def calculate_r_vectors(self):
