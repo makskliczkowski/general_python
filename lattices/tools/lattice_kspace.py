@@ -1121,9 +1121,6 @@ def build_translation_operators(lattice: 'Lattice') -> tuple[np.ndarray, np.ndar
     - Sublattice permutations are handled by matching translated site positions
       modulo the lattice vectors.
     """
-    a_vectors   = lattice.avec
-    b_vectors   = lattice.bvec
-    basis       = lattice.basis
     dim         = lattice.dim
     n_basis     = lattice.multipartity
     Ns          = lattice.Ns
@@ -1135,43 +1132,106 @@ def build_translation_operators(lattice: 'Lattice') -> tuple[np.ndarray, np.ndar
     T3          = np.zeros_like(T1)
     Ts          = [T1, T2, T3]
 
-    # Precompute real-space positions of all sites
-    cells       = np.array([[nx, ny, nz] for nz in range(Lz)
-                                         for ny in range(Ly)
-                                         for nx in range(Lx)])
-    # fractional coordinates of all sites
-    frac_pos    = (cells[:, None, :dim] + basis[None, :, :dim])  # (Nc, nb, dim)
-    frac_pos    = frac_pos.reshape(-1, dim) / np.array([Lx, Ly, Lz])[:dim]
+    # Precompute indices
+    indices         = np.arange(Ns)
+    basis_idx       = indices % n_basis
+    cell_idx        = indices // n_basis
 
-    # Apply translations
-    Ls = np.array([Lx, Ly, Lz])[:dim]
+    nx              = cell_idx % Lx
+    ny              = (cell_idx // Lx) % Ly
+    nz              = (cell_idx // (Lx * Ly)) % Lz
+
+    coords_idx      = [nx, ny, nz]
+    dims            = [Lx, Ly, Lz]
+
     for dir_idx in range(dim):
-        for site_idx, r_frac in enumerate(frac_pos):
-            # translate by +a_dir -> fractional coords + e_dir / L_dir
-            r_t     = r_frac + np.eye(dim)[dir_idx] / Ls[dir_idx]
-            # wrap around PBC
-            r_t_mod = np.mod(r_t, 1.0)
+        # Calculate new coordinates and winding
+        # Translation along dir_idx means adding 1 to the corresponding coordinate
+        # The coordinate is coords_idx[dir_idx]
 
-            # Find nearest site (within tolerance)
-            diff    = frac_pos - r_t_mod
-            diff   -= np.round(diff)
-            dist2   = np.sum(diff**2, axis=1)
-            j       = np.argmin(dist2)
-            if dist2[j] > 1e-8:
-                raise ValueError(f"Could not match translated site {site_idx} in direction {dir_idx}")
+        # New coordinate: (n + 1) % L
+        n_curr      = coords_idx[dir_idx]
+        L           = dims[dir_idx]
+        n_next      = (n_curr + 1) % L
 
-            # compute winding numbers: how many times the translation wrapped each axis
-            wx      = int(np.floor(r_t[0])) - int(np.floor(r_frac[0])) if dim >= 1 else 0
-            wy      = int(np.floor(r_t[1])) - int(np.floor(r_frac[1])) if dim >= 2 else 0
-            wz      = int(np.floor(r_t[2])) - int(np.floor(r_frac[2])) if dim >= 3 else 0
+        # Winding number: 1 if wrapping around boundary, 0 otherwise
+        # Wrapped when n_curr + 1 == L => n_next == 0
+        winding     = (n_curr + 1) // L
 
-            # get flux phase
-            if hasattr(lattice, "boundary_phase_from_winding"):
-                phase = lattice.boundary_phase_from_winding(wx, wy, wz)
-            else:
-                phase = 1.0 # no flux
+        # Compute new cell index
+        # cell_new = nx_new + Lx * ny_new + Lx * Ly * nz_new
+        # Only one coordinate changes
 
-            Ts[dir_idx][j, site_idx] = phase
+        if dir_idx == 0:
+            nx_new = n_next
+            ny_new = ny
+            nz_new = nz
+            wx, wy, wz = winding, np.zeros_like(winding), np.zeros_like(winding)
+        elif dir_idx == 1:
+            nx_new = nx
+            ny_new = n_next
+            nz_new = nz
+            wx, wy, wz = np.zeros_like(winding), winding, np.zeros_like(winding)
+        elif dir_idx == 2:
+            nx_new = nx
+            ny_new = ny
+            nz_new = n_next
+            wx, wy, wz = np.zeros_like(winding), np.zeros_like(winding), winding
+        else:
+            raise ValueError(f"Invalid direction index {dir_idx}")
+
+        cell_new    = nx_new + Lx * ny_new + Lx * Ly * nz_new
+        j_indices   = cell_new * n_basis + basis_idx
+
+        # Compute phases
+        if hasattr(lattice, "boundary_phase_from_winding"):
+            # If lattice has boundary flux, we need to apply phases
+            # Optimization:
+            # 1. Compute phase for trivial winding (0,0,0) -> 1.0
+            # 2. Compute phase for non-trivial winding (only where winding > 0)
+
+            # Default phase is 1.0
+            phases = np.ones(Ns, dtype=complex)
+
+            # Find sites where winding occurred
+            mask_w = (winding > 0)
+            if np.any(mask_w):
+                # We can either iterate over unique windings or just compute for the single case w=1
+                # Usually winding is only 1.
+
+                # Check if we can vectorize boundary_phase_from_winding?
+                # It usually calls self._flux.phase(direction, winding).
+                # If we access lattice.flux directly? No, abstraction.
+
+                # Assume standard implementation: phase = exp(i * phi * w)
+                # We can just compute phase for w=1 in this direction.
+
+                # Calculate phase for w=1
+                w_args = [0, 0, 0]
+                w_args[dir_idx] = 1
+                phase_1 = lattice.boundary_phase_from_winding(*w_args)
+
+                if abs(phase_1 - 1.0) > 1e-14:
+                    phases[mask_w] = phase_1
+
+                    # If winding > 1 (unlikely for +1 translation unless L=1)
+                    # L=1 => winding = 1.
+                    # If L < 1 (impossible), etc.
+                    # Technically if L=1, winding is 1.
+                    # If someone defined L=0.5 (impossible for integer).
+
+                    # If there are sites with winding > 1?
+                    # (n+1)//L can be > 1 only if n >= 2L-1.
+                    # But n < L. So n+1 <= L. So (n+1)//L <= 1.
+                    # So winding is always 0 or 1.
+                    pass
+
+        else:
+            phases = np.ones(Ns, dtype=complex)
+
+        # Assign to matrix
+        # Ts[dir_idx][j_indices, indices] = phases
+        Ts[dir_idx][j_indices, indices] = phases
 
     return T1, T2, T3
 
