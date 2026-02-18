@@ -3,6 +3,7 @@ import pytest
 import numpy as np
 from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
 from general_python.algebra.eigen import LanczosEigensolver
+from general_python.algebra.solvers.minres import MinresSolver, MinresSolverScipy
 
 def create_2d_laplacian(L):
     """
@@ -77,6 +78,40 @@ class TestSolversSanity:
         # Check residual
         residual = np.linalg.norm(A @ result.x - b) / np.linalg.norm(b)
         assert residual < 1e-6
+
+    def test_native_minres_convergence_indefinite(self):
+        """
+        Test Native MinresSolver convergence on an indefinite symmetric matrix.
+        MINRES works for symmetric indefinite matrices, where CG might fail.
+        """
+        N = 20
+        np.random.seed(42)
+        # Create indefinite symmetric matrix
+        # Eigenvalues in [-5, 5]
+        evals = np.linspace(-5, 5, N)
+        Q, _ = np.linalg.qr(np.random.randn(N, N))
+        A = Q @ np.diag(evals) @ Q.T
+
+        x_true = np.random.randn(N)
+        b = A @ x_true
+
+        # Test Native
+        res = MinresSolver.solve(
+            matvec=lambda v: A @ v,
+            b=b,
+            x0=np.zeros(N),
+            tol=1e-8,
+            maxiter=N*2 # Should converge in N iterations ideally
+        )
+
+        assert res.converged
+
+        # Check residual
+        residual_norm = np.linalg.norm(A @ res.x - b)
+        rel_residual = residual_norm / np.linalg.norm(b)
+        assert rel_residual < 1e-6
+        # Also check reported residual is consistent
+        assert np.isclose(res.residual_norm, rel_residual * np.linalg.norm(b), atol=1e-5)
 
     @pytest.mark.parametrize("dtype", [np.float32, np.float64, np.complex128])
     def test_lanczos_dtypes(self, dtype):
