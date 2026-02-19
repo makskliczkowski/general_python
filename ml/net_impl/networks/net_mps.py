@@ -35,6 +35,7 @@ from typing         import Any, Optional, Sequence
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....algebra.utils                  import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE = True
 except ImportError:
     raise ImportError("MPS requires JAX/Flax and general_python modules.")
@@ -42,6 +43,20 @@ except ImportError:
 # ----------------------------------------------------------------------
 # Inner Flax Module
 # ----------------------------------------------------------------------
+
+def _state_to_binary_index(s: jnp.ndarray) -> jnp.ndarray:
+    """Convert backend spin/non-spin states to binary indices {0,1}."""
+    s_real = jnp.real(s)
+    if BACKEND_DEF_SPIN:
+        threshold   = jnp.asarray(0.0, dtype=s_real.dtype)
+    else:
+        repr_value  = jnp.asarray(float(BACKEND_REPR), dtype=s_real.dtype)
+        threshold   = jnp.where(
+            repr_value == 0,
+            jnp.asarray(0.0, dtype=s_real.dtype),
+            0.5 * repr_value,
+        )
+    return (s_real > threshold).astype(jnp.int32)
 
 class _FlaxMPS(nn.Module):
     n_sites         : int
@@ -75,7 +90,7 @@ class _FlaxMPS(nn.Module):
         # 1. Map inputs to physical indices
         s_real = jnp.real(s)
         if self.phys_dim == 2:
-            s_idx = (s_real > 0).astype(jnp.int32)
+            s_idx = _state_to_binary_index(s_real)
         else:
             s_idx = jnp.round(s_real).astype(jnp.int32)
             s_idx = jnp.clip(s_idx, 0, self.phys_dim - 1)

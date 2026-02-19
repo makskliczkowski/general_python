@@ -35,12 +35,10 @@ try:
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.activation_functions   import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
+    from ....common.binary                      import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE                               = True
 except ImportError as e:
-    print(f"Error importing general_python base modules: {e}")
-    class FlaxInterface:
-        pass
-    JAX_AVAILABLE = False
+    raise ImportError("RBM requires JAX/Flax and general_python modules.") from e
 
 # JAX / Flax Imports
 if JAX_AVAILABLE:
@@ -228,8 +226,12 @@ class RBM(FlaxInterface):
             input_shape = input_shape,
             backend     = 'jax',        # Force JAX backend
             dtype       = final_dtype,  # Pass the COMPUTATION dtype to FlaxInterface
-            seed        = seed
+            seed        = seed,
+            in_activation=input_activation,
         )
+        # GeneralNet stores `_in_activation`; keep RBM helper paths in sync
+        # with the actual forward activation used by `_FlaxRBM`.
+        self._in_activation = input_activation
 
         #! For the analytic gradient, we need to compile the function
         self._compiled_grad_fn                      = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
@@ -416,13 +418,11 @@ class RBM(FlaxInterface):
         take            = odd & (~seen_before)
 
         s_old_idx       = state[safe_idx]
-        is_binary       = jnp.all((state == 0) | (state == 1))
-        s_new_idx       = jax.lax.cond(
-            is_binary,
-            lambda x: 1 - x,
-            lambda x: -x,
-            s_old_idx,
-        )
+        if BACKEND_DEF_SPIN:
+            s_new_idx   = -s_old_idx
+        else:
+            flip_value  = jnp.asarray(BACKEND_REPR, dtype=s_old_idx.dtype)
+            s_new_idx   = flip_value - s_old_idx
 
         v_old_idx       = RBM._prepare_visible(s_old_idx, compute_dtype, input_activation=input_activation)
         v_new_idx       = RBM._prepare_visible(s_new_idx, compute_dtype, input_activation=input_activation)

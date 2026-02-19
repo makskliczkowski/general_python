@@ -39,7 +39,7 @@ try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
     from ....ml.net_impl.activation_functions import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, Array
+    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, BACKEND_DEF_SPIN, BACKEND_REPR, Array
 except ImportError as e:
     raise ImportError("Required modules for ResNet not found. Ensure general_python.ml and general_python.algebra are accessible.") from e
 
@@ -53,6 +53,19 @@ else:
 ##########################################################
 #! UTILITIES
 ##########################################################
+
+def _map_state_to_pm1(x):
+    """Map backend state representation to {-1, +1} when requested."""
+    one = jnp.asarray(1.0, dtype=x.dtype)
+    two = jnp.asarray(2.0, dtype=x.dtype)
+    if BACKEND_DEF_SPIN:
+        scale = jnp.asarray(abs(float(BACKEND_REPR)), dtype=x.dtype)
+        scale = jnp.where(scale == 0, one, scale)
+        return x / scale
+    repr_value = jnp.asarray(float(BACKEND_REPR), dtype=x.dtype)
+    repr_value = jnp.where(repr_value == 0, one, repr_value)
+    return x * (two / repr_value) - one
+
 
 def circular_pad(x, kernel_size):
     """
@@ -175,7 +188,7 @@ class _FlaxResNet(nn.Module):
             s = s[jnp.newaxis, ...]
 
         if self.map_input_to_spin:
-            s = 2 * s - 1
+            s = _map_state_to_pm1(s)
             
         batch_size   = s.shape[0]
         # (Batch, L1, L2, ..., 1)

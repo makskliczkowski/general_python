@@ -52,7 +52,7 @@ try:
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
     from ....ml.net_impl.activation_functions   import log_cosh_jnp
-    from ....algebra.utils                      import JAX_AVAILABLE
+    from ....algebra.utils                      import JAX_AVAILABLE, BACKEND_DEF_SPIN, BACKEND_REPR
     
     # Import shared Pfaffian utility
     try:
@@ -66,6 +66,20 @@ except ImportError as e:
 # ----------------------------------------------------------------------
 # Logic for Log-Pfaffian
 # ----------------------------------------------------------------------
+
+def _state_to_binary_index(s: jax.Array) -> jax.Array:
+    """Convert backend spin/non-spin states to binary indices {0,1}."""
+    s_real = jnp.real(s)
+    if BACKEND_DEF_SPIN:
+        threshold   = jnp.asarray(0.0, dtype=s_real.dtype)
+    else:
+        repr_value  = jnp.asarray(float(BACKEND_REPR), dtype=s_real.dtype)
+        threshold   = jnp.where(
+            repr_value == 0,
+            jnp.asarray(0.0, dtype=s_real.dtype),
+            0.5 * repr_value,
+        )
+    return (s_real > threshold).astype(jnp.int32)
 
 def log_pfaffian_proxy(A):
     """
@@ -115,8 +129,8 @@ class _FlaxPP(nn.Module):
         if needs_batch:
             s = s[jnp.newaxis, :]
         
-        # 1. Cast Input to Indices (0, 1)
-        s_idx           = (s > 0).astype(jnp.int32)
+        # 1. Cast input to physical indices (0, 1)
+        s_idx           = _state_to_binary_index(s)
         
         # 2. Cast Parameters to High Precision for Pfaffian
         F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
@@ -175,19 +189,19 @@ class _FlaxRBMPP(nn.Module):
         if needs_batch:
             s = s[jnp.newaxis, :]
         
-        # --- RBM Part ---
+        # RBM Part
         v_rbm           = s.astype(self.dtype)
         theta           = self.rbm_dense(v_rbm)
         log_rbm         = jnp.sum(log_cosh_jnp(theta), axis=-1)
         log_rbm         = log_rbm + jnp.sum(v_rbm * self.vis_bias.astype(self.dtype), axis=-1)
         
-        # --- PP Part ---
-        s_idx           = (s > 0).astype(jnp.int32)
+        # PP Part 
+        s_idx           = _state_to_binary_index(s)
         F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
         F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
-        i_idx = self._i_idx[None, :, None]  # (1, N, 1)
-        j_idx = self._i_idx[None, None, :]  # (1, 1, N)
-        X_batch = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
+        i_idx           = self._i_idx[None, :, None]  # (1, N, 1)
+        j_idx           = self._i_idx[None, None, :]  # (1, 1, N)
+        X_batch         = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
         log_pp          = log_pfaffian_proxy(X_batch)
 
         out = log_rbm + log_pp

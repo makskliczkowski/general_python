@@ -51,6 +51,7 @@ try:
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
     from ....ml.net_impl.activation_functions   import get_activation_jnp
+    from ....algebra.utils                      import BACKEND_DEF_SPIN, BACKEND_REPR
     if TYPE_CHECKING:
         from ....algebra.utils                  import Array
     JAX_AVAILABLE                               = True
@@ -91,6 +92,18 @@ def _resolve_activation(act: Optional[Any]) -> Optional[Callable]:
     if isinstance(act, (list, tuple)) and len(act) > 0 and callable(act[0]):
         return act[0]
     raise ValueError(f"Invalid activation specification: {act!r}")
+
+def _map_state_to_pm1(x: jax.Array) -> jax.Array:
+    """Map backend state representation to {-1, +1} when requested."""
+    one = jnp.asarray(1.0, dtype=x.dtype)
+    two = jnp.asarray(2.0, dtype=x.dtype)
+    if BACKEND_DEF_SPIN:
+        scale = jnp.asarray(abs(float(BACKEND_REPR)), dtype=x.dtype)
+        scale = jnp.where(scale == 0, one, scale)
+        return x / scale
+    repr_value = jnp.asarray(float(BACKEND_REPR), dtype=x.dtype)
+    repr_value = jnp.where(repr_value == 0, one, repr_value)
+    return x * (two / repr_value) - one
 
 ##########################################################
 
@@ -149,9 +162,9 @@ class _FlaxCNN(nn.Module):
         x               = s_proc.reshape(target_shape)
         x               = x.astype(comp_dtype)  # Cast to computation dtype (first)        
             
-        # Transform 0/1 -> -1/1 if needed
+        # Transform backend representation -> {-1, +1} if needed
         if self.transform_input:
-            x           = x * 2 - 1
+            x           = _map_state_to_pm1(x)
 
         # Input Activation
         in_act = _resolve_activation(self.in_act)

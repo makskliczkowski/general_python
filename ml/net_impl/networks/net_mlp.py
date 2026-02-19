@@ -37,6 +37,7 @@ try:
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
     from ....ml.net_impl.activation_functions   import get_activation_jnp
+    from ....algebra.utils                      import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE       = True
 except ImportError:
     raise ImportError("MLP requires JAX/Flax and general_python modules.")
@@ -44,6 +45,18 @@ except ImportError:
 # ----------------------------------------------------------------------
 # Inner Flax Module
 # ----------------------------------------------------------------------
+
+def _map_state_to_pm1(x):
+    """Map backend state representation to {-1, +1} when requested."""
+    one = jnp.asarray(1.0, dtype=x.dtype)
+    two = jnp.asarray(2.0, dtype=x.dtype)
+    if BACKEND_DEF_SPIN:
+        scale = jnp.asarray(abs(float(BACKEND_REPR)), dtype=x.dtype)
+        scale = jnp.where(scale == 0, one, scale)
+        return x / scale
+    repr_value = jnp.asarray(float(BACKEND_REPR), dtype=x.dtype)
+    repr_value = jnp.where(repr_value == 0, one, repr_value)
+    return x * (two / repr_value) - one
 
 class _FlaxMLP(nn.Module):
     hidden_dims     : Sequence[int]
@@ -161,7 +174,7 @@ class MLP(FlaxInterface):
                 output_shape   : tuple                 = (1,),
                 use_bias       : bool                  = True,
                 split_complex  : bool                  = False,
-                transform_input: bool                  = False, # 0/1 -> -1/1
+                transform_input: bool                  = False, # backend repr -> -1/1
                 dtype          : Any                   = jnp.complex128,
                 param_dtype    : Optional[Any]         = None,
                 seed           : int                   = 0,
@@ -193,7 +206,7 @@ class MLP(FlaxInterface):
             'dtype'         : dtype,
             'param_dtype'   : param_dtype if param_dtype else dtype,
             'split_complex' : split_complex,
-            'input_trans'   : (lambda x: 2*x - 1) if transform_input else None
+            'input_trans'   : _map_state_to_pm1 if transform_input else None
         }
 
         super().__init__(
