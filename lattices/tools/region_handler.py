@@ -386,19 +386,20 @@ class LatticeRegionHandler:
 
         Notes
         -----
-        - ``quarter`` is defined as the intersection of ``half_x`` and ``half_y``.
-        - ``sweep`` returns nested prefixes for scaling analyses.
-        - For non-Bravais lattices (e.g. honeycomb), ``sweep`` defaults to unit-cell
-          increments; for Bravais lattices, it defaults to site increments.
+        - ``quarter`` 
+            - is defined as the intersection of ``half_x`` and ``half_y``.
+        - ``sweep`` 
+            - returns nested prefixes for scaling analyses.
+        -   For non-Bravais lattices (e.g. honeycomb), ``sweep`` defaults to unit-cell
+            increments; for Bravais lattices, it defaults to site increments.
         """
-        cut_type_norm = cut_type.strip().lower()
-        valid = {"half_x", "half_y", "quarter", "sublattice_a", "sweep", "all"}
+        cut_type_norm   = cut_type.strip().lower()
+        valid           = {"half_x", "half_y", "quarter", "sublattice_a", "sweep", "all"}
+        
         if cut_type_norm not in valid:
-            raise ValueError(
-                f"Unknown cut_type '{cut_type}'. Use one of {sorted(valid)}."
-            )
+            raise ValueError(f"Unknown cut_type '{cut_type}'. Use one of {sorted(valid)}.")
 
-        cuts: Dict[str, List[int]] = {}
+        cuts            : Dict[str, List[int]] = {}
 
         if cut_type_norm in ("half_x", "all"):
             cuts["half_x"] = self.region_half("x")
@@ -407,8 +408,8 @@ class LatticeRegionHandler:
             cuts["half_y"] = self.region_half("y")
 
         if cut_type_norm in ("quarter", "all"):
-            half_x = set(cuts.get("half_x", self.region_half("x")))
-            half_y = set(cuts.get("half_y", self.region_half("y")))
+            half_x          = set(cuts.get("half_x", self.region_half("x")))
+            half_y          = set(cuts.get("half_y", self.region_half("y")))
             cuts["quarter"] = sorted(half_x & half_y)
 
         if include_sublattice and cut_type_norm in ("sublattice_a", "all"):
@@ -442,7 +443,6 @@ class LatticeRegionHandler:
                 except TypeError:
                     pass
             raise NotImplementedError(f"Coordinate mapping not implemented for lattice type {self.lattice._type}")
-
 
     # ------------------------------------------------------------------------------
     # Specific region definitions
