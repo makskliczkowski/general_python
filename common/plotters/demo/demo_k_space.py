@@ -11,6 +11,7 @@ Run as module from project root:
 import  sys, os
 import  numpy as np
 import  matplotlib as mpl
+import  matplotlib.pyplot as plt
 
 # Set the plotting style to a clean, publication-ready style using the 'science'
 try:
