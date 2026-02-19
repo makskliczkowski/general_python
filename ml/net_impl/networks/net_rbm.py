@@ -56,7 +56,7 @@ else:
 ##########################################################
 
 class _FlaxRBM(nn.Module):
-    """
+    r"""
     Inner Flax module for a Restricted Boltzmann Machine.
 
     Designed to be wrapped by `FlaxInterface`. Calculates the log-amplitude
@@ -232,9 +232,15 @@ class RBM(FlaxInterface):
         )
 
         #! For the analytic gradient, we need to compile the function
-        self._compiled_grad_fn  = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
-        self._has_analytic_grad = False
-        self._name              = 'rbm'
+        self._compiled_grad_fn                      = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
+        self._compiled_log_psi_delta_fn             = jax.jit(partial(RBM._log_psi_delta_impl, input_activation=self._in_activation))
+        self._compiled_log_psi_delta_cache_init_fn  = jax.jit(partial(RBM._init_log_psi_delta_cache_impl, input_activation=self._in_activation))
+        self._has_analytic_grad                     = False
+        # Fast-update support is valid for flip-based rules only.
+        self._fast_update_supported_rules           = frozenset(
+            {"LOCAL", "MULTI_FLIP", "BOND_FLIP", "WORM"}
+        )
+        self._name                                  = 'rbm'
 
     # ------------------------------------------------------------
     #! Analytic Gradient
@@ -329,6 +335,189 @@ class RBM(FlaxInterface):
     # ------------------------------------------------------------
     #! Public Methods
     # ------------------------------------------------------------
+
+    @staticmethod
+    def _split_update_info(update_info: Any):
+        ''' Utility to split update_info into indices and valid mask if provided. '''
+        if isinstance(update_info, (tuple, list)) and len(update_info) == 2:
+            return update_info[0], update_info[1]
+        return update_info, None
+
+    @staticmethod
+    def _prepare_visible(state: jax.Array, dtype: Any, input_activation: Optional[Callable] = None):
+        ''' Prepare visible state with correct dtype and optional activation. Supports both single and batched states. '''
+        visible = jnp.asarray(state, dtype=dtype)
+        if input_activation is not None:
+            visible = input_activation(visible)
+        return visible
+
+    @staticmethod
+    @partial(jax.jit, static_argnames=("input_activation",))
+    def _init_log_psi_delta_cache_impl(
+        params: Any,
+        states: jax.Array,
+        input_activation: Optional[Callable] = None,
+    ) -> jax.Array:
+        """
+        Precompute RBM hidden pre-activations theta = v @ W + b for fast updates.
+        Supports both single-state and batched states.
+        """
+        W               = params["VisibleToHidden"]["kernel"]
+        b               = params["VisibleToHidden"].get("bias", None)
+        compute_dtype   = W.dtype
+
+        single          = states.ndim == 1
+        states_b        = states[jnp.newaxis, :] if single else states.reshape((-1, states.shape[-1]))
+        v               = RBM._prepare_visible(states_b, compute_dtype, input_activation=input_activation)
+        theta           = jnp.matmul(v, W)
+        if b is not None:
+            theta = theta + b
+        if single:
+            return theta[0]
+        return theta.reshape(states.shape[:-1] + (theta.shape[-1],))
+
+    @staticmethod
+    def _log_psi_delta_single(
+        params              : Any,
+        state               : jax.Array,
+        update_info         : Any,
+        theta_old           : Optional[jax.Array] = None,
+        input_activation    : Optional[Callable] = None,
+    ):
+        """
+        Compute delta log(psi) from flip indices and optionally update theta cache.
+        This function handles a single state and its corresponding update_info.
+        """
+        W               = params["VisibleToHidden"]["kernel"]
+        b               = params["VisibleToHidden"].get("bias", None)
+        a               = params.get("visible_bias", None)
+        compute_dtype   = W.dtype
+
+        idx_raw, valid_mask_raw = RBM._split_update_info(update_info)
+        idx                     = jnp.asarray(idx_raw, dtype=jnp.int32).reshape(-1)
+        if valid_mask_raw is None:
+            valid = jnp.ones_like(idx, dtype=jnp.bool_)
+        else:
+            valid = jnp.asarray(valid_mask_raw, dtype=jnp.bool_).reshape(-1)
+            valid = jnp.broadcast_to(valid, idx.shape)
+
+        n_visible       = state.shape[0]
+        valid           = valid & (idx >= 0) & (idx < n_visible)
+        safe_idx        = jnp.where(valid, idx, 0)
+
+        # Keep exactly one representative for indices flipped an odd number of times.
+        m               = safe_idx.shape[0]
+        row             = jnp.arange(m)[:, None]
+        col             = jnp.arange(m)[None, :]
+        same            = safe_idx[:, None] == safe_idx[None, :]
+        valid_same      = same & valid[:, None] & valid[None, :]
+        odd             = valid & ((jnp.sum(valid_same, axis=1) % 2) == 1)
+        seen_before     = jnp.sum(valid_same & (col < row), axis=1) > 0
+        take            = odd & (~seen_before)
+
+        s_old_idx       = state[safe_idx]
+        is_binary       = jnp.all((state == 0) | (state == 1))
+        s_new_idx       = jax.lax.cond(
+            is_binary,
+            lambda x: 1 - x,
+            lambda x: -x,
+            s_old_idx,
+        )
+
+        v_old_idx       = RBM._prepare_visible(s_old_idx, compute_dtype, input_activation=input_activation)
+        v_new_idx       = RBM._prepare_visible(s_new_idx, compute_dtype, input_activation=input_activation)
+        delta_v_idx     = (v_new_idx - v_old_idx) * take.astype(compute_dtype)
+
+        if theta_old is None:
+            v_full      = RBM._prepare_visible(state, compute_dtype, input_activation=input_activation)
+            theta_old   = jnp.matmul(v_full, W)
+            if b is not None:
+                theta_old = theta_old + b
+
+        w_rows          = W[safe_idx]  # (m, n_hidden)
+        delta_theta     = jnp.sum(w_rows * delta_v_idx[:, None], axis=0)
+        theta_new       = theta_old + delta_theta
+
+        hidden_delta = jnp.sum(log_cosh_jnp(theta_new) - log_cosh_jnp(theta_old))
+        if a is not None:
+            visible_delta = jnp.sum(a[safe_idx] * delta_v_idx)
+        else:
+            visible_delta = jnp.asarray(0.0, dtype=hidden_delta.dtype)
+
+        return hidden_delta + visible_delta, theta_new
+
+    @staticmethod
+    @partial(jax.jit, static_argnames=("input_activation",))
+    def _log_psi_delta_impl(
+        params: Any,
+        current_log_psi: jax.Array,
+        state: jax.Array,
+        update_info: Any,
+        cache: Optional[jax.Array] = None,
+        input_activation: Optional[Callable] = None,
+    ):
+        """
+        Delta log(psi) for proposed flip updates.
+        If cache is provided, returns (delta, updated_cache).
+        """
+        del current_log_psi  # Kept for sampler API compatibility.
+
+        if state.ndim == 1:
+            delta, theta_new = RBM._log_psi_delta_single(
+                params=params,
+                state=state,
+                update_info=update_info,
+                theta_old=cache,
+                input_activation=input_activation,
+            )
+            if cache is None:
+                return delta
+            return delta, theta_new
+
+        if cache is None:
+            deltas, _ = jax.vmap(
+                lambda s, ui: RBM._log_psi_delta_single(
+                    params=params,
+                    state=s,
+                    update_info=ui,
+                    theta_old=None,
+                    input_activation=input_activation,
+                ),
+                in_axes=(0, 0),
+            )(state, update_info)
+            return deltas
+
+        deltas, cache_new = jax.vmap(
+            lambda s, ui, th: RBM._log_psi_delta_single(
+                params=params,
+                state=s,
+                update_info=ui,
+                theta_old=th,
+                input_activation=input_activation,
+            ),
+            in_axes=(0, 0, 0),
+        )(state, update_info, cache)
+        return deltas, cache_new
+
+    def init_log_psi_delta_cache(self, params: Any, states: jax.Array):
+        return self._compiled_log_psi_delta_cache_init_fn(params, states)
+
+    def log_psi_delta(
+        self,
+        params: Any,
+        current_log_psi: jax.Array,
+        state: jax.Array,
+        update_info: Any,
+        cache: Optional[jax.Array] = None,
+    ):
+        return self._compiled_log_psi_delta_fn(params, current_log_psi, state, update_info, cache)
+
+    def get_log_psi_delta(self):
+        return self.log_psi_delta
+
+    @property
+    def fast_update_supported_rules(self):
+        return self._fast_update_supported_rules
 
     def __repr__(self) -> str:
         init_status = "initialized"                             if self.initialized else "uninitialized"

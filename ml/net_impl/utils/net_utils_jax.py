@@ -1091,25 +1091,18 @@ if JAX_AVAILABLE:
             return estimates, jnp.mean(estimates), jnp.std(estimates)
 
         # ----------------------------------------------------------------------
-        # Scan over batches, writing directly into a length-N_pad buffer
+        # Map over reshaped batches
         # ----------------------------------------------------------------------
-        # infer dtype once from a tiny dummy call
-        dummy_out    = batch_kernel(p_states[:1], p_logp_in[:1], p_samp_p[:1], *op_args)
-        init_out     = jnp.empty((N_pad,), dtype=dummy_out.dtype)
+        batched_states  = p_states.reshape(n_batches, batch_size, -1)
+        batched_logp    = p_logp_in.reshape(n_batches, batch_size)
+        batched_samp    = p_samp_p.reshape(n_batches, batch_size)
 
-        def body(carry, idx):
-            start   = idx * batch_size
+        def process_batch(batch_inputs):
+            bs_s, bs_lp, bs_sp = batch_inputs
+            return batch_kernel(bs_s, bs_lp, bs_sp, *op_args)
 
-            bs_s    = lax.dynamic_slice_in_dim(p_states,  start, batch_size, axis=0)
-            bs_lp   = lax.dynamic_slice_in_dim(p_logp_in, start, batch_size, axis=0)
-            bs_sp   = lax.dynamic_slice_in_dim(p_samp_p,  start, batch_size, axis=0)
-
-            chunk   = batch_kernel(bs_s, bs_lp, bs_sp, *op_args)   # (batch_size,)
-            carry   = lax.dynamic_update_slice(carry, chunk, (start,))
-            return carry, None
-
-        estimates_pad, _ = lax.scan(body, init_out, xs=jnp.arange(n_batches))
-        estimates        = estimates_pad[:N]  # drop padded tail
+        estimates_stacked   = lax.map(process_batch, (batched_states, batched_logp, batched_samp))
+        estimates           = estimates_stacked.reshape(-1)[:N]
 
         return estimates, jnp.mean(estimates), jnp.std(estimates)
         

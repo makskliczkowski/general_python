@@ -337,7 +337,6 @@ if JAX_AVAILABLE:
             full_size           = var_deriv._n_params
             n_samples           = var_deriv._n_samples
             var_deriv_m         = var_deriv.mean(axis=0)
-            var_deriv.mean_val  = var_deriv_m
             var_deriv_c         = var_deriv # Treat the object as the centered derivative carrier
             return loss_c, var_deriv_c, var_deriv_m, n_samples, full_size
 
@@ -362,7 +361,6 @@ if JAX_AVAILABLE:
             full_size           = var_deriv._n_params
             n_samples           = var_deriv._n_samples
             var_deriv_m         = var_deriv.mean(axis=0)
-            var_deriv.mean_val  = var_deriv_m
             var_deriv_c         = var_deriv
             return loss_c, var_deriv_c, var_deriv_m, n_samples, full_size
 
