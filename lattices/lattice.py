@@ -1495,28 +1495,72 @@ class Lattice(ABC):
     #! SITE HELPERS
     # -----------------------------------------------------------------------------
 
-    def site_diff(self, i : Union[int, tuple], j : Union[int, tuple]):
-        '''
-        Returns the site difference between sites
-        - i - i'th lattice site or tuple of coordinates
-        - j - j'th lattice site or tuple of coordinates
-        Returns:
-        - tuple of differences (x, y, z)
-        '''
-        x1, y1, z1 = self.get_coordinates(i) if isinstance(i, int) else i 
-        x2, y2, z2 = self.get_coordinates(j) if isinstance(j, int) else j
-        return (x2 - x1, y2 - y1, z2 - z1)
+    def site_diff(
+        self,
+        i: Union[int, tuple],
+        j: Union[int, tuple],
+        *,
+        minimum_image: bool = False,
+        real_space: bool = False,
+    ) -> Tuple[float, float, float]:
+        """
+        Return the displacement ``i -> j`` with optional PBC minimum-image wrapping.
+
+        Parameters
+        ----------
+        i, j : int or tuple
+            Site indices or explicit coordinates.
+        minimum_image : bool, default=False
+            If True, wrap each periodic direction to the shortest displacement.
+        real_space : bool, default=False
+            If True and ``i, j`` are site indices, return displacement in real-space
+            vectors (uses :meth:`displacement`). Otherwise use lattice coordinates.
+        """
+        if real_space and isinstance(i, int) and isinstance(j, int):
+            dr = np.asarray(self.displacement(i, j, minimum_image=minimum_image), dtype=float).reshape(-1)
+            if dr.size < 3:
+                dr = np.pad(dr, (0, 3 - dr.size), mode="constant")
+            return float(dr[0]), float(dr[1]), float(dr[2])
+
+        c1 = np.asarray(self.get_coordinates(i) if isinstance(i, int) else i, dtype=float).reshape(-1)
+        c2 = np.asarray(self.get_coordinates(j) if isinstance(j, int) else j, dtype=float).reshape(-1)
+        if c1.size < 3:
+            c1 = np.pad(c1, (0, 3 - c1.size), mode="constant")
+        if c2.size < 3:
+            c2 = np.pad(c2, (0, 3 - c2.size), mode="constant")
+
+        delta = c2[:3] - c1[:3]
+        if minimum_image:
+            flags   = self.periodic_flags()
+            dims    = (float(self.Lx), float(max(self.Ly, 1)), float(max(self.Lz, 1)))
+            for d, is_periodic in enumerate(flags):
+                if is_periodic and dims[d] > 0.0:
+                    delta[d] -= dims[d] * np.round(delta[d] / dims[d])
+
+        return float(delta[0]), float(delta[1]), float(delta[2])
         
-    def site_distance(self, i : Union[int, tuple], j : Union[int, tuple]):
-        '''
-        Returns the site distance between sites
-        - i - i'th lattice site or tuple of coordinates
-        - j - j'th lattice site or tuple of coordinates
-        Returns:
-        - distance between sites
-        '''
-        x, y, z = self.site_diff(i, j)
-        return np.sqrt(x**2 + y**2 + z**2)
+    def site_distance(
+        self,
+        i: Union[int, tuple],
+        j: Union[int, tuple],
+        *,
+        minimum_image: bool = False,
+        real_space: bool = False,
+    ) -> float:
+        """
+        Return Euclidean distance between two sites/coordinates.
+
+        Parameters
+        ----------
+        minimum_image : bool, default=False
+            If True, periodic directions use minimum-image convention.
+        real_space : bool, default=False
+            If True and inputs are indices, measure in real-space lattice vectors.
+        """
+        if real_space and isinstance(i, int) and isinstance(j, int):
+            return float(self.distance(i, j, minimum_image=minimum_image))
+        x, y, z = self.site_diff(i, j, minimum_image=minimum_image, real_space=real_space)
+        return float(np.sqrt(x**2 + y**2 + z**2))
 
     # -----------------------------------------------------------------------------
     #! DFT MATRIX
