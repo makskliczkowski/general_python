@@ -129,6 +129,10 @@ class HoneycombLattice(Lattice):
         """
         return HighSymmetryPoints.honeycomb_2d()
 
+    def contains_special_point(self, point, *, tol: float = 1e-12) -> bool:
+        """Check if a honeycomb special point is present in the current k-grid."""
+        return super().contains_special_point(point, tol=tol)
+
     ###################################
 
     def get_real_vec(self, x: int, y: int, z: int = 0):

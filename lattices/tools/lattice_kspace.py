@@ -1,4 +1,4 @@
-'''
+r'''
 K-space utilities for lattice systems.
 
 Provides:
@@ -11,6 +11,8 @@ Provides:
 File            : lattices/tools/lattice_kspace.py
 Author          : Maksymilian Kliczkowski
 Date            : 2025-01-15 (Updated)
+Version         : 2.0
+    - Added HighSymmetryPoint and HighSymmetryPoints classes for better management of high-symmetry points and paths.
 --------------------------------
 '''
 
@@ -244,6 +246,50 @@ class HighSymmetryPoints:
     def get(self, name: str) -> Optional[HighSymmetryPoint]:
         """Get a point by name, returns None if not found."""
         return self.points.get(name)
+
+    @staticmethod
+    def _normalize_label(name: str) -> str:
+        """Normalize common aliases for high-symmetry point labels."""
+        if name is None:
+            return ""
+        label = str(name).strip()
+        label = label.replace("Γ", "Gamma").replace("γ", "Gamma")
+        label = label.replace("’", "'")
+        if label in ("G", "g", "\\Gamma", "gamma", "Gamma"):
+            return "Gamma"
+        if label.endswith("'"):
+            label = f"{label[:-1]}p"
+        return label
+
+    def resolve_label(self, name: str) -> Optional[str]:
+        """
+        Resolve a label or alias to a canonical key in ``self.points``.
+
+        Examples: ``"Γ" -> "Gamma"``, ``"K'" -> "Kp"``.
+        """
+        if not self.points:
+            return None
+        
+        # First try direct normalization and lookup
+        norm = self._normalize_label(name)
+        if norm in self.points:
+            return norm
+        
+        # Fallback: case-insensitive match against keys and normalized keys
+        norm_l = norm.lower()
+        for key in self.points:
+            if key.lower() == norm_l:
+                return key
+            if self._normalize_label(key).lower() == norm_l:
+                return key
+        return None
+
+    def resolve(self, name: str) -> Optional[HighSymmetryPoint]:
+        """Resolve a label/alias and return the matching point object."""
+        key = self.resolve_label(name)
+        if key is None:
+            return None
+        return self.points.get(key)
     
     @property
     def default_path(self) -> List[str]:
@@ -266,10 +312,11 @@ class HighSymmetryPoints:
         """
         path = []
         for label in path_labels:
-            if label not in self.points:
+            resolved = self.resolve_label(label)
+            if resolved is None:
                 raise ValueError(f"Unknown high-symmetry point: '{label}'. "
                                 f"Available: {list(self.points.keys())}")
-            path.append(self.points[label].as_tuple())
+            path.append(self.points[resolved].as_tuple())
         return path
     
     def get_default_path_points(self) -> List[Tuple[str, List[float]]]:

@@ -162,19 +162,24 @@ def select_kpoints_along_path(
     k2_vec              = np.asarray(lattice.k2, float).reshape(3)
     k3_vec              = np.asarray(getattr(lattice, 'k3', [0, 0, 1]), float).reshape(3)
     
+    # Resolve labels to Cartesian coordinates -> path_points_cart
     for label in path_labels:
-        if label not in hs_points_obj.points:
+        resolved_label = hs_points_obj.resolve_label(label) if hasattr(hs_points_obj, "resolve_label") else label
+        if resolved_label is None or resolved_label not in hs_points_obj.points:
             raise ValueError(f"High-symmetry point '{label}' not defined for this lattice")
-        pt_obj          = hs_points_obj.points[label]
+        
+        pt_obj          = hs_points_obj.points[resolved_label]
         # Handle both HighSymmetryPoint objects and direct tuples
         if hasattr(pt_obj, 'to_cartesian'):
             pt_cart_3d  = pt_obj.to_cartesian(k1_vec, k2_vec, k3_vec)
             pt_cart     = pt_cart_3d[:2]  # Take only x, y components
+
         elif hasattr(pt_obj, 'frac_coords'):
             # Direct computation if to_cartesian not available
             f1, f2, f3  = pt_obj.frac_coords
             pt_cart_3d  = f1 * k1_vec + f2 * k2_vec + f3 * k3_vec
             pt_cart     = pt_cart_3d[:2]
+            
         else:
             # Assume it's a tuple of fractional coordinates
             f1, f2      = pt_obj[:2] if len(pt_obj) >= 2 else (pt_obj[0], 0)

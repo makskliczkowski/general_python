@@ -882,6 +882,79 @@ class Lattice(ABC):
         if hs_pts is not None:
             return hs_pts.get_default_path_points()
         return None
+
+    def contains_special_point(
+        self,
+        point: Union[str, HighSymmetryPoint, Tuple[float, ...], np.ndarray],
+        *,
+        tol: float = 1e-12,
+    ) -> bool:
+        r"""
+        Return ``True`` if the lattice momentum grid contains a special point.
+
+        Parameters
+        ----------
+        point
+            Special point identifier. Accepted forms:
+            - label string (e.g. ``"Gamma"``, ``"K"``, ``"K'"``),
+            - :class:`HighSymmetryPoint`,
+            - explicit fractional coordinate tuple/array.
+        tol
+            Absolute tolerance used in the coordinate match.
+
+        Notes
+        -----
+        The check is done in *fractional* reciprocal coordinates and naturally
+        includes flux-induced shifts from twisted boundary conditions because it
+        uses ``self.kvectors_frac``.
+        """
+        
+        # Get fractional k-vectors, calculating if not already available
+        kfrac = getattr(self, "kvectors_frac", None)
+        if kfrac is None:
+            self.calculate_k_vectors()
+            kfrac = getattr(self, "kvectors_frac", None)
+        if kfrac is None:
+            return False
+
+        # Resolve target point to fractional coordinates
+        target_frac = None
+        if isinstance(point, HighSymmetryPoint):
+            target_frac = np.asarray(point.frac_coords, dtype=float)
+            
+        elif isinstance(point, str): # Label string - look up in high_symmetry_points
+            hs_pts = self.high_symmetry_points()
+            if hs_pts is None:
+                return False
+            p_obj = hs_pts.resolve(point) if hasattr(hs_pts, "resolve") else hs_pts.get(point)
+            if p_obj is None:
+                return False
+            target_frac = np.asarray(p_obj.frac_coords, dtype=float)
+            
+        else: # Fractional coordinate tuple/array
+            try:
+                target_frac = np.asarray(point, dtype=float).reshape(-1)
+            except Exception:
+                return False
+
+        # Check if any k-vector matches the target fractional coordinates within tolerance
+        if target_frac is None or target_frac.size == 0:
+            return False
+
+        if target_frac.size < 3:
+            target_frac = np.pad(target_frac, (0, 3 - target_frac.size), mode="constant")
+
+        # Check dimensions and wrap to [0, 1) - we work in fractional coordinates so this naturally includes any flux-induced shifts
+        dim     = 1 if self.dim == 1 else (2 if self.dim == 2 else 3)
+        grid    = np.asarray(kfrac, dtype=float)
+        if grid.ndim != 2 or grid.shape[1] < dim:
+            return False
+        
+        # Grid and target are wrapped to [0, 1) in fractional coordinates, so this check naturally includes any flux-induced shifts from twisted boundary conditions
+        grid    = np.mod(grid[:, :dim], 1.0)
+        tgt     = np.mod(target_frac[:dim], 1.0)
+        hits    = np.all(np.isclose(grid, tgt[None, :], atol=tol, rtol=0.0), axis=1)
+        return bool(np.any(hits))
     
     def generate_bz_path(
         self,

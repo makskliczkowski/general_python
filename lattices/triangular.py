@@ -60,6 +60,10 @@ class TriangularLattice(Lattice):
         """
         return HighSymmetryPoints.triangular_2d()
 
+    def contains_special_point(self, point, *, tol: float = 1e-12) -> bool:
+        """Check if a triangular special point is present in the current k-grid."""
+        return super().contains_special_point(point, tol=tol)
+
     # -----------------------------------------------------------------------
 
     def get_real_vec(self, x: int, y: int, z: int):

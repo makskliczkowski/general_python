@@ -138,6 +138,10 @@ class HexagonalLattice(Lattice):
         """
         return HighSymmetryPoints.hexagonal_2d()
 
+    def contains_special_point(self, point, *, tol: float = 1e-12) -> bool:
+        """Check if a hexagonal special point is present in the current k-grid."""
+        return super().contains_special_point(point, tol=tol)
+
     @staticmethod
     def dispersion(k, a=1.0):
         """
