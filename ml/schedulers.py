@@ -60,8 +60,8 @@ class BaseSchedulerLogger(ABC):
         # Format the message with class name
         full_msg = f"[{self.__class__.__name__}] {message}"
         
-        if self._logger:
-            if color:
+        if self._logger is not None and hasattr(self._logger, "say"):
+            if color and hasattr(self._logger, "colorize"):
                 full_msg = self._logger.colorize(full_msg, color)
             
             # Map string log levels to integer if needed, or rely on Logger defaults
