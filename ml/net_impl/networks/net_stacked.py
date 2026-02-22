@@ -23,9 +23,35 @@ try:
     from ...net_impl.interface_net_flax import FlaxInterface
     from ...net_impl.activation_functions import get_activation
     from ...net_impl.utils.net_init_jax import complex_he_init, real_he_init
-    from .net_approx_symmetric import GroupAveragingOp, make_permutation_symmetry_op
 except ImportError:
     raise ImportError("Required modules from general_python package are missing.")
+
+# ----------------------------------------------------------------------
+# Symmetry helpers (local to stacked API)
+# ----------------------------------------------------------------------
+
+class _GroupAveragingOp:
+    def __init__(self, mode: str = "mean"):
+        self.mode = mode
+
+    def __call__(self, x):
+        if self.mode == "mean":
+            return jnp.mean(x, axis=-1, keepdims=True)
+        if self.mode == "sum":
+            return jnp.sum(x, axis=-1, keepdims=True)
+        return x
+
+def _make_permutation_symmetry_op(indices_list: Sequence[Sequence[int]]) -> Callable[[jnp.ndarray], jnp.ndarray]:
+    indices_array = jnp.asarray(indices_list, dtype=jnp.int32)
+
+    def op(x):
+        def apply_single_perm(perm):
+            return x[:, perm]
+
+        all_perms = jax.vmap(apply_single_perm)(indices_array)
+        return jnp.mean(all_perms, axis=0)
+
+    return op
 
 # ----------------------------------------------------------------------
 # Block Definitions
@@ -80,8 +106,8 @@ class StackedNet(nn.Module):
     though passing callables through Flax module configuration requires care.
     Here we rely on predefined blocks and dynamic instantiation.
     """
-    blocks_config: List[Dict[str, Any]]
-    dtype: Any = jnp.complex128
+    blocks_config   : List[Dict[str, Any]]
+    dtype           : Any = jnp.complex128
 
     @nn.compact
     def __call__(self, x):
@@ -94,41 +120,41 @@ class StackedNet(nn.Module):
             # Instantiate Block based on type or callable
             if callable(block_type):
                 # If block_type is a class or factory passed directly
-                h = block_type(**block_args)(h)
+                h           = block_type(**block_args)(h)
 
-            elif block_type == 'Dense':
-                act_str = block_args.get('act', 'relu')
-                act_fn, _ = get_activation(act_str)
-                features = block_args.get('features', 64)
-                h = DenseBlock(features=features, act=act_fn, dtype=self.dtype)(h)
+            elif block_type == 'Dense': # simple dense block with activation
+                act_str     = block_args.get('act', 'relu')
+                act_fn, _   = get_activation(act_str)
+                features    = block_args.get('features', 64)
+                h           = DenseBlock(features=features, act=act_fn, dtype=self.dtype)(h)
 
-            elif block_type == 'Identity':
-                h = IdentityBlock()(h)
+            elif block_type == 'Identity': # simple pass-through block
+                h           = IdentityBlock()(h)
 
-            elif block_type == 'Readout':
-                act_str = block_args.get('act', 'log_cosh')
-                act_fn, _ = get_activation(act_str)
-                h = ReadoutBlock(act=act_fn, dtype=self.dtype)(h)
+            elif block_type == 'Readout': # reads out to scalar with optional activation
+                act_str     = block_args.get('act', 'log_cosh')
+                act_fn, _   = get_activation(act_str)
+                h           = ReadoutBlock(act=act_fn, dtype=self.dtype)(h)
 
-            elif block_type == 'SymmetryGroup':
+            elif block_type == 'SymmetryGroup': # applies symmetric information to the ansatz
                 # Use provided symmetry operation or factory
                 op_callable = block_args.get('op')
 
                 if op_callable is not None and callable(op_callable):
-                    h = op_callable(h)
+                    h       = op_callable(h)
                 else:
                     # Fallback to simple modes if no callable provided
-                    mode = block_args.get('mode', 'identity')
+                    mode    = block_args.get('mode', 'identity')
                     indices = block_args.get('indices')
 
                     if indices is not None:
                         # Use permutation symmetry
-                        sym_op = make_permutation_symmetry_op(indices)
-                        h = sym_op(h)
+                        sym_op  = _make_permutation_symmetry_op(indices)
+                        h       = sym_op(h)
                     elif mode in ['mean', 'sum']:
                         # Use simple averaging
-                        sym_op = GroupAveragingOp(mode=mode)
-                        h = sym_op(h)
+                        sym_op  = _GroupAveragingOp(mode=mode)
+                        h       = sym_op(h)
                     else:
                         pass # Identity
 

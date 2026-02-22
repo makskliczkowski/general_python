@@ -54,6 +54,7 @@ date        : 2025-04-02
 ----------------------------------------------------------------
 """
 
+import inspect
 import numpy    as np
 from typing     import Tuple, Callable, Optional, Any, List, Union, TYPE_CHECKING
 
@@ -122,8 +123,12 @@ class FlaxInterface(GeneralNet):
                 **kwargs):  
         
         self._name  = 'FlaxNetInterface'
+        if net_kwargs is None:
+            net_kwargs = {}
+
         #! Check the dtype.
-        self._dtype = self._dtype = self._resolve_dtype(dtype if dtype is not None else net_kwargs.get('dtype', DEFAULT_JP_FLOAT_TYPE))
+        requested_dtype = dtype if dtype is not None else net_kwargs.get("dtype", DEFAULT_JP_FLOAT_TYPE)
+        self._dtype     = self._resolve_dtype(requested_dtype)
         
         #! Initialize the GeneralNet class.
         super().__init__(input_shape, backend, self._dtype, in_activation=in_activation, seed=seed, **kwargs)
@@ -136,9 +141,6 @@ class FlaxInterface(GeneralNet):
         
         
         #! Set the kwargs for the network module.
-        if net_kwargs is None:
-            net_kwargs = {}
-        
         self._seed                  = seed if seed is not None else np.random.randint(0, 2**32 - 1)
         self._net_module_class      = net_module
         self._net_args              = net_args
@@ -146,22 +148,50 @@ class FlaxInterface(GeneralNet):
         
         #! Ensure dtype consistency in kwargs passed to the module
         net_kwargs_processed        = net_kwargs.copy()
-        net_kwargs_processed.setdefault('dtype', self._dtype)
         # pop the kwargs that are not meant for the Flax module
         net_kwargs_processed.pop('in_activation', None)
         net_kwargs_processed.pop('backend', None)
         net_kwargs_processed.pop('input_shape', None)
         net_kwargs_processed.pop('seed', None)
+        net_kwargs_processed.pop('param_dtype', None)
         
         #! Handle activation functions if specified
         self._handle_activations(net_kwargs_processed)
-        
+
+        # Keep only kwargs accepted by the concrete Flax module constructor.
+        module_ctor     = self._net_module_class if isinstance(self._net_module_class, type) else self._net_module_class.__class__
+        accepted_kwargs = net_kwargs_processed
+        try:
+            sig             = inspect.signature(module_ctor)
+            params          = sig.parameters
+            has_var_kw      = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+            if not has_var_kw:
+                accepted_names  = {name for name in params.keys() if name != "self"}
+                accepted_kwargs = {k: v for k, v in net_kwargs_processed.items() if k in accepted_names}
+            else:
+                accepted_kwargs = dict(net_kwargs_processed)
+            if "dtype" in params and "dtype" not in accepted_kwargs:
+                accepted_kwargs["dtype"] = self._dtype
+        except Exception:
+            accepted_kwargs = dict(net_kwargs_processed)
+
         #! Create the internal Flax module.
         try:
-            self._flax_module: nn.Module = self._net_module_class(*self._net_args, **net_kwargs_processed)
+            if isinstance(self._net_module_class, nn.Module):
+                if self._net_args:
+                    raise ValueError("`net_args` must be empty when `net_module` is an instantiated Flax module.")
+                if accepted_kwargs:
+                    if hasattr(self._net_module_class, "replace"):
+                        self._flax_module = self._net_module_class.replace(**accepted_kwargs)
+                    else:
+                        raise ValueError("Instantiated Flax module does not support `.replace(...)` for kwargs updates.")
+                else:
+                    self._flax_module = self._net_module_class
+            else:
+                self._flax_module = self._net_module_class(*self._net_args, **accepted_kwargs)
         except Exception as e:
-            raise ValueError(f"Failed to instantiate Flax module {self._net_module_class.__name__} "
-                            f"with args={self._net_args}, kwargs={net_kwargs_processed}: {e}") from e
+            module_name = getattr(self._net_module_class, "__name__", self._net_module_class.__class__.__name__)
+            raise ValueError(f"Failed to instantiate Flax module {module_name} with args={self._net_args}, kwargs={accepted_kwargs}: {e}") from e
         
         # Initialize parameters to None; will be set in init().
         self._parameters            : Optional[Any]     = None                  # PyTree of parameters
@@ -418,6 +448,10 @@ class FlaxInterface(GeneralNet):
         """
         if not self.initialized:
             self.init()
+        
+        if not hasattr(x, "dtype") or x.dtype != self._dtype:
+            x = jnp.asarray(x, dtype=self._dtype)
+            
         return self._compiled_apply_fn(self._parameters, x)
         # return self._flax_module.apply({'params': self._parameters}, x)
         
@@ -480,9 +514,8 @@ class FlaxInterface(GeneralNet):
             array-like
                 Output of the network.
         """
-        # Optimization: avoid cast if already correct dtype
-        if x.dtype != self._dtype:
-            x = x.astype(self._dtype)
+        if not hasattr(x, "dtype") or x.dtype != self._dtype:
+            x = jnp.asarray(x, dtype=self._dtype)
         return self._compiled_apply_fn(self._parameters, x)
 
     #########################################################

@@ -122,7 +122,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                    param_dtype  : Any               = None,
                    seed         : Optional[int]     = None,
                    **kwargs) -> GeneralNet:
-    """
+    r"""
     Smart factory to instantiate a network.
     
     This factory can create networks by name (e.g., 'rbm', 'cnn'), wrap raw Flax modules,
@@ -342,12 +342,16 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
             return network_type(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
     # It is a Flax Module (Auto-Wrap Logic)
-    # We check this loosely to avoid importing flax if not needed
-    is_flax = False
+    # We check this loosely to avoid importing flax if not needed.
+    is_flax         = False
+    flax_instance   = None
     try:
         import flax.linen as nn
         if isinstance(network_type, type) and issubclass(network_type, nn.Module):
-            is_flax = True
+            is_flax         = True
+        elif isinstance(network_type, nn.Module):
+            is_flax         = True
+            flax_instance   = network_type
     except ImportError:
         pass
 
@@ -355,26 +359,20 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         # Lazy import the interface wrapper
         from .net_impl.interface_net_flax import FlaxInterface
         
-        # The network_type here IS the Flax Module class
-        # We pass all kwargs to the FlaxInterface, which will pass them to the module
+        # We pass only module-constructor kwargs to FlaxInterface.
         all_kwargs = kwargs.copy()
         all_kwargs.pop('input_shape',   None)  # Remove if present in kwargs
         all_kwargs.pop('backend',       None)
         all_kwargs.pop('dtype',         None)
         all_kwargs.pop('param_dtype',   None)
-        all_kwargs.update({
-            'input_shape'   : input_shape,
-            'backend'       : backend,
-            'dtype'         : dtype,
-            'param_dtype'   : param_dtype,
-        })
+
+        net_module          = flax_instance if flax_instance is not None else network_type
         return FlaxInterface(
-            net_module      =   network_type,
+            net_module      =   net_module,
             net_kwargs      =   all_kwargs,
             input_shape     =   input_shape,
             backend         =   backend,
             dtype           =   dtype,
-            param_dtype     =   param_dtype,
             seed            =   seed,
             in_activation   =   kwargs.get('in_activation', None)
         )
