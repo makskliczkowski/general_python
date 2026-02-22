@@ -416,16 +416,27 @@ class HoneycombLattice(Lattice):
     #! Plaquettes
     ###############################################################################################
     
-    def calculate_plaquettes(self, open_bc: bool = True):
-        X = X_BOND_NEI
-        Y = Y_BOND_NEI
-        Z = Z_BOND_NEI
+    def calculate_plaquettes(self, open_bc: Optional[bool] = None):
+        ''' Calculate the hexagonal plaquettes of the honeycomb lattice. '''
+        
+        if open_bc is None:
+            # Default behavior should follow lattice boundary conditions:
+            # for fully periodic XY boundaries we must include wrapped plaquettes.
+            try:
+                pbcx, pbcy, _   = self.periodic_flags()
+                open_bc         = not (bool(pbcx) and bool(pbcy))
+            except Exception:
+                open_bc         = True
+
+        X           = X_BOND_NEI
+        Y           = Y_BOND_NEI
+        Z           = Z_BOND_NEI
 
         # For your NN convention, an A-anchored CCW walk is:
-        bond_cycle = [Y, X, Z, Y, X, Z]
+        bond_cycle  = [Y, X, Z, Y, X, Z]
 
-        plaquettes = []
-        seen       = set()
+        plaquettes  = []
+        seen        = set()
 
         for i in range(self.Ns):
 
