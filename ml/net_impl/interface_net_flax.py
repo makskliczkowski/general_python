@@ -63,7 +63,7 @@ try:
     import jax.numpy    as jnp
     from jax            import random
     from flax           import linen as nn
-    from jax.tree_util  import tree_flatten, tree_map
+    from jax.tree_util  import tree_flatten, tree_map, tree_structure
     JAX_AVAILABLE       = True
 except ImportError as e:
     JAX_AVAILABLE       = False
@@ -126,9 +126,18 @@ class FlaxInterface(GeneralNet):
         if net_kwargs is None:
             net_kwargs = {}
 
-        #! Check the dtype.
-        requested_dtype = dtype if dtype is not None else net_kwargs.get("dtype", DEFAULT_JP_FLOAT_TYPE)
-        self._dtype     = self._resolve_dtype(requested_dtype)
+        #! Parameter dtype + input dtype (keep states real by default for complex models).
+        requested_dtype         = dtype if dtype is not None else net_kwargs.get("dtype", DEFAULT_JP_FLOAT_TYPE)
+        self._dtype             = self._resolve_dtype(requested_dtype)
+        requested_input_dtype   = kwargs.pop("input_dtype", None)
+        if requested_input_dtype is None:
+            requested_input_dtype = (
+                (jnp.float32 if self._dtype == jnp.complex64 else jnp.float64)
+                if jnp.issubdtype(self._dtype, jnp.complexfloating)
+                else self._dtype
+            )
+        self._input_dtype           = self._resolve_dtype(requested_input_dtype)
+        self._validate_param_tree   = bool(kwargs.pop("validate_param_tree", False))
         
         #! Initialize the GeneralNet class.
         super().__init__(input_shape, backend, self._dtype, in_activation=in_activation, seed=seed, **kwargs)
@@ -196,6 +205,7 @@ class FlaxInterface(GeneralNet):
         # Initialize parameters to None; will be set in init().
         self._parameters            : Optional[Any]     = None                  # PyTree of parameters
         self._param_tree_def        : Optional[Any]     = None                  # PyTree definition
+        self._param_tree_structure  : Optional[Any]     = None                  # Tree structure for fast checks
         self._param_shapes_orig     : Optional[List[Tuple[int, tuple]]] = None  # List of (size, shape)
         self._shapes_for_update     : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
         self._param_num             : Optional[int]     = None                  # Total number of parameters
@@ -353,7 +363,7 @@ class FlaxInterface(GeneralNet):
             key = random.PRNGKey(self._seed)
 
         try:
-            dummy_input     = jnp.ones((1, self.input_dim), dtype=self._dtype)
+            dummy_input     = jnp.ones((1, self.input_dim), dtype=self._input_dtype)
             variables       = self._flax_module.init(key, dummy_input)
 
             if 'params' not in variables:
@@ -374,7 +384,8 @@ class FlaxInterface(GeneralNet):
         if self._parameters is None:
             raise RuntimeError("Parameters are None after Flax initialization.")
 
-        flat_params, self._param_tree_def = tree_flatten(self._parameters)
+        flat_params, self._param_tree_def   = tree_flatten(self._parameters)
+        self._param_tree_structure          = tree_structure(self._parameters)
         if not self._param_tree_def or not flat_params:
             raise TypeError("Initialized parameters did not yield a valid PyTree structure or leaves.")
 
@@ -419,9 +430,10 @@ class FlaxInterface(GeneralNet):
         if not self._initialized:
             raise RuntimeError(self._ERR_NET_NOT_INITIALIZED)
         
-        new_flat, new_tree = tree_flatten(params)
-        if new_tree != self._param_tree_def:
-            raise ValueError("New parameters have different tree structure.")
+        if self._validate_param_tree:
+            new_tree = tree_structure(params)
+            if new_tree != self._param_tree_structure:
+                raise ValueError("New parameters have different tree structure.")
         self._parameters = params
     
     def get_params(self):
@@ -449,8 +461,8 @@ class FlaxInterface(GeneralNet):
         if not self.initialized:
             self.init()
         
-        if not hasattr(x, "dtype") or x.dtype != self._dtype:
-            x = jnp.asarray(x, dtype=self._dtype)
+        if not hasattr(x, "dtype") or x.dtype != self._input_dtype:
+            x = jnp.asarray(x, dtype=self._input_dtype)
             
         return self._compiled_apply_fn(self._parameters, x)
         # return self._flax_module.apply({'params': self._parameters}, x)
@@ -492,11 +504,11 @@ class FlaxInterface(GeneralNet):
     #########################################################
     
     def __repr__(self) -> str:
-        return (f"Interface[flax](input_dim={self.input_dim}, dtype={self._dtype}, "
+        return (f"Interface[flax](input_dim={self.input_dim}, dtype={self._dtype}, input_dtype={self._input_dtype}, "
                 f"flax_module={self._flax_module.__class__.__name__})")
         
     def __str__(self) -> str:
-        return (f"FlaxNetInterface(input_dim={self.input_dim}, dtype={self._dtype}, "
+        return (f"FlaxNetInterface(input_dim={self.input_dim}, dtype={self._dtype}, input_dtype={self._input_dtype}, "
                 f"flax_module={self._flax_module.__class__.__name__})")
         
     #########################################################
@@ -514,8 +526,8 @@ class FlaxInterface(GeneralNet):
             array-like
                 Output of the network.
         """
-        if not hasattr(x, "dtype") or x.dtype != self._dtype:
-            x = jnp.asarray(x, dtype=self._dtype)
+        if not hasattr(x, "dtype") or x.dtype != self._input_dtype:
+            x = jnp.asarray(x, dtype=self._input_dtype)
         return self._compiled_apply_fn(self._parameters, x)
 
     #########################################################
@@ -640,7 +652,7 @@ class FlaxInterface(GeneralNet):
         
         # Check if the network is holomorphic.
         key                     = jax.random.PRNGKey(self._seed) # Use stored seed
-        dummy_input             = jax.random.normal(key, (1, self.input_dim)).astype(self.dtype)
+        dummy_input             = jax.random.normal(key, (1, self.input_dim)).astype(self._input_dtype)
         apply_handle            = self._flax_module.apply
         if apply_handle is None:
             raise RuntimeError("Internal apply handle not set.")
@@ -746,6 +758,22 @@ class FlaxInterface(GeneralNet):
             jnp.dtype: The data type of the network parameters.
         """
         return self._dtype
+
+    @property
+    def input_dtype(self):
+        """
+        Get the preferred input dtype of the network.
+        Returns:
+            jnp.dtype: Input dtype used before calling the compiled Flax apply.
+        """
+        return self._input_dtype
+
+    @property
+    def supports_batched_apply(self):
+        """
+        Flax modules exposed here accept batched inputs directly.
+        """
+        return True
     
     @property
     def input_dim(self):

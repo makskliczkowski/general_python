@@ -161,6 +161,38 @@ if JAX_AVAILABLE:
         flat = out.reshape((out.shape[0] * out.shape[1],) + out.shape[2:])
         return flat[:data.shape[0]]
 
+    @partial(jax.jit, static_argnums=(0, 2))
+    def eval_batched_jax_native(func: Any, data: jnp.ndarray, batch_size: int, params: Any):
+        """
+        Fast batched evaluation for networks that natively accept batched inputs.
+
+        Parameters
+        ----------
+        func : Callable
+            Function with signature ``func(params, batch_states)``.
+        data : jnp.ndarray
+            Input states with leading sample axis.
+        batch_size : int
+            Chunk size used to bound peak memory.
+        params : Any
+            Parameter pytree passed to ``func``.
+        """
+        n = data.shape[0]
+        if n == 0:
+            return func(params, data)
+
+        if (batch_size is None) or (batch_size <= 0) or (n <= batch_size):
+            return func(params, data)
+
+        batches = create_batches_jax(data, batch_size)
+
+        def _eval_batch(x):
+            return func(params, x)
+
+        out = jax.lax.map(_eval_batch, batches)
+        flat = out.reshape((out.shape[0] * out.shape[1],) + out.shape[2:])
+        return flat[:n]
+
 ###########################################################################
 #! GRADIENTS
 ###########################################################################
@@ -1137,19 +1169,24 @@ if JAX_AVAILABLE:
             - mean          : Mean of the estimates (over sample dimension).
             - std           : Standard deviation of the estimates (over sample dimension).
         """
-        # Reshape inputs.
-        # states          = jnp.reshape(states, (-1, states.shape[-1]))
-        # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
+        # Normalize log-probability shape to (N, K) so vmapped per-sample input
+        # is always at least 1D (handles incoming shapes (N,), (N,1), ...).
+        if logprobas_in.ndim == 0:
+            logprobas_in = logprobas_in.reshape((1, 1))
+        else:
+            logprobas_in = jnp.reshape(logprobas_in, (states.shape[0], -1))
         
         # Function to compute the estimate for a single state.
         def compute_estimate(state, logp):
-            logp                    = logp[0]           # Squeeze scalar.
+            # Robust scalar extraction for both scalar and vector-shaped logp.
+            logp                    = jnp.reshape(logp, (-1,))[0]
             new_states, new_vals    = func(state)
             new_logprobas           = logproba_fun(parameters, new_states)
             weights                 = jnp.exp((new_logprobas - logp))
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
-            # Return the weighted sum.
-            return jnp.sum(weighted_sum, axis=0)
+            # ``weighted_sum`` is already reduced over connected configurations.
+            # It can be scalar or vector-valued depending on the observable.
+            return weighted_sum
         
         if states.shape[0] == 0:
             empty = jnp.empty((0,), dtype=jnp.result_type(logprobas_in.dtype, jnp.float32))

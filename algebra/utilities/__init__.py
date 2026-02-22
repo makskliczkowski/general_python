@@ -19,6 +19,7 @@ _LAZY_IMPORTS = {
     'pfaffian_jax'  : ('.pfaffian_jax', None),
     'hafnian'       : ('.hafnian', None),
     'hafnian_jax'   : ('.hafnian_jax', None),
+    'udt'           : ('.udt', None),
 }
 
 _LAZY_CACHE = {}
@@ -29,7 +30,7 @@ if TYPE_CHECKING:
     from . import pfaffian_jax
     from . import hafnian
     from . import hafnian_jax
-
+    from . import udt
 
 def __getattr__(name: str):
     """
@@ -52,10 +53,14 @@ def __getattr__(name: str):
     _LAZY_CACHE[name] = result
     return result
 
-
 __all__ = [
     'pfaffian',
     'pfaffian_jax',
     'hafnian',
     'hafnian_jax',
+    'udt',
 ]
+
+# ----------------------------------------------------------------------
+#! EOF
+# ----------------------------------------------------------------------
