@@ -33,21 +33,47 @@ class UDTState(NamedTuple):
     D: Any
     T: Any
 
+def _safe_diag_for_inverse(diag: Any, be: Any, tiny: float = 1e-30) -> Any:
+    """
+    Return a numerically safe diagonal for row scaling.
+
+    Keeps the original phase/sign when |diag_i| is very small.
+    """
+    mag     = be.abs(diag)
+    one     = be.ones_like(diag)
+    denom   = be.where(mag > tiny, mag, one)
+    phase   = diag / denom
+    phase   = be.where(mag > tiny, phase, one)
+    return be.where(mag > tiny, diag, tiny * phase)
+
+def _loh_split(diag: Any, be: Any) -> Tuple[Any, Any]:
+    """
+    Loh split for a diagonal vector D:
+      D = D_big * D_small, where |D_big| >= 1 and |D_small| <= 1.
+
+    Returns
+    -------
+    (D_big_inv, D_small):
+        D_big_inv = 1 / D_big, used in stable solves.
+    """
+    mag         = be.abs(diag)
+    one         = be.ones_like(diag)
+    large       = mag > 1.0
+    d_big_inv   = be.where(large, 1.0 / diag, one)
+    d_small     = be.where(large, one, diag)
+    return d_big_inv, d_small
+
 def udt_decompose(M: Any, backend: str = "default") -> UDTState:
     """
     Decompose matrix M into U @ diag(D) @ T.
-    Uses QR decomposition with pivoting for better stability if available.
+    Uses QR decomposition.
     """
     be      = get_backend(backend)
     
-    # In NumPy/SciPy we can use qr with pivoting: M[:, P] = Q @ R
-    # In JAX, jnp.linalg.qr doesn't support pivoting currently in a simple way.
-    # We use standard QR for now.
-    
     Q, R    = be.linalg.qr(M)
-    D       = be.abs(be.diag(R))
-    # Avoid zero division
-    D_safe  = be.where(D < 1e-16, 1e-16, D)
+    # Keep signed/complex diagonal (do not use abs), as required by Loh split.
+    D       = be.diag(R)
+    D_safe  = _safe_diag_for_inverse(D, be)
     T       = be.diag(1.0 / D_safe) @ R
     
     return UDTState(U=Q, D=D, T=T)
@@ -63,8 +89,8 @@ def udt_fact_mult(Ml: Any, state: UDTState, backend: str = "default") -> UDTStat
     M_tmp           = (Ml @ state.U) * state.D[None, :]
     
     Q_new, R_new    = be.linalg.qr(M_tmp)
-    D_new           = be.abs(be.diag(R_new))
-    D_safe          = be.where(D_new < 1e-16, 1e-16, D_new)
+    D_new           = be.diag(R_new)
+    D_safe          = _safe_diag_for_inverse(D_new, be)
     
     T_new           = (be.diag(1.0 / D_safe) @ R_new) @ state.T
     
@@ -72,25 +98,16 @@ def udt_fact_mult(Ml: Any, state: UDTState, backend: str = "default") -> UDTStat
 
 def udt_inv_1p(state: UDTState, backend: str = "default") -> Any:
     """
-    Compute (I + U @ diag(D) @ T)^{-1} stably.
+    Compute (I + U @ diag(D) @ T)^{-1} stably using Loh's trick.
     """
     be = get_backend(backend)
     
-    # G = (I + UDT)^{-1} = (U U^H + UDT)^{-1} = (U(U^H + DT))^{-1} = (U^H + DT)^{-1} U^H
-    # To stabilize, we use Loh's trick: D = Db @ Ds where Db = max(D, 1) and Ds = min(D, 1).
-    # Wait, the C++ implementation used Db = max(D, 1)^-1 and Ds = min(D, 1).
-    # Let's use Db = max(D, 1) and Ds = min(D, 1).
-    # G = (U^H + Db Ds T)^{-1} U^H = (Db^-1 U^H + Ds T)^{-1} Db^-1 U^H
-    
-    Db = be.maximum(state.D, 1.0)
-    Ds = be.minimum(state.D, 1.0)
-    
-    # (Db^-1 U^H + Ds T) x = Db^-1 U^H
-    # is equivalent to (U^H + Db Ds T) x = U^H? No.
-    # (Db^-1 U^H + Ds T) x = (diag(1/Db) @ U^H + diag(Ds) @ T) x = diag(1/Db) @ U^H
-    
-    mat = (state.U.conj().T / Db[:, None]) + (Ds[:, None] * state.T)
-    rhs = state.U.conj().T / Db[:, None]
+    # C++ parity (UDT_QR::inv1P): solve((Db * U^H + Ds * T), Db * U^H)
+    # where Db is inverse max-scale and Ds is min-scale from Loh split.
+    db_inv, ds = _loh_split(state.D, be)
+    u_h = state.U.conj().T
+    mat = db_inv[:, None] * u_h + ds[:, None] * state.T
+    rhs = db_inv[:, None] * u_h
     
     return be.linalg.solve(mat, rhs)
 
@@ -105,18 +122,16 @@ def udt_inv_sum(state_a: UDTState, state_b: UDTState, backend: str = "default") 
     # (Ma + Mb)^{-1} = [Ua Da Ta + Ub Db Tb]^{-1}
     # We use Loh's strategy: Da = Dmax_a Dmin_a, Db = Dmax_b Dmin_b
     
-    Dmax_a = be.maximum(state_a.D, 1.0)
-    Dmin_a = be.minimum(state_a.D, 1.0)
+    abs_da = be.abs(state_a.D)
+    abs_db = be.abs(state_b.D)
+    one_a = be.ones_like(state_a.D)
+    one_b = be.ones_like(state_b.D)
+
+    Dmax_a = be.where(abs_da > 1.0, state_a.D, one_a)
+    Dmin_a = be.where(abs_da > 1.0, one_a, state_a.D)
     
-    Dmax_b = be.maximum(state_b.D, 1.0)
-    Dmin_b = be.minimum(state_b.D, 1.0)
-    
-    # (Ua Dmax_a Dmin_a Ta + Ub Dmax_b Dmin_b Tb)^{-1}
-    # = (Ua Dmax_a (Dmin_a Ta + Dmax_a^-1 Ua^H Ub Dmax_b Dmin_b Tb))^{-1}
-    # This is getting messy. The C++ code had:
-    # matL = Ta @ inv(Tb) @ diag(Dmin_a / Dmax_b)
-    # matR = Ua^H @ Ub @ diag(Dmin_b / Dmax_a)
-    # result = Tb^-1 @ (matL + matR)^-1 @ Dmax_a^-1 @ Ua^H
+    Dmax_b = be.where(abs_db > 1.0, state_b.D, one_b)
+    Dmin_b = be.where(abs_db > 1.0, one_b, state_b.D)
     
     invTb = be.linalg.inv(state_b.T)
     matL = (state_a.T @ invTb) * (Dmin_a / Dmax_b)[None, :]
@@ -124,12 +139,6 @@ def udt_inv_sum(state_a: UDTState, state_b: UDTState, backend: str = "default") 
     matR = (state_a.U.conj().T @ state_b.U) * (Dmin_b / Dmax_a)[None, :]
     
     sum_mat = matL + matR
-    
-    # We want Mb^-1 ( Ma Mb^-1 + I )^-1? No.
-    # Standard stable inversion of sum:
-    # Ma + Mb = Ua Dmax_a (Dmin_a Ta + Dmax_a^-1 Ub Db Tb)
-    # Actually, let's use the most robust form:
-    # Ma + Mb = (Ua Dmax_a) (Dmin_a Ta Tb^-1 Dmax_b^-1 + Dmax_a^-1 Ua^H Ub Dmin_b) (Dmax_b Tb)
     
     res = be.linalg.solve(sum_mat, state_a.U.conj().T / Dmax_a[:, None])
     res = invTb @ res / Dmax_b[:, None]
