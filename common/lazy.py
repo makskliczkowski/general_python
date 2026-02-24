@@ -8,9 +8,9 @@ class LazyImporter:
     Helper class to manage lazy imports.
     """
     def __init__(self, module_name, lazy_imports, lazy_cache=None):
-        self.module_name = module_name
-        self._lazy_imports = lazy_imports
-        self._lazy_cache = lazy_cache if lazy_cache is not None else {}
+        self.module_name    = module_name
+        self._lazy_imports  = lazy_imports
+        self._lazy_cache    = lazy_cache if lazy_cache is not None else {}
 
     def lazy_import(self, name: str):
         """
@@ -52,3 +52,13 @@ class LazyImporter:
 
     def __dir__(self):
         return sorted(list(self._lazy_imports.keys()))
+
+# -----
+# Example usage in a module:
+# from .lazy import LazyImporter
+# _lazy_imports = {
+#     'SomeClass': ('some_module', 'SomeClass'),
+#     'some_function': ('some_module', 'some_function'),
+#     'SomeSubModule': ('some_submodule', None),  # Import the whole submodule
+# }
+# _lazy = LazyImporter(__name__, _lazy_imports)

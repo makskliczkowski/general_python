@@ -789,6 +789,29 @@ class Lattice(ABC):
     @cardinality.setter
     def cardinality(self, value):   self._nn_max_num = value
     
+    @property
+    def flux(self):                 return self._flux
+    @flux.setter
+    def flux(self, flux: Union[BoundaryFlux, Dict[str, float], None]):
+        ''' 
+        Set the flux piercing the boundaries for twisted boundary conditions.
+        '''        
+        
+        self._bc            = handle_boundary_conditions(self._bc, flux=flux)  # Normalize boundary conditions and handle flux
+        
+        # flux piercing the boundaries - for topological models
+        _raw_flux           = None
+        if isinstance(self._bc, tuple):
+            # If we have a tuple, it means we have TWISTED BCs with flux information
+            self._bc, _raw_flux = self._bc
+        self._flux          = _normalize_flux_dict(_raw_flux if _raw_flux is not None else flux)
+        self._raw_flux      = _raw_flux if _raw_flux is not None else flux
+
+    @property
+    def name(self):                 return self.__str__()
+    @property
+    def type(self):                 return self._type if hasattr(self, '_type') else None
+    
     # ------------------------------------------------------------------
     #! Sublattice
     # ------------------------------------------------------------------
