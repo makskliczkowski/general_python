@@ -715,145 +715,16 @@ class Plotter:
     ###########################################################
 
     @staticmethod
-    def filter_results(results, filters=None, get_params_fun: callable = lambda r: r['params'], *, tol=1e-9):
-        """
-        Filter results based on flexible parameter conditions.
-        For example, you can filter by:
-        [
-            { 'data' : [...], 'params' : {'Ns': 8, 'Gz': 0.5, 'hx': 0.3} },
-            { 'data' : [...], 'params' : {'Ns': 16, 'Gz': 1.0, 'hx': 0.7} },
-        ]
-        
-        Parameters:
-        -----------
-        results : list
-            List of result dictionaries. We assume it has data and parameters
-            For example, 
-        filters : dict
-            Dictionary of parameter filters. Each key is a parameter name, and value can be:
-            - Single value: param == value (e.g., {'Ns': 8})
-            - Tuple ('eq', value): param ==     value
-            - Tuple ('neq', value): param !=     value
-            - Tuple ('lt', value): param <      value
-            - Tuple ('le', value): param <=     value
-            - Tuple ('gt', value): param >      value
-            - Tuple ('ge', value): param >=     value
-            - Tuple ('between', (min, max)): min <= param <= max
-            - List of values: param in [values]
-        
-        Returns:
-        --------
-        filtered : list
-            Filtered list of results
-        
-        Examples:
-        ---------
-        # Equal to a value
-        filter_results(results, {'Ns': 8, 'Gz': 0.5})
-        
-        # Greater than
-        filter_results(results, {'hx': ('gt', 0.5)})
-        
-        # Between range
-        filter_results(results, {'hx': ('between', (0.2, 0.8))})
-        
-        # In list
-        filter_results(results, {'Gz': [0.0, 0.5, 1.0]})
-        
-        # Combined
-        filter_results(results, {
-            'Ns': 8,
-            'hx': ('between', (0.0, 1.0)),
-            'Gz': ('ge', 0.5)
-        })
+    def filter_results(results, filters=None, get_params_fun: callable = None, *, tol=1e-9):
+        """Backward-compatible wrapper around `plotters.data_loader.filter_results`."""
+        from .plotters.data_loader import filter_results as _filter_results
 
-        >> filter_results(results, {'hx': ('lt', 0.5)})
-        """
-        if filters is None:
-            return results
-        
-        filtered = []
-        
-        for r in results:
-            params  = get_params_fun(r)
-            matches = True
-            
-            for param_name, condition in filters.items():
-                param_value = params.get(param_name, None)
-                
-                if param_value is None:
-                    matches = False
-                    break
-                
-                # Handle different condition types
-                if isinstance(condition, (list, tuple)) and len(condition) > 0:
-                    # Check if it's a comparison operator tuple
-                    if isinstance(condition, tuple) and len(condition) == 2 and isinstance(condition[0], str):
-                        op, value = condition
-                        
-                        if isinstance(value, (list, tuple)):
-                            raise ValueError(f"Value for operator '{op}' cannot be a list or tuple.")
-                        
-                        if isinstance(value, str):
-                            # E.g., ('gt', 'other_param_name')
-                            value = float(params.get(value, None))
-                            if value is None:
-                                matches = False
-                                break
-                        
-                        if op == 'eq':
-                            if not abs(param_value - value) < tol:
-                                matches = False
-                                break
-                        elif op == 'neq':
-                            if abs(param_value - value) < tol:
-                                matches = False
-                                break
-                        elif op == 'lt':
-                            if not param_value < value:
-                                matches = False
-                                break
-                        elif op == 'le':
-                            if not param_value <= value:
-                                matches = False
-                                break
-                        elif op == 'gt':
-                            if not param_value > value:
-                                matches = False
-                                break
-                        elif op == 'ge':
-                            if not param_value >= value:
-                                matches = False
-                                break
-                        elif op == 'between':
-                            min_val, max_val = value
-                            if not (min_val <= param_value <= max_val):
-                                matches = False
-                                break
-                        else:
-                            raise ValueError(f"Unknown operator: {op}")
-                    else:
-                        # It's a list of acceptable values
-                        if param_value not in condition:
-                            matches = False
-                            break
-                else:
-                    # Single value - exact match
-                    if isinstance(condition, str):
-                        condition = float(params.get(condition, None)) # Convert string to float using params
-                    
-                    if condition is None:
-                        matches = False
-                        break
-                    
-                    if abs(param_value - condition) >= 1e-9:
-                        matches = False
-                        break
-            
-            if matches:
-                filtered.append(r)
-        
-        return filtered
+        return _filter_results(
+            results=results,
+            filters=filters,
+            get_params_fun=get_params_fun,
+            tol=tol,
+        )
     
     ###########################################################
     

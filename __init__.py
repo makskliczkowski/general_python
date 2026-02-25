@@ -37,6 +37,18 @@ _ALIASES = {
     'random': 'algebra.ran_wrapper',
 }
 
+_COMMON_EXPORTS = {
+    'load_results',
+    'filter_results',
+    'ResultSet',
+    'PlotData',
+    'LazyDataEntry',
+    'LazyHDF5Entry',
+    'LazyNpzEntry',
+    'LazyPickleEntry',
+    'LazyJsonEntry',
+}
+
 # Try to import submodules eagerly for CI compatibility
 # In CI environments, __getattr__ may not work reliably
 try:
@@ -56,15 +68,24 @@ def __getattr__(name: str):
         return importlib.import_module(f'.{name}', package=__name__)
     if name in _ALIASES:
         return importlib.import_module(f'.{_ALIASES[name]}', package=__name__)
+    if name in _COMMON_EXPORTS:
+        common = importlib.import_module('.common', package=__name__)
+        return getattr(common, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 def list_capabilities():
     """List available capabilities."""
-    return sorted(list(_SUBMODULES) + list(_ALIASES.keys()))
+    return sorted(list(_SUBMODULES) + list(_ALIASES.keys()) + list(_COMMON_EXPORTS))
 
 def __dir__():
     """Return list of available attributes."""
-    return sorted(list(globals().keys()) + list(_SUBMODULES) + list(_ALIASES.keys()) + ['list_capabilities'])
+    return sorted(
+        list(globals().keys())
+        + list(_SUBMODULES)
+        + list(_ALIASES.keys())
+        + list(_COMMON_EXPORTS)
+        + ['list_capabilities']
+    )
 
 def list_available_modules():
     """Return list of available submodules."""

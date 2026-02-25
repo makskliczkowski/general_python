@@ -18,6 +18,8 @@ from .config import (
 
 from .data_loader import (
     load_results,
+    filter_results,
+    ResultSet,
     PlotData,
 )
 
@@ -49,6 +51,8 @@ __all__ = [
     'StylePresets',
     # Data loading
     'load_results',
+    'filter_results',
+    'ResultSet',
     'PlotData',
     # K-space utilities
     'point_to_segment_distance_2d',

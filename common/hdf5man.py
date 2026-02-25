@@ -1,76 +1,31 @@
 """
 A collection of functions to read, write, and process HDF5 files.
+
+This module provides utilities for:
+- Reading data from HDF5 files with flexible options for key selection and error handling.
+- Concatenating datasets across multiple files with shape handling and cleaning options.
+- Saving and appending data to HDF5 files with robust logic for different input types.
+- Managing file lists and streaming data from multiple files or directories with conditions.
 """
 from __future__ import annotations
 
-from pathlib import Path
-import os
-import h5py
-import logging
-import numpy as np
-from typing import List, Dict, Any, Optional, Union, Generator, Tuple, Callable
+import  os
+import  h5py
+import  logging
+import  numpy as np
+from    typing import List, Dict, Any, Optional, Union, Generator, Tuple, Callable
 
 try:
-    from ..common.directories import Directories
-    
-except ImportError:
-    raise ImportError("Required modules from 'common' package are missing.")
+    from ..common.directories   import Directories
+except ImportError as e:
+    raise ImportError("Required modules from 'common' package are missing.") from e
 
 # --------------------------------
-
-class LazyHDF5Entry:
-    """A proxy that holds metadata but loads data only on demand."""
-    def __init__(self, filepath, params):
-        self.filepath   = filepath
-        self.filename   = Path(filepath).name
-        self.params     = params
-        self._cache     = {}
-
-    def __getitem__(self, key):
-        """Behaves like a dict, but loads from HDF5 on the fly."""
-        if key in self._cache:
-            return self._cache[key]
-        
-        data = HDF5Manager.read_hdf5(self.filepath, keys=[key], verbose=False)
-        if key in data:
-            self._cache[key] = data[key]
-            return data[key]
-        raise KeyError(f"Key '{key}' not found in {self.filename}")
-
-    def get(self, key, default=None):
-        """Get method with default value."""
-        try:
-            return self.__getitem__(key)
-        except KeyError:
-            return default
-        
-    def __contains__(self, key):
-        """Check if key exists without loading data."""
-        if key in self._cache:
-            return True
-        data = HDF5Manager.read_hdf5(self.filepath, keys=[key], verbose=False)
-        return key in data
-    
-    def __len__(self):
-        """Number of keys available (may require loading)."""
-        if self._cache:
-            return len(self._cache)
-        data = HDF5Manager.read_hdf5(self.filepath, verbose=False)
-        self._cache.update(data)
-        return len(self._cache)
-    
-    def keys(self):
-        """List of keys available (may require loading)."""
-        if self._cache:
-            return self._cache.keys()
-        data = HDF5Manager.read_hdf5(self.filepath, verbose=False)
-        self._cache.update(data)
-        return self._cache.keys()
-
-    def load_all(self):
-        """Force load everything if needed."""
-        self._cache = HDF5Manager.read_hdf5(self.filepath, verbose=False)
-        return self
+try:
+    from .flog import get_global_logger
+    _logger = get_global_logger()
+except Exception:
+    _logger = logging.getLogger(__name__)
 
 # --------------------------------
 
@@ -1453,13 +1408,10 @@ class HDF5Manager:
             for y_s, x_s in processed_series:
                 if x_s.size == 0: continue # Skip empty series
                 # Interpolate y_s onto x_common_grid
-                y_interp = np.interp(x_common_grid, x_s, y_s, left=0, right=0) # Or np.nan and handle later
-                sum_y_on_common_grid += y_interp
-                # Count contributions: where x_common_grid values fall within the range of x_s
-                # A simpler way is to count non-zero interpolated values if left/right are 0
-                # Or, more accurately, for each point in x_common_grid, count how many original series could contribute
-                min_x_s, max_x_s = np.min(x_s), np.max(x_s)
-                counts_on_common_grid += ((x_common_grid >= min_x_s) & (x_common_grid <= max_x_s) & (y_interp != 0)) # Approximation
+                y_interp                = np.interp(x_common_grid, x_s, y_s, left=0, right=0) # Or np.nan and handle later
+                sum_y_on_common_grid   += y_interp
+                min_x_s, max_x_s        = np.min(x_s), np.max(x_s)
+                counts_on_common_grid  += ((x_common_grid >= min_x_s) & (x_common_grid <= max_x_s) & (y_interp != 0)) # Approximation
             
             # Avoid division by zero
             valid_counts = counts_on_common_grid > 0
@@ -1469,10 +1421,6 @@ class HDF5Manager:
             return y_combined_averaged, x_common_grid
 
         else: # Non-interpolation method (original logic)
-            # This part is complex to replicate exactly without deeper understanding of "divider".
-            # The original non-interpolation part sums y-values for common bins and appends unique bins.
-            # Averaging then divides by a 'divider' array that tracks contributions.
-            # Let's simplify for now or stick to interpolation if possible, which is often more robust.
             # For a direct port of original non-interpolation:
             combined_dict = {} # x_value -> (sum_y, count)
             for y_s, x_s in processed_series:
@@ -1534,11 +1482,6 @@ class HDF5Manager:
             
             for _ in range(num_realizations_in_group):
                 # y_arrays_list could be a list of lists or a flat list of y-arrays
-                # Assuming y_arrays_list is structured such that each element corresponds to an x_array group,
-                # and if num_realizations_in_group > 1, then y_arrays_list[group_idx] is a list of y-arrays.
-                # If y_arrays_list is flat: y_current_realization = y_arrays_list[y_list_flat_idx]
-                # If y_arrays_list is nested: y_current_realization = y_arrays_list[group_idx][real_idx_in_group]
-                # The original had 'y = y_list[il][ii]', suggesting y_list was list of lists.
                 # Let's assume y_arrays_list[group_idx] gives us the y-array or list of y-arrays for this group.
 
                 y_data_for_group = y_arrays_list[group_idx] # This might be a single array or a list of arrays
@@ -1549,8 +1492,6 @@ class HDF5Manager:
                     y_current_realization = y_data_for_group[_] # _ is realization index within group
                 else: # Fallback or error for mismatched structure
                     # This part depends on exact structure of y_arrays_list.
-                    # Original 'y = y_list[il][ii]' means y_list[il] is indexable (a list/array of y_arrays).
-                    # For simplicity, let's adjust input expectations for y_arrays_list.
                     # Assume y_arrays_list is a FLAT list of all y_arrays.
                     if y_list_flat_idx >= len(y_arrays_list):
                         raise ValueError("Mismatch between group_lengths and total number of y_arrays.")

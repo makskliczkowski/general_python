@@ -145,7 +145,7 @@ def schmidt(
     (size_a, size_b), order = mask_subsystem(va, ns, local_dim, contiguous)
 
     if not eig:
-        psi_mat     = psi_numpy(state, order, size_a, ns, local_dim)
+        psi_mat = psi_numpy(state, order, size_a, ns, local_dim)
         if return_vecs:
             u, s, vh    = la.svd(psi_mat, full_matrices=False)
             return s**2 if square else s, (u, vh)
@@ -154,7 +154,7 @@ def schmidt(
             return s**2 if square else s
     else:
         # RDM approach
-        rho_A       = rho(state, va, ns, local_dim, contiguous)
+        rho_A = rho(state, va, ns, local_dim, contiguous)
         if return_vecs:
             vals, vecs  = la.eigh(rho_A)
             vals        = np.clip(vals, 0.0, 1.0)

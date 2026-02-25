@@ -24,23 +24,28 @@ from    typing import TYPE_CHECKING
 
 # For static type checking (IDE support) without runtime import
 if TYPE_CHECKING:
-    from .directories   import Directories
-    from .plot          import (
-                            Plotter, PlotterSave, MatrixPrinter,
-                            colorsCycle, colorsCycleBright, colorsCycleDark, colorsList,
-                            linestylesCycle, linestylesCycleExtended, linestylesList,
-                            markersCycle, markersList
-                        )
-    from .datah         import DataHandler
-    from .binary        import (
-                            ctz64, popcount64,
-                            mask_from_indices, indices_from_mask,
-                            complement_mask, complement_indices
-                        )
-    from .hdf5man       import HDF5Manager
-    from .flog          import Logger, get_global_logger
-    from .memory        import log_memory_status, check_memory_for_operation
-    from .timer         import Timer
+    from .directories           import Directories
+    from .plot                  import (
+                                    Plotter, PlotterSave, MatrixPrinter,
+                                    colorsCycle, colorsCycleBright, colorsCycleDark, colorsList,
+                                    linestylesCycle, linestylesCycleExtended, linestylesList,
+                                    markersCycle, markersList
+                                )
+    from .datah                 import DataHandler
+    from .binary                import (
+                                    ctz64, popcount64,
+                                    mask_from_indices, indices_from_mask,
+                                    complement_mask, complement_indices
+                                )
+    from .hdf5man               import HDF5Manager
+    from .lazy_entry            import (
+                                    LazyDataEntry, LazyHDF5Entry,
+                                    LazyNpzEntry, LazyPickleEntry, LazyJsonEntry
+                                )
+    from .plotters.data_loader  import load_results, filter_results, ResultSet, PlotData
+    from .flog                  import Logger, get_global_logger
+    from .memory                import log_memory_status, check_memory_for_operation
+    from .timer                 import Timer
 
 # Lazy loading registry
 _LAZY_IMPORTS = {
@@ -70,6 +75,17 @@ _LAZY_IMPORTS = {
     'complement_indices'        : ('.binary', 'complement_indices'),  # alias
     # hdf5
     'HDF5Manager'               : ('.hdf5man', 'HDF5Manager'),
+    # lazy entries
+    'LazyDataEntry'             : ('.lazy_entry', 'LazyDataEntry'),
+    'LazyHDF5Entry'             : ('.lazy_entry', 'LazyHDF5Entry'),
+    'LazyNpzEntry'              : ('.lazy_entry', 'LazyNpzEntry'),
+    'LazyPickleEntry'           : ('.lazy_entry', 'LazyPickleEntry'),
+    'LazyJsonEntry'             : ('.lazy_entry', 'LazyJsonEntry'),
+    # data loaders
+    'load_results'              : ('.plotters.data_loader', 'load_results'),
+    'filter_results'            : ('.plotters.data_loader', 'filter_results'),
+    'ResultSet'                 : ('.plotters.data_loader', 'ResultSet'),
+    'PlotData'                  : ('.plotters.data_loader', 'PlotData'),
     # logging
     'Logger'                    : ('.flog', 'Logger'),
     'get_global_logger'         : ('.flog', 'get_global_logger'),
@@ -115,6 +131,8 @@ def get_module_description(module_name):
         "plot"          : "Provides visualization utilities (Plotter, PlotterSave, MatrixPrinter).",
         "datah"         : "Handles various data operations and transformations.",
         "hdf5man"       : "Manages reading and writing HDF5 files.",
+        "lazy_entry"    : "Lazy data-entry wrappers for HDF5/NPZ/Pickle/JSON files.",
+        "plotters"      : "Plot-related data loaders and plotting utilities.",
         "flog"          : "Provides logging functionalities for structured output.",
         "memory"        : "Memory monitoring and management utilities.",
         "timer"         : "Context manager and utilities for performance timing."
@@ -128,7 +146,7 @@ def list_available_modules():
     Returns:
     - list: A list of available module names.
     """
-    return ["binary", "directories", "plot", "datah", "hdf5man", "flog", "memory", "timer"]
+    return ["binary", "directories", "plot", "datah", "hdf5man", "lazy_entry", "plotters", "flog", "memory", "timer"]
 
 # Expose all lazy-loadable names for `from common import *`
 __all__ = list(_LAZY_IMPORTS.keys()) + ['get_module_description', 'list_available_modules']

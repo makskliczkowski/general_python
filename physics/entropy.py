@@ -9,12 +9,13 @@ email       : maksymilian.kliczkowski@pwr.edu.pl
 --------------------------------
 '''
 
+from    __future__      import annotations
+
 from    enum            import Enum, unique
 import  numpy           as np
 import  numba
 import  math
-import  scipy.linalg    as la
-from    typing          import List, Dict, Tuple, Union, Optional, Any
+from    typing          import List, Dict, Tuple, Optional, Any, TYPE_CHECKING, Union
 
 try:
     import jax
@@ -23,11 +24,20 @@ try:
 except ImportError:
     JAX_AVAILABLE = False
     
+if TYPE_CHECKING:
+    from ..lattices.tools.regions.region    import Region
+    from ..common.flog                      import Logger
+    
 # ----------------------------------
 
+try:
+    from .entropies.entropy_constants       import *
+    from .entropies.entropy_toplogical      import TOPOLOGICAL_ENTROPIES, TopologicalOrderFamily
+except ImportError as e:
+    raise ImportError(f"Failed to import entropy constants or topological entropy data: {e}") from e
+
 if JAX_AVAILABLE:
-    from ..physics import entropy_jax as entropy_jax
-    from .entropies.entropy_constants import *
+    from ..physics                          import entropy_jax as entropy_jax
 else:
     entropy_jax = None
     
@@ -36,6 +46,20 @@ else:
 ###################################
 #! JIT-optimized entropy kernels
 ###################################
+
+def _validate_log_base(base: Optional[float]) -> Optional[float]:
+    """Validate logarithm base for entropy conversions."""
+    if base is None:
+        return None
+    b = float(base)
+    if b <= 0.0 or math.isclose(b, 1.0, rel_tol=0.0, abs_tol=0.0):
+        raise ValueError(f"Invalid logarithm base={base}. Base must be positive and different from 1.")
+    return b
+
+@numba.njit(cache=True, inline="always")
+def _inv_log_base(base: float) -> float:
+    """Return 1/log(base) for base conversion inside nopython kernels."""
+    return 1.0 / math.log(base)
 
 @numba.njit(cache=True)
 def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
@@ -46,7 +70,7 @@ def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
     return q / s if abs(s - 1.0) > 1e-14 else q
 
 @numba.njit(cache=True, fastmath=True)
-def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
+def vn_entropy(lam: np.ndarray, base: float = None) -> float:
     r"""
     Calculates the von Neumann entropy for a given probability distribution.c
 
@@ -67,18 +91,18 @@ def vn_entropy(lam: np.ndarray, base: float = np.e) -> float:
     The function internally cleans the probability array to ensure numerical stability.
     A small constant (1e-30) is added to probabilities before taking the logarithm to avoid log(0).
     """
-    lam     = _clean_probs(lam)
-    # Avoid log(0) for exactly zero elements
-    ent     = 0.0
+    lam         = _clean_probs(lam)
+    # Use change-of-base: log_b(x) = log(x) / log(b). Numba does not support math.log(x, b).
+    ent         = 0.0
+    use_base    = base is not None
+    inv_log_b   = _inv_log_base(base) if use_base else 1.0
     for p in lam:
         if p > 0:
-            ent -= p * math.log(p)
-    if base != np.e:
-        ent /= math.log(base)
+            ent -= p * math.log(p) * inv_log_b
     return ent
 
 @numba.njit(cache=True, fastmath=True)
-def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e) -> float:
+def renyi_entropy(lam: np.ndarray, q: float, base: float = None) -> float:
     r"""
     Calculates the Rényi entropy of a probability distribution.
 
@@ -109,13 +133,14 @@ def renyi_entropy(lam: np.ndarray, q: float, base: float = np.e) -> float:
     lam         = _clean_probs(lam)
     s           = (lam ** q).sum()
     if s <= 0:  return 0.0
-    log_s       = math.log(s)
-    if base != np.e:
-        log_s /= math.log(base)
+    use_base    = base is not None
+    inv_log_b   = _inv_log_base(base) if use_base else 1.0
+    log_s       = math.log(s) * inv_log_b
+        
     return log_s / (1.0 - q)
 
 @numba.njit(cache=True, fastmath=True)
-def tsallis_entropy(lam: np.ndarray, q: float) -> float:
+def tsallis_entropy(lam: np.ndarray, q: float, base: float = None) -> float:
     r"""
     Compute the Tsallis entropy for a given probability distribution.
 
@@ -135,12 +160,12 @@ def tsallis_entropy(lam: np.ndarray, q: float) -> float:
         - C. Tsallis, "Possible generalization of Boltzmann-Gibbs statistics," J. Stat. Phys. 52, 479-487 (1988).
     """
     if abs(q - 1.0) < 1e-9:
-        return vn_entropy(lam)
+        return vn_entropy(lam, base=base)
     lam = _clean_probs(lam)
     return (1.0 - (lam ** q).sum()) / (q - 1.0)
 
 @numba.njit(cache=True)
-def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):    
+def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = None):    
     r"""
     Compute the single-particle correlation entropy for a set of eigenvalues.
     This function calculates either the von Neumann entropy (for q=1) or the Rényi entropy (for generic q)
@@ -168,7 +193,7 @@ def sp_correlation_entropy(lam: np.ndarray, q: float, base: float = np.e):
     - The entropy is normalized by the logarithm of the specified base.
     """
     
-    log_base = np.log(base)
+    log_base = np.log(base) if base is not None else 1.0
     
     #! von-Neumann entropy (q == 1)
     if np.abs(q - 1.0) < 1e-12:
@@ -292,7 +317,7 @@ class Entanglement(Enum):
     SINGLE      = 4
     PARTIC      = 5
 
-def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
+def entropy(lam: np.ndarray, q: float = 1.0, *, base: Optional[float] = None,
         typek: Entanglement = Entanglement.RENYI, backend: str = "numpy", **kwargs) -> float:
     """
     Calculates the entropy of a probability distribution using the specified entanglement entropy type.
@@ -321,33 +346,35 @@ def entropy(lam: np.ndarray, q: float = 1.0, base: float = np.e, *,
     Raises:
         ValueError: If an unsupported entanglement type is provided.
     """
+    base = _validate_log_base(base)
+
     if backend.lower() == 'numpy':
         lam = np.asarray(lam)
         if typek == Entanglement.VN:
-            return vn_entropy(lam, base)
+            return vn_entropy(lam, base=base)
         elif typek == Entanglement.RENYI:
-            return renyi_entropy(lam, q, base)
+            return renyi_entropy(lam, q, base=base)
         elif typek == Entanglement.TSALLIS:
-            return tsallis_entropy(lam, q, base)
+            return tsallis_entropy(lam, q, base=base)
         elif typek == Entanglement.SINGLE:
-            return sp_correlation_entropy(lam, q, base)
+            return sp_correlation_entropy(lam, q, base=base)
         elif typek == Entanglement.PARTIC:
             return participation_entropy(lam, q, kwargs.get('threshold', 1e-12))
     elif backend.lower() == 'jax' and JAX_AVAILABLE:
         if typek == Entanglement.VN:
-            return entropy_jax.vn_entropy_jax(lam, base)
+            return entropy_jax.vn_entropy_jax(lam, base=base)
         elif typek == Entanglement.RENYI:
-            return entropy_jax.renyi_entropy_jax(lam, q, base)
+            return entropy_jax.renyi_entropy_jax(lam, q, base=base)
         elif typek == Entanglement.TSALLIS:
-            return entropy_jax.tsallis_entropy_jax(lam, q, base)
+            return entropy_jax.tsallis_entropy_jax(lam, q, base=base)
         elif typek == Entanglement.SINGLE:
-            return entropy_jax.sp_correlation_entropy_jax(lam, q, base)
+            return entropy_jax.sp_correlation_entropy_jax(lam, q, base=base)
         elif typek == Entanglement.PARTIC:
             return entropy_jax.participation_entropy_jax(lam, q, kwargs.get('threshold', 1e-12))
     else:
         raise ValueError(f"Unsupported backend: {backend}. Use 'numpy' or 'jax'.")
 
-def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, **kwargs) -> Tuple[float, Tuple[float, float, float]]:
+def mutual_information(psi, i, j, ns, q: float = 1.0, base: Optional[float] = None, **kwargs) -> Tuple[float, Tuple[float, float, float]]:
     """
     Compute mutual information I(i:j) = S_i + S_j - S_ij.
     
@@ -376,54 +403,75 @@ def mutual_information(psi, i, j, ns, q: float = 1.0, base: float = np.e, **kwar
     spec_j  = rho_spectrum(rho_j)
     spec_ij = rho_spectrum(rho_ij)
 
-    Si      = entropy(spec_i, q, base, **kwargs)
-    Sj      = entropy(spec_j, q, base, **kwargs)
-    Sij     = entropy(spec_ij, q, base, **kwargs)
+    Si      = entropy(spec_i, q, base=base, **kwargs)
+    Sj      = entropy(spec_j, q, base=base, **kwargs)
+    Sij     = entropy(spec_ij, q, base=base, **kwargs)
     
     return Si + Sj - Sij, (Si, Sj, Sij)
 
 def topological_entropy(
-    psi         : np.ndarray, 
-    regions     : Dict[str, List[int]], 
-    ns          : int, 
-    q           : float = 1.0, 
-    base        : float = np.e, 
+    psi                 : np.ndarray, 
+    regions             : Union[Dict[str, List[int]], Region],
+    ns                  : int, 
+    *,
+    q                   : float = 1.0, 
+    base                : Optional[float] = None,
+    region_entropies    : Optional[Dict[str, float]] = None,
+    logger              : Optional['Logger'] = None,
     **kwargs
 ) -> Dict[str, Any]:
     r"""
     Calculate topological entanglement entropy (TEE) \gamma.
     Optimized for speed and memory.
     """
-    from .density_matrix import schmidt
+    try:
+        from .density_matrix                    import schmidt
+    except ImportError:
+        raise ImportError("The 'density_matrix' module is required for computing topological entropy. Please ensure it is available in the same package.")
     
-    topo_kind   = kwargs.get('topological', 'kitaev_preskill')
+    # Convert Region object to dict if necessary
     entropies   = {}
     
+    # Compute entropies for all regions, using precomputed values if provided
     for name, indices in regions.items():
+        
+        # Try to use precomputed entropy if available for this region
+        if region_entropies is not None and name in region_entropies:
+            entropies[name] = region_entropies[name]
+            continue
+        
+        # Compute entropy for this region using the Schmidt decomposition and the specified entropy function
         indices         = np.asarray(indices, dtype=np.int64)
         size_a          = len(indices)
         
         if size_a == 0 or size_a == ns:
+            if logger is not None:
+                logger.warning(f"Region '{name}' is empty or full. Setting entropy to 0.")
             entropies[name] = 0.0
             continue
             
         probs           = schmidt(psi, va=indices, ns=ns, eig=False, contiguous=False, square=True, return_vecs=False)
-        entropies[name] = entropy(probs, q, base, **kwargs)
+        entropies[name] = entropy(probs, q, base=base, **kwargs)
         
     # Calculate Gamma
     gamma = 0.0
-    if topo_kind.startswith('kitaev') or topo_kind.startswith('levin'):
+    
+    try:
         # Both KP and LW can use the 7-region formula if regions are defined that way
-        keys = ['A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC']
-        if all(k in entropies for k in keys):
-            gamma = (entropies['A'] + entropies['B'] + entropies['C'] 
-                   - entropies['AB'] - entropies['BC'] - entropies['AC'] 
+        keys_ABC    = ['A', 'B', 'C', 'AB', 'BC', 'AC', 'ABC']
+        keys_RING   = ['inner', 'outer', 'inner_outer']
+        
+        if all(k in entropies for k in keys_ABC):
+            gamma = (entropies['A']     + entropies['B']    + entropies['C'] 
+                   - entropies['AB']    - entropies['BC']   - entropies['AC'] 
                    + entropies['ABC'])
-        elif topo_kind.startswith('levin'):
+        elif all(k in entropies for k in keys_RING):
             # Fallback for old concentric annuli formula
-            keys = ['inner', 'outer', 'inner_outer']
-            if all(k in entropies for k in keys):
-                gamma = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
+            gamma = (entropies['inner'] + entropies['outer'] - entropies['inner_outer'])
+        else:
+            raise ValueError("Insufficient region entropies to compute TEE. Required keys: " + ", ".join(keys_ABC) + " or " + ", ".join(keys_RING))
+    except KeyError as e:
+        raise KeyError(f"Missing entropy for region {e.args[0]}. Cannot compute TEE. Available entropies: {list(entropies.keys())}")
          
     return {
         'gamma'     : gamma,
@@ -457,14 +505,14 @@ class Fractal:
     ################################
     
     @staticmethod
-    def fractal_dim_pr(pr_lp1, pr_l, q):
+    def fractal_dim_pr(pr_lp1, pr_l, q, base: Optional[float] = None):
         '''
         Calculate the fractal dimension out of the information entropy of the system.
         - pr_lp1: Entropy of the system with L+1 sites.
         - pr_l: Entropy of the system with L sites.
         '''
         if q != 1.0:    
-            return (np.log2(pr_lp1) - np.log2(pr_l)) / (1 - q)
+            return (np.log2(pr_lp1, where=pr_lp1>0) - np.log2(pr_l, where=pr_l>0)) / (1 - q)
         else:
             return (np.log2(pr_lp1) - np.log2(pr_l))
         

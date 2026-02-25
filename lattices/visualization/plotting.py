@@ -73,15 +73,18 @@ def _init_axes(ax: Optional[Axes], dim: int, projection: Optional[str] = None) -
         
     return fig, ax
 
-def _annotate_indices(ax: Axes, coords: np.ndarray, *, zorder: int = 5, color: str = 'k', fontsize: int = 8) -> None:
+def _annotate_indices(ax: Axes, coords: np.ndarray, *, zorder: int = 5, color: str = 'k', fontsize: int = 8, padding: float = 0.0) -> None:
     """ Annotate sites with their indices. """
     for idx, point in enumerate(coords):
-        if point.size >= 3:
-            ax.text(point[0], point[1], point[2], str(idx), zorder=zorder, color=color, fontsize=fontsize)
-        elif point.size == 2:
-            ax.text(point[0], point[1], str(idx), zorder=zorder, color=color, fontsize=fontsize)
+        
+        true_point = point + padding * np.sign(point) if padding != 0 else point
+        
+        if true_point.size >= 3:
+            ax.text(true_point[0], true_point[1], true_point[2], str(idx), zorder=zorder, color=color, fontsize=fontsize)
+        elif true_point.size == 2:
+            ax.text(true_point[0], true_point[1], str(idx), zorder=zorder, color=color, fontsize=fontsize)
         else:
-            ax.text(point[0], 0.0, str(idx), zorder=zorder, color=color, fontsize=fontsize)
+            ax.text(true_point[0], 0.0, str(idx), zorder=zorder, color=color, fontsize=fontsize)
 
 def _finalise_figure(fig: Figure, *, top_padding: float = 0.88) -> None:
     """ Apply layout adjustments. """
@@ -887,42 +890,130 @@ def _region_palette(n: int) -> List:
     cmap = cm.get_cmap("tab20", max(n, 20))
     return [cmap(i) for i in range(n)]
 
+def _normalize_site_indices(indices_like: Any, n_sites: int) -> List[int]:
+    """Convert supported index containers to sorted unique valid site indices."""
+    if indices_like is None:
+        return []
+    if isinstance(indices_like, np.ndarray):
+        raw = indices_like.ravel().tolist()
+    elif isinstance(indices_like, (list, tuple, set)):
+        raw = list(indices_like)
+    else:
+        return []
+
+    out: Set[int] = set()
+    for item in raw:
+        if isinstance(item, (int, np.integer)):
+            idx = int(item)
+            if 0 <= idx < n_sites:
+                out.add(idx)
+    return sorted(out)
+
+def _extract_region_indices(region_spec: Any, n_sites: int, component: str = "A") -> List[int]:
+    """
+    Normalize one region descriptor to a site-index list.
+
+    Supports:
+    - plain lists/arrays of indices,
+    - dicts containing region components,
+    - Region-like objects (with .get/.A/.to_dict()).
+    """
+    direct = _normalize_site_indices(region_spec, n_sites)
+    if direct:
+        return direct
+
+    comp = str(component).upper()
+
+    if isinstance(region_spec, dict):
+        if comp in region_spec:
+            return _normalize_site_indices(region_spec.get(comp), n_sites)
+        merged: List[int] = []
+        for value in region_spec.values():
+            v = _normalize_site_indices(value, n_sites)
+            if v:
+                merged.extend(v)
+        return sorted(set(merged))
+
+    get_fn = getattr(region_spec, "get", None)
+    if callable(get_fn):
+        try:
+            cand = get_fn(comp, None)
+        except Exception:
+            cand = None
+        cand_norm = _normalize_site_indices(cand, n_sites)
+        if cand_norm:
+            return cand_norm
+
+    if hasattr(region_spec, comp):
+        cand_norm = _normalize_site_indices(getattr(region_spec, comp), n_sites)
+        if cand_norm:
+            return cand_norm
+
+    to_dict_fn = getattr(region_spec, "to_dict", None)
+    if callable(to_dict_fn):
+        try:
+            mapping = to_dict_fn()
+        except Exception:
+            mapping = None
+        if isinstance(mapping, dict):
+            if comp in mapping:
+                return _normalize_site_indices(mapping.get(comp), n_sites)
+            merged: List[int] = []
+            for value in mapping.values():
+                v = _normalize_site_indices(value, n_sites)
+                if v:
+                    merged.extend(v)
+            return sorted(set(merged))
+    return []
+
 def plot_regions(
     lattice             : Lattice,
-    regions             : Dict[str, List[int]],
+    regions             : Union[Dict[str, Any], Any],
     *,
     ax                  : Optional[Axes]                = None,
+    # showers
     show_indices        : bool                          = False,
     show_system         : bool                          = True,
     show_complement     : bool                          = False,
     show_labels         : bool                          = True,
     show_overlaps       : bool                          = True,
     show_bonds          : bool                          = False,
+    show_legend         : bool                          = True,
+    # Other points
     origin              : Optional[np.ndarray]          = None,
     system_color        : str                           = 'lightgray',
     system_alpha        : float                         = 0.25,
+    region_colors       : Optional[Dict[str, str]]      = None,
+    region_alpha        : float                         = 0.6,
     complement_color    : str                           = 'lightgray',
     complement_alpha    : float                         = 0.3,
     overlap_color       : str                           = 'red',
     fill                : bool                          = False,
     fill_alpha          : float                         = 0.2,
+    # region styling
     blob_radius         : Optional[float]               = None,
     blob_alpha          : float                         = 0.12,
     marker_size         : int                           = 60,
     edge_width          : float                         = 1.5,
+    # general plot settings
     figsize             : Optional[Tuple[float, float]] = None,
     title               : Optional[str]                 = None,
     title_kwargs        : Optional[Dict[str, object]]   = None,
     tight_layout        : bool                          = True,
     elev                : Optional[float]               = None,
     azim                : Optional[float]               = None,
+    # Region labels and legend
     region_descriptions : Optional[Dict[str, str]]      = None,
     legend_loc          : str                           = 'best',
     legend_fontsize     : int                           = 9,
     legend_bbox         : tuple                         = (1.05, 1),
+    # Label styling
     label_fontsize      : int                           = 11,
     label_offset        : float                         = 1.2,
+    # Indices and axes
+    indices_padding     : float                         = 0.05,
     show_axes           : bool                          = False,
+    region_component    : str                           = "A",
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
     """
@@ -942,8 +1033,9 @@ def plot_regions(
     ----------
     lattice : Lattice
         The lattice object.
-    regions : Dict[str, List[int]]
-        Region name → sorted site-index list.
+    regions : Dict[str, Any] or Region-like
+        Region mapping or Region-like objects. Region-like values are
+        resolved using ``region_component`` (default ``"A"``).
     region_descriptions : dict[str, str], optional
         Optional human-readable description per region key that is appended
         to the legend entry (e.g. ``{'A': 'sector 0°-120°'}``).
@@ -959,6 +1051,9 @@ def plot_regions(
         centroid).  Values > 1 push the label outside the region.
     show_bonds : bool
         Draw NN bonds coloured by region.
+    region_component : str
+        Component to extract from Region-like entries (default ``"A"``).
+        Ignored for plain index lists.
     blob_radius, blob_alpha : float
         Per-site circle patches (2D only).
     fill, fill_alpha : bool, float
@@ -971,7 +1066,6 @@ def plot_regions(
     target_dim  = lattice.dim if lattice.dim else coords.shape[1]
     dim         = max(1, min(coords.shape[1], target_dim, 3))
     coords      = coords[:, :dim]
-
     fig, axis   = _init_axes(ax, dim)
 
     if figsize is not None and axis is fig.axes[0]:
@@ -992,6 +1086,17 @@ def plot_regions(
             axis.scatter(coords[:, 0], y, **_sc)
         else:
             axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], **_sc)
+            
+        # bonds 
+        if show_bonds and dim <= 2:
+            for i in range(len(coords)):
+                for j in lattice.get_nn(i):
+                    if lattice.wrong_nei(j):
+                        continue
+                    j = int(j)
+                    if i < j: # Avoid double counting
+                        ri, rj = coords[i, :2], coords[j, :2]
+                        axis.plot([ri[0], rj[0]], [ri[1], rj[1]], color=system_color, lw=0.8, alpha=system_alpha * 0.8, zorder=0)
 
     if origin is not None:
         _sc = dict(color='black', alpha=0.8, marker='X', s=100, zorder=5)
@@ -1000,6 +1105,16 @@ def plot_regions(
             axis.scatter(origin[0], y, **_sc)
         else:
             axis.scatter(origin[0], origin[1], origin[2], **_sc)
+
+    # Normalize inputs: convert Region/dict/list descriptors to list[int]
+    if not isinstance(regions, dict):
+        regions = {"region": regions}
+
+    normalized_regions  : Dict[str, List[int]] = {}
+    n_sites             = len(coords)
+    for name, spec in regions.items():
+        normalized_regions[str(name)] = _extract_region_indices(spec, n_sites=n_sites, component=region_component)
+    regions             = normalized_regions
 
     # site membership bookkeeping 
     all_region_sites            = set()
@@ -1036,7 +1151,8 @@ def plot_regions(
             continue
 
         rc    = coords[indices]
-        color = palette[i % len(palette)]
+        color = palette[i % len(palette)] if region_colors is None else region_colors.get(name, palette[i % len(palette)])
+        alpha = region_alpha
         n_pts = len(indices)
 
         # Build informative legend text
@@ -1050,7 +1166,7 @@ def plot_regions(
             try:
                 hull   = ConvexHull(rc)
                 hp     = rc[hull.vertices]
-                axis.fill(hp[:, 0], hp[:, 1], color=color, alpha=fill_alpha, zorder=1)
+                axis.fill(hp[:, 0], hp[:, 1], color=color, alpha=alpha * fill_alpha, zorder=1)
             except Exception:
                 pass
 
@@ -1059,7 +1175,7 @@ def plot_regions(
             from matplotlib.patches     import Circle as _Circle
             from matplotlib.collections import PatchCollection as _PC
             circles     = [_Circle((x, y), blob_radius) for x, y in rc[:, :2]]
-            pc          = _PC(circles, facecolors=color, edgecolors='none', alpha=blob_alpha, zorder=1)
+            pc          = _PC(circles, facecolors=color, edgecolors='none', alpha=alpha * blob_alpha, zorder=1)
             axis.add_collection(pc)
 
         # Intra-region NN bonds (2D)
@@ -1072,11 +1188,10 @@ def plot_regions(
                     nj = int(nj)
                     if nj in idx_set and nj > si:
                         ri, rj = coords[si, :2], coords[nj, :2]
-                        axis.plot([ri[0], rj[0]], [ri[1], rj[1]],
-                                  color=color, lw=1.2, alpha=0.55, zorder=2)
+                        axis.plot([ri[0], rj[0]], [ri[1], rj[1]], color=color, lw=1.2, alpha=alpha * 0.55, zorder=2)
 
         # Scatter markers
-        sc_kw   = dict(color=color, marker='o', s=marker_size, edgecolors='black', linewidths=edge_width * 0.5, label=lbl, zorder=3)
+        sc_kw   = dict(color=color, marker='o', s=marker_size, edgecolors='black', linewidths=edge_width * 0.5, label=lbl, zorder=3, alpha=alpha)
         sc_kw.update(scatter_kwargs)
         
         if dim <= 2:
@@ -1115,10 +1230,9 @@ def plot_regions(
             
         # Fallback label placement for non-2D or if no sites (just put at centroid)
         elif show_labels and dim != 2 and len(rc) > 0:
-            com = np.mean(rc, axis=0)
-            txt_kw = dict(fontsize=label_fontsize, fontweight='bold', color=color,
-                          ha='center', va='center',
-                          bbox=dict(fc='white', ec=color, alpha=0.8, pad=1.0))
+            com     = np.mean(rc, axis=0)
+            txt_kw  = dict(fontsize=label_fontsize, fontweight='bold', color=color,
+                          ha='center', va='center', bbox=dict(fc='white', ec=color, alpha=0.8, pad=1.0))
             if dim == 1:
                 axis.text(com[0], 0, name, **txt_kw)
             else:
@@ -1138,7 +1252,7 @@ def plot_regions(
 
     # site-index annotations
     if show_indices:
-        _annotate_indices(axis, coords)
+        _annotate_indices(axis, coords, padding=indices_padding)
 
     # Spatial Limits & Visibility
     # Use a larger margin if we have region labels to avoid clipping
@@ -1165,24 +1279,25 @@ def plot_regions(
             parts.append(f",  {len(overlap_sites)} overlaps")
 
     # legend (deduplicated, compact)
-    handles, labels = axis.get_legend_handles_labels()
-    by_label        = dict(zip(labels, handles))
-    if by_label:
-        axis.legend(
-            by_label.values(), by_label.keys(),
-            loc             =legend_loc, 
-            fontsize        =legend_fontsize,
-            bbox_to_anchor  =legend_bbox,
-            framealpha      =0.90, 
-            edgecolor       ='lightgray', 
-            fancybox        =True,
-            handletextpad   =0.3, 
-            labelspacing    =0.25,
-            borderpad       =0.4, 
-            handlelength    =1.2,
-            markerscale     =0.7,
-            **scatter_kwargs,
-        )
+    if show_legend:
+        handles, labels = axis.get_legend_handles_labels()
+        by_label        = dict(zip(labels, handles))
+        if by_label:
+            axis.legend(
+                by_label.values(), by_label.keys(),
+                loc             =legend_loc, 
+                fontsize        =legend_fontsize,
+                bbox_to_anchor  =legend_bbox,
+                framealpha      =0.90, 
+                edgecolor       ='lightgray', 
+                fancybox        =True,
+                handletextpad   =0.3, 
+                labelspacing    =0.25,
+                borderpad       =0.4, 
+                handlelength    =1.2,
+                markerscale     =0.7,
+                **scatter_kwargs,
+            )
 
     if tight_layout:
         _finalise_figure(fig)

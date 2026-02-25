@@ -67,10 +67,9 @@ from    dataclasses import dataclass
 # ---------------------------------------------------------------------
 
 if TYPE_CHECKING: # pragma: no cover - import only for type checking   
-    from ..common.flog import Logger
+    from ..common.flog import Logger as QESLogger
 
-from typing import Optional
-log: Optional["Logger"]                     = None  # Assigned during _qes_initialize_utils via qes_globals
+log: Optional[Union["QESLogger", logging.Logger]] = None  # Assigned during _qes_initialize_utils
 
 # ---------------------------------------------------------------------
 
@@ -137,6 +136,29 @@ def _log_message(msg, lvl = 0, **kwargs):
         print(msg)
     else:
         log.info(text, **kwargs)
+
+
+def _initialize_logger() -> Union["QESLogger", logging.Logger]:
+    """
+    Resolve the package logger in a robust way.
+
+    Priority:
+    1) package-relative singleton logger (normal import path)
+    2) absolute ``general_python`` path (legacy usage)
+    3) silent stdlib logger fallback
+    """
+    try:
+        from ..common.flog import get_global_logger
+        return get_global_logger()
+    except Exception:
+        try:
+            from general_python.common.flog import get_global_logger
+            return get_global_logger()
+        except Exception:
+            fallback = logging.getLogger(__name__)
+            if not fallback.handlers:
+                fallback.addHandler(logging.NullHandler())
+            return fallback
 
 # ---------------------------------------------------------------------
 #! SET VARIABLES
@@ -1164,15 +1186,8 @@ def _qes_initialize_utils():
     global ACTIVE_SCIPY_MODULE, ACTIVE_JIT, ACTIVE_JAX_KEY
     global ACTIVE_INT_TYPE, ACTIVE_FLOAT_TYPE, ACTIVE_COMPLEX_TYPE
 
-    # 1. Setup Logger
-    try:
-        # Centralized singleton access (avoids duplicate banner prints)
-        from general_python.common.flog import get_logger
-        log = get_logger()
-    except Exception:
-        logging.basicConfig(level=logging.INFO)
-        log = logging.getLogger(__name__)
-        log.info("Fallback standard logger initialized (qes_globals unavailable).")
+    # 1. Setup logger (singleton when available, silent stdlib fallback otherwise)
+    log = _initialize_logger()
 
     _log_message("Initializing general_python.algebra.utils...")
 

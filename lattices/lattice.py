@@ -2946,6 +2946,23 @@ class Lattice(ABC):
     def plot_structure(self, **kwargs):
         """
         Convenience wrapper returning the matplotlib figure and axes for a detailed lattice structure plot.
+
+        Parameters
+        ----------
+        show_indices : bool
+            If True, annotates nodes with their site indices.
+        highlight_boundary : bool
+            If True, draws boundary nodes with a distinct color/edge.
+        show_axes : bool
+            If False, hides the coordinate axes for a cleaner diagram.
+        partition_colors : tuple of str, optional
+            Colors to use for bipartite/sublattice coloring. If provided, nodes are
+            colored based on sublattice parity.
+        show_periodic_connections : bool
+            If True, indicates wrap-around connections textually or graphically.
+        show_primitive_cell : bool
+            If True, overlays the primitive unit cell vectors/box.
+        ... other kwargs passed to the underlying plotting function (e.g., node size, color map, etc.), see plot_lattice_structure() for details.
         """
         from .visualization import plot_lattice_structure
         return plot_lattice_structure(self, **kwargs)

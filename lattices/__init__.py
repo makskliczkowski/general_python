@@ -23,6 +23,7 @@ roundoff can affect reciprocal-space formatting or plotting labels but should no
 change connectivity.
 """
 
+import importlib
 from collections                import OrderedDict
 from typing                     import TYPE_CHECKING, Optional, Tuple, Type, Union
 import numpy                    as np
@@ -31,12 +32,14 @@ if TYPE_CHECKING:
     import matplotlib.pyplot    as plt
     
 from .lattice   import (
+    # Core lattice classes and utilities
     BoundaryFlux,
     Lattice,
     Backend as LatticeBackend,
     LatticeBC,
     LatticeDirection,
     LatticeType,
+    # Visualization utilities
     handle_boundary_conditions,
     handle_dim,
     HighSymmetryPoints,
@@ -49,6 +52,8 @@ from .hexagonal     import HexagonalLattice
 from .honeycomb     import HoneycombLattice
 from .triangular    import TriangularLattice
 from .graph         import GraphLattice
+
+# Import visualization utilities
 from ..common.plot  import colorsCycle
 
 # Import visualization utilities
@@ -64,12 +69,17 @@ from .visualization import (
     plot_brillouin_zone,
 )
 
+# Import region utilities and tools
+from . import tools
+from .tools.region_handler import RegionType, LatticeRegionHandler
+
 __all__ = [
     "BoundaryFlux",
     "Lattice",
     "LatticeBC",
     "LatticeDirection",
     "LatticeType",
+    "LatticeBackend",
     # Core lattice classes
     "SquareLattice",
     "HexagonalLattice",
@@ -98,12 +108,40 @@ __all__ = [
     "plot_reciprocal_space",
     "plot_brillouin_zone",
     "plot_lattice_structure",
+    # Region utilities
+    "tools",
+    "RegionType",
+    "LatticeRegionHandler",
+    "Region",
+    "KitaevPreskillRegion",
+    "LevinWenRegion",
+    "HalfRegions",
+    "DiskRegion",
+    "PlaquetteRegion",
+    "CustomRegion",
+    "KPRegion",
+    "LWRegion",
+    "get_predefined_region",
+    "list_predefined_regions",
     # Testing utilities
     "run_lattice_tests",
 ]
 
 LatticeFactory      = Type[Lattice]
 _LATTICE_REGISTRY   : "OrderedDict[str, LatticeFactory]" = OrderedDict()
+_LAZY_REGION_EXPORTS = {
+    "Region"                : (".tools.regions", "Region"),
+    "KitaevPreskillRegion"  : (".tools.regions", "KitaevPreskillRegion"),
+    "LevinWenRegion"        : (".tools.regions", "LevinWenRegion"),
+    "HalfRegions"           : (".tools.regions", "HalfRegions"),
+    "DiskRegion"            : (".tools.regions", "DiskRegion"),
+    "PlaquetteRegion"       : (".tools.regions", "PlaquetteRegion"),
+    "CustomRegion"          : (".tools.regions", "CustomRegion"),
+    "KPRegion"              : (".tools.regions", "KPRegion"),
+    "LWRegion"              : (".tools.regions", "LWRegion"),
+    "get_predefined_region" : (".tools.regions", "get_predefined_region"),
+    "list_predefined_regions": (".tools.regions", "list_predefined_regions"),
+}
 
 def register_lattice(name: str, lattice_cls: LatticeFactory, *aliases: str, overwrite: bool = False):
     """
@@ -357,4 +395,18 @@ def choose_lattice(typek    : Optional[str]         = 'square',
         return _class(bc=_bc, flux=flux, **kwargs)
     return _class(dim=dim, lx=lx, ly=ly, lz=lz, bc=_bc, flux=flux, **kwargs)
 
+def __getattr__(name: str):
+    if name in _LAZY_REGION_EXPORTS:
+        module_name, attr_name  = _LAZY_REGION_EXPORTS[name]
+        module                  = importlib.import_module(module_name, package=__name__)
+        value                   = getattr(module, attr_name)
+        globals()[name]         = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+def __dir__():
+    return sorted(list(globals().keys()) + list(_LAZY_REGION_EXPORTS.keys()))
+
+####################################################################################################
+#! EOF
 ####################################################################################################

@@ -49,10 +49,10 @@ Date    : 2025-12-30
 -------------------------------------------------------------------------------
 """
 
-import  numpy   as np
-from    typing  import List, Optional, Union, Dict, Any, Tuple, TYPE_CHECKING
-from    enum    import Enum, auto
-from    itertools import combinations
+import  numpy       as np
+from    typing      import List, Optional, Union, Dict, Any, Tuple, TYPE_CHECKING
+from    enum        import Enum
+from    itertools   import combinations
 
 
 class RegionType(Enum):
@@ -72,6 +72,7 @@ class RegionType(Enum):
     KITAEV_PRESKILL = "kitaev_preskill"
     LEVIN_WEN       = "levin_wen"
     CUSTOM          = "custom"
+    FRACTION        = "fraction"
 
     def __str__(self):
         return self.value
@@ -81,6 +82,7 @@ class RegionType(Enum):
 
 if TYPE_CHECKING:
     from general_python.lattices.lattice import Lattice
+    from .regions.region import Region
 
 class LatticeRegionHandler:
     r"""
@@ -160,6 +162,83 @@ class LatticeRegionHandler:
             return self._pbc_displacements(r0)
         return self._raw_displacements(r0)
 
+    def _sorted_unique_sites(self, sites: List[int]) -> List[int]:
+        """Normalize a site list to sorted unique valid indices."""
+        ns = int(self.lattice.Ns)
+        return sorted({int(s) for s in sites if 0 <= int(s) < ns})
+
+    def _complement_sites(self, sites_a: List[int]) -> List[int]:
+        """Return sorted complement of A in [0, Ns)."""
+        set_a = set(self._sorted_unique_sites(sites_a))
+        return sorted(i for i in range(int(self.lattice.Ns)) if i not in set_a)
+
+    def _make_bipartite_region(self, sites_a: List[int], region_cls):
+        """Construct a bipartite Region-like object with A and its complement B."""
+        a   = self._sorted_unique_sites(sites_a)
+        b   = self._complement_sites(a)
+        return region_cls(A=a, B=b, C=[])
+
+    def _make_topological_region(self, regions: Dict[str, List[int]], *, kind: str):
+        """Construct KP/LW region objects from dictionary output."""
+        from .regions import KitaevPreskillRegion, LevinWenRegion
+
+        a   = self._sorted_unique_sites(regions.get("A", []))
+        b   = self._sorted_unique_sites(regions.get("B", []))
+        c   = self._sorted_unique_sites(regions.get("C", []))
+        ab  = self._sorted_unique_sites(regions.get("AB", []))
+        ac  = self._sorted_unique_sites(regions.get("AC", []))
+        bc  = self._sorted_unique_sites(regions.get("BC", []))
+        abc = self._sorted_unique_sites(regions.get("ABC", []))
+
+        if kind == "kitaev_preskill":
+            return KitaevPreskillRegion(A=a, B=b, C=c, AB=ab, AC=ac, BC=bc, ABC=abc)
+        if kind == "levin_wen":
+            return LevinWenRegion(A=a, B=b, C=c, AB=ab, AC=ac, BC=bc, ABC=abc)
+        raise ValueError(f"Unsupported topological region kind: {kind}")
+
+    def _normalize_predefined_kind(self, kind: Optional[str]) -> Optional[str]:
+        """Normalize user-friendly kind aliases to registry kind names."""
+        if kind is None:
+            return None
+        k = str(kind).strip().lower()
+        if "kitaev" in k or k.startswith("kp"):
+            return "kitaev_preskill"
+        if "levin" in k or k.startswith("lw"):
+            return "levin_wen"
+        if k.startswith("half"):
+            return "half"
+        if "disk" in k:
+            return "disk"
+        if "plaquette" in k:
+            return "plaquette"
+        if "custom" in k:
+            return "custom"
+        if "sublattice" in k:
+            return "sublattice"
+        if "graph" in k:
+            return "graph"
+        return k
+
+    def _normalize_lattice_type_filter(self, lattice_type: Optional[Union[str, Any]]):
+        """Normalize optional lattice-type filter to LatticeType enum."""
+        if lattice_type is None:
+            return None
+        from .lattice_tools import LatticeType
+        if isinstance(lattice_type, LatticeType):
+            return lattice_type
+        if isinstance(lattice_type, str):
+            key = lattice_type.strip().lower()
+            mapping = {
+                "square": LatticeType.SQUARE,
+                "triangular": LatticeType.TRIANGULAR,
+                "honeycomb": LatticeType.HONEYCOMB,
+                "hexagonal": LatticeType.HEXAGONAL,
+                "graph": LatticeType.GRAPH,
+            }
+            if key in mapping:
+                return mapping[key]
+        raise ValueError(f"Unknown lattice type filter: {lattice_type!r}")
+
     def get_shortest_displacement(self, i: int, j: int) -> np.ndarray:
         """
         Compute the shortest displacement vector r_j - r_i respecting PBC.
@@ -194,9 +273,11 @@ class LatticeRegionHandler:
         sites           : Optional[List[int]]               = None,
         depth           : Optional[int]                     = None,
         plaquettes      : Optional[List[int]]               = None,
-        configuration   : Optional[int]                    = None,
+        configuration   : Optional[int]                     = None,
+        predefined      : Optional[Union[bool, int, str]]   = None,
+        as_region       : bool                              = True,
         **kwargs
-    ) -> Union[List[int], Dict[str, List[int]]]:
+    ) -> Union[List[int], Dict[str, List[int]], Dict[str, Any], List[Dict[str, Any]], "Region"]:
         r"""
         Return site indices defining a spatial region.
 
@@ -221,7 +302,16 @@ class LatticeRegionHandler:
         plaquettes : list[int], optional
             Plaquette indices for ``'plaquette'`` regions.
         configuration : int, optional
-            Predefined configuration index for the given lattice and kind.
+            Legacy predefined configuration index (1-based) for the given
+            lattice and kind.
+        predefined : bool | int | str, optional
+            Convenience selector for predefined regions.
+            - ``True``  : list available predefined entries for given lattice/kind.
+            - ``int``   : select predefined entry by 0-based index.
+            - ``str``   : select predefined entry by label.
+        as_region : bool, optional
+            If True (default), return Region-class objects for supported kinds.
+            If False, keep legacy list/dict return shapes.
 
         Keyword-only (forwarded)
         ------------------------
@@ -240,18 +330,23 @@ class LatticeRegionHandler:
 
         Returns
         -------
-        list[int]  or  dict[str, list[int]]
-            Sorted site list for simple regions, or a dict of labelled site
-            lists for topological partitions.
+        Region  or  list[int]  or  dict[str, list[int]]  or  list[dict]
+            Sorted site list for simple regions, a dict of labelled site
+            lists for topological partitions, metadata entries when ``predefined=True``,
+            or Region objects when ``as_region=True``.
 
         Examples
         --------
         >>> lat.regions.get_region('half_x')
-        [0, 1, 2, ...]
+        HalfRegion(A=[...], B=[...])
         >>> lat.regions.get_region('disk', origin=10, radius=2.5)
-        [5, 6, 10, 11, 15]
+        DiskRegion(A=[...], B=[...], C=[])
         >>> lat.regions.get_region('kitaev_preskill', configuration=1)
-        {'A': [...], 'B': [...], 'C': [...], 'AB': [...], ...}
+        KitaevPreskillRegion(A=[...], B=[...], C=[...])
+        >>> lat.regions.get_region('kitaev_preskill', predefined=0)
+        KitaevPreskillRegion(A=[...], B=[...], C=[...])
+        >>> lat.regions.get_region('half_x', as_region=False)
+        [0, 1, 2, ...]
         """
         # Normalise kind to lowercase string
         if isinstance(kind, str):
@@ -261,58 +356,151 @@ class LatticeRegionHandler:
         else:
             raise ValueError("kind must be a string or RegionType enum")
 
-        # handle predefined configurations
-        if configuration is not None:
-            
-            try:
-                from .regions.predefined import get_predefined_region
-            except ImportError:
-                raise ImportError("Predefined regions module not found. Make sure 'regions/predefined.py' exists and is in the correct location.")
-            
-            predefined = get_predefined_region(
-                self.lattice._type, self.lattice.Lx, self.lattice.Ly, self.lattice.Lz, kind_str, configuration
-            )
-            
-            # If a predefined configuration is found, it already contains site indices
-            if predefined is not None:
-                region_id = kwargs.get("region")
-                if region_id is not None:
-                    return predefined.get(region_id.upper(), [])
-                
-                # For predefined KP/LW, return the full structured dictionary
-                if kind_str.startswith(("kitaev", "kp", "levin", "lw")):
-                    return predefined.to_dict()
-                
-                # For simple regions (disk, half, etc.), return just region 'A' by default
-                # This matches the behavior of non-predefined simple regions.
-                if kind_str in ("half", "disk", "sublattice", "graph", "plaquette", "custom"):
-                    return predefined.A
-                
-                return predefined.to_dict()
-            else:
-                raise ValueError(f"Predefined configuration {configuration} not found for {self.lattice._type} {self.lattice.Lx}x{self.lattice.Ly}x{self.lattice.Lz} {kind_str}")
+        # handle predefined configurations/selection
+        if configuration is not None and predefined is not None:
+            raise ValueError("Use only one of 'configuration' or 'predefined'.")
 
+        if configuration is not None or predefined is not None:
+            try:
+                from .regions import get_predefined_region, list_predefined_regions
+            except ImportError as exc:
+                raise ImportError(
+                    "Predefined regions are unavailable. Ensure "
+                    "'lattices/tools/regions' package is importable."
+                ) from exc
+
+            if predefined is True:
+                return list_predefined_regions(
+                    self.lattice._type,
+                    self.lattice.Lx,
+                    self.lattice.Ly,
+                    self.lattice.Lz,
+                    kind=kind_str,
+                )
+
+            predefined_region = None
+            if configuration is not None:
+                predefined_region = get_predefined_region(
+                    self.lattice._type,
+                    self.lattice.Lx,
+                    self.lattice.Ly,
+                    self.lattice.Lz,
+                    kind_str,
+                    configuration,
+                )
+            elif isinstance(predefined, (int, np.integer)):
+                predefined_region = get_predefined_region(
+                    self.lattice._type,
+                    self.lattice.Lx,
+                    self.lattice.Ly,
+                    self.lattice.Lz,
+                    kind_str,
+                    index=int(predefined),
+                )
+            elif isinstance(predefined, str):
+                predefined_region = get_predefined_region(
+                    self.lattice._type,
+                    self.lattice.Lx,
+                    self.lattice.Ly,
+                    self.lattice.Lz,
+                    kind_str,
+                    label=predefined,
+                )
+            else:
+                raise ValueError(
+                    "'predefined' must be one of: True, int (0-based index), str (label)."
+                )
+
+            if predefined_region is None:
+                raise ValueError(
+                    f"Predefined region not found for {self.lattice._type} "
+                    f"{self.lattice.Lx}x{self.lattice.Ly}x{self.lattice.Lz} "
+                    f"{kind_str!r} (configuration={configuration!r}, predefined={predefined!r})."
+                )
+
+            region_id = kwargs.get("region")
+            if region_id is not None:
+                return predefined_region.get(region_id.upper(), [])
+
+            if as_region:
+                return predefined_region
+
+            kind_key = kind_str.replace("-", "_")
+            if kind_key.startswith(("kitaev", "kp", "levin", "lw")):
+                return predefined_region.to_dict()
+            if kind_key.startswith("half") or kind_key in (
+                "disk",
+                "sublattice",
+                "graph",
+                "plaquette",
+                "custom",
+            ):
+                return predefined_region.A
+            return predefined_region.to_dict()
+
+        # 0) fraction
+        if "frac" in kind_str:
+            fraction    = kwargs.get("fraction", 0.5)
+            sites_frac  = self.region_fraction(fraction)
+            if as_region:
+                from .regions import RegionFraction
+                return self._make_bipartite_region(sites_frac, RegionFraction)
+            return sites_frac
+            
+            
         # a) half-system cuts
         if kind_str in ("half", "half_x", "half-x"):
-            return self.region_half(direction or "x")
+            sites_half = self.region_half(direction or "x")
+            if as_region:
+                from .regions import HalfRegions
+                return self._make_bipartite_region(sites_half, HalfRegions)
+            return sites_half
         if kind_str in ("half_y", "half-y"):
-            return self.region_half("y")
+            sites_half = self.region_half("y")
+            if as_region:
+                from .regions import HalfRegions
+                return self._make_bipartite_region(sites_half, HalfRegions)
+            return sites_half
         if kind_str in ("half_z", "half-z"):
-            return self.region_half("z")
+            sites_half = self.region_half("z")
+            if as_region:
+                from .regions import HalfRegions
+                return self._make_bipartite_region(sites_half, HalfRegions)
+            return sites_half
         if kind_str in ("half_xy", "half-xy"):
-            return self.region_half("xy")
+            sites_half = self.region_half("xy")
+            if as_region:
+                from .regions import HalfRegions
+                return self._make_bipartite_region(sites_half, HalfRegions)
+            return sites_half
         if kind_str in ("half_yx", "half-yx"):
-            return self.region_half("yx")
+            sites_half = self.region_half("yx")
+            if as_region:
+                from .regions import HalfRegions
+                return self._make_bipartite_region(sites_half, HalfRegions)
+            return sites_half
         if kind_str == "quarter":
-            return self.region_quarter()
+            sites_quarter = self.region_quarter()
+            if as_region:
+                from .regions import HalfRegions
+                return self._make_bipartite_region(sites_quarter, HalfRegions)
+            return sites_quarter
         if kind_str == "sweep":
-            return self.region_sweep(by_unit_cell=kwargs.get("by_unit_cell", None))
+            sweep_regions = self.region_sweep(by_unit_cell=kwargs.get("by_unit_cell", None))
+            if as_region:
+                from .regions import HalfRegions
+                return {name: self._make_bipartite_region(cut_sites, HalfRegions) for name, cut_sites in sweep_regions.items()}
+            return sweep_regions
 
         # b) disk
         if kind_str == "disk":
             if origin is None or radius is None:
                 raise ValueError("'disk' requires 'origin' and 'radius'.")
-            return self.region_disk(origin, radius)
+            sites_disk = self.region_disk(origin, radius)
+            if as_region:
+                from .regions import DiskRegion
+                return self._make_bipartite_region(sites_disk, DiskRegion)
+            return sites_disk
 
         # c) graph-distance ball
         if kind_str == "graph":
@@ -320,19 +508,31 @@ class LatticeRegionHandler:
                 raise ValueError("'graph' requires 'origin' (int) and 'depth'.")
             if not isinstance(origin, (int, np.integer)):
                 raise ValueError("'graph' origin must be a site index.")
-            return self.region_graph_ball(int(origin), depth)
+            sites_graph = self.region_graph_ball(int(origin), depth)
+            if as_region:
+                from .regions import CustomRegion
+                return self._make_bipartite_region(sites_graph, CustomRegion)
+            return sites_graph
 
         # d) sublattice
         if kind_str == "sublattice":
             if sublattice is None:
                 raise ValueError("'sublattice' requires 'sublattice' index.")
-            return self.region_sublattice(sublattice)
+            sites_sub = self.region_sublattice(sublattice)
+            if as_region:
+                from .regions import CustomRegion
+                return self._make_bipartite_region(sites_sub, CustomRegion)
+            return sites_sub
 
         # e) plaquette union 
         if kind_str == "plaquette":
             if plaquettes is None:
                 raise ValueError("'plaquette' requires 'plaquettes' list.")
-            return self.region_plaquettes(plaquettes)
+            sites_plaq = self.region_plaquettes(plaquettes)
+            if as_region:
+                from .regions import PlaquetteRegion
+                return self._make_bipartite_region(sites_plaq, PlaquetteRegion)
+            return sites_plaq
 
         # f) Kitaev-Preskill
         if kind_str.startswith("kitaev") or kind_str.startswith("kp"):
@@ -346,6 +546,8 @@ class LatticeRegionHandler:
             region_id = kwargs.get("region")
             if region_id is not None:
                 return regions.get(region_id.upper(), [])
+            if as_region:
+                return self._make_topological_region(regions, kind="kitaev_preskill")
             return regions
 
         # g) Levin-Wen
@@ -359,13 +561,270 @@ class LatticeRegionHandler:
             region_id = kwargs.get("region")
             if region_id is not None:
                 return regions.get(region_id.upper(), [])
+            if as_region:
+                return self._make_topological_region(regions, kind="levin_wen")
             return regions
 
         # h) custom 
         if kind_str == "custom":
-            return sorted(list(set(sites))) if sites else []
+            custom_sites = sorted(list(set(sites))) if sites else []
+            if as_region:
+                from .regions import CustomRegion
+                return self._make_bipartite_region(custom_sites, CustomRegion)
+            return custom_sites
 
         raise ValueError(f"Unknown region type: {kind_str!r}")
+
+    # -------------------------------------------------------------------------------
+    # Convenience methods for querying predefined regions
+    # -------------------------------------------------------------------------------
+    
+    def list_predefined(
+        self,
+        kind: Optional[str] = None,
+        *,
+        lattice_type: Optional[Union[str, Any]] = None,
+        lx: Optional[int] = None,
+        ly: Optional[int] = None,
+        lz: Optional[int] = None,
+        include_region: bool = False,
+        labels_only: bool = False,
+    ) -> List[Any]:
+        """
+        List predefined regions with optional filtering by type/size/kind.
+
+        Defaults to the current lattice type and size if no filters are provided.
+        """
+        from .regions import PREDEFINED_META, PREDEFINED_REGIONS
+
+        kind_norm = self._normalize_predefined_kind(kind)
+        lt_filter = self._normalize_lattice_type_filter(lattice_type)
+        use_default_scope = (
+            lattice_type is None and lx is None and ly is None and lz is None
+        )
+
+        if use_default_scope:
+            lt_filter = self.lattice._type
+            lx = int(self.lattice.Lx)
+            ly = int(self.lattice.Ly)
+            lz = int(self.lattice.Lz)
+
+        selected: List[Dict[str, Any]] = []
+        keys = sorted(
+            PREDEFINED_REGIONS.keys(),
+            key=lambda k: (str(k[0]), int(k[1]), int(k[2]), int(k[3]), str(k[4]), int(k[5])),
+        )
+        for key in keys:
+            lt, kx, ky, kz, kkind, cfg = key
+            if lt_filter is not None and lt != lt_filter:
+                continue
+            if lx is not None and int(kx) != int(lx):
+                continue
+            if ly is not None and int(ky) != int(ly):
+                continue
+            if lz is not None and int(kz) != int(lz):
+                continue
+            if kind_norm is not None and kkind != kind_norm:
+                continue
+
+            meta = dict(PREDEFINED_META.get(key, {}))
+            entry = {
+                "lattice_type": lt,
+                "lx": int(kx),
+                "ly": int(ky),
+                "lz": int(kz),
+                "kind": str(kkind),
+                "configuration": int(cfg),
+                "label": meta.get("label", f"{kkind}_{cfg}"),
+                "tags": tuple(meta.get("tags", ())),
+            }
+            if include_region:
+                entry["region"] = PREDEFINED_REGIONS[key]
+            selected.append(entry)
+
+        for idx, entry in enumerate(selected):
+            entry["index"] = idx
+
+        if labels_only:
+            return [entry["label"] for entry in selected]
+        return selected
+    
+    def list_predefined_kinds(
+        self,
+        *,
+        lattice_type: Optional[Union[str, Any]] = None,
+        lx: Optional[int] = None,
+        ly: Optional[int] = None,
+        lz: Optional[int] = None,
+    ) -> List[str]:
+        """Return sorted predefined-kind names for the selected type/size filters."""
+        entries = self.list_predefined(
+            kind=None,
+            lattice_type=lattice_type,
+            lx=lx,
+            ly=ly,
+            lz=lz,
+            include_region=False,
+            labels_only=False,
+        )
+        return sorted({str(entry["kind"]) for entry in entries})
+
+    def list_predefined_sizes(
+        self,
+        *,
+        kind: Optional[str] = None,
+        lattice_type: Optional[Union[str, Any]] = None,
+    ) -> List[Tuple[int, int, int]]:
+        """Return available (Lx, Ly, Lz) sizes for selected lattice type and optional kind."""
+        entries = self.list_predefined(
+            kind=kind,
+            lattice_type=lattice_type,
+            lx=None,
+            ly=None,
+            lz=None,
+            include_region=False,
+            labels_only=False,
+        )
+        return sorted({(int(entry["lx"]), int(entry["ly"]), int(entry["lz"])) for entry in entries})
+
+    def get_predefined(
+        self,
+        kind: str,
+        *,
+        configuration: Optional[Union[int, str]] = None,
+        index: Optional[int] = None,
+        label: Optional[str] = None,
+        lattice_type: Optional[Union[str, Any]] = None,
+        lx: Optional[int] = None,
+        ly: Optional[int] = None,
+        lz: Optional[int] = None,
+        region: Optional[str] = None,
+        return_meta: bool = False,
+    ):
+        """
+        Fetch one predefined region by configuration/index/label with optional type/size filters.
+        """
+        from .regions import get_predefined_region
+
+        if sum(v is not None for v in (configuration, index, label)) > 1:
+            raise ValueError("Provide only one selector: configuration, index, or label.")
+
+        lt = self._normalize_lattice_type_filter(lattice_type)
+        if lt is None:
+            lt = self.lattice._type
+
+        kx = int(self.lattice.Lx) if lx is None else int(lx)
+        ky = int(self.lattice.Ly) if ly is None else int(ly)
+        kz = int(self.lattice.Lz) if lz is None else int(lz)
+
+        result = get_predefined_region(
+            lt,
+            kx,
+            ky,
+            kz,
+            kind,
+            config=configuration,
+            index=index,
+            label=label,
+            return_meta=return_meta,
+        )
+        if result is None:
+            raise ValueError(
+                f"No predefined region found for kind={kind!r}, "
+                f"selector=(configuration={configuration!r}, index={index!r}, label={label!r}), "
+                f"lattice={lt}, size=({kx}, {ky}, {kz})."
+            )
+
+        if return_meta:
+            region_obj, meta = result
+            if region is not None:
+                return region_obj.get(region.upper(), []), meta
+            return region_obj, meta
+
+        region_obj = result
+        if region is not None:
+            return region_obj.get(region.upper(), [])
+        return region_obj
+
+    def show_predefined(
+        self,
+        kind            : Optional[str] = None,
+        *,
+        lattice_type    : Optional[Union[str, Any]] = None,
+        lx              : Optional[int] = None,
+        ly              : Optional[int] = None,
+        lz              : Optional[int] = None,
+        limit           : Optional[int] = 40,
+    ) -> List[Dict[str, Any]]:
+        """
+        Pretty-print predefined entries and return them.
+        
+        Filters default to the current lattice type and size if not provided.
+        
+        Parameters
+        ----------
+        kind : str, optional
+            Filter by region kind (e.g. 'half_x', 'kitaev_preskill', etc.).
+        lattice_type : str or LatticeType, optional
+            Filter by lattice type (e.g. 'square', 'honeycomb').
+        lx, ly, lz : int, optional
+            Filter by lattice size. Defaults to current lattice dimensions.
+        limit : int, optional
+            Maximum number of entries to show (default 40). Use None for no limit.        
+        """
+        entries = self.list_predefined(
+            kind=kind,
+            lattice_type=lattice_type,
+            lx=lx,
+            ly=ly,
+            lz=lz,
+            include_region=False,
+            labels_only=False,
+        )
+        n_total = len(entries)
+        if n_total == 0:
+            print("No predefined regions found for the requested filters.")
+            return entries
+
+        n_show  = n_total if limit is None else min(max(int(limit), 0), n_total)
+        rows    = entries[:n_show]
+
+        headers = ["index", "type", "size", "kind", "cfg", "label", "tags"]
+        body    = []
+        for e in rows:
+            body.append(
+                [
+                    str(e["index"]),
+                    str(e["lattice_type"]),
+                    f"{e['lx']}x{e['ly']}x{e['lz']}",
+                    str(e["kind"]),
+                    str(e["configuration"]),
+                    str(e["label"]),
+                    ",".join(map(str, e.get("tags", ()))),
+                ]
+            )
+
+        widths = [len(h) for h in headers]
+        for row in body:
+            for i, cell in enumerate(row):
+                widths[i] = min(max(widths[i], len(cell)), 40)
+
+        def _clip(txt: str, w: int) -> str:
+            if len(txt) <= w:
+                return txt
+            if w <= 1:
+                return txt[:w]
+            return txt[: w - 1] + "…"
+
+        def _fmt(cols: List[str]) -> str:
+            return " | ".join(_clip(c, widths[i]).ljust(widths[i]) for i, c in enumerate(cols))
+
+        print(f"predefined regions: showing {n_show}/{n_total}")
+        print(_fmt(headers))
+        print("-+-".join("-" * w for w in widths))
+        for row in body:
+            print(_fmt(row))
+        return entries
 
     # ------------------------------------------------------------------------------
     # Entropy-oriented cut helpers
@@ -448,6 +907,17 @@ class LatticeRegionHandler:
     # Specific region definitions
     # ------------------------------------------------------------------------------
 
+    def region_fraction(self, fraction: Union[float, int]) -> List[int]:
+        ''' Return a fraction of the system as a contiguous block of sites in index order. '''
+        
+        if not (0 < fraction < 1) and fraction <= self.lattice.Ns:
+            fraction = fraction // self.lattice.Ns 
+            
+        n_sites = int(fraction * self.lattice.Ns)
+        return [i for i in range(n_sites)]
+
+    # ------------------------------------------------------------------------------
+
     def region_half(self, direction: str = "x") -> List[int]:
         r"""
         Half-system cut along a cardinal or tilted direction.
@@ -461,14 +931,15 @@ class LatticeRegionHandler:
             'xy' is a diagonal cut along x+y, 'yx' is along x-y.
         Returns
         -------
-        list[int]
-            Sorted list of site indices in the half-region.
+        Region
+            The half-region as a CustomRegion object.
             
         Example
         -------
         >>> half_x_sites = lattice.regions.get_region(kind='half_x')
         ... [10, 11, 12, 13, 14, 15, ...]  # sites in the left half of the lattice
         """
+        
         coords      = self.lattice.rvectors
         direction   = direction.lower()
         
@@ -489,7 +960,8 @@ class LatticeRegionHandler:
         cut_val = np.median(vals)
 
         # Return sites with coordinate less than cut_val along the specified axis
-        return sorted(np.where(vals < cut_val)[0].tolist())
+        sites   = sorted(np.where(vals < cut_val)[0].tolist())
+        return sites
 
     # ------------------------------------------------------------------------------
 
@@ -497,8 +969,13 @@ class LatticeRegionHandler:
         """
         Return a quarter-system region as ``half_x ∩ half_y``.
         """
-        return sorted(set(self.region_half("x")) & set(self.region_half("y")))
-
+        from .regions import CustomRegion
+        
+        half_x  = self.region_half("x")
+        half_y  = self.region_half("y")
+        A       = sorted(set(half_x.A) & set(half_y.A))
+        B       = sorted(set(half_x.B) & set(half_y.B))
+        return A
     # ------------------------------------------------------------------------------
 
     def region_sweep(self, *, by_unit_cell: Optional[bool] = None) -> Dict[str, List[int]]:
