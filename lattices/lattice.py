@@ -287,25 +287,25 @@ class Lattice(ABC):
             nn_list             = []
             nnn_list            = []
             for i in range(Ns):
-                #! get sorted neighbors by weight desc (exclude self-loop)
+                #! sort by |weight| so signed couplings keep topology semantics
                 js              = [j for j in range(Ns) if j != i and W[i, j] != 0]
-                sorted_js       = sorted(js, key=lambda j: W[i, j], reverse=True)
+                sorted_js       = sorted(js, key=lambda j: abs(W[i, j]), reverse=True)
                 if not sorted_js:
                     nn_list.append([])
                     nnn_list.append([])
                     continue
                 
-                #! highest weight defines nn
-                max_w           = W[i, sorted_js[0]]
-                nn_js           = [j for j in sorted_js if W[i, j] == max_w]
+                #! highest |weight| defines nn
+                max_w_abs       = abs(W[i, sorted_js[0]])
+                nn_js           = [j for j in sorted_js if abs(W[i, j]) == max_w_abs]
                 nn_list.append(nn_js)
                 
                 if len(sorted_js) > len(nn_js):
-                    #! find next distinct weight
-                    remaining   = [W[i, j] for j in sorted_js if W[i, j] != max_w]
+                    #! find next distinct |weight|
+                    remaining   = [abs(W[i, j]) for j in sorted_js if abs(W[i, j]) != max_w_abs]
                     if remaining:
                         second_w    = max(remaining)
-                        nnn_js      = [j for j in sorted_js if W[i, j] == second_w]
+                        nnn_js      = [j for j in sorted_js if abs(W[i, j]) == second_w]
                     else:
                         nnn_js      = []
                 else:
@@ -407,6 +407,14 @@ class Lattice(ABC):
             include_sublattice=include_sublattice,
             sweep_by_unit_cell=sweep_by_unit_cell,
         )
+
+    def generate_regions(self, kind: Union[str, RegionType] = RegionType.KITAEV_PRESKILL, **kwargs,):
+        """
+        Generate many region candidates for a selected region type.
+
+        This is a thin wrapper around :meth:`self.regions.generate_regions`.
+        """
+        return self.regions.generate_regions(kind=kind, **kwargs)
 
     ################################### GETTERS ###################################
     

@@ -50,7 +50,7 @@ Date    : 2025-12-30
 """
 
 import  numpy       as np
-from    typing      import List, Optional, Union, Dict, Any, Tuple, TYPE_CHECKING
+from    typing      import List, Optional, Union, Dict, Any, Tuple, TYPE_CHECKING, Callable, Set
 from    enum        import Enum
 from    itertools   import combinations
 
@@ -257,6 +257,162 @@ class LatticeRegionHandler:
         disp  = dn[0] * self.lattice.a1 + dn[1] * self.lattice.a2 + dn[2] * self.lattice.a3
         disp += self.lattice.basis[self.lattice.subs[j]] - self.lattice.basis[self.lattice.subs[i]]
         return disp
+
+    # ------------------------------------------------------------------------------
+    # Region-generation helpers (combinatorics over adjacency)
+    # ------------------------------------------------------------------------------
+
+    def adjacency_map(
+        self,
+        *,
+        include_nnn         : bool = False,
+        weight_threshold    : float = 0.0,
+        use_abs_weights     : bool = True,
+    ) -> Dict[int, Set[int]]:
+        """
+        Return normalized adjacency as ``dict[int, set[int]]``.
+        """
+        from .regions import Region
+
+        adj_mat = getattr(self.lattice, "_adj_mat", None)
+        if adj_mat is not None:
+            return Region.normalize_adjacency(adj_mat, ns=int(self.lattice.Ns), weight_threshold=weight_threshold, use_abs_weights=use_abs_weights,)
+        return Region.adjacency_from_lattice(self.lattice, include_nnn=include_nnn)
+
+    def connected_subsets(
+        self,
+        *,
+        max_size    : int,
+        nodes       : Optional[List[int]] = None,
+        min_size    : int = 1,
+        max_regions : Optional[int] = None,
+        adjacency   : Optional[Any] = None,
+    ) -> List[List[int]]:
+        """
+        Enumerate connected subsets using the current lattice adjacency.
+        """
+        from .regions import Region
+
+        adj_map = self.adjacency_map() if adjacency is None else Region.normalize_adjacency(adjacency, ns=int(self.lattice.Ns))
+        subsets = Region.connected_subsets(adj_map, max_size=max_size, nodes=nodes, min_size=min_size, max_regions=max_regions,)
+        return [sorted(list(s)) for s in subsets]
+
+    def generate_regions(
+        self,
+        kind                            : Union[str, RegionType] = RegionType.KITAEV_PRESKILL,
+        *,
+        adjacency                       : Optional[Any] = None,
+        nodes                           : Optional[List[int]] = None,
+        min_size                        : int = 1,
+        max_size                        : int = 4,
+        # Size parameters can be specified separately for A, B, C (for tripartite types) or default to the same range.
+        size_a                          : Optional[Tuple[int, int]] = None,
+        size_b                          : Optional[Tuple[int, int]] = None,
+        size_c                          : Optional[Tuple[int, int]] = None,
+        # Connectivity requirements for KP-like tripartite constructions.
+        require_connected_parts         : bool = True,
+        require_connected_union         : bool = True,
+        require_connected_complement    : bool = False,
+        require_pairwise_touch          : Optional[bool] = None,
+        require_single_triple_junction  : Optional[bool] = None,
+        forbid_full_system              : bool = True,
+        # Other options.
+        include_nnn                     : bool = False,
+        max_regions                     : Optional[int] = 128,
+        as_region                       : bool = True,
+        tripartite                      : Optional[bool] = None,
+        extra                           : Optional[Callable[['Region'], bool]] = None,
+    ) -> Union[List["Region"], List[Dict[str, List[int]]]]:
+        """
+        Generate many region candidates of a selected type.
+
+        For KP-like constructions this supports connected/disjoint A,B,C
+        combinations with optional single triple-junction filtering.
+        """
+        from .regions import (
+            Region,
+            KitaevPreskillRegion,
+            LevinWenRegion,
+            HalfRegions,
+            DiskRegion,
+            PlaquetteRegion,
+            RegionFraction,
+            CustomRegion,
+        )
+
+        kind_str        = kind.value if isinstance(kind, RegionType) else str(kind).strip().lower()
+        adj_map         = self.adjacency_map(include_nnn=include_nnn) if adjacency is None else Region.normalize_adjacency(adjacency, ns=int(self.lattice.Ns))
+        ns              = int(self.lattice.Ns)
+
+        size_default    = (int(min_size), int(max_size))
+        if size_default[0] < 1 or size_default[1] < size_default[0]:
+            raise ValueError(f"Invalid size range: {size_default}.")
+        size_a_eff      = size_a or size_default
+        size_b_eff      = size_b or size_a_eff
+        size_c_eff      = size_c or size_a_eff
+        
+        general_kwargs  = {
+            "adj": adj_map,
+            "ns": ns,
+            "nodes": nodes,
+            "require_connected_parts": require_connected_parts,
+            "require_connected_union": require_connected_union,
+            "require_connected_complement": require_connected_complement,
+            "forbid_full_system": forbid_full_system,
+            "max_regions": max_regions,
+            "extra": extra,
+            # sizes
+            "size_a": size_a_eff,
+            "size_b": size_b_eff,
+            "size_c": size_c_eff,
+        }
+
+        if kind_str.startswith(("kitaev", "kp")):
+            pairwise        = True if require_pairwise_touch is None else bool(require_pairwise_touch)
+            single_junction = True if require_single_triple_junction is None else bool(require_single_triple_junction)
+            regions         = Region.generate_tripartite_regions(
+                region_cls                      = KitaevPreskillRegion,
+                require_pairwise_touch          = pairwise,
+                require_single_triple_junction  = single_junction,
+                **general_kwargs,
+            )
+            return regions if as_region else [r.to_dict() for r in regions]
+
+        if kind_str.startswith(("levin", "lw")):
+            pairwise        = False if require_pairwise_touch is None else bool(require_pairwise_touch)
+            single_junction = False if require_single_triple_junction is None else bool(require_single_triple_junction)
+            regions         = Region.generate_tripartite_regions(region_cls=LevinWenRegion, require_pairwise_touch=pairwise, require_single_triple_junction=single_junction, **general_kwargs,)
+    
+            return regions if as_region else [r.to_dict() for r in regions]
+
+        # Generic custom mode can be either bi- or tripartite.
+        if kind_str == "custom" and bool(tripartite):
+            pairwise        = False if require_pairwise_touch is None else bool(require_pairwise_touch)
+            single_junction = False if require_single_triple_junction is None else bool(require_single_triple_junction)
+            regions         = Region.generate_tripartite_regions(region_cls=CustomRegion, require_pairwise_touch=pairwise, require_single_triple_junction=single_junction, **general_kwargs,)
+            return regions if as_region else [r.to_dict() for r in regions]
+
+        bip_map = {
+            "half"      : HalfRegions,
+            "half_x"    : HalfRegions,
+            "half_y"    : HalfRegions,
+            "half_z"    : HalfRegions,
+            "half_xy"   : HalfRegions,
+            "half_yx"   : HalfRegions,
+            "quarter"   : HalfRegions,
+            "disk"      : DiskRegion,
+            "plaquette" : PlaquetteRegion,
+            "fraction"  : RegionFraction,
+            "custom"    : CustomRegion,
+            "graph"     : CustomRegion,
+            "sublattice": CustomRegion,
+        }
+
+        if kind_str not in bip_map:
+            raise ValueError(f"Unknown region type for generation: {kind_str!r}")
+
+        regions = Region.generate_bipartite_regions(region_cls=bip_map[kind_str], **general_kwargs)
+        return regions if as_region else [r.to_dict() for r in regions]
 
     # ------------------------------------------------------------------------------
     # Main region extraction method

@@ -24,8 +24,8 @@ def _normalize_adjacency(adj: Union[np.ndarray, Sequence[Sequence[float]]]) -> n
     arr = np.asarray(adj, dtype=float)
     if arr.ndim != 2 or arr.shape[0] != arr.shape[1]:
         raise ValueError(f"Adjacency matrix must be square; got shape {arr.shape}.")
-    if np.any(arr < 0):
-        raise ValueError("Adjacency matrix weights must be non-negative.")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("Adjacency matrix must contain only finite values.")
     return arr
 
 def _normalize_coordinates(coords: Optional[Union[np.ndarray, Sequence[Sequence[float]]]], ns: int) -> np.ndarray:
