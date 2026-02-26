@@ -37,10 +37,13 @@ class Region:
     ns            : Optional[int]   = None                          # Total number of sites in the lattice (optional, can be inferred from the union of A, B, and C)
     
     def to_dict(self) -> Dict[str, List[int]]:
-        """Convert the region to a dictionary format."""
-        return {field.name.upper(): getattr(self, field.name) for field in self.__dataclass_fields__.values() 
-                if field.name not in ["configuration"]}
-
+        """Convert the region to a dictionary format."""    
+        return {
+            'A': self.A,
+            'B': self.B,
+            'C': self.C
+        }
+        
     def bipartite(self) -> bool:
         """Check if the region is bipartite (i.e., C is empty)."""
         return len(self.C) == 0
@@ -77,18 +80,15 @@ class Region:
     
     def __iter__(self):
         """Allow iteration over the region's keys."""
-        return (field.name.upper() for field in self.__dataclass_fields__.values() 
-                if field.name not in ["configuration"])
+        return (field.name.upper() for field in self.__dataclass_fields__.values() if field.name not in ["configuration", "ns"])
         
     def items(self):
         """Return an iterator over the region's items (key-value pairs)."""
-        return ((field.name.upper(), getattr(self, field.name)) for field in self.__dataclass_fields__.values() 
-                if field.name not in ["configuration"])
+        return ((field.name.upper(), getattr(self, field.name)) for field in self.__dataclass_fields__.values() if field.name not in ["configuration", "ns"])
         
     def values(self):
         """Return a list of the region's values (lists of coordinates)."""
-        return [getattr(self, field.name) for field in self.__dataclass_fields__.values() 
-                if field.name not in ["configuration"]]
+        return [getattr(self, field.name) for field in self.__dataclass_fields__.values() if field.name not in ["configuration", "ns"]]
         
     def get(self, key: str, default: Any = None) -> Any:
         """Allow dictionary-style get access."""
@@ -424,7 +424,8 @@ class Region:
             return []
 
         if require_connected_parts:
-            candidates  = cls.connected_subsets(adj_map, max_size=max_a, nodes=allowed, min_size=min_a,)
+            # Keep full subset coverage here; cap only final output regions.
+            candidates  = cls.connected_subsets(adj_map, max_size=max_a, nodes=allowed, min_size=min_a, max_regions=None)
         else:
             candidates  = []
             ordered     = sorted(allowed)
@@ -541,7 +542,10 @@ class Region:
         max_part    = max(sa[1], sb[1], sc[1])
         min_part    = min(sa[0], sb[0], sc[0])
         if require_connected_parts:
-            subsets = cls.connected_subsets(adj_map, max_size=max_part, nodes=allowed, min_size=min_part, max_regions=max_regions)
+            # Do not truncate subset candidates at this stage. Early truncation
+            # can bias toward low-index anchors and eliminate all valid
+            # disjoint A/B/C combinations for larger min_size.
+            subsets = cls.connected_subsets(adj_map, max_size=max_part, nodes=allowed, min_size=min_part, max_regions=None)
         else:
             subsets = []
             ordered = sorted(allowed)

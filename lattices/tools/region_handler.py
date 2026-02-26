@@ -352,19 +352,18 @@ class LatticeRegionHandler:
         size_c_eff      = size_c or size_a_eff
         
         general_kwargs  = {
-            "adj": adj_map,
-            "ns": ns,
-            "nodes": nodes,
-            "require_connected_parts": require_connected_parts,
-            "require_connected_union": require_connected_union,
-            "require_connected_complement": require_connected_complement,
-            "forbid_full_system": forbid_full_system,
-            "max_regions": max_regions,
-            "extra": extra,
+            "adj"                       : adj_map,
+            "ns"                        : ns,
+            "nodes"                     : nodes,
+            "require_connected_parts"   : require_connected_parts,
+            "require_connected_union"   : require_connected_union,
+            "forbid_full_system"        : forbid_full_system,
+            "max_regions"               : max_regions,
+            "extra"                     : extra,
             # sizes
-            "size_a": size_a_eff,
-            "size_b": size_b_eff,
-            "size_c": size_c_eff,
+            "size_a"                    : size_a_eff,
+            "size_b"                    : size_b_eff,
+            "size_c"                    : size_c_eff,
         }
 
         if kind_str.startswith(("kitaev", "kp")):
@@ -411,7 +410,7 @@ class LatticeRegionHandler:
         if kind_str not in bip_map:
             raise ValueError(f"Unknown region type for generation: {kind_str!r}")
 
-        regions = Region.generate_bipartite_regions(region_cls=bip_map[kind_str], **general_kwargs)
+        regions = Region.generate_bipartite_regions(region_cls=bip_map[kind_str], require_connected_complement=require_connected_complement, **general_kwargs)
         return regions if as_region else [r.to_dict() for r in regions]
 
     # ------------------------------------------------------------------------------

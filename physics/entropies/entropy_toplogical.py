@@ -347,7 +347,7 @@ TOPOLOGICAL_ENTROPIES: Dict[float, TopologicalOrderFamily] = {
                 "anyon_types" : ["1", "e", "m", "ε"],
                 "description" : (
                     "Four Abelian anyons, all with quantum dimension 1. "
-                    "e and m are bosons with mutual semion statistics; ε = e × m is a fermion. "
+                    "e and m are bosons with mutual semion statistics; ε = e x m is a fermion. "
                     "D^2 = 4 (four anyons)."
                 ),
             },
@@ -357,12 +357,12 @@ TOPOLOGICAL_ENTROPIES: Dict[float, TopologicalOrderFamily] = {
                 "anyon_types" : ["1", "s", "s̄", "b"],
                 "description" : (
                     "Four Abelian anyons with d_a = 1. s and s̄ are semion and anti-semion; "
-                    "b = s × s̄ is a boson. D^2 = 4. "
+                    "b = s x s̄ is a boson. D^2 = 4. "
                     "Same global quantum dimension as the toric code but different braiding data."
                 ),
             },
             {
-                "name"        : "Three-fermion Z2 × Z2 topological order",
+                "name"        : "Three-fermion Z2 x Z2 topological order",
                 "abelian"     : True,
                 "anyon_types" : ["1", "f1", "f2", "f3"],
                 "description" : (
@@ -376,7 +376,7 @@ TOPOLOGICAL_ENTROPIES: Dict[float, TopologicalOrderFamily] = {
                 "anyon_types" : ["1", "ψ", "σ"],
                 "description" : (
                     "Non-Abelian theory with d_1 = 1, d_ψ = 1, d_σ = sqrt(2). "
-                    "Fusion rules: σ × σ = 1 + ψ, σ × ψ = σ, ψ × ψ = 1. "
+                    "Fusion rules: σ x σ = 1 + ψ, σ x ψ = σ, ψ x ψ = 1. "
                     "D^2 = 1^2 + 1^2 + (sqrt(2))^2 = 4, so D = 2; same global dimension as toric code."
                 ),
             },
@@ -402,7 +402,7 @@ TOPOLOGICAL_ENTROPIES: Dict[float, TopologicalOrderFamily] = {
                 "anyon_types" : ["1", "τ"],
                 "description" : (
                     "Non-Abelian theory with d_1 = 1, d_τ = phi = (1 + sqrt(5)) / 2. "
-                    "Fusion rule: τ × τ = 1 + τ. "
+                    "Fusion rule: τ x τ = 1 + τ. "
                     "Total quantum dimension D^2 = 1 + phi^2 = phi + 2 ≈ 3.618, so D ≈ 1.902."
                 ),
             },
@@ -435,7 +435,7 @@ TOPOLOGICAL_ENTROPIES: Dict[float, TopologicalOrderFamily] = {
                 "anyon_types" : None,
                 "description" : (
                     "Quantum double of Z3. There are 9 Abelian anyons, all with d_a = 1. "
-                    "D^2 = 9, so D = 3. Fusion is that of Z3 × Z3̂ (charge × flux), with nontrivial braiding but all "
+                    "D^2 = 9, so D = 3. Fusion is that of Z3 x Z3̂ (charge x flux), with nontrivial braiding but all "
                     "anyons Abelian."
                 ),
             },
@@ -460,32 +460,32 @@ TOPOLOGICAL_ENTROPIES: Dict[float, TopologicalOrderFamily] = {
                 "anyon_types" : None,
                 "description" : (
                     "Quantum double of Z4. There are 16 Abelian anyons, all with d_a = 1. "
-                    "D^2 = 16, so D = 4. Fusion is that of Z4 × Z4̂ (charges and fluxes)."
+                    "D^2 = 16, so D = 4. Fusion is that of Z4 x Z4̂ (charges and fluxes)."
                 ),
             },
             {
-                "name"        : "Z2 × Z2 gauge theory / D(Z2 × Z2)",
+                "name"        : "Z2 x Z2 gauge theory / D(Z2 x Z2)",
                 "abelian"     : True,
                 "anyon_types" : None,
                 "description" : (
-                    "Quantum double of Z2 × Z2, also with 16 Abelian anyons and D^2 = 16. "
+                    "Quantum double of Z2 x Z2, also with 16 Abelian anyons and D^2 = 16. "
                     "Different braiding data from Z4 gauge theory but the same global dimension."
                 ),
             },
             {
-                "name"        : "Ising × Ising",
+                "name"        : "Ising x Ising",
                 "abelian"     : False,
                 "anyon_types" : None,
                 "description" : (
-                    "Product of two Ising TQFTs. Each Ising factor has D = 2, so D_total = 2 × 2 = 4. "
+                    "Product of two Ising TQFTs. Each Ising factor has D = 2, so D_total = 2 x 2 = 4. "
                     "Contains multiple non-Abelian sectors (σ ⊗ 1, 1 ⊗ σ, σ ⊗ σ, etc.)."
                 ),
             },
         ],
         description = (
             "Here D^2 = 16. There are many Abelian and non-Abelian possibilities. Abelian examples include quantum doubles "
-            "of groups of order 4 (Z4 and Z2 × Z2), each giving 16 Abelian anyons. Non-Abelian examples include product "
-            "theories like Ising × Ising, Fibonacci × Fibonaccī, etc., which all share the same total quantum dimension D = 4. "
+            "of groups of order 4 (Z4 and Z2 x Z2), each giving 16 Abelian anyons. Non-Abelian examples include product "
+            "theories like Ising x Ising, Fibonacci x Fibonaccī, etc., which all share the same total quantum dimension D = 4. "
             "Global D alone is therefore far from sufficient to characterize the phase."
         ),
     ),
