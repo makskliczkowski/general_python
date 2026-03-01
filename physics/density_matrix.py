@@ -1,4 +1,4 @@
-'''
+r'''
 This module contains functions for manipulating and analyzing density matrices in quantum mechanics.
 It provides optimized implementations using NumPy and Numba for computing reduced density matrices,
 Schmidt decompositions, and entanglement spectra.
@@ -12,6 +12,8 @@ where d is the local_dim.
 --------------------------------
 Author      : Maksymilian Kliczkowski
 email       : maksymilian.kliczkowski@pwr.edu.pl
+version     : 2.0
+copyright   : (c) 2026 by Maksymilian Kliczkowski. All rights reserved.
 --------------------------------
 '''
 
@@ -77,6 +79,20 @@ def psi_numpy(
 ) -> np.ndarray:
     """
     Reshape and reorder a quantum state vector into a matrix Psi_{A,B} using NumPy.
+    This representation is used to compute the reduced density matrix rho_A = Psi @ Psi^dagger.
+    
+    Parameters
+    ----------
+    state : np.ndarray
+        The input state vector of shape (local_dim**ns,).
+    order : Tuple[int, ...]
+        The permutation order of sites to bring subsystem A sites to the front.
+    size_a : int
+        The number of sites in subsystem A.
+    ns : int
+        Total number of sites in the system.
+    local_dim : int
+        Local Hilbert space dimension (default is 2 for qubits).
     """
     dA          = local_dim**size_a
     dB          = local_dim**(ns - size_a)
@@ -100,6 +116,19 @@ def rho_numpy(
     """
     Compute reduced density matrix using NumPy with Fortran-order convention.
     Works for any local_dim.
+    
+    Parameters
+    ----------
+    state : np.ndarray
+        The input state vector of shape (local_dim**ns,).
+    size_a : int
+        The number of sites in subsystem A.
+    ns : int
+        Total number of sites in the system.
+    local_dim : int
+        Local Hilbert space dimension (default is 2 for qubits).
+    order : Optional[Tuple[int, ...]]
+        The permutation order of sites to bring subsystem A sites to the front. If None, assumes natural order.
     """
     psi = psi_numpy(state, order, size_a, ns, local_dim)
     return psi @ psi.conj().T

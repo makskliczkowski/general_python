@@ -1,30 +1,33 @@
-'''
+r'''
 JAX-optimized reduced density matrix and Schmidt decomposition.
 Mirrors the NumPy API in density_matrix.py.
 
 --------------------------------
 Author      : Maksymilian Kliczkowski
 email       : maksymilian.kliczkowski@pwr.edu.pl
+version     : 2.0
+copyright   : (c) 2026 by Maksymilian Kliczkowski. All rights reserved.
+file        : general_python/physics/density_matrix_jax.py
 --------------------------------
 '''
 
 from __future__ import annotations
 
-from functools import lru_cache, partial
-from typing import Any, List, Optional, Tuple, Union
+from functools  import lru_cache, partial
+from typing     import Any, List, Optional, Tuple, Union
 
 import numpy as np
 
 try:
-    import jax
-    import jax.numpy as jnp
-    from jax import jit
+    import  jax
+    import  jax.numpy as jnp
+    from    jax import jit
     JAX_AVAILABLE = True
 except ImportError:
-    jax = None
-    jnp = None
-    jit = None
-    JAX_AVAILABLE = False
+    jax             = None
+    jnp             = None
+    jit             = None
+    JAX_AVAILABLE   = False
 
 from .density_matrix import mask_subsystem
 
@@ -34,44 +37,60 @@ from .density_matrix import mask_subsystem
 
 if JAX_AVAILABLE:
 
-    @lru_cache(maxsize=256)
+    @lru_cache(maxsize=256) # Cache gather indices for up to 256 different subsystem configurations (va, ns, local_dim, order)
     def _psi_take_indices(
-        ns: int,
-        size_a: int,
-        local_dim: int,
-        order: Tuple[int, ...]
+        ns          : int,
+        size_a      : int,
+        local_dim   : int,
+        order       : Tuple[int, ...]
     ) -> np.ndarray:
         """
         Precompute gather indices such that:
         psi_mat.reshape(-1, order='C') == state[idx]
-        using QES little-endian site convention.
+        using the 'density_matrix' little-endian site convention.
+        
+        Parameters
+        ----------
+        ns : int
+            Total number of sites in the system.
+        size_a : int
+            Number of sites in subsystem A.
+        local_dim : int
+            Local Hilbert space dimension (e.g., 2 for qubits).
+        order : Tuple[int, ...]
+            Permutation of site indices that brings subsystem A sites to the front.
+            
+        Returns
+        -------
+        np.ndarray
+            Array of indices to gather from the state vector to reshape into Psi_{A,B}.
         """
-        dA = local_dim ** size_a
-        dB = local_dim ** (ns - size_a)
-        idx = np.empty(dA * dB, dtype=np.int64)
-        sites_a = order[:size_a]
-        sites_b = order[size_a:]
-        pow_site = np.asarray([local_dim ** i for i in range(ns)], dtype=np.int64)
+        dA          = local_dim ** size_a
+        dB          = local_dim ** (ns - size_a)
+        idx         = np.empty(dA * dB, dtype=np.int64)
+        sites_a     = order[:size_a]
+        sites_b     = order[size_a:]
+        pow_site    = np.asarray([local_dim ** i for i in range(ns)], dtype=np.int64)
 
         pos = 0
         for a in range(dA):
-            ta = a
-            digits_a = np.empty(size_a, dtype=np.int64)
+            ta          = a
+            digits_a    = np.empty(size_a, dtype=np.int64)
             for k in range(size_a):
                 digits_a[k] = ta % local_dim
-                ta //= local_dim
+                ta          //= local_dim
 
             for b in range(dB):
                 tb = b
                 i = 0
                 for k, site in enumerate(sites_a):
-                    i += int(digits_a[k]) * int(pow_site[site])
+                    i       +=  int(digits_a[k]) * int(pow_site[site])
                 for k, site in enumerate(sites_b):
-                    digit = tb % local_dim
-                    tb //= local_dim
-                    i += int(digit) * int(pow_site[site])
+                    digit   =   tb % local_dim
+                    tb      //= local_dim
+                    i       +=  int(digit) * int(pow_site[site])
                 idx[pos] = i
-                pos += 1
+                pos     += 1
         return idx
 
     @partial(jit, static_argnums=(1, 2, 3, 4))
