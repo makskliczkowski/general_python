@@ -162,7 +162,7 @@ class FlaxInterface(GeneralNet):
         net_kwargs_processed.pop('backend', None)
         net_kwargs_processed.pop('input_shape', None)
         net_kwargs_processed.pop('seed', None)
-        net_kwargs_processed.pop('param_dtype', None)
+        # NOTE: do NOT pop 'param_dtype' here — it IS a Flax module kwarg and
         
         #! Handle activation functions if specified
         self._handle_activations(net_kwargs_processed)
