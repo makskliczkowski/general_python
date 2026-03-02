@@ -551,6 +551,26 @@ class SlurmMonitor:
             if logger: logger.warning(f"Failed to get memory info: {e}")
             pass
     
+    @staticmethod
+    def get_slurm_memory(logger: Optional['Logger'] = None):
+        """Get SLURM memory limit in GB, returns None if not available"""
+        if not SlurmMonitor.is_slurm():
+            return None
+        try:
+            
+            mem_limit_str   = os.getenv("SLURM_MEM_PER_NODE") or os.getenv("SLURM_MEM_PER_CPU")
+            if mem_limit_str is None:
+                return None
+            
+            mem_limit_gb    = int(mem_limit_str) / 1024 # Convert from MB to GB
+            if logger: 
+                logger.info(f"SLURM memory limit: {mem_limit_gb:.2f} GB", lvl=3, color='red')
+            return mem_limit_gb
+        except Exception as e:
+            if logger: 
+                logger.warning(f"Failed to get SLURM memory limit: {e}")
+            return None
+    
     #####################################################
     
     @staticmethod

@@ -177,7 +177,7 @@ def schmidt(
         psi_mat = psi_numpy(state, order, size_a, ns, local_dim)
         if return_vecs:
             u, s, vh    = la.svd(psi_mat, full_matrices=False)
-            return s**2 if square else s, (u, vh)
+            return s**2 if square else s, (u, vh), psi_mat
         else:
             s           = la.svdvals(psi_mat)
             return s**2 if square else s
@@ -188,7 +188,7 @@ def schmidt(
             vals, vecs  = la.eigh(rho_A)
             vals        = np.clip(vals, 0.0, 1.0)
             idx         = np.argsort(vals)[::-1]
-            return vals[idx], vecs[:, idx]
+            return vals[idx], vecs[:, idx], rho_A
         else:
             w           = la.eigvalsh(rho_A)
             w           = np.clip(w, 0.0, 1.0)

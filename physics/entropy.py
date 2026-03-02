@@ -307,6 +307,26 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
             out[j] = math.log(acc) / (1.0 - q) if acc > 0.0 else 0.0
     return out
 
+#! Purity - a sum of squares of eigenvalues, related to Rényi-2 entropy
+
+@numba.njit(cache=True)
+def purity(eigvals: np.ndarray) -> float:
+    """
+    Compute the purity of a quantum state given its eigenvalues.
+
+    The purity is defined as P = Tr(ρ^2) = ∑ λ_i^2, where λ_i are the eigenvalues of the density matrix ρ.
+    It ranges from 1/dim(ρ) for a maximally mixed state to 1 for a pure state.
+
+    Args:
+        eigvals (np.ndarray): Array of eigenvalues of the density matrix.
+    Returns:
+        float: The purity of the quantum state.
+    """
+    p = 0.0
+    for lam in eigvals:
+        p += lam * lam
+    return p
+
 # ----------------------------------
 
 @unique
