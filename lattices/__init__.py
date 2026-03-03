@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     import matplotlib.axes      as pltAxes
     import matplotlib.pyplot    as plt
     
-from .lattice   import (
+from .lattice       import (
     # Core lattice classes and utilities
     BoundaryFlux,
     Lattice,

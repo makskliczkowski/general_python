@@ -3801,11 +3801,15 @@ class Plotter:
                         annot_y_pos     =   None,                   # position for annotation - y
                         panel_labels    =   False,
                         single_if_1     =   False,                  # if True, return ax instead of [ax] when nrows=ncols=1
+                        share_x         =   False,
+                        share_y         =   False,
+                        width_ratios    =   None,                   # list of relative widths for columns (overrides sizex if provided)
+                        height_ratios   =   None,                   # list of relative heights for rows (overrides sizey if provided)
                         **kwargs) -> Tuple[plt.Figure, List[plt.Axes]]:
         """
         Flexible subplot factory that *always* returns (fig, flat_axes_list).
 
-        niceties (all optional, via kwargs):
+        Other (all optional, via kwargs):
         - width_ratios/height_ratios via sizex/sizey if they are sequences
         - hspace/wspace/left/right/top/bottom (mapped to gridspec_kw)
         - constrained_layout=True by default (unless tight_layout is explicitly set)
@@ -3815,19 +3819,27 @@ class Plotter:
         - suptitle="...", suptitle_kws={...}
         - dpi=..., sharex=..., sharey=..., subplot_kw={...}, gridspec_kw={...}
         - post_hook=<callable(fig, axes_list)> for custom last-mile tweaks
+        - single_if_1=True to return ax instead of [ax] when nrows=ncols=1 for convenience
+        - annot_x_pos, annot_y_pos to control panel label positions (can be single value or list/tuple matching number of axes)
         """
 
         #! Extract utility kwargs (do not pass to plt.subplots)
-        gridspec_kw   = dict(kwargs.pop('gridspec_kw', {}) or {})
-        subplot_kw    = dict(kwargs.pop('subplot_kw', {}) or {})
-        panel_labels  = kwargs.pop('panel_labels', None)         # True or list/tuple of labels
-        grid_on       = kwargs.pop('grid', False)
-        grid_kws      = dict(kwargs.pop('grid_kws', {}) or {})
-        despine       = kwargs.pop('despine', False)
-        axis_off      = kwargs.pop('axis_off', False)
-        suptitle      = kwargs.pop('suptitle', None)
-        suptitle_kws  = dict(kwargs.pop('suptitle_kws', {}) or {})
-        post_hook     = kwargs.pop('post_hook', None)
+        gridspec_kw     = dict(kwargs.pop('gridspec_kw', {}) or {})
+        subplot_kw      = dict(kwargs.pop('subplot_kw', {}) or {})
+        panel_labels    = kwargs.pop('panel_labels', None)         # True or list/tuple of labels
+        grid_on         = kwargs.pop('grid', False)
+        grid_kws        = dict(kwargs.pop('grid_kws', {}) or {})
+        despine         = kwargs.pop('despine', False)
+        axis_off        = kwargs.pop('axis_off', False)
+        suptitle        = kwargs.pop('suptitle', None)
+        suptitle_kws    = dict(kwargs.pop('suptitle_kws', {}) or {})
+        post_hook       = kwargs.pop('post_hook', None)
+        width_ratios    = kwargs.pop('width_ratios', None)
+        height_ratios   = kwargs.pop('height_ratios', None)
+        share_x         = kwargs.pop('sharex', share_x)
+        share_y         = kwargs.pop('sharey', share_y)
+        wspace          = kwargs.pop('wspace', None)
+        hspace          = kwargs.pop('hspace', None)
 
         # Use constrained_layout by default unless user opted for tight_layout or already set it
         if 'constrained_layout' not in kwargs and not kwargs.get('tight_layout', False):
@@ -3867,7 +3879,8 @@ class Plotter:
         figsize                             = kwargs.pop('figsize', (total_w, total_h))
 
         #! Create
-        fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, gridspec_kw=gridspec_kw, subplot_kw=subplot_kw, **kwargs)
+        fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, width_ratios=width_ratios, height_ratios=height_ratios,
+                gridspec_kw=gridspec_kw, subplot_kw=subplot_kw, sharex=share_x, sharey=share_y, **kwargs)
 
         #! Normalize axes to a flat list, regardless of (1,1), (1,N), (M,1), (M,N)
         if isinstance(ax, (list, tuple)):

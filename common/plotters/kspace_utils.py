@@ -128,129 +128,20 @@ def select_kpoints_along_path(
             'k_cart'            : (Npath, D) array of selected k-vectors
         }
     """
-    from general_python.lattices.tools.lattice_kspace import extend_kspace_data
-    
-    # Get high-symmetry points
-    hs_points_obj       = lattice.high_symmetry_points()
-    if hs_points_obj is None:
-        raise ValueError("Lattice does not define high_symmetry_points")
-    
-    # Determine path
-    if path_labels is None:
-        path_labels     = hs_points_obj.default_path
-    if path_labels is None:
-        raise ValueError("No path specified and lattice has no default path")
-    
-    # Extend k-space if requested
-    if use_extend:
-        k1_vec          = np.asarray(lattice.k1, float).ravel()[:2]
-        k2_vec          = np.asarray(lattice.k2, float).ravel()[:2]
-        k2_extended, _  = extend_kspace_data(
-                            k_vectors[:, :2],
-                            np.arange(len(k_vectors)),
-                            k1_vec, k2_vec,
-                            nx=extend_copies,
-                            ny=extend_copies
-                        )
-        k2 = k2_extended
-    else:
-        k2 = k_vectors[:, :2]
-    
-    # Convert path labels to Cartesian coordinates
-    path_points_cart    = []
-    k1_vec              = np.asarray(lattice.k1, float).reshape(3)
-    k2_vec              = np.asarray(lattice.k2, float).reshape(3)
-    k3_vec              = np.asarray(getattr(lattice, 'k3', [0, 0, 1]), float).reshape(3)
-    
-    # Resolve labels to Cartesian coordinates -> path_points_cart
-    for label in path_labels:
-        resolved_label = hs_points_obj.resolve_label(label) if hasattr(hs_points_obj, "resolve_label") else label
-        if resolved_label is None or resolved_label not in hs_points_obj.points:
-            raise ValueError(f"High-symmetry point '{label}' not defined for this lattice")
-        
-        pt_obj          = hs_points_obj.points[resolved_label]
-        # Handle both HighSymmetryPoint objects and direct tuples
-        if hasattr(pt_obj, 'to_cartesian'):
-            pt_cart_3d  = pt_obj.to_cartesian(k1_vec, k2_vec, k3_vec)
-            pt_cart     = pt_cart_3d[:2]  # Take only x, y components
+    selection = lattice.bz_path_points(
+        path=path_labels,
+        points_per_seg=40,
+        k_vectors=k_vectors,
+        tol=tolerance,
+        periodic=not use_extend,
+    )
 
-        elif hasattr(pt_obj, 'frac_coords'):
-            # Direct computation if to_cartesian not available
-            f1, f2, f3  = pt_obj.frac_coords
-            pt_cart_3d  = f1 * k1_vec + f2 * k2_vec + f3 * k3_vec
-            pt_cart     = pt_cart_3d[:2]
-            
-        else:
-            # Assume it's a tuple of fractional coordinates
-            f1, f2      = pt_obj[:2] if len(pt_obj) >= 2 else (pt_obj[0], 0)
-            pt_cart     = f1 * k1_vec[:2] + f2 * k2_vec[:2]
-        path_points_cart.append(pt_cart)
-    
-    # Auto-determine tolerance
-    if tolerance is None:
-        k_spacing = np.median(np.diff(np.sort(k2[:, 0])))
-        tolerance = k_spacing * 0.5
-    
-    # Select k-points along path segments
-    selected_k_indices  = []
-    cumulative_dist     = 0.0
-    k_distances         = []
-    label_positions     = [0.0]
-    label_texts         = [path_labels[0]]
-    
-    for i in range(len(path_points_cart) - 1):
-        p1                  = path_points_cart[i]
-        p2                  = path_points_cart[i + 1]
-        
-        # Find k-points close to this segment
-        distances           = point_to_segment_distance_2d(k2, p1, p2)
-        close_mask          = distances < tolerance
-        segment_k_indices   = np.where(close_mask)[0]
-        
-        if len(segment_k_indices) > 0:
-            # Project onto path direction
-            segment_k_points    = k2[segment_k_indices]
-            path_vec            = p2 - p1
-            path_length         = np.linalg.norm(path_vec)
-            
-            if path_length > 1e-14:
-                path_dir            = path_vec / path_length
-                proj                = np.dot(segment_k_points - p1[None, :], path_dir)
-                
-                # Sort by projection
-                sort_idx            = np.argsort(proj)
-                segment_k_indices   = segment_k_indices[sort_idx]
-                proj                = proj[sort_idx]
-                
-                # Add to total distance
-                segment_distances   = cumulative_dist + proj
-                k_distances.extend(segment_distances.tolist())
-                selected_k_indices.extend(segment_k_indices.tolist())
-        
-        # Update cumulative distance
-        cumulative_dist += np.linalg.norm(p2 - p1)
-        label_positions.append(cumulative_dist)
-        label_texts.append(path_labels[i + 1])
-    
-    # Remove duplicates
-    unique_indices      = []
-    seen                = set()
-    unique_distances    = []
-    for idx, dist in zip(selected_k_indices, k_distances):
-        if idx not in seen:
-            unique_indices.append(idx)
-            unique_distances.append(dist)
-            seen.add(idx)
-    
-    selected_k_indices = np.array(unique_indices, dtype=int)
-    k_distances = np.array(unique_distances, dtype=float)
-    
     return {
-        'indices'           : selected_k_indices,
-        'distances'         : k_distances,
-        'label_positions'   : np.array(label_positions),
-        'label_texts'       : label_texts,
-        'k_cart'            : k_vectors[selected_k_indices] if not use_extend else k2[selected_k_indices]
+        'indices'           : np.asarray(selection.matched_indices, dtype=int),
+        'distances'         : np.asarray(selection.k_dist, dtype=float),
+        'label_positions'   : np.asarray(selection.label_positions, dtype=float),
+        'label_texts'       : list(selection.label_texts),
+        'k_cart'            : np.asarray(selection.matched_cart if selection.matched_cart is not None else selection.path_cart, dtype=float),
     }
 
 # ==============================================================================
@@ -286,17 +177,21 @@ def compute_structure_factor_from_corr(
     Sk : (Nk,) array
         Structure factor at each k-point
     """
-    C   = np.asarray(C, float)
-    r2  = np.asarray(r_vectors, float)[:, :2]
-    k2  = np.asarray(k_vectors, float)[:, :2]
-    
-    Ns  = C.shape[0]
-    P   = np.exp(-1j * (k2 @ r2.T))     # (Nk, Ns)
-    PC  = P @ C                         # (Nk, Ns)
-    Sk  = np.real((PC * np.conjugate(P)).sum(axis=1))
-    
+    C       = np.asarray(C)
+    r_arr   = np.asarray(r_vectors, float)
+    k_arr   = np.asarray(k_vectors, float)
+
+    if C.ndim != 2 or C.shape[0] != C.shape[1]:
+        raise ValueError("C must be a square correlation matrix.")
+    if r_arr.shape[0] != C.shape[0]:
+        raise ValueError("r_vectors must have one position vector per site.")
+
+    dim     = min(r_arr.shape[1], k_arr.shape[1])
+    phases  = np.exp(-1j * (k_arr[:, :dim] @ r_arr[:, :dim].T))
+    Sk      = np.einsum('ki,ij,kj->k', phases, C, np.conjugate(phases)).real
+
     if normalize:
-        Sk /= Ns
+        Sk /= float(C.shape[0])
         
     return Sk
 

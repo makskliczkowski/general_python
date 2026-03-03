@@ -37,6 +37,8 @@ from .spectral_utils import (
 )
 
 from .plot_helpers import (
+    compute_correlation_kspace,
+    plot_kspace_path,
     plot_static_structure_factor,
     plot_kspace_intensity
 )
@@ -64,6 +66,8 @@ __all__ = [
     'compute_spectral_broadening',
     'extract_spectral_data',
     # Plot helpers
+    'compute_correlation_kspace',
+    'plot_kspace_path',
     'plot_spectral_function_2d',
     'plot_static_structure_factor',
     'plot_kspace_intensity',

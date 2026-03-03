@@ -18,11 +18,9 @@ License             : MIT
 
 from    typing              import Tuple, Optional, Literal, TYPE_CHECKING
 import  numpy               as np
-from    scipy.interpolate   import griddata
 
 try:
-    
-    from .kspace_utils      import label_high_sym_points
+    from .plot_helpers      import plot_kspace_intensity
 except ImportError:
     raise ImportError("Failed to import plotting configurations or k-space utilities.")
 
@@ -347,119 +345,40 @@ def plot_spectral_function_2d(
         
     elif mode == 'grid':
         
-        # Grid mode: show full k-space
         if k_values.ndim == 1:
-            raise ValueError("For mode='grid', k_values must be 2D array (Nk, 2)")
-        
-        k2 = k_values[:, :2]
-        
-        # Extend k-space if requested
-        if use_extend and lattice is not None:
-            try:
-                from general_python.lattices.tools.lattice_kspace import extend_kspace_data
-            except ImportError as e:
-                raise ImportError("Failed to import k-space extension utility: " + str(e))
-            
-            k1_vec              = np.asarray(lattice.k1, float).ravel()[:2]
-            k2_vec              = np.asarray(lattice.k2, float).ravel()[:2]
-            extended_intensity  = []
-            
-            # Extend each omega slice
-            for iw in range(intensity.shape[1]):
-                k2_ext, int_ext = extend_kspace_data(
-                                    k2, intensity[:, iw],
-                                    k1_vec, k2_vec,
-                                    nx=extend_copies, ny=extend_copies
-                                )
-                extended_intensity.append(int_ext)
-            
-            k2          = k2_ext
-            intensity   = np.array(extended_intensity).T # (Nk_extended, Nw)
-        
-        kx_unique = np.unique(k2[:, 0])
-        ky_unique = np.unique(k2[:, 1])
-        
-        # Create 2D visualization (average over w or select specific w)
+            raise ValueError("For mode='grid', k_values must include Cartesian k-point coordinates.")
+
         if spectral_config.omega_grid is not None:
-            # Select specific omega
-            
-            # Try to reshape into regular grid first
-            if len(kx_unique) * len(ky_unique) == len(k2):
-                # Regular grid - can use imshow/pcolormesh
-                nx, ny  = len(kx_unique), len(ky_unique)
-                
-                # Reshape intensity for each omega and create heatmap
-                # For spectral function, we want to show A(kx, ky, omega) as 2D heatmap
-                # Option 1: Integrate over omega
-                # Option 2: Show specific omega slice
-                if spectral_config.omega_grid is not None:
-                    # Select specific omega
-                    omega0          = spectral_config.energy_shift
-                    idx             = np.argmin(np.abs(omega - omega0))
-                    intensity_slice = intensity[:, idx]
-                else:
-                    intensity_slice = np.trapezoid(intensity, omega, axis=1)
-                
-                # Reshape to grid
-                try:
-                    intensity_grid  = intensity_slice.reshape(ny, nx)
-                    
-                    # Create meshgrid for proper plotting
-                    KX, KY          = np.meshgrid(kx_unique, ky_unique, indexing='xy')
-                    
-                    im = ax.pcolormesh(
-                        KX, KY, intensity_grid,
-                        cmap        =   style.cmap,
-                        vmin        =   vmin if not spectral_config.log_scale else None,
-                        vmax        =   vmax if not spectral_config.log_scale else None,
-                        norm        =   norm,
-                        shading     =   'auto'
-                    )
-                except:
-                    # Fallback to scatter if reshape fails
-                    im = ax.scatter(
-                        k2[:, 0], k2[:, 1],
-                        c           =   intensity_slice,
-                        cmap        =   style.cmap,
-                        vmin        =   vmin,
-                        vmax        =   vmax,
-                        s           =   style.markersize * 2,
-                        alpha       =   style.alpha,
-                        edgecolors  =   'none'
-                    )
+            omega0          = spectral_config.energy_shift
+            idx             = np.argmin(np.abs(omega - omega0))
+            intensity_2d    = intensity[:, idx]
         else:
-            # Integrate over omega
-            # Irregular grid - use scatter
-            if spectral_config.omega_grid is not None:
-                omega0          = spectral_config.energy_shift
-                idx             = np.argmin(np.abs(omega - omega0))
-                intensity_2d    = intensity[:, idx]
-            else:
-                intensity_2d    = np.trapezoid(intensity, omega, axis=1)
-            
-            im                  = ax.scatter(
-                                    k2[:, 0], k2[:, 1],
-                                    c           =   intensity_2d,
-                                    cmap        =   style.cmap,
-                                    vmin        =   vmin,
-                                    vmax        =   vmax,
-                                    s           =   style.markersize * 2,
-                                    alpha       =   style.alpha,
-                                    edgecolors  =   'none'
-                                )
-        Plotter.set_ax_params(
+            intensity_2d    = np.trapezoid(intensity, omega, axis=1)
+
+        im = plot_kspace_intensity(
             ax,
-            xlabel          =   r'$k_x$',
-            ylabel          =   r'$k_y$',
-            fontsize        =   style.fontsize_label
+            k2                  =   k_values,
+            intensity           =   intensity_2d,
+            style               =   style,
+            lattice             =   lattice,
+            show_extended_bz    =   use_extend,
+            bz_copies           =   extend_copies,
+            grid_n              =   kwargs.get('grid_n', 0),
+            point_size          =   kwargs.get('point_size', style.markersize * 8),
+            point_alpha         =   kwargs.get('point_alpha', style.alpha),
+            draw_bz_outline     =   kwargs.get('draw_bz_outline', True),
+            label_high_symmetry =   kwargs.get('label_high_symmetry', True),
+            mask_outside_bz     =   kwargs.get('mask_outside_bz', True),
+            interp_method       =   kwargs.get('interp_method', 'linear'),
+            imshow_interp       =   kwargs.get('imshow_interp', 'bilinear'),
         )
-        ax.set_aspect('equal')
     
     # Energy limits
-    if spectral_config.vmin_omega is not None:
-        ax.set_ylim(bottom=spectral_config.vmin_omega)
-    if spectral_config.vmax_omega is not None:
-        ax.set_ylim(top=spectral_config.vmax_omega)
+    if mode == 'kpath':
+        if spectral_config.vmin_omega is not None:
+            ax.set_ylim(bottom=spectral_config.vmin_omega)
+        if spectral_config.vmax_omega is not None:
+            ax.set_ylim(top=spectral_config.vmax_omega)
     
     ax.tick_params(labelsize=style.fontsize_tick)
     

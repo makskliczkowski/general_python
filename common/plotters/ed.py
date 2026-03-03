@@ -1,4 +1,4 @@
-'''
+r'''
 This module contains common plotting utilities for Quantum EigenSolver.
 
 Modular architecture for ED plotting with support for:
@@ -65,28 +65,28 @@ import  numpy               as np
 import  matplotlib.pyplot   as plt
 
 try:
-    from general_python.lattices.lattice    import Lattice
+    from ...lattices.lattice                import Lattice
     from .data_loader                       import load_results, PlotData
     from .config                            import PlotStyle, KSpaceConfig, KPathConfig, SpectralConfig, FigureConfig
-    from .kspace_utils                      import (
-                                                    point_to_segment_distance_2d,
-                                                    select_kpoints_along_path,
-                                                    compute_structure_factor_from_corr,
-                                                    label_high_sym_points,
-                                                    format_pi_ticks
-                                                )
+    from .kspace_utils                      import select_kpoints_along_path, format_pi_ticks
     from .spectral_utils                    import compute_spectral_broadening, extract_spectral_data
-    from .plot_helpers                      import plot_static_structure_factor, plot_kspace_intensity
+    from .plot_helpers                      import (
+                                                    compute_correlation_kspace,
+                                                    plot_kspace_intensity,
+                                                    plot_kspace_path,
+                                                    plot_static_structure_factor,
+                                                )
     from .data_loader                       import PlotData
 except ImportError:
     raise ImportError("Failed to import required modules from the current package.")
 
 if TYPE_CHECKING:
-    from general_python.lattices.lattice    import Lattice
-    from general_python.common.flog         import Logger
+    from ...lattices.lattice    import Lattice
+    from ..flog                 import Logger
 
 # ==============================================================================
 # Correlation function plotter along BZ path
+# ==============================================================================
 
 def plot_bz_path_from_corr(
         ax,
@@ -102,137 +102,26 @@ def plot_bz_path_from_corr(
         kpath_config    : Optional[KPathConfig] = None,
         style           : Optional[PlotStyle]   = None,
     ):
-    r"""
-    Plot correlation-derived structure factor along high-symmetry path.
-        
-    Computes (site-based) structure factor:
-        S(k) = (1/Ns) sum_{i,j} C_{ij} exp[-i k . (r_i - r_j)]
-    
-    Uses modular helper select_kpoints_along_path for path extraction.
-    
-    Parameters
-    ----------
-    ax : matplotlib Axes
-    lattice : Lattice
-        Must have .rvectors, .kvectors, .high_symmetry_points()
-    corr_matrix : (Ns,Ns) array
-        Correlation matrix in site basis
-    path : optional
-        Path specification (None = lattice default, or list like ['Gamma','K','M'])
-    kpath_config : KPathConfig, optional
-        Configuration object (overrides individual parameters)
-    style : PlotStyle, optional
-        Styling configuration
-    
-    Returns
-    -------
-    result : dict
-        Path data with k_dist, values, label_positions, label_texts
-    """
-    
-    # Setup configuration
-    if kpath_config is None:
-        kpath_config = KPathConfig(
-                        path            =   path,
-                        points_per_seg  =   points_per_seg
-                    )
-    if style is None:
-        style       = PlotStyle()
-    
-    # Override config with explicit parameters if provided
-    if path is not None:
-        kpath_config.path           = path
-    if points_per_seg is not None:
-        kpath_config.points_per_seg = points_per_seg
-    
-    # Set up default styling - emphasize discrete points
-    if line_kw is None:
-        line_kw = {
-                    "lw"            : style.linewidth,
-                    "ls"            : "-",
-                    "color"         : "C0",
-                    "marker"        : style.marker,
-                    "ms"            : style.markersize,
-                    "mfc"           : "C0",
-                    "mec"           : "white",
-                    "mew"           : 0.5,
-                    "alpha"         : style.alpha
-                }
-    
-    if hsline_kw is None:
-        hsline_kw   = kpath_config.separator_style
-    
-    C = np.asarray(corr_matrix, float)
-    if C.ndim != 2 or C.shape[0] != C.shape[1]:
-        raise ValueError("corr_matrix must be square (Ns,Ns).")
-
-    r_cart          = np.asarray(lattice.rvectors, float)
-    k_cart          = np.asarray(lattice.kvectors, float)
-    Ns              = C.shape[0]
-    
-    if r_cart.shape[0] != Ns:
-        raise ValueError(f"Ns mismatch: corr {Ns}, lattice {r_cart.shape[0]}")
-
-    # Compute S(k) at all k-points
-    Sk              = compute_structure_factor_from_corr(C, r_cart, k_cart, normalize=True)
-
-    # Use modular path selection helper
-    k_spacing       = np.median(np.diff(np.sort(k_cart[:, 0])))
-    tolerance       = kpath_config.tolerance if kpath_config.tolerance else k_spacing * 0.5
-    path_labels     = kpath_config.path
-    
-    path_result = select_kpoints_along_path(
-        lattice         =   lattice,
-        k_vectors       =   k_cart,
-        path_labels     =   path_labels,
-        tolerance       =   tolerance,
-        use_extend      =   False
-    )
-    
+    r"""Backward-compatible wrapper around :func:`plot_kspace_path`."""
     if print_vectors:
         print("\n=== DEBUG: BZ path correlation plotting ===")
-        print(f"Number of sites: {r_cart.shape[0]}")
-        print(f"Number of k-points: {k_cart.shape[0]}")
-        print(f"Path: {path_labels}")
-        print(f"Selected k-points: {len(path_result['indices'])}")
+        print(f"Number of sites: {np.asarray(corr_matrix).shape[0]}")
+        print(f"Number of k-points: {len(np.asarray(lattice.kvectors))}")
+        print(f"Path: {path}")
         print("=" * 40 + "\n")
-    
-    # Extract values at selected k-points
-    selected_indices    = path_result['indices']
-    k_distances         = path_result['distances']
-    label_positions     = path_result['label_positions']
-    label_texts         = path_result['label_texts']
-    
-    if len(selected_indices) == 0:
-        raise ValueError("No k-points found along path. Try increasing tolerance or checking path definition.")
-    
-    y = Sk[selected_indices]
-    x = k_distances
 
-    # Plot discrete k-points with markers
-    ax.plot(x, y, **line_kw)
-    ax.set_ylabel(value_label, fontsize=style.fontsize_label)
-    ax.set_xlim(x.min(), x.max())
-
-    # Add high-symmetry separators + ticks
-    if kpath_config.show_separators:
-        for xv in label_positions:
-            ax.axvline(xv, **hsline_kw)
-        ax.set_xticks(label_positions)
-        ax.set_xticklabels(label_texts)
-
-    ax.grid(alpha=0.25)
-    ax.tick_params(labelsize=style.fontsize_tick)
-    
-    # Return result with compatibility
-    result = {
-        'k_dist'            : x,
-        'values'            : y,
-        'label_positions'   : label_positions,
-        'label_texts'       : label_texts
-    }
-    
-    return result
+    return plot_kspace_path(
+        ax,
+        lattice,
+        corr_matrix=corr_matrix,
+        path=path,
+        points_per_seg=points_per_seg,
+        value_label=value_label,
+        line_kw=line_kw,
+        hsline_kw=hsline_kw,
+        style=style,
+        kpath_config=kpath_config,
+    )
 
 # ==============================================================================
 # Spectral function plotter
@@ -705,10 +594,11 @@ def plot_phase_diagram_states(
 # ==============================================================================
 
 def plot_correlation_grid(
-                        directory           : str,
+                        directory           : Optional[str],
                         param_name          : str,
                         lattice             : 'Lattice',
                         *,
+                        data_values                     = None,
                         x_parameters        : list,
                         y_parameters        : list,
                         x_param             : str       = 'J',
@@ -740,12 +630,17 @@ def plot_correlation_grid(
 
     Parameters
     ----------
-    directory : str
-        Path to directory containing ED result files
+    directory : str or None
+        Path to directory containing ED result files. May be ``None`` when
+        ``data_values`` is provided directly.
     param_name : str
         Name of correlation data parameter to extract from results (e.g., 'spin_corr', 'density_corr')
     lattice : Lattice
         Lattice object defining the geometry (must have rvectors, kvectors, and k-space methods)
+    data_values : optional
+        In-memory results payload accepted by :meth:`PlotData.from_input`.
+        Use this when the correlation data is already loaded and no filesystem
+        lookup is needed.
     x_parameters : list
         Values of x_param to include in grid
     y_parameters : list
@@ -917,15 +812,21 @@ def plot_correlation_grid(
     if lx is None or ly is None or Ns is None:
         raise ValueError("Lattice or lx, ly, Ns must be provided.")
     
-    results             = load_results(
-                            data_dir            =   directory,
+    results             = PlotData.from_input(
+                            directory           =   directory,
+                            data_values         =   data_values,
+                            x_parameters        =   x_parameters,
+                            y_parameters        =   y_parameters,
+                            x_param             =   x_param,
+                            y_param             =   y_param,
+                            data_key            =   param_name,
                             filters             =   filters,
-                            lx                  =   lx, 
-                            ly                  =   ly, 
-                            lz                  =   lz, 
-                            Ns                  =   Ns,
                             logger              =   kwargs.get('logger', None),
-                            post_process_func   =   post_process_func
+                            lx                  =   lx,
+                            ly                  =   ly,
+                            lz                  =   lz,
+                            Ns                  =   Ns,
+                            post_process_func   =   post_process_func,
                         )
     if not results:
         return None, None
@@ -980,17 +881,6 @@ def plot_correlation_grid(
             positions   = None
             d_dim       = None
 
-    # --------------------------------------------------------------
-    # k-space precomputes (shared across panels)
-    # --------------------------------------------------------------
-    k_cart              = None          # (Nk,3)
-    k2                  = None          # (Nk,2)
-    r2                  = None          # (Ns,2)
-    phase               = None          # (Nk,Ns)
-    phase_conj          = None          # (Nk,Ns)
-    Ns_lat              = None          # number of sites in lattice, if needed
-    Nk                  = None          # number of k-points
-    
     interpolation       = kwargs.get('interpolation', 'linear')             # interpolation method
 
     ks_grid_n           = int(kwargs.get('ks_grid_n',           500))       # interpolation grid resolution
@@ -1002,22 +892,8 @@ def plot_correlation_grid(
     ks_mask_outside_bz  = bool(kwargs.get('ks_mask_outside_bz', True))      # mask outside BZ
     auto_vlim_kspace    = bool(kwargs.get('auto_vlim_kspace',   True))      # auto vmin/vmax
 
-    # If kspace: build phase once.
-    if plot_mode == 'kspace' and lattice is not None:
-        try:
-            k_cart      = np.asarray(lattice.kvectors, float)   # (Nk,3) usually Nk = Nc
-            r_cart      = np.asarray(lattice.rvectors, float)   # (Ns,3) Ns = Nc*Nb
-
-            k2          = k_cart[:, :2]
-            r2          = r_cart[:, :2]
-
-            phase       = np.exp(-1j * (k2 @ r2.T))             # (Nk,Ns)
-            phase_conj  = np.conjugate(phase)                   # (Nk,Ns) for S(k) calc
-
-            Ns_lat      = r2.shape[0]
-            Nk          = k2.shape[0]
-        except Exception:
-            plot_mode   = 'matrix'
+    if plot_mode in ('kspace', 'kpath') and lattice is None:
+        plot_mode = 'matrix'
 
     # --------------------------------------------------------------
     # determine vmin/vmax
@@ -1030,9 +906,9 @@ def plot_correlation_grid(
             return None
 
         if data_root.ndim == 3:
-            return np.asarray(np.real(data_root[:, :, state_idx]), float)
+            return np.asarray(np.real_if_close(data_root[:, :, state_idx]))
         if data_root.ndim == 2 and data_root.shape == (ns, ns):
-            return np.asarray(np.real(data_root), float)
+            return np.asarray(np.real_if_close(data_root))
         return None
 
     def _selected_results():
@@ -1048,16 +924,16 @@ def plot_correlation_grid(
         return out
 
     if (vmin is None or vmax is None):
-        if plot_mode == 'kspace' and phase is not None and auto_vlim_kspace:
+        if plot_mode == 'kspace' and lattice is not None and auto_vlim_kspace:
             sk_min, sk_max  = +np.inf, -np.inf
             for r in _selected_results():
                 C           = _extract_corr_matrix(r)
                 if C is None:
                     continue
-                if C.shape[0] != Ns_lat:
+                try:
+                    Sk, _, _   = compute_correlation_kspace(lattice, C, reduction="sum", norm="site")
+                except Exception:
                     continue
-                tmp         = phase @ C
-                Sk          = np.real((tmp * phase_conj).sum(axis=1) / C.shape[0])
                 if np.all(np.isnan(Sk)):
                     continue
                 sk_min      = min(sk_min, float(np.nanmin(Sk)))
@@ -1130,21 +1006,12 @@ def plot_correlation_grid(
         for jj, x_val in enumerate(unique_x):
 
             ax      = axes_grid[ii, jj]
-            subset  = []
+            result  = PlotData.from_match(results=results, x_param=x_param, y_param=y_param, x_val=x_val, y_val=y_val, tol=point_closeness)
 
-            for r in results:
-                rx = r.params.get(x_param, np.nan)
-                ry = r.params.get(y_param, np.nan)
-                if abs(rx - x_val) < point_closeness and abs(ry - y_val) < point_closeness:
-                    subset.append(r)
-                    
-            # if no result, skip
-            if not subset:
+            if result is None:
                 ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes)
                 ax.axis('off')
                 continue
-
-            result      = subset[0]
             corr_matrix = _extract_corr_matrix(result)
             if corr_matrix is None:
                 ax.text(0.5, 0.5, 'N/A', ha='center', va='center', transform=ax.transAxes)
@@ -1249,23 +1116,16 @@ def plot_correlation_grid(
                         ax.axis('off')
 
             elif plot_mode == 'kspace':
-                if phase is None or k2 is None:
+                if lattice is None:
                     ax.text(0.5, 0.5, 'k-space unavailable', ha='center', va='center', transform=ax.transAxes)
                     ax.axis('off')
                 else:
-                    # Compute S(k)
-                    if corr_matrix.shape[0] != Ns_lat:
+                    try:
+                        Sk, k_grid, _ = compute_correlation_kspace(lattice, corr_matrix, reduction="sum", norm="site")
+                    except Exception:
                         ax.text(0.5, 0.5, 'Ns mismatch', ha='center', va='center', transform=ax.transAxes)
                         ax.axis('off')
                     else:
-                        C       = np.asarray(corr_matrix, float)
-                        Ns0     = C.shape[0]
-
-                        tmp     = phase @ C
-                        Sk      = np.real((tmp * phase_conj).sum(axis=1) / Ns0) # (Nk,)
-
-                        # Use the new modular k-space plotter
-                        # Create configuration objects
                         style   = PlotStyle(
                                     cmap                    =   cmap,
                                     vmin                    =   vmin,
@@ -1294,7 +1154,7 @@ def plot_correlation_grid(
                         # Use new plot_kspace_intensity with extended BZ and Pi labels
                         plot_kspace_intensity(
                                     ax                      =   ax,
-                                    k2                      =   k2,
+                                    k2                      =   k_grid,
                                     intensity               =   Sk,
                                     style                   =   style,
                                     ks_config               =   ks_config,

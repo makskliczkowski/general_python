@@ -22,13 +22,12 @@ Date    : 2025-02-01
 """
 
 from    __future__          import annotations
-import  math
 import  numpy               as np
 import  matplotlib.pyplot   as plt
 
 from    collections         import defaultdict
 from    dataclasses         import dataclass
-from    typing              import Optional, Tuple, List, Set, Dict, Union, Any
+from    typing              import Optional, Tuple, List, Set, Dict, Union, Any, Iterable
 
 from    matplotlib.axes     import Axes
 from    matplotlib.figure   import Figure
@@ -99,13 +98,18 @@ def _finalise_figure(fig: Figure, *, top_padding: float = 0.88) -> None:
     except Exception:
         pass
 
+def _apply_planar_aspect(axis: Axes, *, fix_aspect: bool = True) -> None:
+    """Apply or release equal aspect for 2D axes."""
+    axis.set_aspect("equal" if fix_aspect else "auto", adjustable="box")
+
 def _apply_spatial_limits(
     axis        : Axes, 
     coords      : np.ndarray, 
     dim         : int, 
     show_axes   : bool, 
     margin      : float = 0.08,
-    labels      : Optional[Tuple[str, ...]] = None
+    labels      : Optional[Tuple[str, ...]] = None,
+    fix_aspect  : bool = True,
 ) -> None:
     """ 
     Uniformly apply spatial limits with padding and aspect ratio. 
@@ -135,7 +139,7 @@ def _apply_spatial_limits(
         
         axis.set_xlim(mins[0] - pad, maxs[0] + pad)
         axis.set_ylim(mins[1] - pad, maxs[1] + pad)
-        axis.set_aspect("equal", adjustable="box")
+        _apply_planar_aspect(axis, fix_aspect=fix_aspect)
         
     # 3D case
     else:
@@ -180,6 +184,7 @@ def plot_real_space(
     color           : str                           = "C0",
     marker          : str                           = "o",
     figsize         : Optional[Tuple[float, float]] = None,
+    fix_aspect      : bool                          = True,
     title           : Optional[str]                 = None,
     title_kwargs    : Optional[Dict[str, object]]   = None,
     tight_layout    : bool                          = True,
@@ -206,6 +211,9 @@ def plot_real_space(
         Marker style.
     figsize : tuple, optional
         Figure size in inches (width, height).
+    fix_aspect : bool, default=True
+        If True, preserve equal axis scaling in 2D plots. Set to ``False`` to
+        let the requested ``figsize`` control the on-screen aspect.
     title : str, optional
         Title of the plot.
     elev, azim : float, optional
@@ -242,7 +250,7 @@ def plot_real_space(
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], color=color, marker=marker, **scatter_kwargs)
 
     # Spatial Limits & Visibility
-    _apply_spatial_limits(axis, coords, dim, show_axes)
+    _apply_spatial_limits(axis, coords, dim, show_axes, fix_aspect=fix_aspect)
 
     # Title
     if title:
@@ -259,6 +267,10 @@ def plot_real_space(
         
     return fig, axis
 
+# -------------------------------------------------------------------------------
+#! Reciprocal Space Plotter
+# -------------------------------------------------------------------------------
+
 def plot_reciprocal_space(
     lattice         : Lattice,
     *,
@@ -268,17 +280,60 @@ def plot_reciprocal_space(
     color           : str                           = "C1",
     marker          : str                           = "o",
     figsize         : Optional[Tuple[float, float]] = None,
+    fix_aspect      : bool                          = True,
     title           : Optional[str]                 = None,
     title_kwargs    : Optional[Dict[str, object]]   = None,
     tight_layout    : bool                          = True,
     elev            : Optional[float]               = None,
     azim            : Optional[float]               = None,
+    # extension
+    extend_kpoints  : bool                          = False,
+    extend_copies   : Union[int, Iterable[int]]     = 2,
+    extend_tol      : float                         = 1e-10,
     **scatter_kwargs,
 ) -> Tuple[Figure, Axes]:
     """
     Scatter-plot of reciprocal lattice vectors (k-points).
     
-    Parameters mirror :func:`plot_real_space`.
+    Parameters mirror :func:`plot_real_space`
+    --------------------------------------------------------------------------
+    lattice : Lattice
+        The lattice object to plot.
+    ax : Axes, optional
+        Matplotlib axes to plot on. If None, a new figure is created.
+    show_indices : bool, default=False
+        If True, annotate each k-point with its index.
+    show_axes : bool, default=True
+        If False, hides the coordinate axes.
+    color : str, default="C1"
+        Color of the k-point markers.
+    marker : str, default="o"
+        Marker style.
+    figsize : tuple, optional
+        Figure size in inches (width, height).
+    fix_aspect : bool, default=True
+        If True, preserve equal axis scaling in 2D plots. Set to ``False`` to
+        let the requested ``figsize`` control the on-screen aspect.
+    title : str, optional
+        Title of the plot.
+    elev, azim : float, optional
+        Elevation and azimuth angles for 3D plots.
+    extend_kpoints : bool, default=False
+        If True, draw translated reciprocal-space copies around the original mesh.
+    extend_copies : int or iterable of int, default=2
+        Number of copies per reciprocal direction used when ``extend_kpoints=True``.
+        Scalars are applied to all active reciprocal directions.
+    extend_tol : float, default=1e-10
+        Tolerance used to identify which extended points are already present in
+        the original reciprocal mesh.
+    **scatter_kwargs
+        Include:
+        - point_edgecolor: Color of the marker edges (default "white").
+        - point_zorder: Z-order for the scatter points (default 5).
+        - color_extended: Color for translated copies (default "C2").
+        - edgecolor_extended: Edge color for translated copies (default "gray").
+        - marker_extended: Marker for translated copies (default ``marker``).
+        - Any other valid arguments for `ax.scatter`.
     """
     coords      = _ensure_numpy(lattice.kvectors)
     target_dim  = lattice.dim if lattice.dim else coords.shape[1]
@@ -286,117 +341,253 @@ def plot_reciprocal_space(
     coords      = coords[:, :dim]
     
     fig, axis   = _init_axes(ax, dim)
-    
     if figsize is not None and axis is fig.axes[0]:
         fig.set_size_inches(*figsize, forward=True)
         
+    # Set 3D view angles if specified
     if dim == 3 and (elev is not None or azim is not None):
         current_elev = elev if elev is not None else getattr(axis, "elev", None)
         current_azim = azim if azim is not None else getattr(axis, "azim", None)
         axis.view_init(elev=current_elev, azim=current_azim)
 
+    # Scatter plot of k-points -> a simple scatter with appropriate axis labels
+    point_edgecolor     = scatter_kwargs.pop("edgecolor", "white")
+    point_zorder        = scatter_kwargs.pop("zorder", 5)
+    point_color         = color if color else scatter_kwargs.get("color", "C1")
+    color_extended      = scatter_kwargs.pop("color_extended", "C2")
+    edgecolor_extended  = scatter_kwargs.pop("edgecolor_extended", "gray")
+    marker_extended     = scatter_kwargs.pop("marker_extended", marker)
     if dim == 1:
-        axis.scatter(coords[:, 0], np.zeros_like(coords[:, 0]), color=color, marker=marker, **scatter_kwargs)
+        axis.scatter(coords[:, 0], np.zeros_like(coords[:, 0]), color=point_color, marker=marker, edgecolor=point_edgecolor, zorder=point_zorder, **scatter_kwargs)
     elif dim == 2:
-        axis.scatter(coords[:, 0], coords[:, 1], color=color, marker=marker, **scatter_kwargs)
+        axis.scatter(coords[:, 0], coords[:, 1], color=point_color, marker=marker, edgecolor=point_edgecolor, zorder=point_zorder, **scatter_kwargs)
     else:
-        axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], color=color, marker=marker, **scatter_kwargs)
+        axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], color=point_color, marker=marker, edgecolor=point_edgecolor, zorder=point_zorder, **scatter_kwargs)
 
-    # Spatial Limits & Visibility
-    k_labels = (r"$k_x$", r"$k_y$", r"$k_z$")
-    _apply_spatial_limits(axis, coords, dim, show_axes, labels=k_labels)
+    plotted_coords = coords
 
+    # Set the title if necessary
     if title:
         kw = {"pad": 12}
-        if title_kwargs: kw.update(title_kwargs)
+        if title_kwargs: 
+            kw.update(title_kwargs)
         axis.set_title(title, **kw)
 
     if show_indices:
         _annotate_indices(axis, coords)
+        
+    if extend_kpoints:
+        active_dim = max(1, min(dim, 3))
+        if np.isscalar(extend_copies):
+            copy_spec   = int(extend_copies)
+        else:
+            copy_values = [int(copy) for copy in extend_copies]
+            if len(copy_values) < active_dim:
+                raise ValueError("extend_copies must provide at least one value per plotted reciprocal direction")
+            copy_spec   = tuple(copy_values[:active_dim])
+
+        extended_k_points, _    = lattice.wigner_seitz_extend(k_points=coords, copies=copy_spec)
+
+        # Compare by rounded row keys to avoid quadratic allclose scans.
+        scale                   = max(float(extend_tol), np.finfo(float).eps)
+        original_keys           = {tuple(np.rint(row / scale).astype(np.int64)) for row in np.asarray(coords, dtype=float)}
+        extended_keys           = [tuple(np.rint(row / scale).astype(np.int64)) for row in np.asarray(extended_k_points, dtype=float)]
+        extended_k_points_mask  = np.array([key not in original_keys for key in extended_keys], dtype=bool)
+        
+        # plot other k-points in a different style
+        if np.any(extended_k_points_mask):
+            extended_coords     = extended_k_points[extended_k_points_mask]
+            plotted_coords      = np.vstack((coords, extended_coords))
+            if dim == 1:
+                axis.scatter(extended_coords[:, 0], np.zeros_like(extended_coords[:, 0]), color=color_extended, marker=marker_extended, edgecolor=edgecolor_extended, zorder=point_zorder-1, **scatter_kwargs)
+            elif dim == 2:
+                axis.scatter(extended_coords[:, 0], extended_coords[:, 1], color=color_extended, marker=marker_extended, edgecolor=edgecolor_extended, zorder=point_zorder-1, **scatter_kwargs)
+            else:
+                axis.scatter(extended_coords[:, 0], extended_coords[:, 1], extended_coords[:, 2], color=color_extended, marker=marker_extended, edgecolor=edgecolor_extended, zorder=point_zorder-1, **scatter_kwargs)
+
+    # Spatial Limits & Visibility
+    k_labels = (r"$k_x$", r"$k_y$", r"$k_z$")
+    _apply_spatial_limits(axis, plotted_coords, dim, show_axes, labels=k_labels, fix_aspect=fix_aspect)
 
     if tight_layout:
         _finalise_figure(fig)
         
     return fig, axis
 
-# ==============================================================================
-# Brillouin Zone Helpers
-# ==============================================================================
+# -------------------------------------------------------------------------------
+#! Brillouin Zone Plotter
+# -------------------------------------------------------------------------------
 
-def _plot_1d_bz(axis: Axes, bounds: Tuple[float, float], *, facecolor: str, alpha: float) -> None:
-    x_min, x_max = bounds
-    axis.axvspan(x_min, x_max, ymin=0.25, ymax=0.75, facecolor=facecolor, alpha=alpha)
-    axis.set_ylim(0, 1)
-    axis.set_yticks([])
-    axis.set_xlabel("k")
-
-def _plot_2d_bz(axis: Axes, points: np.ndarray, *, facecolor: str, edgecolor: str, alpha: float) -> None:
-    polygon = None
-    if ConvexHull is not None:
-        try:
-            hull    = ConvexHull(points)
-            polygon = points[hull.vertices]
-        except Exception:
-            pass
-
-    if polygon is None:
-        # Fallback to bounding box
-        x_min, y_min = points.min(axis=0)
-        x_max, y_max = points.max(axis=0)
-        polygon = np.array([
-            [x_min, y_min], [x_max, y_min],
-            [x_max, y_max], [x_min, y_max],
-        ])
-
-    axis.fill(*polygon.T, facecolor=facecolor, alpha=alpha, edgecolor=edgecolor, linewidth=1.5)
-    axis.plot(*polygon.T, color=edgecolor, linewidth=1.5)
-    # close the loop
-    axis.plot([polygon[-1, 0], polygon[0, 0]], [polygon[-1, 1], polygon[0, 1]], color=edgecolor, linewidth=1.5)
+def _draw_bz_region(axis: Axes, points: np.ndarray, *,
+    dim             : int,
+    lattice         : Optional[Lattice] = None,
+    offset          : Optional[np.ndarray] = None,
+    shells          : int = 2,
+    facecolor       : str,
+    edgecolor       : str,
+    alpha           : float,
+    linewidth       : float = 1.5,
+    fix_aspect      : bool = True,
+    show_points     : bool = True,
+    point_kwargs    : Optional[Dict[str, Any]] = None,
+    zorder          : float = 0.0,
+    **kwargs,
+) -> None:
+    """
+    Draw a Brillouin-zone region from sampled boundary points. It allows
+    to visualize the Wigner-Seitz cell of the reciprocal lattice, which is the
+    Brillouin zone, by plotting the region defined by the given boundary points.
     
-    axis.set_aspect("equal", adjustable="box")
-    axis.set_xlabel(r"$k_x$")
-    axis.set_ylabel(r"$k_y$")
+    Parameters
+    ----------
+    axis : Axes
+        The matplotlib axes to draw on.
+    points : array-like
+        An array of shape (N, D) containing the coordinates of the boundary points.
+    dim : int
+        The dimensionality of the points (1, 2, or 3).
+    lattice : Lattice, optional
+        If provided, the lattice's Wigner-Seitz mask will be used to draw the Brillouin zone region. This can provide a more accurate representation of the BZ shape.
+    offset : array-like, optional
+        An optional offset to apply to the points when using the lattice's Wigner-Seitz mask. This can be used to visualize the BZ region around a specific k-point.
+    shells : int, default=2
+        When using the lattice's Wigner-Seitz mask, this parameter controls how many shells of reciprocal lattice vectors to consider when determining the mask. A larger number of shells can provide a more accurate BZ shape but may increase computation time.
+    facecolor : str
+        The color to fill the Brillouin zone region.
+    edgecolor : str
+        The color to use for the edges of the Brillouin zone region.
+    alpha : float
+        The transparency level for the filled region (0.0 transparent, 1.0 opaque).
+    linewidth : float, default=1.5
+        The width of the edges of the Brillouin zone region.
+    show_points : bool, default=True
+        If True, the original boundary points will be plotted on top of the filled region.
+    point_kwargs : dict, optional
+        Additional keyword arguments to pass to the scatter function when plotting the boundary points (e.g., marker style, size).
+    zorder : float, default=0.0
+        The z-order for the filled region and edges. Points will be plotted at zorder + 0.2 to ensure they are on top.
+    """
+    pts             = np.asarray(points, dtype=float)
+    point_kwargs    = {} if point_kwargs is None else dict(point_kwargs)
 
-def _plot_3d_bz(axis: Axes, points: np.ndarray, *, facecolor: str, edgecolor: str, alpha: float) -> None:
+    if dim == 1:
+        x_min, x_max = pts[:, 0].min(), pts[:, 0].max()
+        axis.axvspan(x_min, x_max, ymin=0.25, ymax=0.75, facecolor=facecolor, alpha=alpha, zorder=zorder)
+        axis.plot([x_min, x_max], [0.5, 0.5], color=edgecolor, linewidth=linewidth, zorder=zorder + 0.1, **kwargs)
+        if show_points:
+            axis.scatter([x_min, x_max], [0.5, 0.5], color=edgecolor, edgecolor="white", zorder=zorder + 0.2, **point_kwargs)
+        axis.set_ylim(0, 1)
+        axis.set_yticks([])
+        axis.set_xlabel("k")
+        return
+
+    if dim == 2:
+        if lattice is not None:
+            # Use the lattice's Wigner-Seitz mask to draw the Brillouin zone region
+            b1      = np.asarray(lattice.k1, dtype=float).ravel()[:2]
+            b2      = np.asarray(lattice.k2, dtype=float).ravel()[:2]
+            # pad to ensure we cover the entire region even if the Wigner-Seitz cell is slightly larger than the sampled points
+            pad     = 1.35
+            kmax    = max(np.linalg.norm(b1), np.linalg.norm(b2)) * pad
+            
+            # Generate a grid of points around the origin (or offset) to evaluate the Wigner-Seitz mask
+            gx      = np.linspace(-kmax, kmax, 500)
+            gy      = np.linspace(-kmax, kmax, 500)
+            
+            # Apply offset if provided
+            if offset is not None:
+                shift   = np.asarray(offset, dtype=float).ravel()[:2]
+                gx     += shift[0]
+                gy     += shift[1]
+            else:
+                shift   = np.zeros(2, dtype=float)
+            GX, GY  = np.meshgrid(gx, gy)
+            mask    = lattice.wigner_seitz_mask(GX - shift[0], GY - shift[1], shells=shells)
+            
+            # Plot the filled contour for the Wigner-Seitz cell and its edges
+            axis.contourf(GX, GY, mask.astype(float), levels=[0.5, 1.5], colors=[facecolor], alpha=alpha, zorder=zorder)
+            # The contour for the edge is plotted with a slightly higher zorder to ensure it appears on top of the filled region
+            axis.contour(GX, GY, mask.astype(float), levels=[0.5], colors=[edgecolor], linewidths=linewidth, zorder=zorder + 0.1)
+        else:
+            # If no lattice is provided, we can attempt to draw a convex hull around the points to represent the BZ region. 
+            # This is a fallback and may not accurately capture the true BZ shape, especially if 
+            # the points are not sampled densely or if the BZ has a complex shape.
+            polygon = None
+            if ConvexHull is not None:
+                try:
+                    hull    = ConvexHull(pts[:, :2])
+                    polygon = pts[hull.vertices, :2]
+                except Exception:
+                    pass
+            if polygon is None:
+                x_min, y_min    = pts[:, :2].min(axis=0)
+                x_max, y_max    = pts[:, :2].max(axis=0)
+                polygon         = np.array([
+                    [x_min, y_min], [x_max, y_min],
+                    [x_max, y_max], [x_min, y_max],
+                ])
+            axis.fill(*polygon.T, facecolor=facecolor, alpha=alpha, edgecolor=edgecolor, linewidth=linewidth, zorder=zorder)
+            axis.plot(*polygon.T, color=edgecolor, linewidth=linewidth, zorder=zorder + 0.1)
+            axis.plot([polygon[-1, 0], polygon[0, 0]], [polygon[-1, 1], polygon[0, 1]], color=edgecolor, linewidth=linewidth, zorder=zorder + 0.1)
+        if show_points:
+            axis.scatter(pts[:, 0], pts[:, 1], color=edgecolor, edgecolor="white", zorder=zorder + 0.2, **point_kwargs)
+        _apply_planar_aspect(axis, fix_aspect=fix_aspect)
+        axis.set_xlabel(r"$k_x$")
+        axis.set_ylabel(r"$k_y$")
+        return
+
+    # ---------------
+    # For 3D, we attempt to create a convex hull of the points to represent the BZ region.
+    # ---------------
+
     if Poly3DCollection is None:
         raise RuntimeError("3D plotting support requires mpl_toolkits.mplot3d.")
 
     faces = None
     if ConvexHull is not None:
         try:
-            hull    = ConvexHull(points)
-            faces   = [points[simplex] for simplex in hull.simplices]
+            hull    = ConvexHull(pts[:, :3])
+            faces   = [pts[simplex, :3] for simplex in hull.simplices]
         except Exception:
             pass
-            
     if faces is None:
-        # Fallback to bounding box cube
-        mins    = points.min(axis=0)
-        maxs    = points.max(axis=0)
+        mins    = pts[:, :3].min(axis=0)
+        maxs    = pts[:, :3].max(axis=0)
         corners = np.array([
             [mins[0], mins[1], mins[2]], [maxs[0], mins[1], mins[2]],
             [maxs[0], maxs[1], mins[2]], [mins[0], maxs[1], mins[2]],
             [mins[0], mins[1], maxs[2]], [maxs[0], mins[1], maxs[2]],
             [maxs[0], maxs[1], maxs[2]], [mins[0], maxs[1], maxs[2]],
         ])
-        
-        # Simple cube faces (indices of corners)
         faces = [
-            corners[[0, 1, 2, 3]], corners[[4, 5, 6, 7]], 
+            corners[[0, 1, 2, 3]], corners[[4, 5, 6, 7]],
             corners[[0, 1, 5, 4]], corners[[2, 3, 7, 6]],
             corners[[1, 2, 6, 5]], corners[[3, 0, 4, 7]],
         ]
-
-    collection = Poly3DCollection(faces, facecolor=facecolor, edgecolor=edgecolor, alpha=alpha)
+    collection = Poly3DCollection(
+        faces, facecolor=facecolor, edgecolor=edgecolor, alpha=alpha,
+        linewidths=linewidth, zorder=zorder
+    )
     axis.add_collection3d(collection)
+    if show_points:
+        axis.scatter(pts[:, 0], pts[:, 1], pts[:, 2], color=edgecolor, edgecolor="white", zorder=zorder + 0.2, **point_kwargs)
     axis.set_xlabel(r"$k_x$")
     axis.set_ylabel(r"$k_y$")
     axis.set_zlabel(r"$k_z$")
 
-# -------------------------------------------------------------------------------
-#! Main Brillouin Zone Plotter
-# -------------------------------------------------------------------------------
+def _plot_1d_bz(axis: Axes, bounds: Tuple[float, float], *, facecolor: str, alpha: float, **kwargs) -> None:
+    ''' Plot a 1D Brillouin Zone as a horizontal band. '''
+    _draw_bz_region(axis, points=np.array(bounds).reshape(1, 2), dim=1, facecolor=facecolor, alpha=alpha, **kwargs)
 
+def _plot_2d_bz(axis: Axes, points: np.ndarray, *, facecolor: str, edgecolor: str, alpha: float, **kwargs) -> None:
+    ''' Plot a 2D Brillouin Zone as a filled polygon. '''
+    _draw_bz_region(axis, points, dim=2, facecolor=facecolor, edgecolor=edgecolor, alpha=alpha, **kwargs)
+    
+def _plot_3d_bz(axis: Axes, points: np.ndarray, *, facecolor: str, edgecolor: str, alpha: float, elev: float = 30.0, azim: float = 45.0, **kwargs) -> None:
+    ''' Plot a 3D Brillouin Zone as a convex hull polyhedron. '''
+    _draw_bz_region(axis, points, dim=3, facecolor=facecolor, edgecolor=edgecolor, alpha=alpha, **kwargs)
+    axis.view_init(elev=elev, azim=azim)
+    
 def plot_brillouin_zone(
     lattice         : Lattice,
     *,
@@ -405,6 +596,7 @@ def plot_brillouin_zone(
     edgecolor       : str                           = "black",
     alpha           : float                         = 0.25,
     figsize         : Optional[Tuple[float, float]] = None,
+    fix_aspect      : bool                          = True,
     title           : Optional[str]                 = None,
     title_kwargs    : Optional[Dict[str, object]]   = None,
     tight_layout    : bool                          = True,
@@ -412,6 +604,28 @@ def plot_brillouin_zone(
     azim            : Optional[float]               = None) -> Tuple[Figure, Axes]:
     """
     Plot the Brillouin Zone approximation based on sampled k-vectors.
+    
+    Parameters
+    ----------
+    lattice : Lattice
+        The lattice object containing k-vectors.
+    ax : Axes, optional
+        Matplotlib axes to plot on. If None, a new figure is created.
+    facecolor : str, default="tab:blue"
+        Color to fill the Brillouin Zone area.
+    edgecolor : str, default="black"
+        Color for the Brillouin Zone boundary.
+    alpha : float, default=0.25 
+        Transparency level for the Brillouin Zone fill.
+    figsize : tuple, optional   
+        Figure size in inches (width, height).
+    fix_aspect : bool, default=True
+        If True, preserve equal axis scaling in 2D plots. Set to ``False`` to
+        let the requested ``figsize`` control the on-screen aspect.
+    title : str, optional
+        Title of the plot.
+    elev, azim : float, optional
+        Elevation and azimuth angles for 3D plots.
     """
     coords      = _ensure_numpy(lattice.kvectors)
     target_dim  = lattice.dim if lattice.dim else coords.shape[1]
@@ -419,20 +633,20 @@ def plot_brillouin_zone(
     coords      = coords[:, :dim]
     
     fig, axis   = _init_axes(ax, dim)
-    
     if figsize is not None and axis is fig.axes[0]:
         fig.set_size_inches(*figsize, forward=True)
 
     if dim == 1:
         _plot_1d_bz(axis, (coords[:, 0].min(), coords[:, 0].max()), facecolor=facecolor, alpha=alpha)
     elif dim == 2:
-        _plot_2d_bz(axis, coords[:, :2], facecolor=facecolor, edgecolor=edgecolor, alpha=alpha)
+        _plot_2d_bz(axis, coords[:, :2], facecolor=facecolor, edgecolor=edgecolor, alpha=alpha, fix_aspect=fix_aspect)
     else:
-        _plot_3d_bz(axis, coords[:, :3], facecolor=facecolor, edgecolor=edgecolor, alpha=alpha)
+        _plot_3d_bz(axis, coords[:, :3], facecolor=facecolor, edgecolor=edgecolor, alpha=alpha, elev=elev, azim=azim)
 
     if title:
         kw = {"pad": 12}
-        if title_kwargs: kw.update(title_kwargs)
+        if title_kwargs: 
+            kw.update(title_kwargs)
         axis.set_title(title, **kw)
 
     if tight_layout:
@@ -441,7 +655,7 @@ def plot_brillouin_zone(
     return fig, axis
 
 # ==============================================================================
-# Structural Plotting Helpers
+#! Structural Plotting Helpers
 # ==============================================================================
 
 def _gather_nn_edges(lattice: Lattice) -> List[Tuple[int, int]]:
@@ -535,6 +749,7 @@ def _draw_primitive_cell(axis: Axes, origin: np.ndarray, basis_vectors: List[np.
         a1, a2  = basis_vectors[:2]
         corners = np.array([origin, origin + a1, origin + a1 + a2, origin + a2, origin])
         axis.plot(corners[:, 0], corners[:, 1], color=color, linestyle=linestyle, linewidth=linewidth)
+    
     elif dim == 3 and len(basis_vectors) >= 3:
         raise NotImplementedError("3D primitive cell plotting is not implemented yet.")
 
@@ -594,10 +809,6 @@ def _draw_boundary_annotations(
     for idx in range(min(positions.shape[1], 2)):
         _annotate_axis(idx, labels[idx])
 
-# ==============================================================================
-# Main Structure Plotter
-# ==============================================================================
-
 def plot_lattice_structure(
     lattice                     : Lattice,
     *,
@@ -620,6 +831,7 @@ def plot_lattice_structure(
     boundary_offset             : float                         = 0.05,
     # general plot settings
     figsize                     : Optional[Tuple[float, float]] = None,
+    fix_aspect                  : bool                          = True,
     title                       : Optional[str]                 = None,
     title_kwargs                : Optional[Dict[str, object]]   = None,
     tight_layout                : bool                          = True,
@@ -654,6 +866,9 @@ def plot_lattice_structure(
         If True, indicates wrap-around connections textually or graphically.
     show_primitive_cell : bool
         If True, overlays the primitive unit cell vectors/box.
+    fix_aspect : bool, default=True
+        If True, preserve equal axis scaling in 2D plots. Set to ``False`` to
+        let the requested ``figsize`` control the on-screen aspect.
     
     ... other parameters mirror plot_real_space ...
     """
@@ -743,7 +958,7 @@ def plot_lattice_structure(
         axis.set_ylim(-0.5, 0.5)
     elif dim == 2:
         axis.scatter(coords[:, 0], coords[:, 1], c=node_face_colors, **scatter_defaults)
-        axis.set_aspect("equal", adjustable="box")
+        _apply_planar_aspect(axis, fix_aspect=fix_aspect)
     else:
         axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], c=node_face_colors, **scatter_defaults)
 
@@ -766,7 +981,7 @@ def plot_lattice_structure(
     if dim == 2:
         margin = max(margin, boundary_offset * 1.5)
     
-    _apply_spatial_limits(axis, coords, dim, show_axes, margin=margin)
+    _apply_spatial_limits(axis, coords, dim, show_axes, margin=margin, fix_aspect=fix_aspect)
 
     if title:
         kw = {"pad": 15}
@@ -863,7 +1078,7 @@ def plot_lattice_structure(
     return fig, axis
 
 # ==============================================================================
-# Region Plotting
+#! Region Plotting
 # ==============================================================================
 
 def _region_palette(n: int) -> List:
@@ -997,6 +1212,7 @@ def plot_regions(
     edge_width          : float                         = 1.5,
     # general plot settings
     figsize             : Optional[Tuple[float, float]] = None,
+    fix_aspect          : bool                          = True,
     title               : Optional[str]                 = None,
     title_kwargs        : Optional[Dict[str, object]]   = None,
     tight_layout        : bool                          = True,
@@ -1061,6 +1277,9 @@ def plot_regions(
     (other parameters identical to previous version)
     show_axes : bool
         If False (default), hides the coordinate axes for a cleaner diagram.
+    fix_aspect : bool, default=True
+        If True, preserve equal axis scaling in 2D plots. Set to ``False`` to
+        let the requested ``figsize`` control the on-screen aspect.
     """
     coords      = _ensure_numpy(lattice.rvectors)
     target_dim  = lattice.dim if lattice.dim else coords.shape[1]
@@ -1261,7 +1480,7 @@ def plot_regions(
         # Increase margin to accommodate labels and their leader lines
         margin = max(margin, (label_offset - 1.0) * 0.4 + 0.1)
     
-    _apply_spatial_limits(axis, coords, dim, show_axes, margin=margin)
+    _apply_spatial_limits(axis, coords, dim, show_axes, margin=margin, fix_aspect=fix_aspect)
 
     # title
     if title:
@@ -1308,210 +1527,341 @@ def plot_regions(
 # K-space / Brillouin-zone with High-Symmetry Points
 # ==============================================================================
 
-def plot_bz_high_symmetry(
-    lattice             : Lattice,
+def plot_high_symmetry_points(
+    lattice                 : Lattice,
     *,
-    ax                  : Optional[Axes]                = None,
-    show_kpoints        : bool                          = True,
-    show_bz             : bool                          = True,
-    show_path           : bool                          = True,
-    bz_facecolor        : str                           = "lavender",
-    bz_edgecolor        : str                           = "slategrey",
-    bz_alpha            : float                         = 0.20,
-    kpoint_color        : str                           = "C0",
-    kpoint_alpha        : float                         = 0.35,
-    kpoint_size         : int                           = 15,
-    path_color          : str                           = "crimson",
-    path_linewidth      : float                         = 1.8,
-    hs_marker_size      : int                           = 90,
-    hs_font_size        : int                           = 13,
-    n_path_points       : int                           = 200,
-    figsize             : Optional[Tuple[float, float]] = None,
-    title               : Optional[str]                 = None,
-    title_kwargs        : Optional[Dict[str, object]]   = None,
-    tight_layout        : bool                          = True,
-    # Extended options
-    extend              : bool                          = False,
-    nx                  : int                           = 1,
-    ny                  : int                           = 1,
-    extended_kpoint_color : str                         = "gray",
-    extended_kpoint_alpha : float                       = 0.15,
-    show_background_bz  : bool                          = False,
+    path                    : Optional[Union[List[str], str, Iterable[Tuple[str, Iterable[float]]]]] = None,
+    ax                      : Optional[Axes]                = None,
+    show_kpoints            : bool                          = True,
+    show_bz                 : bool                          = True,
+    show_path               : bool                          = True,
+    show_matched_kpoints    : bool                          = True,
+    bz_facecolor            : str                           = "lavender",
+    bz_edgecolor            : str                           = "slategrey",
+    bz_alpha                : float                         = 0.20,
+    kpoint_color            : str                           = "C0",
+    kpoint_alpha            : float                         = 0.35,
+    kpoint_size             : int                           = 15,
+    path_color              : str                           = "crimson",
+    path_linewidth          : float                         = 1.8,
+    matched_kpoint_color    : str                           = "goldenrod",
+    matched_kpoint_alpha    : float                         = 1.0,
+    matched_kpoint_size     : int                           = 44,
+    matched_kpoint_marker   : str                           = "o",
+    matched_kpoint_edgecolor: str                           = "black",
+    hs_marker_size          : int                           = 90,
+    hs_marker_facecolor     : str                           = "white",
+    hs_marker_edgecolor     : str                           = "black",
+    hs_font_size            : int                           = 13,
+    hs_label_kwargs         : Optional[Dict[str, object]]   = None, 
+    hs_plot                 : str                           = "markers", # "none", "markers", "labels", or "both"
+    points_per_seg          : int                           = 40,
+    path_match_tol          : Optional[float]               = None,
+    figsize                 : Optional[Tuple[float, float]] = None,
+    fix_aspect              : bool                          = True,
+    title                   : Optional[str]                 = None,
+    title_kwargs            : Optional[Dict[str, object]]   = None,
+    tight_layout            : bool                          = True,
+    extend                  : bool                          = False,
+    extend_copies           : Optional[Union[int, Iterable[int]]] = None,
+    nx                      : int                           = 1,
+    ny                      : int                           = 1,
+    nz                      : int                           = 1,
+    extended_kpoint_color   : str                           = "gray",
+    extended_kpoint_alpha   : float                         = 0.15,
+    extended_bz_facecolor   : str                           = "lightgray",
+    extended_bz_edgecolor   : str                           = "dimgray",
+    extended_bz_alpha       : float                         = 0.10,
+    show_background_bz      : bool                          = False,
+    # legend
+    legend_kwargs           : Optional[Dict[str, object]]   = None,
+    **kwargs,
 ) -> Tuple[Figure, Axes]:
     r"""
-    Plot the first Brillouin zone with high-symmetry points and the
-    default k-path overlaid on the sampled k-point grid.
+    Plot the Brillouin zone, high-symmetry path, and sampled reciprocal mesh.
+
+    This view combines exact reciprocal-space geometry from the lattice with an
+    ideal high-symmetry path and, optionally, the subset of sampled k-points
+    that genuinely match that path within a configurable tolerance.
 
     Parameters
     ----------
     lattice : Lattice
-        Lattice object (must have ``kvectors``, reciprocal basis, and
-        ``high_symmetry_points()``).
-    show_kpoints : bool
-        If *True*, scatter-plot the discrete k-point mesh.
-    show_bz : bool
-        If *True*, shade the first BZ polygon.
-    show_path : bool
-        If *True*, draw the default high-symmetry path (e.g.
-        ``\Gamma \to K \to M \to \Gamma``).
+        Lattice object providing reciprocal vectors, sampled ``kvectors``, and
+        optionally ``kvectors_frac`` and ``high_symmetry_points()``.
+    path : list[str], str, or iterable[(label, frac)], optional
+        High-symmetry path specification. If omitted, the lattice default path
+        is used.
+    ax : Axes, optional
+        Existing matplotlib axes. If omitted, a new figure and axes are created.
+    show_kpoints : bool, default=True
+        Draw sampled reciprocal-space mesh points.
+    show_bz : bool, default=True
+        Draw the first Brillouin zone.
+    show_path : bool, default=True
+        Draw the ideal high-symmetry path.
+    show_matched_kpoints : bool, default=True
+        Highlight sampled k-points whose distance to the path is within the
+        matching tolerance.
     bz_facecolor, bz_edgecolor, bz_alpha
-        Appearance of the BZ polygon.
+        Style of the first Brillouin zone.
     kpoint_color, kpoint_alpha, kpoint_size
-        Appearance of the k-point mesh dots.
+        Style of the original sampled k-mesh.
     path_color, path_linewidth
-        Appearance of the high-symmetry path line.
-    hs_marker_size, hs_font_size
-        Size of the high-symmetry markers and labels.
-    n_path_points : int
-        Number of interpolation points between successive high-symmetry
-        points (higher = smoother path).
-    figsize : tuple, optional
-        Figure size.
-    title : str, optional
-        Plot title.
-    extend : bool
-        If True, plot k-points in multiple BZ copies.
-    nx, ny : int
-        Number of BZ copies in x and y directions.
-    extended_kpoint_color : str
-        Color for k-points in extended zones.
-    extended_kpoint_alpha : float
-        Transparency for k-points in extended zones.
-    show_background_bz : bool
-        If True, show BZ outlines for all extended copies.
+        Style of the ideal path.
+    matched_kpoint_color, matched_kpoint_alpha, matched_kpoint_size,
+    matched_kpoint_marker, matched_kpoint_edgecolor
+        Style of valid matched mesh points.
+    hs_marker_size, hs_marker_facecolor, hs_marker_edgecolor
+        Style of exact high-symmetry vertices.
+    hs_font_size, hs_label_kwargs
+        Style of high-symmetry labels.
+    hs_plot : {"none", "markers", "labels", "both"}, default="markers"
+        Whether to draw exact high-symmetry markers, labels, or both.
+    points_per_seg : int, default=40
+        Number of interpolation points per path segment for the ideal path.
+    path_match_tol : float, optional
+        Distance tolerance for highlighting mesh points near the drawn path.
+        If omitted, a mesh-based Cartesian tolerance is estimated from the
+        sampled reciprocal points.
+    fix_aspect : bool, default=True
+        If True, preserve equal axis scaling in 2D plots. Set to ``False`` to
+        let the requested ``figsize`` control the on-screen aspect.
+    extend : bool, default=False
+        Draw translated copies of the sampled k-mesh.
+    extend_copies : int or iterable[int], optional
+        Number of reciprocal-cell copies per direction. In 2D,
+        ``extend_copies=1`` includes the first shell around the first Brillouin
+        zone and ``extend_copies=2`` includes the second shell as well.
+    nx, ny, nz : int, default=(1, 1, 1)
+        Legacy per-direction extension counts used when ``extend_copies`` is
+        not specified.
+    extended_kpoint_color, extended_kpoint_alpha
+        Style of translated mesh points.
+    extended_bz_facecolor, extended_bz_edgecolor, extended_bz_alpha
+        Style of translated Brillouin-zone copies.
+    show_background_bz : bool, default=False
+        Draw translated Brillouin-zone copies behind the mesh.
+    legend_kwargs : dict, optional
+        Extra keyword arguments passed to ``axis.legend``.
+    **kwargs
+        Low-level style overrides such as ``zorder_path``, ``zorder_kpoints``,
+        ``marker_hs`` or ``marker_extend``.
 
     Returns
     -------
     fig, ax : Figure, Axes
+        Matplotlib figure and axes containing the plot.
     """
-    from ..tools.lattice_kspace import ws_bz_mask, extend_kspace_data
 
-    # ---- k-point mesh ----
-    kvecs       = _ensure_numpy(lattice.kvectors)
-    dim         = max(1, min(kvecs.shape[1], lattice.dim if lattice.dim else 2, 3))
-    kvecs2      = kvecs[:, :2] if dim >= 2 else kvecs[:, :1]
+    kvecs_full  = _ensure_numpy(lattice.kvectors)
+    target_dim  = lattice.dim if lattice.dim else kvecs_full.shape[1]
+    dim         = max(1, min(kvecs_full.shape[1], target_dim, 3))
+    coords      = kvecs_full[:, :dim]
+    kfrac       = getattr(lattice, "kvectors_frac", None)
 
-    fig, axis   = _init_axes(ax, min(dim, 2))          # stay 2-D
+    fig, axis   = _init_axes(ax, dim)
     if figsize is not None and axis is fig.axes[0]:
         fig.set_size_inches(*figsize, forward=True)
 
-    # ---- reciprocal basis ----
-    b1 = np.asarray(lattice.k1, float).ravel()
-    b2 = np.asarray(lattice.k2, float).ravel()
-    b3 = np.asarray(getattr(lattice, 'k3', np.zeros(3)), float).ravel()
+    # Set 3D view if applicable
+    if dim == 3:
+        axis.view_init(elev=getattr(axis, "elev", 30.0), azim=getattr(axis, "azim", 45.0))
 
-    # ---- WS BZ outline (2-D) ----
-    def _draw_bz_outline(ax_obj, b1_vec, b2_vec, face_c, edge_c, alpha_val, hatch=None, offset=None):
-        pad     = 1.3
-        kmax    = max(np.linalg.norm(b1_vec[:2]), np.linalg.norm(b2_vec[:2])) * pad
-        gx      = np.linspace(-kmax, kmax, 500)
-        gy      = np.linspace(-kmax, kmax, 500)
-        
-        if offset is not None:
-            gx += offset[0]
-            gy += offset[1]
-            
-        GX, GY  = np.meshgrid(gx, gy)
-        
-        # ws_bz_mask is centered at origin, so we shift coordinates back
-        mask_coords_x = GX
-        mask_coords_y = GY
-        if offset is not None:
-            mask_coords_x = GX - offset[0]
-            mask_coords_y = GY - offset[1]
-            
-        mask = ws_bz_mask(mask_coords_x, mask_coords_y, b1_vec, b2_vec, shells=2)
-        ax_obj.contourf(GX, GY, mask.astype(float), levels=[0.5, 1.5], colors=[face_c], alpha=alpha_val)
-        ax_obj.contour(GX, GY, mask.astype(float), levels=[0.5], colors=[edge_c], linewidths=1.0 if hatch else 1.5)
+    # Determine how many extended copies to generate in each direction
+    if extend_copies is None:
+        copy_spec = nx if dim == 1 else ((nx, ny) if dim == 2 else (nx, ny, nz))
+    elif np.isscalar(extend_copies):
+        copy_spec = int(extend_copies)
+    else:
+        copy_values = tuple(int(v) for v in extend_copies)
+        if len(copy_values) < dim:
+            raise ValueError("extend_copies must provide at least one value per reciprocal-space dimension")
+        copy_spec = copy_values[:dim]
 
-    if show_bz and dim >= 2:
-        _draw_bz_outline(axis, b1, b2, bz_facecolor, bz_edgecolor, bz_alpha)
-        
-        if show_background_bz and extend:
-            for m in range(-nx, nx + 1):
-                for n in range(-ny, ny + 1):
-                    if m == 0 and n == 0: continue
-                    G = m * b1[:2] + n * b2[:2]
-                    _draw_bz_outline(axis, b1, b2, bz_facecolor, bz_edgecolor, bz_alpha * 0.5, offset=G)
+    # Check the BZ path and find the nearest k-points along it.
+    selection       = lattice.bz_path_points(path=path, points_per_seg=points_per_seg, k_vectors=kvecs_full, k_vectors_frac=kfrac, tol=path_match_tol, periodic=False,)
+    hs              = lattice.high_symmetry_points()
+    resolved_path   = lattice.default_resolve_path(path if path is not None else hs)
+    legend_kwargs   = {} if legend_kwargs is None else dict(legend_kwargs)
+    plotted_coords  = [coords]
+    round_scale     = 1e-10
 
-    # ---- k-point scatter ----
-    if show_kpoints and dim >= 2:
-        if extend:
-            # Extended k-points
-            ext_k, _        = extend_kspace_data(kvecs2, np.arange(len(kvecs2)), b1[:2], b2[:2], nx=nx, ny=ny)
-            
-            # Mask out the original points to color them differently
-            gx_all, gy_all  = ext_k[:, 0], ext_k[:, 1]
-            mask_orig       = ws_bz_mask(gx_all, gy_all, b1, b2, shells=2)
-            
-            # Plot extended copies
-            axis.scatter(ext_k[~mask_orig, 0], ext_k[~mask_orig, 1], s=kpoint_size,
-                         color=extended_kpoint_color, alpha=extended_kpoint_alpha, marker='o',
-                         edgecolors='none', label='extended mesh', zorder=1)
-            
-            # Plot original zone
-            axis.scatter(ext_k[mask_orig, 0], ext_k[mask_orig, 1], s=kpoint_size,
-                         color=kpoint_color, alpha=kpoint_alpha, marker='o',
-                         edgecolors='none', label='k-mesh', zorder=2)
+    if show_bz:
+        _draw_bz_region(axis, coords, dim=dim, lattice=lattice, facecolor=bz_facecolor, edgecolor=bz_edgecolor, alpha=bz_alpha, fix_aspect=fix_aspect, show_points=False, zorder=0.0, **kwargs)
+
+    if show_background_bz:
+        bz_centers       = lattice.wigner_seitz_shifts(copies=copy_spec, include_origin=False)
+        seen_shifts     = set()
+        shifts          = []
+        for shift in bz_centers:
+            key         = tuple(np.rint(shift / round_scale).astype(np.int64))
+            if key in seen_shifts:
+                continue
+            seen_shifts.add(key)
+            if np.allclose(shift, 0.0):
+                continue
+            shifts.append(shift)
+        
+        # Draw the extended BZ regions first (if requested) so they appear behind the original points and path
+        if show_bz:
+            for shift in shifts:
+                _draw_bz_region(axis, coords + shift, dim=dim, lattice=lattice, offset=shift, facecolor=extended_bz_facecolor,
+                    edgecolor=extended_bz_edgecolor, alpha=extended_bz_alpha, fix_aspect=fix_aspect, show_points=False, zorder=-0.1, **kwargs
+                )
+            if len(shifts) > 0:
+                plotted_coords.append(np.vstack([coords + shift for shift in shifts]))
+
+    # Get the path points in Cartesian coordinates and plot the path segments
+    if show_path:
+        path_cart   = selection.path_cart[:, :dim]
+        plotted_coords.append(path_cart)
+        zorder_path = kwargs.get("zorder_path", 2)
+        
+        if dim == 1:
+            axis.plot(path_cart[:, 0], np.zeros(len(path_cart)), color=path_color, linewidth=path_linewidth, zorder=zorder_path)
+        elif dim == 2:
+            axis.plot(path_cart[:, 0], path_cart[:, 1], color=path_color, linewidth=path_linewidth, zorder=zorder_path)
         else:
-            axis.scatter(kvecs2[:, 0], kvecs2[:, 1], s=kpoint_size,
-                         color=kpoint_color, alpha=kpoint_alpha, marker='o',
-                         edgecolors='none', label='k-mesh', zorder=2)
+            axis.plot(path_cart[:, 0], path_cart[:, 1], path_cart[:, 2], color=path_color, linewidth=path_linewidth, zorder=zorder_path)
 
-    # high-symmetry points + path
-    try:
-        hs = lattice.high_symmetry_points()
-    except Exception:
-        hs = None
+    # Optionally extend the k-point mesh and plot the extended points with a distinct style
+    if extend and show_kpoints:
+        extended_k, _   = lattice.wigner_seitz_extend(k_points=coords, copies=copy_spec)
+        original_keys   = {tuple(np.rint(row / round_scale).astype(np.int64)) for row in coords}
+        seen_ext_keys   = set()
+        ext_mask_list   = []
+        for row in extended_k:
+            key = tuple(np.rint(row / round_scale).astype(np.int64))
+            keep = key not in original_keys and key not in seen_ext_keys
+            ext_mask_list.append(keep)
+            if keep:
+                seen_ext_keys.add(key)
+        ext_mask        = np.array(ext_mask_list, dtype=bool)
+        
+        # Plot the extended k-points with a distinct style, ensuring we only plot the new points and not duplicates of the original mesh
+        if np.any(ext_mask):
+            ext_coords          = extended_k[ext_mask]
+            plotted_coords.append(ext_coords)
+            marker_extend       = kwargs.get("marker_extend", "o")
+            edgecolor_extend    = kwargs.get("edgecolor_extend", "none")
+            zorder_extend       = kwargs.get("zorder_extend", 3)
+            
+            if dim == 1:
+                axis.scatter(ext_coords[:, 0], np.zeros(len(ext_coords)), s=kpoint_size, color=extended_kpoint_color,
+                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label='extended mesh')
+            elif dim == 2:
+                axis.scatter(ext_coords[:, 0], ext_coords[:, 1], s=kpoint_size, color=extended_kpoint_color,
+                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label='extended mesh')
+            else:
+                axis.scatter(ext_coords[:, 0], ext_coords[:, 1], ext_coords[:, 2], s=kpoint_size, color=extended_kpoint_color,
+                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label='extended mesh')
 
-    if hs is not None and dim >= 2:
-        path_labels = hs.default_path
+    # Plot the original k-points on top of everything else (if requested) so they are visible even if they overlap with the path or extended points
+    if show_kpoints:
+        zorder_kpoints      = kwargs.get("zorder_kpoints", 6)
+        marker_kpoints      = kwargs.get("marker_kpoints", "o")
+        edgecolor_kpoints   = kwargs.get("edgecolor_kpoints", "none")
+        
+        if dim == 1:
+            axis.scatter(coords[:, 0], np.zeros(len(coords)), s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label='k-mesh')
+        elif dim == 2:
+            axis.scatter(coords[:, 0], coords[:, 1], s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label='k-mesh')
+        else:
+            axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label='k-mesh')
 
-        # Convert to Cartesian
-        hs_cart = {}
-        for lbl in set(path_labels):
-            pt = hs.get(lbl)
-            if pt is None:
+    # Plot the matched k-points along the path with a distinct style, ensuring we only plot them if there are matches and if the option is enabled
+    if show_matched_kpoints and selection.has_matches:
+        valid_mask          = selection.matched_distances <= (selection.match_tolerance + 1e-14)
+        valid_positions     = np.flatnonzero(valid_mask)
+        seen_match_indices  = set()
+        keep_positions      = []
+        for pos in valid_positions:
+            key_array = selection.matched_grid_indices if len(selection.matched_grid_indices) > 0 else selection.matched_indices
+            idx = int(key_array[pos])
+            if idx in seen_match_indices:
                 continue
-            kc = pt.to_cartesian(b1, b2, b3)
-            hs_cart[lbl] = kc[:2]
+            seen_match_indices.add(idx)
+            keep_positions.append(pos)
 
-        # Draw path segments
-        if show_path and len(path_labels) >= 2:
-            for i in range(len(path_labels) - 1):
-                lbl_a, lbl_b = path_labels[i], path_labels[i + 1]
-                if lbl_a in hs_cart and lbl_b in hs_cart:
-                    ka, kb = hs_cart[lbl_a], hs_cart[lbl_b]
-                    axis.plot([ka[0], kb[0]], [ka[1], kb[1]],
-                              color=path_color, linewidth=path_linewidth,
-                              zorder=4, solid_capstyle='round')
+        matched = selection.matched_cart[np.asarray(keep_positions, dtype=int), :dim] if keep_positions else np.zeros((0, dim), dtype=float)
+        if len(matched) > 0:
+            plotted_coords.append(matched)
+            
+            if dim == 1:
+                axis.scatter(matched[:, 0], np.zeros(len(matched)), s=matched_kpoint_size, color=matched_kpoint_color,
+                             alpha=matched_kpoint_alpha, marker=matched_kpoint_marker, edgecolors=matched_kpoint_edgecolor,
+                             linewidths=0.9, zorder=7, label='matched path points')
+            elif dim == 2:
+                axis.scatter(matched[:, 0], matched[:, 1], s=matched_kpoint_size, color=matched_kpoint_color,
+                             alpha=matched_kpoint_alpha, marker=matched_kpoint_marker, edgecolors=matched_kpoint_edgecolor,
+                             linewidths=0.9, zorder=7, label='matched path points')
+            else:
+                axis.scatter(matched[:, 0], matched[:, 1], matched[:, 2], s=matched_kpoint_size, color=matched_kpoint_color,
+                             alpha=matched_kpoint_alpha, marker=matched_kpoint_marker, edgecolors=matched_kpoint_edgecolor,
+                             linewidths=0.9, zorder=7, label='matched path points')
 
-        # Mark and label each unique high-symmetry point
-        plotted = set()
-        for lbl in path_labels:
-            if lbl in plotted or lbl not in hs_cart:
+    # Plot exact high-symmetry vertices, not the nearest interpolated path samples.
+    if hs_plot != "none":
+        hs_points   = []
+        seen_hs     = set()
+        b1          = lattice.b1
+        b2          = lattice.b2 if lattice.dim >= 2 else np.zeros(3, dtype=float)
+        b3          = lattice.b3 if lattice.dim >= 3 else np.zeros(3, dtype=float)
+        
+        for lbl, frac in resolved_path:
+            frac_arr                = np.zeros(3, dtype=float)
+            frac_arr[:len(frac)]    = np.asarray(frac, dtype=float)
+            pt_obj                  = hs.get(lbl) if hs is not None and hasattr(hs, "get") else None
+            cart3                   = pt_obj.to_cartesian(b1, b2, b3) if pt_obj is not None else frac_arr[0] * b1 + frac_arr[1] * b2 + frac_arr[2] * b3
+            cart                    = cart3[:dim]
+            key                     = tuple(np.rint(cart / round_scale).astype(np.int64))
+            if key in seen_hs:
                 continue
-            plotted.add(lbl)
-            kc = hs_cart[lbl]
-            pt = hs.get(lbl)
-            latex = pt.latex_label if pt else f'${lbl}$'
-            axis.scatter(kc[0], kc[1], s=hs_marker_size, color='white',
-                         edgecolors='black', linewidths=1.5, zorder=5, marker='o')
-            axis.annotate(latex, xy=(kc[0], kc[1]),
-                          textcoords='offset points', xytext=(8, 8),
-                          fontsize=hs_font_size, fontweight='bold',
-                          ha='left', va='bottom', zorder=6,
-                          bbox=dict(boxstyle='round,pad=0.15', fc='white',
-                                    ec='none', alpha=0.75))
+            seen_hs.add(key)
+            hs_points.append((lbl, cart))
 
-    # styling
-    axis.set_xlabel(r'$k_x$')
-    axis.set_ylabel(r'$k_y$')
-    axis.set_aspect('equal', adjustable='box')
-    axis.axhline(0, color='grey', lw=0.4, zorder=0)
-    axis.axvline(0, color='grey', lw=0.4, zorder=0)
+        if hs_points:
+            hs_coords = np.array([cart for _, cart in hs_points], dtype=float)
+            plotted_coords.append(hs_coords)
+            
+            if hs_plot in ["markers", "both"]:
+                
+                marker_hs   = kwargs.get("marker_hs", "o")
+                zorder_hs   = kwargs.get("zorder_hs", 5)
+                lw_hs       = kwargs.get("lw_hs", 1.4)
+                
+                if dim == 1:
+                    axis.scatter(hs_coords[:, 0], np.zeros(len(hs_coords)), s=hs_marker_size, color=hs_marker_facecolor, edgecolors=hs_marker_edgecolor, linewidths=lw_hs, zorder=zorder_hs, marker=marker_hs)
+                elif dim == 2:
+                    axis.scatter(hs_coords[:, 0], hs_coords[:, 1], s=hs_marker_size, color=hs_marker_facecolor, edgecolors=hs_marker_edgecolor, linewidths=lw_hs, zorder=zorder_hs, marker=marker_hs)
+                else:
+                    axis.scatter(hs_coords[:, 0], hs_coords[:, 1], hs_coords[:, 2], s=hs_marker_size, color=hs_marker_facecolor, edgecolors=hs_marker_edgecolor, linewidths=lw_hs, zorder=zorder_hs, marker=marker_hs)
 
-    # title
+            if hs_plot in ["labels", "both"]:
+                for lbl, cart in hs_points:
+                    pt      = hs.get(lbl) if hs is not None and hasattr(hs, "get") else None
+                    text    = pt.latex_label if pt is not None else str(lbl)
+                    hs_dict = hs_label_kwargs.copy() if hs_label_kwargs else {}
+                    hs_fw   = hs_dict.pop("fontweight", "bold")
+                    hs_zord = hs_dict.pop("zorder", 8)
+                    bbox    = hs_dict.pop("bbox", dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.75))
+                    hs_xy   = hs_dict.pop("xy", (8, 8))
+                    hs_xy   = hs_xy if isinstance(hs_xy, tuple) else (hs_xy.get(lbl, (8, 8)) if isinstance(hs_xy, dict) else (8, 8))
+                    print(f"Placing HS label '{text} [{lbl}]' at {cart} with offset {hs_xy} and style {hs_dict}")
+                    if dim == 3:
+                        axis.text(cart[0], cart[1], cart[2], text, fontsize=hs_font_size, fontweight=hs_fw, zorder=hs_zord, bbox=bbox, ha='center', va='center', **hs_dict)
+                    else:
+                        axis.annotate(text, xy=(cart[0], cart[1] if dim > 1 else 0.0), textcoords='offset points', xytext=hs_xy, fontsize=hs_font_size, fontweight=hs_fw, zorder=hs_zord, bbox=bbox, **hs_dict)
+
+    # Final spatial limits and legend
+    plotted_stack = np.vstack([np.asarray(arr, dtype=float).reshape(-1, dim) for arr in plotted_coords if np.asarray(arr).size > 0])
+    _apply_spatial_limits(axis, plotted_stack, dim, True, labels=(r'$k_x$', r'$k_y$', r'$k_z$'), fix_aspect=fix_aspect)
+
+    if dim == 2:
+        axis.axhline(0, color='grey', lw=0.4, zorder=-1)
+        axis.axvline(0, color='grey', lw=0.4, zorder=-1)
+
     if title:
         kw = {"pad": 12}
         if title_kwargs:
@@ -1520,7 +1870,11 @@ def plot_bz_high_symmetry(
 
     handles, labels_ = axis.get_legend_handles_labels()
     if handles:
-        axis.legend(loc='best', fontsize=8)
+        axis.legend(loc=legend_kwargs.pop("loc", "best"), 
+            fontsize=legend_kwargs.pop("fontsize", 9), 
+            framealpha=legend_kwargs.pop("framealpha", 0.90), 
+            edgecolor=legend_kwargs.pop("edgecolor", "lightgray"), 
+            fancybox=legend_kwargs.pop("fancybox", True), **legend_kwargs)
 
     if tight_layout:
         _finalise_figure(fig)
@@ -1550,7 +1904,46 @@ class LatticePlotter:
         return plot_real_space(self.lattice, **kwargs)
 
     def reciprocal_space(self, **kwargs) -> Tuple[Figure, Axes]:
-        """ Plot reciprocal-space k-points. """
+        """
+        Scatter-plot of reciprocal lattice vectors (k-points).
+        
+        Parameters mirror :func:`plot_real_space`
+        --------------------------------------------------------------------------
+        lattice : Lattice
+            The lattice object to plot.
+        ax : Axes, optional
+            Matplotlib axes to plot on. If None, a new figure is created.
+        show_indices : bool, default=False
+            If True, annotate each k-point with its index.
+        show_axes : bool, default=True
+            If False, hides the coordinate axes.
+        color : str, default="C1"
+            Color of the k-point markers.
+        marker : str, default="o"
+            Marker style.
+        figsize : tuple, optional
+            Figure size in inches (width, height).
+        title : str, optional
+            Title of the plot.
+        elev, azim : float, optional
+            Elevation and azimuth angles for 3D plots.
+        extend_kpoints : bool, default=False
+            If True, draw translated reciprocal-space copies around the original mesh.
+        extend_copies : int or iterable of int, default=2
+            Number of copies per reciprocal direction used when ``extend_kpoints=True``.
+            Scalars are applied to all active reciprocal directions.
+        extend_tol : float, default=1e-10
+            Tolerance used to identify which extended points are already present in
+            the original reciprocal mesh.
+        **scatter_kwargs
+            Include:
+            - point_edgecolor: Color of the marker edges (default "white").
+            - point_zorder: Z-order for the scatter points (default 5).
+            - color_extended: Color for translated copies (default "C2").
+            - edgecolor_extended: Edge color for translated copies (default "gray").
+            - marker_extended: Marker for translated copies (default ``marker``).
+            - Any other valid arguments for `ax.scatter`.
+        """
         kwargs.setdefault("figsize", (5.0, 5.0))
         return plot_reciprocal_space(self.lattice, **kwargs)
 
@@ -1643,20 +2036,44 @@ class LatticePlotter:
 
     def bz_high_symmetry(self, **kwargs) -> Tuple[Figure, Axes]:
         """
-        Plot the first Brillouin zone with high-symmetry points and path.
+        Plot the Brillouin zone, high-symmetry path, and sampled reciprocal mesh.
 
         Parameters
         ----------
-        show_kpoints : bool
-            Show sampled k-mesh dots.
-        show_bz : bool
-            Show the WS BZ polygon.
-        show_path : bool
-            Draw the default high-symmetry k-path.
-        ... see ``plot_bz_high_symmetry`` for full options ...
+        path : list[str], str, or iterable[(label, frac)], optional
+            High-symmetry path specification. If omitted, the lattice default path
+            is used.
+        show_kpoints : bool, default=True
+            Draw sampled reciprocal-space mesh points.
+        show_bz : bool, default=True
+            Draw the first Brillouin zone.
+        show_path : bool, default=True
+            Draw the ideal high-symmetry path.
+        show_matched_kpoints : bool, default=True
+            Highlight sampled k-points whose distance to the path is within the
+            matching tolerance.
+        points_per_seg : int, default=40
+            Number of interpolation points per path segment for the ideal path.
+        path_match_tol : float, optional
+            Distance tolerance used when highlighting mesh points near the
+            drawn path.
+        extend : bool, default=False
+            Draw translated copies of the sampled k-mesh.
+        extend_copies : int or iterable[int], optional
+            Number of reciprocal-cell copies per direction. In 2D,
+            ``extend_copies=1`` includes the first shell around the first Brillouin
+            zone and ``extend_copies=2`` includes the second shell as well.
+        show_background_bz : bool, default=False
+            Draw translated Brillouin-zone copies behind the mesh.
+        hs_plot : {"none", "markers", "labels", "both"}, default="markers"
+            Whether to draw exact high-symmetry markers, labels, or both.
+        legend_kwargs : dict, optional
+            Extra keyword arguments passed to ``axis.legend``.
+        **kwargs
+            Additional style overrides forwarded to ``plot_high_symmetry_points``.
         """
         kwargs.setdefault("figsize", (5.5, 5.5))
-        return plot_bz_high_symmetry(self.lattice, **kwargs)
+        return plot_high_symmetry_points(self.lattice, **kwargs)
 
 # ------------------------------------------------------------------------------
 #! EOF

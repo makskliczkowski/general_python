@@ -5,6 +5,12 @@ The functions in this module intentionally avoid any side-effects on the passed
 `Lattice` instances.  They simply transform existing lattice data into plain
 Python strings so the caller can direct the output to terminals, loggers, or
 documentation tooling.
+
+-----------------------------------------------------------------------------
+Author          : Maksymilian Kliczkowski
+Created         : 2026-01-15
+File            : general_python/lattices/visualization/formatting.py
+-----------------------------------------------------------------------------
 """
 
 from __future__ import annotations
@@ -15,19 +21,26 @@ from typing import Iterable, Optional, Sequence
 
 import numpy as np
 
-from ..lattice import Lattice, LatticeDirection
+try:
+    from ..lattice import Lattice, LatticeDirection
+except ImportError:
+    raise ImportError("Failed to import Lattice classes for formatting module. Ensure the lattice module is available and correctly structured.")
 
+# -----------------------------------------------------------------------------
+# Internal helper functions and data structures
+# -----------------------------------------------------------------------------
 
 @dataclass(frozen=True)
 class _VectorTableConfig:
     """Configuration holder for vector table formatting."""
 
-    max_rows: int = 10
-    precision: int = 3
-    column_labels: Optional[Sequence[str]] = None
-    index_label: str = "#"
-    indentation: str = ""
+    max_rows        : int                       = 10
+    precision       : int                       = 3
+    column_labels   : Optional[Sequence[str]]   = None
+    index_label     : str                       = "#"
+    indentation     : str                       = ""
 
+# -----------------------------------------------------------------------------
 
 def _as_float_array(vectors: Iterable[Sequence[float]]) -> np.ndarray:
     """
@@ -40,20 +53,22 @@ def _as_float_array(vectors: Iterable[Sequence[float]]) -> np.ndarray:
         raise ValueError(f"Expected a 2D array of vectors, got shape {arr.shape!r}.")
     return arr
 
-
 def _default_labels(dimension: int) -> Sequence[str]:
     axes = ("x", "y", "z")
     return axes[:dimension]
 
+# -----------------------------------------------------------------------------
+# Public formatting functions
+# -----------------------------------------------------------------------------
 
 def format_vector_table(
-    vectors: Iterable[Sequence[float]],
+    vectors         : Iterable[Sequence[float]],
     *,
-    max_rows: int = 10,
-    precision: int = 3,
-    column_labels: Optional[Sequence[str]] = None,
-    index_label: str = "#",
-    indentation: str = "",
+    max_rows        : int = 10,
+    precision       : int = 3,
+    column_labels   : Optional[Sequence[str]] = None,
+    index_label     : str = "#",
+    indentation     : str = "",
 ) -> str:
     """
     Return a tabular string representation of an array of vectors.
@@ -74,23 +89,23 @@ def format_vector_table(
         Optional indentation prefix applied to each line of the table.
     """
     cfg = _VectorTableConfig(
-        max_rows=max_rows,
-        precision=precision,
-        column_labels=column_labels,
-        index_label=index_label,
-        indentation=indentation,
+        max_rows        = max_rows,
+        precision       = precision,
+        column_labels   = column_labels,
+        index_label     = index_label,
+        indentation     = indentation,
     )
 
-    array = _as_float_array(vectors)
-    dim = array.shape[1]
-    labels = cfg.column_labels or _default_labels(dim)
+    array   = _as_float_array(vectors)
+    dim     = array.shape[1]
+    labels  = cfg.column_labels or _default_labels(dim)
     if len(labels) != dim:
         raise ValueError(f"Expected {dim} column labels, received {len(labels)}.")
 
-    header = cfg.indentation + "\t".join([cfg.index_label, *labels])
-    lines = [header]
-    row_limit = min(cfg.max_rows, array.shape[0])
-    fmt = "{:." + str(cfg.precision) + "f}"
+    header      = cfg.indentation + "\t".join([cfg.index_label, *labels])
+    lines       = [header]
+    row_limit   = min(cfg.max_rows, array.shape[0])
+    fmt         = "{:." + str(cfg.precision) + "f}"
 
     for idx in range(row_limit):
         values = "\t".join(fmt.format(val) for val in array[idx])
@@ -102,6 +117,9 @@ def format_vector_table(
 
     return "\n".join(lines)
 
+# ----
+# Flux
+# ----
 
 def _format_flux_lines(lattice: Lattice, precision: int) -> Sequence[str]:
     flux = getattr(lattice, "flux", None)
@@ -111,17 +129,16 @@ def _format_flux_lines(lattice: Lattice, precision: int) -> Sequence[str]:
     lines = ["Boundary flux:"]
     for direction in LatticeDirection:
         if direction in flux.values:
-            phi = flux.values[direction]
-            phase = flux.phase(direction)
-            amp = abs(phase)
-            argument = math.atan2(phase.imag, phase.real)
+            phi         = flux.values[direction]
+            phase       = flux.phase(direction)
+            amp         = abs(phase)
+            argument    = math.atan2(phase.imag, phase.real)
             lines.append(
                 f"  {direction.name}: {phi:.{precision}f} rad "
                 f"(phase = exp(i*{phi:.{precision}f}) "
                 f"|phase|={amp:.2f}, arg={argument:.{precision}f})"
             )
     return tuple(lines)
-
 
 def _format_basis(prefix: str, vector: Optional[Sequence[float]], precision: int) -> str:
     if vector is None:
@@ -132,43 +149,56 @@ def _format_basis(prefix: str, vector: Optional[Sequence[float]], precision: int
     comps = ", ".join(f"{val:.{precision}f}" for val in arr[:3])
     return f"{prefix}: ({comps})"
 
+# -----------------------------------------------------------------------------
+# Main lattice summary and overview functions
+# -----------------------------------------------------------------------------
 
 def format_lattice_summary(lattice: Lattice, *, precision: int = 3) -> str:
     """
     Produce a multi-line summary describing key lattice metadata.
     """
-    lines: list[str] = []
-
-    type_name = getattr(lattice, "typek", None)
-    lattice_kind = type_name.name if type_name is not None else lattice.__class__.__name__
+    lines: list[str]    = []
+    type_name           = getattr(lattice, "typek", None)
+    lattice_kind        = type_name.name if type_name is not None else lattice.__class__.__name__
+    
+    # Append size
+    size_str            = f"sites={lattice.Ns} (Lx={lattice.Lx}"
+    if lattice.dim >= 2:
+        size_str += f", Ly={lattice.Ly}"
+    if lattice.dim >= 3:
+        size_str += f", Lz={lattice.Lz}"
+    size_str += ")"
+    lines.append(size_str)
+    
     lines.append(f"Lattice type: {lattice_kind}")
-    lines.append(
-        f"Dimensions: d={lattice.dim} "
-        f"(Lx={lattice.Lx}, Ly={lattice.Ly}, Lz={lattice.Lz}) sites={lattice.Ns}"
-    )
+    lines.append(f"Dimensions: d={lattice.dim}")
     lines.append(f"Boundary: {lattice.bc.name} periodic flags={lattice.periodic_flags()}")
 
     # Primitive real-space vectors when available
     lines.append(_format_basis("a1", getattr(lattice, "a1", None), precision))
-    lines.append(_format_basis("a2", getattr(lattice, "a2", None), precision))
+    if lattice.dim >= 2:
+        lines.append(_format_basis("a2", getattr(lattice, "a2", None), precision))
     if lattice.dim >= 3:
         lines.append(_format_basis("a3", getattr(lattice, "a3", None), precision))
 
     # Reciprocal primitive vectors when available
     if hasattr(lattice, "k1"):
         lines.append(_format_basis("b1", getattr(lattice, "k1", None), precision))
-    if hasattr(lattice, "k2"):
+    if lattice.dim >= 2 and hasattr(lattice, "k2"):
         lines.append(_format_basis("b2", getattr(lattice, "k2", None), precision))
     if lattice.dim >= 3 and hasattr(lattice, "k3"):
         lines.append(_format_basis("b3", getattr(lattice, "k3", None), precision))
 
+    # Boundary flux information when available
     lines.extend(_format_flux_lines(lattice, precision))
 
+    # Stored coordinates information when available
     coords = getattr(lattice, "coordinates", None)
-    if coords:
+    if coords is not None and isinstance(coords, (list, np.ndarray)):
         lines.append(f"Stored coordinates: {len(coords)} entries")
     return "\n".join(lines)
 
+# -----------------------------------------------------------------------------
 
 def format_real_space_vectors(
     lattice: Lattice,
@@ -180,11 +210,11 @@ def format_real_space_vectors(
     """
     Format a table of lattice real-space vectors.
     """
-    arr = _as_float_array(lattice.rvectors)
-    target_dim = lattice.dim if lattice.dim and lattice.dim > 0 else arr.shape[1]
-    dim = max(1, min(arr.shape[1], target_dim))
-    trimmed = arr[:, :dim]
-    column_labels = _default_labels(dim)
+    arr             = _as_float_array(lattice.rvectors)
+    target_dim      = lattice.dim if lattice.dim and lattice.dim > 0 else arr.shape[1]
+    dim             = max(1, min(arr.shape[1], target_dim))
+    trimmed         = arr[:, :dim]
+    column_labels   = _default_labels(dim)
     return format_vector_table(
         trimmed,
         max_rows=max_rows,
@@ -192,7 +222,6 @@ def format_real_space_vectors(
         column_labels=column_labels,
         indentation=indentation,
     )
-
 
 def format_reciprocal_space_vectors(
     lattice: Lattice,
@@ -204,11 +233,11 @@ def format_reciprocal_space_vectors(
     """
     Format a table of reciprocal (k-space) vectors.
     """
-    arr = _as_float_array(lattice.kvectors)
-    target_dim = lattice.dim if lattice.dim and lattice.dim > 0 else arr.shape[1]
-    dim = max(1, min(arr.shape[1], target_dim))
-    trimmed = arr[:, :dim]
-    column_labels = _default_labels(dim)
+    arr             = _as_float_array(lattice.kvectors)
+    target_dim      = lattice.dim if lattice.dim and lattice.dim > 0 else arr.shape[1]
+    dim             = max(1, min(arr.shape[1], target_dim))
+    trimmed         = arr[:, :dim]
+    column_labels   = _default_labels(dim)
     return format_vector_table(
         trimmed,
         max_rows=max_rows,
@@ -217,6 +246,7 @@ def format_reciprocal_space_vectors(
         indentation=indentation,
     )
 
+# -----------------------------------------------------------------------------
 
 def format_brillouin_zone_overview(
     lattice: Lattice,
@@ -233,18 +263,16 @@ def format_brillouin_zone_overview(
     if kvectors is None or len(kvectors) == 0:
         return "No reciprocal-space vectors available."
 
-    arr = _as_float_array(kvectors)
-    target_dim = lattice.dim if lattice.dim and lattice.dim > 0 else arr.shape[1]
-    dim = max(1, min(arr.shape[1], target_dim))
-    arr = arr[:, :dim]
+    arr             = _as_float_array(kvectors)
+    target_dim      = lattice.dim if lattice.dim and lattice.dim > 0 else arr.shape[1]
+    dim             = max(1, min(arr.shape[1], target_dim))
+    arr             = arr[:, :dim]
 
-    labels = _default_labels(min(3, dim))
-    bounds = []
+    labels          = _default_labels(min(3, dim))
+    bounds          = []
     for axis, label in enumerate(labels):
         comp = arr[:, axis]
-        bounds.append(
-            f"{label}: [{comp.min():.{precision}f}, {comp.max():.{precision}f}]"
-        )
+        bounds.append(f"{label}: [{comp.min():.{precision}f}, {comp.max():.{precision}f}]")
 
     lines = [f"Reciprocal-space bounds: {', '.join(bounds)}"]
 
@@ -253,8 +281,8 @@ def format_brillouin_zone_overview(
         from scipy.spatial import ConvexHull  # type: ignore
 
         if dim >= 2 and arr.shape[0] >= dim + 1:
-            hull = ConvexHull(arr[:, :dim])
-            measure_name = {2: "area", 3: "volume"}.get(dim, "measure")
+            hull            = ConvexHull(arr[:, :dim])
+            measure_name    = {2: "area", 3: "volume"}.get(dim, "measure")
             lines.append(f"Convex hull {measure_name}: {hull.volume:.{precision}f}")
     except ImportError:
         lines.append("Convex hull metrics unavailable (scipy not installed).")
@@ -262,3 +290,7 @@ def format_brillouin_zone_overview(
         lines.append(f"Convex hull computation failed: {exc}")
 
     return "\n".join(lines)
+
+# -----------------------------------------------------------------------------
+#! EOF
+# -----------------------------------------------------------------------------

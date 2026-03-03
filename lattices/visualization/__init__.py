@@ -24,6 +24,7 @@ from .plotting import (
     plot_reciprocal_space,
     plot_brillouin_zone,
     plot_lattice_structure,
+    plot_high_symmetry_points,
 )
 
 __all__ = [
@@ -37,4 +38,9 @@ __all__ = [
     "plot_reciprocal_space",
     "plot_brillouin_zone",
     "plot_lattice_structure",
+    "plot_high_symmetry_points",
 ]
+
+# -----------------------------------------------------------------------------
+#! EOF
+# -----------------------------------------------------------------------------

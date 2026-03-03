@@ -16,22 +16,27 @@ Version : 2.0
 
 from    __future__  import annotations
 from    abc         import ABC, abstractmethod
-from token import OP
-from    typing      import Dict, List, Mapping, Optional, Tuple, Union
+from    typing      import Dict, Iterable, List, Literal, Mapping, Optional, Tuple, Union, TYPE_CHECKING
 import  numpy       as np
 
 from .tools.lattice_tools   import (
                                 LatticeDirection, LatticeBC, LatticeType, 
                                 handle_boundary_conditions, handle_boundary_conditions_detailed, handle_dim
                             )
-from .tools.lattice_flux    import BoundaryFlux, _normalize_flux_dict
-from .tools.lattice_kspace  import ( extract_bz_path_data, StandardBZPath, PathTypes, brillouin_zone_path,
+from .tools.lattice_kspace  import ( 
+                                bz_path_data, brillouin_zone_path, StandardBZPath, 
+                                PathTypes,
                                 reciprocal_from_real, extract_momentum, reconstruct_k_grid_from_blocks,
-                                build_translation_operators, HighSymmetryPoints, HighSymmetryPoint,
+                                build_translation_operators, 
+                                HighSymmetryPoints, HighSymmetryPoint,
                                 KPathResult, find_nearest_kpoints
                             )
 from .tools.region_handler  import LatticeRegionHandler, RegionType
-from ..common               import hdf5man as HDF5Mod
+from .tools.lattice_flux    import BoundaryFlux
+
+if TYPE_CHECKING:
+    from ..common.flog          import Logger
+    from .tools.lattice_kspace  import KPathSelection
 
 ################################################################################
 
@@ -136,6 +141,11 @@ class Lattice(ABC):
             flux in each direction, or a single value applied to all directions. Importantly, 
             this automatically implies **TWISTED** boundary conditions, so the `bc` parameter can be left as None or set to 'TWISTED' for clarity.
         '''
+        
+        try:
+            from .tools.lattice_flux import _normalize_flux_dict
+        except ImportError as e:
+            raise ImportError("Failed to import lattice flux tools. Ensure that the QES package is correctly installed.") from e
         
         self._dim           = handle_dim(lx, ly, lz)[0] if dim is None else dim
         self._bc            = handle_boundary_conditions(bc, flux=flux)  # Normalize boundary conditions and handle flux
@@ -390,23 +400,13 @@ class Lattice(ABC):
             **kwargs
         )
 
-    def get_entropy_cuts(
-        self,
-        cut_type: str = "all",
-        *,
-        include_sublattice: bool = True,
-        sweep_by_unit_cell: Optional[bool] = None,
-    ) -> Dict[str, List[int]]:
+    def get_entropy_cuts(self, cut_type: str = "all", *, include_sublattice: bool = True, sweep_by_unit_cell: Optional[bool] = None) -> Dict[str, List[int]]:
         """
         Return canonical bipartition cuts for entanglement-entropy workflows.
 
         This is a convenience wrapper around :meth:`self.regions.get_entropy_cuts`.
         """
-        return self.regions.get_entropy_cuts(
-            cut_type=cut_type,
-            include_sublattice=include_sublattice,
-            sweep_by_unit_cell=sweep_by_unit_cell,
-        )
+        return self.regions.get_entropy_cuts(cut_type=cut_type, include_sublattice=include_sublattice, sweep_by_unit_cell=sweep_by_unit_cell)
 
     def generate_regions(self, kind: Union[str, RegionType] = RegionType.KITAEV_PRESKILL, **kwargs,):
         """
@@ -800,10 +800,14 @@ class Lattice(ABC):
     @property
     def flux(self):                 return self._flux
     @flux.setter
-    def flux(self, flux: Union[BoundaryFlux, Dict[str, float], None]):
+    def flux(self, flux: Union['BoundaryFlux', Dict[str, float], None]):
         ''' 
         Set the flux piercing the boundaries for twisted boundary conditions.
         '''        
+        try:
+            from .tools.lattice_flux import _normalize_flux_dict
+        except ImportError:
+            raise ImportError("Setting flux requires the lattice_flux module. Please ensure it is available.")
         
         self._bc            = handle_boundary_conditions(self._bc, flux=flux)  # Normalize boundary conditions and handle flux
         
@@ -850,17 +854,134 @@ class Lattice(ABC):
         if self.dim > 2:
             kvec += qz * self.k3[0,:]
         return kvec
+
+    def k_grid(self, n_k: Union[int, Tuple[int, int, int]], shift: Optional[Union[bool, Tuple[bool, bool, bool]]] = None) -> np.ndarray:
+        r"""
+        Generate a full k-point grid for the given lattice.
+
+        Parameters
+        ----------
+        lattice : Lattice
+            Lattice object with reciprocal lattice vectors _k1, _k2, _k3.
+            
+        n_k : Iterable[int]
+            Number of points (Lx, Ly, Lz) along each reciprocal direction.
+            
+            We define the k-points as:
+            k = f1 * b1 + f2 * b2 + f3 * b3,
+            where f_i = n_i / N_i, with n_i = 0, 1, ..., N_i - 1.
+
+        Returns
+        -------
+        k_points : np.ndarray, shape (Nk, dim)
+            Cartesian coordinates of k-points in reciprocal space.
+        """
+        try:
+            from .tools.lattice_kspace import generate_k_grid
+        except ImportError:
+            raise ImportError("k_grid requires the lattice_kspace module. Please ensure it is available.")
+        
+        return generate_k_grid(lattice=self, n_k=n_k, shift=shift)
     
-    def extract_momentum(self, 
-                        eigvecs    : np.ndarray, 
-                        *,
-                        eigvals     : np.ndarray = None,
-                        tol         : float      = 1e-10,
-                        ) -> np.ndarray:
+    def extract_momentum(self, eigvecs: np.ndarray, *, eigvals: np.ndarray = None, tol: float = 1e-10) -> np.ndarray:
         """
         Extract crystal momentum vectors k from real-space eigenvectors.
         """
         return extract_momentum(eigvecs, self, eigvals=eigvals, tol=tol)
+
+    def wigner_seitz_extend(self, k_points: np.ndarray, data: Optional[np.ndarray] = None, *, copies: Optional[Union[int, Iterable[int]]] = None, **kwargs) -> Tuple[np.ndarray, Optional[np.ndarray]]:
+        r''' 
+        Extend k-space points and optional data across translated Brillouin zones.
+
+        The helper works for arbitrary k-space dimensions and any number of
+        reciprocal translation vectors. Legacy ``b1``/``b2``/``b3`` with
+        ``nx``/``ny``/``nz`` remain supported for existing callers.
+
+        Allows to generate extended k-point grids for plotting band structures along high-symmetry paths...
+        
+        Parameters
+        ----------
+        k_points : ndarray, shape (N, dim)
+            Array of k-points in reciprocal space to be extended.
+        data : ndarray, shape (N, ...) or None
+            Optional data associated with each k-point (e.g. eigenvalues) to be extended alongside the k-points. Must have the same leading dimension as k_points.
+        copies : int or iterable of ints, optional
+            Number of translated copies to generate in each reciprocal direction. If an integer is provided, the same number of copies will be generated in all directions. If an iterable is
+            provided, it should have a length equal to the number of reciprocal lattice vectors (e.g. 3 for 3D), specifying the number of copies in each direction separately.
+        **kwargs
+            Additional keyword arguments to pass to the underlying ws_extend function. See its documentation for details.
+            
+        Returns
+        -------
+        extended_k_points : ndarray, shape (M, dim)
+            Array of extended k-points in reciprocal space, including the original points and their translated copies
+        extended_data : ndarray, shape (M, ...) or None
+            Extended data associated with each k-point, if the input data was provided. Otherwise, None
+        '''
+        try:
+            from .tools.lattice_kspace import extend_kspace_data
+        except ImportError:
+            raise ImportError("wigner_seitz_extend requires the lattice_kspace module. Please ensure it is available.")
+        
+        return extend_kspace_data(k_points=k_points, data=data, lattice=self, copies=copies, **kwargs)
+        
+    def wigner_seitz_mask(self, Kx, Ky=None, Kz=None, *, shells: int = 1, tol: float = 1e-12, **kwargs) -> np.ndarray:
+        """
+        Return a boolean mask for the Wigner-Seitz cell in reciprocal space.
+        This can be used to identify which k-points lie within the first Brillouin zone.
+        
+        Parameters
+        ----------
+        Kx, Ky, Kz : array-like
+            Arrays of k-point coordinates in reciprocal space. This is a grid 
+            of k-points for which we want to determine if they lie within the Wigner-Seitz cell.
+        shells : int
+            Number of shells of Wigner-Seitz cell to include in the mask.
+        tol : float
+            Tolerance for determining if a point is within the Wigner-Seitz cell, accounting for numerical precision issues.
+        **kwargs
+            Additional keyword arguments to pass to the underlying ws_bz_mask function. See its documentation for details.
+        """
+        try:
+            from .tools.lattice_kspace import ws_bz_mask
+        except ImportError:
+            raise ImportError("wigner_seitz_mask requires the lattice_kspace module. Please ensure it is available.")
+        
+        return ws_bz_mask(KX=Kx, KY=Ky, KZ=Kz, shells=shells, tol=tol, lattice=self, **kwargs)
+
+    def wigner_seitz_shifts(self, *, copies: Optional[Union[int, Iterable[int]]] = None,
+                            include_origin: bool = False, tol: float = 1e-12, **kwargs) -> np.ndarray:
+        """
+        Return reciprocal-lattice translation vectors for Brillouin-zone copies.
+
+        This is the shared geometry helper for selecting or drawing translated
+        Brillouin zones. It returns zone-center shifts only, not an extended
+        k-mesh.
+
+        Parameters
+        ----------
+        copies : int or iterable of int, optional
+            Number of translated copies to generate in each reciprocal
+            direction.
+        include_origin : bool, default=False
+            Whether to include the central Brillouin zone at ``Gamma``.
+        tol : float, default=1e-12
+            Tolerance used when removing numerically duplicated shifts.
+        **kwargs
+            Additional keyword arguments forwarded to
+            ``tools.lattice_kspace.ws_bz_shifts``.
+
+        Returns
+        -------
+        np.ndarray
+            Array of reciprocal-space translation vectors for zone copies.
+        """
+        try:
+            from .tools.lattice_kspace import ws_bz_shifts
+        except ImportError:
+            raise ImportError("wigner_seitz_shifts requires the lattice_kspace module. Please ensure it is available.")
+
+        return ws_bz_shifts(lattice=self, copies=copies, include_origin=include_origin, tol=tol, **kwargs)
 
     # ------------------------------------------------------------------
     #! High-symmetry points and BZ paths
@@ -914,14 +1035,42 @@ class Lattice(ABC):
             return hs_pts.get_default_path_points()
         return None
 
-    def contains_special_point(
-        self,
-        point: Union[str, HighSymmetryPoint, Tuple[float, ...], np.ndarray],
-        *,
-        tol: float = 1e-12,
-    ) -> bool:
+    def default_resolve_path(self, path: Iterable[tuple[str, Iterable[float]]] | StandardBZPath | str | List[str] | HighSymmetryPoints) -> List[Tuple[str, List[float]]]:
+        """
+        Resolve path input to a list of (label, fractional_coord) pairs.
+
+        Parameters
+        ----------
+        path : list[(label, coords)], StandardBZPath, str, List[str], or HighSymmetryPoints
+            Path definition (fractional coordinates), standard enum, enum name string, 
+            list of point labels, or HighSymmetryPoints object.
+        lattice : Lattice, optional
+            Lattice object used to resolve labels if path is a list of strings.
+
+        Returns
+        -------
+        resolved_path : list[(label, list[float])]
+            Resolved path as a list of (label, fractional_coord) pairs.
+            
+        Example
+        -------
+        >>> path = _resolve_path_input("SQUARE_2D")
+        >>> for label, coord in path:
+        ...     print(f"{label}: {coord}")
+        """
+        
+        try:
+            from .tools.lattice_kspace import resolve_path_input    
+        except ImportError:
+            raise ImportError("default_resolve_path requires the path_utils module. Please ensure it is available.")
+        return resolve_path_input(path, lattice=self)
+
+    def contains_special_point(self, point: Union[str, HighSymmetryPoint, Tuple[float, ...], np.ndarray], *, tol: float = 1e-12) -> bool:
         r"""
         Return ``True`` if the lattice momentum grid contains a special point.
+        This method helps to check whether a finite lattice 
+        contains a particular high-symmetry point in the Brillouin zone, 
+        which is important for band structure calculations and topological analyses.
 
         Parameters
         ----------
@@ -930,7 +1079,7 @@ class Lattice(ABC):
             - label string (e.g. ``"Gamma"``, ``"K"``, ``"K'"``),
             - :class:`HighSymmetryPoint`,
             - explicit fractional coordinate tuple/array.
-        tol
+        tol : float
             Absolute tolerance used in the coordinate match.
 
         Notes
@@ -987,12 +1136,7 @@ class Lattice(ABC):
         hits    = np.all(np.isclose(grid, tgt[None, :], atol=tol, rtol=0.0), axis=1)
         return bool(np.any(hits))
     
-    def generate_bz_path(
-        self,
-        path            : Optional[Union[List[str], str, StandardBZPath]] = None,
-        *,
-        points_per_seg  : int = 40,
-    ) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
+    def bz_path(self, path: Optional[Union[List[str], str, StandardBZPath]] = None, *, points_per_seg: int = 40) -> Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]:
         """
         Generate k-points along a Brillouin zone path.
         
@@ -1020,22 +1164,22 @@ class Lattice(ABC):
         Example
         -------
         >>> lattice = SquareLattice(dim=2, lx=4, ly=4)
-        >>> k_path, k_dist, labels, k_frac = lattice.generate_bz_path()
+        >>> k_path, k_dist, labels, k_frac = lattice.bz_path()
         >>> # Or with custom path:
-        >>> k_path, k_dist, labels, k_frac = lattice.generate_bz_path(['Gamma', 'M', 'Gamma'])
+        >>> k_path, k_dist, labels, k_frac = lattice.bz_path(['Gamma', 'M', 'Gamma'])
         """
         # Resolve path
         if path is None:
             resolved_path = self.default_bz_path()
             if resolved_path is None:
-                raise ValueError(f"No default BZ path for {type(self).__name__}. "
-                               "Specify path explicitly.")
+                raise ValueError(f"No default BZ path for {type(self).__name__}. Specify path explicitly.")
+            
         elif isinstance(path, list) and all(isinstance(p, str) for p in path):
             # List of point names - look up in high_symmetry_points
             hs_pts = self.high_symmetry_points()
             if hs_pts is None:
-                raise ValueError(f"Cannot resolve point names for {type(self).__name__}. "
-                               "Use explicit fractional coordinates instead.")
+                raise ValueError(f"Cannot resolve point names for {type(self).__name__}. Use explicit fractional coordinates instead.")
+            
             resolved_path = hs_pts.get_path_points(path)
         elif isinstance(path, (str, StandardBZPath)):
             resolved_path = path  # Will be resolved by brillouin_zone_path
@@ -1044,37 +1188,93 @@ class Lattice(ABC):
         
         return brillouin_zone_path(self, resolved_path, points_per_seg=points_per_seg)
 
-    def extract_bz_path_data(self, 
-                            k_vectors           : np.ndarray,
-                            k_vectors_frac      : np.ndarray,
-                            values              : np.ndarray,
-                            path                : Optional[Union[List[str], PathTypes, str, StandardBZPath]] = None,
-                            *,
-                            points_per_seg      : int = 40,
-                            return_result       : bool = True,
-                            ) -> Union[KPathResult, Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]]:
-        """
-        Extract k-point path data in the Brillouin zone for band structure calculations.
-        
-        This method finds the nearest k-points on the actual grid to an ideal path
-        through high-symmetry points. It returns both the matched data and indices
-        for mapping back to the original grid.
+    def bz_path_points(self, path: Optional[Union[List[str], str, StandardBZPath]] = None, *, 
+                    points_per_seg: int = 40, 
+                    k_vectors: Optional[np.ndarray] = None, k_vectors_frac: Optional[np.ndarray] = None,
+                    tol: float = 1e-12, periodic: bool = True) -> 'KPathSelection':
+        '''
+        Build an ideal Brillouin-zone path and optionally match it to an existing k-grid.
+
+        If no k-grid is provided, the returned object still contains the continuous
+        path geometry, which is useful for plotting or for constructing a path that
+        is not constrained to the sampled reciprocal mesh. When a sampled grid is
+        provided, reciprocal-lattice copies are generated automatically as needed
+        so paths in extended Brillouin-zone regions can still match the existing
+        data.
         
         Parameters
         ----------
-        k_vectors : np.ndarray
-            Array of k-vectors in Cartesian coordinates, shape (..., 3).
-        k_vectors_frac : np.ndarray
-            Fractional coordinates of k-vectors, shape (..., 3).
-        values : np.ndarray
-            Corresponding values (e.g., energies) at each k-vector, shape (..., n_bands).
-        path : list of str, PathTypes, str, StandardBZPath, or None
+        path : list of str, str, StandardBZPath, or None
             Path specification. Can be:
             - List of high-symmetry point names: ['Gamma', 'X', 'M', 'Gamma']
             - StandardBZPath enum or string: 'SQUARE_2D'
             - None: use default path for this lattice
         points_per_seg : int
-            Number of points per segment for path interpolation.
+            Number of interpolated points per path segment.
+        k_vectors : np.ndarray, shape (Nk, 3), optional
+            Cartesian k-vectors of the existing grid to match against.  
+        k_vectors_frac : np.ndarray, shape (Nk, 3), optional
+            Fractional k-vectors of the existing grid to match against. Required if k_vectors is provided.
+        tol : float
+            Tolerance for matching path points to the existing k-grid. With
+            ``periodic=True`` it is interpreted in fractional reciprocal
+            coordinates. With ``periodic=False`` it is interpreted in plotted
+            Cartesian reciprocal coordinates.
+        periodic : bool, default=True
+            If True, allow reciprocal-translation-equivalent points to match.
+            Set to False for visual matching in the displayed Brillouin-zone copy.
+        '''
+        
+        try:
+            from .tools.lattice_kspace import bz_path_points
+        except ImportError:
+            raise ImportError("bz_path_points requires the lattice_kspace module. Please ensure it is available.")
+        
+        return bz_path_points(
+            lattice=self, path=path, points_per_seg=points_per_seg,
+            k_vectors=k_vectors, k_vectors_frac=k_vectors_frac, tol=tol, periodic=periodic
+        )
+
+    def bz_path_data(self, 
+                    k_vectors           : np.ndarray,
+                    k_vectors_frac      : np.ndarray,
+                    values              : np.ndarray,
+                    path                : Optional[Union[List[str], PathTypes, str, StandardBZPath]] = None,
+                    *,
+                    points_per_seg      : int = 40,
+                    return_result       : bool = True,
+                    ) -> Union[KPathResult, Tuple[np.ndarray, np.ndarray, List[Tuple[int, str]], np.ndarray]]:
+        r"""
+        Extract k-path data from a k-grid using fractional coordinate matching.
+        
+        This function finds the closest k-points on the actual grid to an ideal path
+        through high-symmetry points. It handles periodic boundary conditions in k-space
+        and automatically reuses reciprocal-lattice copies of the sampled grid when the
+        requested path lies in an extended Brillouin-zone region.
+        It also allows to return a structured KPathResult dataclass or a tuple...
+        
+        Parameters
+        ----------
+        lattice : Lattice
+            Lattice object with reciprocal lattice vectors
+        k_vectors : np.ndarray, shape (..., 3) 
+            Cartesian k-points (will be flattened)
+        k_vectors_frac : np.ndarray, shape (..., 3)
+            Fractional coordinates of k-points (will be flattened)
+        values : np.ndarray
+            Data values sampled on the k-grid. The k-grid axes may appear as
+            ``(Lx, Ly, Lz, ...)`` or after leading batch axes such as time or
+            frequency, e.g. ``(Nw, Lx, Ly, Lz)`` or ``(Nw, Lx, Ly, Lz, ...)``.
+            A single flattened k-grid axis of length ``Nk`` is also supported.
+        path : various, optional
+            Path specification. Can be:
+            - StandardBZPath enum value (e.g., StandardBZPath.SQUARE_2D)
+            - String name (e.g., 'SQUARE_2D')
+            - List of (label, [f1,f2,f3]) tuples
+            - HighSymmetryPoints object (uses default path)
+            - None: uses lattice's default path if available
+        points_per_seg : int
+            Number of interpolated points per path segment
         return_result : bool
             If True (default), return KPathResult dataclass.
             If False, return tuple for backwards compatibility.
@@ -1082,58 +1282,48 @@ class Lattice(ABC):
         Returns
         -------
         KPathResult or tuple
-            If return_result=True: KPathResult with k_cart, k_frac, k_dist, labels, 
-                values, indices, and matched_distances.
-            If return_result=False: (k_cart, k_frac, k_dist, labels, values) tuple.
+            If return_result=True: KPathResult dataclass with all path data.
+            The returned ``values`` preserve any leading batch axes and replace
+            the k-grid axes with a path axis.
+            If return_result=False: (k_cart, k_frac, k_dist, labels, values) tuple
         
-        Example
-        -------
-        >>> lattice = SquareLattice(dim=2, lx=8, ly=8, bc='pbc')
-        >>> # Get k-grid from Hamiltonian
-        >>> k_grid, k_frac, energies = ham.to_kspace()
-        >>> 
-        >>> # Extract band structure along path
-        >>> result = lattice.extract_bz_path_data(k_grid, k_frac, energies)
-        >>> 
-        >>> # Plot
-        >>> import matplotlib.pyplot as plt
+        Examples
+        --------
+        >>> # Using default path from HighSymmetryPoints
+        >>> result = bz_path_data(lattice, k_grid, k_frac, energies, HighSymmetryPoints.square_2d())
         >>> plt.plot(result.k_dist, result.values)
-        >>> for pos, label in zip(result.label_positions, result.label_texts):
-        ...     plt.axvline(pos, color='k', linestyle='--')
-        >>> plt.xticks(result.label_positions, result.label_texts)
-        """
-        # Resolve path if given as list of names
-        if isinstance(path, list) and all(isinstance(p, str) for p in path):
-            hs_pts = self.high_symmetry_points()
-            if hs_pts is None:
-                raise ValueError(f"Cannot resolve point names for {type(self).__name__}. "
-                               "Use explicit fractional coordinates instead.")
-            resolved_path = hs_pts.get_path_points(path)
-        elif path is None:
-            # Use default path or high_symmetry_points
-            hs_pts = self.high_symmetry_points()
-            if hs_pts is not None:
-                resolved_path = hs_pts
-            else:
-                raise ValueError(f"No default path for {type(self).__name__}. Specify path explicitly.")
-        else:
-            resolved_path = path
         
-        return extract_bz_path_data(
-            self, k_vectors, k_vectors_frac, values, resolved_path,
-            points_per_seg=points_per_seg, return_result=return_result
-        )
+        >>> # Using standard path enum
+        >>> result = bz_path_data(lattice, k_grid, k_frac, energies, 'SQUARE_2D')
+        
+        >>> # Custom path
+        >>> custom_path = [('G', [0,0,0]), ('X', [0.5,0,0]), ('G', [0,0,0])]
+        >>> result      = bz_path_data(lattice, k_grid, k_frac, energies, custom_path)
+        """
+        try:
+            from .tools.lattice_kspace import bz_path_data
+        except ImportError:
+            raise ImportError("bz_path_data requires the lattice_kspace module. Please ensure it is available.")        
+
+        return bz_path_data(lattice=self, k_vectors=k_vectors, k_vectors_frac=k_vectors_frac, values=values, path=path,
+            points_per_seg=points_per_seg, return_result=return_result)
     
     # ------------------------------------------------------------------
     #! Boundary fluxes
     # ------------------------------------------------------------------
     
     @property
-    def flux(self) -> BoundaryFlux: 
+    def flux(self) -> 'BoundaryFlux': 
         return self._flux
     
     @flux.setter
     def flux(self, value: Optional[Union[float, Mapping[Union[str, LatticeDirection], float]]]):
+        
+        try:
+            from .tools.lattice_flux import _normalize_flux_dict
+        except ImportError:
+            raise ImportError("Setting flux requires the lattice_flux module. Please ensure it is available.")
+        
         self._flux = _normalize_flux_dict(value)
         # When flux changes the BC becomes TWISTED (if non-trivial)
         if self._flux is not None and self._flux.is_nontrivial:
@@ -1526,14 +1716,7 @@ class Lattice(ABC):
     #! SITE HELPERS
     # -----------------------------------------------------------------------------
 
-    def site_diff(
-        self,
-        i: Union[int, tuple],
-        j: Union[int, tuple],
-        *,
-        minimum_image: bool = False,
-        real_space: bool = False,
-    ) -> Tuple[float, float, float]:
+    def site_diff(self, i: Union[int, tuple], j: Union[int, tuple], *, minimum_image: bool = False, real_space: bool = False) -> Tuple[float, float, float]:
         """
         Return the displacement ``i -> j`` with optional PBC minimum-image wrapping.
 
@@ -1570,14 +1753,7 @@ class Lattice(ABC):
 
         return float(delta[0]), float(delta[1]), float(delta[2])
         
-    def site_distance(
-        self,
-        i: Union[int, tuple],
-        j: Union[int, tuple],
-        *,
-        minimum_image: bool = False,
-        real_space: bool = False,
-    ) -> float:
+    def site_distance(self, i: Union[int, tuple], j: Union[int, tuple], *, minimum_image: bool = False, real_space: bool = False,) -> float:
         """
         Return Euclidean distance between two sites/coordinates.
 
@@ -1856,7 +2032,7 @@ class Lattice(ABC):
         pass
     
     # -----------------------------------------------------------------------------
-    #! NEAREST NEIGHBORS HELPERS
+    #! NEIGHBOR VALIDATION
     # -----------------------------------------------------------------------------
     
     def wrong_nei(self, nei):
@@ -1883,6 +2059,10 @@ class Lattice(ABC):
                 nei == self.bad_lattice_site or \
                 np.isnan(nei) or                \
                 nei < 0
+    
+    # -----------------------------------------------------------------------------
+    #! NEAREST NEIGHBORS HELPERS
+    # -----------------------------------------------------------------------------
     
     def get_nn_num(self, site : int):
         '''
@@ -2819,9 +2999,9 @@ class Lattice(ABC):
         cell        = ((cz*Ly + cy)*Lx + cx).astype(int)            # (Ns,)
         return cell, sub
 
-    # ============================================================
-    #  INVERSE BLOCH TRANSFORM & K-SPACE OPERATIONS
-    # ============================================================
+    # -------------------------------------------------------------------------
+    #! INVERSE BLOCH TRANSFORM & K-SPACE OPERATIONS
+    # -------------------------------------------------------------------------
 
     def realspace_from_kspace(
         self,
@@ -2836,11 +3016,8 @@ class Lattice(ABC):
         """
         from .tools.lattice_kspace import realspace_from_kspace, full_k_space_transform
         if block_diag is False:
-            return full_k_space_transform(lattice=self, mat_k=H_k, inverse=True)
-        return realspace_from_kspace(
-            lattice = self,
-            H_k     = H_k,
-            kgrid   = kgrid)
+            return full_k_space_transform(lattice=self, mat=H_k, inverse=True)
+        return realspace_from_kspace(lattice = self, H_k = H_k, kgrid = kgrid)
 
     def kspace_from_realspace(self, mat: np.ndarray, block_diag: bool = False):
         """
@@ -2863,12 +3040,174 @@ class Lattice(ABC):
         """
         from .tools.lattice_kspace import full_k_space_transform, kspace_from_realspace
         if block_diag:
-            return kspace_from_realspace(lattice=self, H_real=mat)
-        return full_k_space_transform(lattice=self, mat=mat)
+            return kspace_from_realspace(lattice=self, H_real=mat, kpoints=self.kvectors)
+        return full_k_space_transform(lattice=self, mat=mat, inverse=False)
+
+    def structure_factor(self, mat: np.ndarray, *,
+        reduction   : Literal["none", "sum", "trace", "mean", "diag"] = "sum",
+        norm        : Literal["none", "cell", "site"] = "none",
+    ):
+        r"""
+        Convert a real-space correlation matrix into a momentum-resolved structure factor.
+
+        This is a convenience wrapper around the basis-aware Bloch projector in
+        ``QES.general_python.lattices.tools.lattice_kspace.kspace_from_realspace``.
+        The real-space input ``mat`` is first transformed into the multipartite
+        k-space block representation evaluated on ``self.kvectors``
+
+        .. math::
+            C_{\alpha\beta}(q)
+            =
+            \frac{1}{N_c}
+            \sum_{R,R'}
+            e^{-i q\cdot(R-R')}
+            \langle O_{R,\alpha} O_{R',\beta} \rangle,
+
+        where ``R, R'`` label unit cells and ``alpha, beta`` label basis sites
+        inside the unit cell. The ``reduction`` argument then decides how this
+        multipartite object is converted into a scalar structure factor at each
+        sampled momentum ``q``.
+
+        Parameters
+        ----------
+        mat : np.ndarray
+            Real-space correlation or operator matrix with shape ``(Ns, Ns)``
+            or batched shape ``(..., Ns, Ns)``. Any leading axes, e.g. time,
+            frequency, disorder sample, or state index, are preserved.
+        reduction : {"none", "sum", "trace", "mean", "diag"}, default="sum"
+            How to reduce the multipartite k-space blocks:
+
+            - ``"none"``: 
+                return the full k-space blocks
+              ``C(q)`` with shape ``(Lx, Ly, Lz, Nb, Nb)`` (i.e., no reduction).
+            - ``"sum"``: 
+                return ``sum_{alpha,beta} C_{alpha beta}(q)`` (i.e., sum over all entries of each block).
+            - ``"trace"``: 
+                return ``sum_alpha C_{alpha alpha}(q)`` (i.e., sum over diagonal entries of each block).
+            - ``"mean"``: 
+                return the arithmetic mean of all multipartite block entries at each ``q`` (i.e., sum over all entries and divide by ``Nb^2``).
+            - ``"diag"``:
+                return the eigenvalues of each block, which can be useful for identifying dominant modes or instabilities. The output shape will be ``(Lx, Ly, Lz, Nb)`` since each block's eigenvalues are returned as a vector of length ``Nb``.
+        norm : {"none", "cell", "site"}, default="none"
+            Optional post-normalization of the returned k-space quantity:
+
+            - ``"none"``:
+                keep the raw Bloch-projector normalization, i.e. the blocks
+              ``C(q)`` defined above with the prefactor ``1 / N_c``.
+            - ``"cell"``:
+                alias for ``"none"`` kept for readability when you want to
+              emphasize unit-cell normalization.
+            - ``"site"``:
+                divide the returned blocks or reduced values by the number of
+              basis sites ``N_b``. For scalar reductions such as ``"sum"``, this
+              converts the default unit-cell normalization into the more common
+              site normalization ``1 / N_s`` used in
+              :math:`S(q) = \langle O_{-q} O_q \rangle`.
+
+        Returns
+        -------
+        values : np.ndarray
+            Momentum-resolved structure factor. For input shape ``(..., Ns, Ns)``
+            the output shape is:
+
+            - ``(..., Lx, Ly, Lz, Nb, Nb)`` for ``reduction="none"``
+            - ``(..., Lx, Ly, Lz, Nb)``     for ``reduction="diag"``
+            - ``(..., Lx, Ly, Lz)``         for ``"sum"``, ``"trace"``, or ``"mean"``
+
+            For a single input matrix ``(Ns, Ns)``, the leading ``...`` is absent.
+        k_grid : np.ndarray
+            Cartesian sampled k-grid with shape ``(Lx, Ly, Lz, 3)``.
+        k_frac : np.ndarray
+            Fractional sampled k-grid with shape ``(Lx, Ly, Lz, 3)``.
+
+        Notes
+        -----
+        Use ``reduction="none"`` when sublattice-resolved information matters.
+        Use one of the scalar reductions when you want a single value per
+        momentum that can be fed directly into ``bz_path_data``.
+
+        The default ``norm="none"`` preserves the existing unit-cell
+        normalization. For comparisons against structure factors built from
+        Fourier-transformed site operators, ``norm="site"`` is typically the
+        physically relevant choice.
+
+        Examples
+        --------
+        >>> Sq, k_grid, k_frac  = lattice.structure_factor(corr_zz, reduction="sum")
+        >>> path                = lattice.bz_path_data(k_grid, k_frac, Sq, path=['Gamma', 'K', 'M', 'Gamma'])
+        >>>
+        >>> # Frequency-resolved data with shape (Nw, Ns, Ns)
+        >>> Sqw, k_grid, k_frac = lattice.structure_factor(corr_zz_w, reduction="sum")
+        >>> # Sqw has shape (Nw, Lx, Ly, Lz)
+        """
+        try:
+            from .tools.lattice_kspace import kspace_from_realspace as _kspace_from_realspace
+        except ImportError:
+            raise ImportError("k-space transformation tools not found. Ensure that the lattice_kspace module is available.")
+        
+        mat = np.asarray(mat)
+        Ns  = self.Ns
+        if mat.ndim < 2 or mat.shape[-2:] != (Ns, Ns):
+            raise ValueError(f"mat must have shape (Ns, Ns) or (..., Ns, Ns) with Ns={Ns}, got {mat.shape}")
+
+        # Use the explicit k-point Bloch projector so the transform follows the
+        # same site-coordinate convention as other Fourier-based observables.
+        batch_shape     = mat.shape[:-2]
+        flat_mat        = mat.reshape((-1, Ns, Ns))
+        Ck_blocks       = []
+        k_grid          = None
+        k_frac          = None
+        grid_shape      = (self._lx, max(self._ly, 1), max(self._lz, 1))
+        for mat_i in flat_mat:
+            blocks_i, k_points_i = _kspace_from_realspace(
+                lattice = self,
+                H_real  = mat_i,
+                kpoints = self.kvectors,
+            )
+            blocks_i = np.asarray(blocks_i).reshape(grid_shape + blocks_i.shape[-2:])
+            Ck_blocks.append(blocks_i)
+            
+            if k_grid is None:
+                k_grid = np.asarray(k_points_i, dtype=float).reshape(grid_shape + (3,))
+                k_frac = np.asarray(self.kvectors_frac, dtype=float).reshape(grid_shape + (3,))
+
+        # Stack back into original batch shape
+        Ck_blocks = np.stack(Ck_blocks, axis=0)
+        if batch_shape:
+            Ck_blocks = Ck_blocks.reshape(batch_shape + Ck_blocks.shape[1:])
+        else:
+            Ck_blocks = Ck_blocks[0]
+
+        reduction_key = reduction.lower()
+        if reduction_key == "none":
+            values = Ck_blocks
+        elif reduction_key == "sum":
+            values = np.sum(Ck_blocks, axis=(-2, -1))
+        elif reduction_key == "trace":
+            values = np.trace(Ck_blocks, axis1=-2, axis2=-1)
+        elif reduction_key == "mean":
+            values = np.mean(Ck_blocks, axis=(-2, -1))
+        elif reduction_key == "diag":
+            values = np.linalg.eigvals(Ck_blocks)
+        else:
+            raise ValueError(f"Unknown reduction '{reduction}'. Use one of: 'none', 'sum', 'trace', 'mean', 'diag'.")
+
+        norm_key = norm.lower()
+        if norm_key in {"none", "cell"}:
+            scale = 1.0
+        elif norm_key == "site":
+            scale = 1.0 / float(max(1, self.multipartity))
+        else:
+            raise ValueError(f"Unknown norm '{norm}'. Use one of: 'none', 'cell', 'site'.")
+
+        if scale != 1.0:
+            values = values * scale
+
+        return values, k_grid, k_frac
 
     # -------------------------------------------------------------------------
     #! Presentation helpers (text / plots)
-    # -----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
 
     def summary_string(self, *, precision: int = 3) -> str:
         """
@@ -2917,18 +3256,16 @@ class Lattice(ABC):
             sections.append("Real-space vectors:\n" + self.real_space_table(max_rows=max_rows, precision=precision))
 
         if include_reciprocal:
-            sections.append(
-                "Reciprocal-space vectors:\n" + self.reciprocal_space_table(max_rows=max_rows, precision=precision)
-            )
+            sections.append("Reciprocal-space vectors:\n" + self.reciprocal_space_table(max_rows=max_rows, precision=precision))
 
         if include_brillouin_zone:
             sections.append("Brillouin zone:\n" + self.brillouin_zone_overview(precision=precision))
 
         return "\n\n".join(sections)
 
-    # -----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     #! PLOTTING HELPERS
-    # -----------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
     
     def plot_real_space(self, **kwargs):
         """
@@ -2939,7 +3276,44 @@ class Lattice(ABC):
 
     def plot_reciprocal_space(self, **kwargs):
         """
-        Convenience wrapper returning the matplotlib figure and axes for a reciprocal-space scatter plot.
+        Scatter-plot of reciprocal lattice vectors (k-points).
+        
+        Parameters mirror :func:`plot_real_space`
+        --------------------------------------------------------------------------
+        lattice : Lattice
+            The lattice object to plot.
+        ax : Axes, optional
+            Matplotlib axes to plot on. If None, a new figure is created.
+        show_indices : bool, default=False
+            If True, annotate each k-point with its index.
+        show_axes : bool, default=True
+            If False, hides the coordinate axes.
+        color : str, default="C1"
+            Color of the k-point markers.
+        marker : str, default="o"
+            Marker style.
+        figsize : tuple, optional
+            Figure size in inches (width, height).
+        title : str, optional
+            Title of the plot.
+        elev, azim : float, optional
+            Elevation and azimuth angles for 3D plots.
+        extend_kpoints : bool, default=False
+            If True, draw translated reciprocal-space copies around the original mesh.
+        extend_copies : int or iterable of int, default=2
+            Number of copies per reciprocal direction used when ``extend_kpoints=True``.
+            Scalars are applied to all active reciprocal directions.
+        extend_tol : float, default=1e-10
+            Tolerance used to identify which extended points are already present in
+            the original reciprocal mesh.
+        **scatter_kwargs
+            Include:
+            - point_edgecolor: Color of the marker edges (default "white").
+            - point_zorder: Z-order for the scatter points (default 5).
+            - color_extended: Color for translated copies (default "C2").
+            - edgecolor_extended: Edge color for translated copies (default "gray").
+            - marker_extended: Marker for translated copies (default ``marker``).
+            - Any other valid arguments for `ax.scatter`.
         """
         from .visualization import plot_reciprocal_space
         return plot_reciprocal_space(self, **kwargs)
@@ -2947,6 +3321,25 @@ class Lattice(ABC):
     def plot_brillouin_zone(self, **kwargs):
         """
         Convenience wrapper returning the matplotlib figure and axes for a Brillouin zone plot.
+        
+        Parameters
+        ----------
+        lattice : Lattice
+            The lattice object containing k-vectors.
+        ax : Axes, optional
+            Matplotlib axes to plot on. If None, a new figure is created.
+        facecolor : str, default="tab:blue"
+            Color to fill the Brillouin Zone area.
+        edgecolor : str, default="black"
+            Color for the Brillouin Zone boundary.
+        alpha : float, default=0.25 
+            Transparency level for the Brillouin Zone fill.
+        figsize : tuple, optional   
+            Figure size in inches (width, height).
+        title : str, optional
+            Title of the plot.
+        elev, azim : float, optional
+            Elevation and azimuth angles for 3D plots.
         """
         from .visualization import plot_brillouin_zone
         return plot_brillouin_zone(self, **kwargs)
@@ -2974,6 +3367,51 @@ class Lattice(ABC):
         """
         from .visualization import plot_lattice_structure
         return plot_lattice_structure(self, **kwargs)
+
+    def plot_high_symmetry(self, **kwargs):
+        """
+        Convenience wrapper for plotting the Brillouin zone, high-symmetry path,
+        and sampled reciprocal mesh.
+
+        Parameters
+        ----------
+        path : list[str], str, or iterable[(label, frac)], optional
+            High-symmetry path specification. If omitted, the lattice default path
+            is used.
+        show_kpoints : bool, default=True
+            Draw sampled reciprocal-space mesh points.
+        show_bz : bool, default=True
+            Draw the first Brillouin zone.
+        show_path : bool, default=True
+            Draw the ideal high-symmetry path.
+        show_matched_kpoints : bool, default=True
+            Highlight sampled k-points whose distance to the path is within the
+            matching tolerance.
+        points_per_seg : int, default=40
+            Number of interpolation points per path segment for the ideal path.
+        path_match_tol : float, optional
+            Distance tolerance used when highlighting mesh points near the
+            drawn path.
+        extend : bool, default=False
+            Draw translated copies of the sampled k-mesh.
+        extend_copies : int or iterable[int], optional
+            Number of reciprocal-cell copies per direction. In 2D,
+            ``extend_copies=1`` includes the first shell around the first Brillouin
+            zone and ``extend_copies=2`` includes the second shell as well.
+        show_background_bz : bool, default=False
+            Draw translated Brillouin-zone copies behind the mesh.
+        hs_plot : {"none", "markers", "labels", "both"}, default="markers"
+            Whether to draw exact high-symmetry markers, labels, or both.
+        legend_kwargs : dict, optional
+            Extra keyword arguments passed to ``axis.legend``.
+        **kwargs
+            Additional style overrides forwarded to ``plot_high_symmetry_points``.
+        """
+        try:
+            from .visualization import plot_high_symmetry_points
+        except ImportError as e:
+            raise ImportError(f"Failed to import plotting module for high-symmetry points: {e}")
+        return plot_high_symmetry_points(self, **kwargs)
 
     @property
     def plot(self):
@@ -3008,6 +3446,12 @@ def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
     Returns:
     - True if the file has been saved, False otherwise
     '''
+    
+    try:
+        from ..common import hdf5man as HDF5Mod
+    except ImportError as e:
+        raise ImportError(f"Failed to import HDF5 module for saving bonds: {e}")
+    
     if lattice.type == LatticeType.HONEYCOMB:
         
         # get the bonds

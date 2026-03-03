@@ -11,25 +11,40 @@ from QES.general_python.lattices.tools import (
 
 import importlib
 
-from .lattice_tools import (
-    LatticeDirection,
-    LatticeBC,
-    LatticeType,
-    handle_twist_flux,
-    handle_boundary_conditions,
-    handle_boundary_conditions_detailed,
-    handle_dim,
+# ============================================================================== 
+# Lattice Tools
+# ==============================================================================
+from .lattice_tools     import (
+    LatticeDirection,                       # direction enum
+    LatticeBC,                              # boundary condition enum
+    LatticeType,                            # lattice type enum
+    handle_twist_flux,                      # twist flux normalization helper
+    handle_boundary_conditions,             # boundary condition normalization helper
+    handle_boundary_conditions_detailed,    # detailed BC normalization helper
+    handle_dim,                             # dimension normalization helper
 )
-from .lattice_flux import BoundaryFlux
-from .lattice_symmetry import (
+
+# ==============================================================================
+# Lattice Flux Container
+# ==============================================================================
+from .lattice_flux      import BoundaryFlux
+
+# ==============================================================================
+# Lattice Symmetry Helpers
+# ==============================================================================
+from .lattice_symmetry  import (
     generate_translation_perms,
     generate_point_group_perms_square,
     generate_space_group_perms,
     compute_cayley_table,
 )
-from .region_handler import RegionType, LatticeRegionHandler
 
-_LAZY_REGION_EXPORTS = {
+# ==============================================================================
+# Lattice Region Handler
+# ==============================================================================
+from .region_handler    import RegionType, LatticeRegionHandler
+
+_LAZY_REGION_EXPORTS    = {
     "Region"                        : (".regions", "Region"),
     "KitaevPreskillRegion"          : (".regions", "KitaevPreskillRegion"),
     "LevinWenRegion"                : (".regions", "LevinWenRegion"),
@@ -44,6 +59,10 @@ _LAZY_REGION_EXPORTS = {
     "get_predefined_region"         : (".regions", "get_predefined_region"),
     "list_predefined_regions"       : (".regions", "list_predefined_regions"),
 }
+
+# ==============================================================================
+# Public API
+# ==============================================================================
 
 __all__ = [
     # Basic lattice enums and normalization helpers
