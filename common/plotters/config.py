@@ -197,6 +197,8 @@ class KSpaceConfig:
     # Display settings
     blob_radius_factor  : float             = 2.5
     imshow_interp       : str               = 'bilinear'
+    limit_to_pi         : bool              = False
+    k_limits            : Optional[Tuple[float, float, float, float]] = None
     
     # BZ extension
     extend_bz           : bool              = False
@@ -256,7 +258,7 @@ class KPathConfig:
     tick_format         : Literal['labels', 'fractional', 'distance'] = 'labels'
     show_separators     : bool              = True
     separator_style     : dict              = field(default_factory=lambda: {
-        "color": "k", "ls": "--", "lw": 1.0, "alpha": 0.35
+        "color": "white", "ls": "--", "lw": 1.0, "alpha": 0.55
     })
     
     # Extension
@@ -319,6 +321,7 @@ class SpectralConfig:
     
     # Energy shifts
     energy_shift        : float             = 0.0
+    omega_value         : Optional[float]   = None
     
     # Visualization
     log_scale           : bool              = False
@@ -332,6 +335,7 @@ class SpectralConfig:
     
     # Optional colormap override
     cmap_spectral       : Optional[str]     = None
+    colorbar_label      : Optional[str]     = None
     
     def get_omega_grid(self) -> Optional[np.ndarray]:
         """Generate omega grid if min/max specified."""
@@ -346,6 +350,10 @@ class SpectralConfig:
         if self.omega_units:
             return f'{self.intensity_label} [{self.omega_units}]'
         return self.intensity_label
+
+    def get_colorbar_label(self) -> str:
+        """Resolve the colorbar label for spectral heatmaps."""
+        return self.colorbar_label if self.colorbar_label else self.get_intensity_label_with_units()
 
 # ==============================================================================
 # FIGURE LAYOUT CONFIGURATION

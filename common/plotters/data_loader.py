@@ -717,15 +717,15 @@ class PlotData:
         """Build a plot-ready result list from either filesystem data or in-memory arrays."""
         if directory is not None and data_values is None:
             return load_results(
-                data_dir=directory,
-                filters=filters,
-                lx=kwargs.pop("Lx", kwargs.pop("lx", None)),
-                ly=kwargs.pop("Ly", kwargs.pop("ly", None)),
-                lz=kwargs.pop("Lz", kwargs.pop("lz", None)),
-                Ns=kwargs.pop("Ns", kwargs.pop("ns", None)),
-                post_process_func=kwargs.get("post_process_func", None),
-                get_params_func=kwargs.get("get_params_func", None),
-                logger=logger,
+                data_dir            =   directory,
+                filters             =   filters,
+                lx                  =   kwargs.pop("Lx", kwargs.pop("lx", None)),
+                ly                  =   kwargs.pop("Ly", kwargs.pop("ly", None)),
+                lz                  =   kwargs.pop("Lz", kwargs.pop("lz", None)),
+                Ns                  =   kwargs.pop("Ns", kwargs.pop("ns", None)),
+                post_process_func   =   kwargs.get("post_process_func", None),
+                get_params_func     =   kwargs.get("get_params_func", None),
+                logger              =   logger,
                 **kwargs,
             )
 
@@ -739,30 +739,30 @@ class PlotData:
                     name="input_results",
                 )
 
-            value_iter = iter(data_values.values())
+            value_iter  = iter(data_values.values())
             first_value = next(value_iter, None)
             if first_value is not None and hasattr(first_value, "params") and all(hasattr(v, "params") for v in value_iter):
                 return ResultSet(data_values.values(), name="input_results")
 
             fixed_params = {k: v for k, v in kwargs.items() if k in {"Lx", "Ly", "Lz", "Ns"}}
+            
             if x_parameters and y_parameters and len(x_parameters) == 1 and len(y_parameters) == 1:
                 params = {x_param: x_parameters[0], y_param: y_parameters[0], **fixed_params}
                 return ResultSet([ResultProxy(data=data_values, params=params)], name="input_results")
-            raise ValueError(
-                "For dict data_values provide {'data': ..., 'params': ...} or single-point x/y parameters."
-            )
+            
+            raise ValueError("For dict data_values provide {'data': ..., 'params': ...} or single-point x/y parameters.")
 
         if isinstance(data_values, np.ndarray):
             fixed_params = {k: v for k, v in kwargs.items() if k in {"Lx", "Ly", "Lz", "Ns"}}
             return prepare_results_for_plotting(
-                data_array=data_values,
-                x_param_values=x_parameters,
-                y_param_values=y_parameters,
-                x_param=x_param,
-                y_param=y_param,
-                data_key=data_key,
-                fixed_params=fixed_params,
-                post_process_func=kwargs.get("post_process_func", None),
+                data_array          =   data_values,
+                x_param_values      =   x_parameters,
+                y_param_values      =   y_parameters,
+                x_param             =   x_param,
+                y_param             =   y_param,
+                data_key            =   data_key,
+                fixed_params        =   fixed_params,
+                post_process_func   =   kwargs.get("post_process_func", None),
             )
 
         raise ValueError(

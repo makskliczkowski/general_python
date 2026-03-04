@@ -66,6 +66,7 @@ import matplotlib               as mpl
 import matplotlib.pyplot        as plt
 import matplotlib.colors        as mcolors
 import matplotlib.ticker        as mticker
+import matplotlib.tri           as mtri
 
 # Grids
 from matplotlib.colors          import Normalize, ListedColormap
@@ -596,7 +597,7 @@ class Plotter:
     
     Main Categories
     ---------------
-    **Plotting Methods**    : plot, scatter, semilogy, semilogx, loglog, errorbar, fill_between, histogram
+    **Plotting Methods**    : plot, scatter, tripcolor_field, semilogy, semilogx, loglog, errorbar, fill_between, histogram
     **Axis Setup**          : set_ax_params, set_tickparams, setup_log_x, setup_log_y
     **Annotations**         : set_annotate, set_annotate_letter, set_arrow
     **Colorbars**           : add_colorbar, get_colormap, discrete_colormap  
@@ -709,6 +710,82 @@ class Plotter:
             max_l   = max(l[1] for l in limits)
             for ax in axes:
                 ax.set_xlim(min_l, max_l)
+
+    @staticmethod
+    def resolve_planar_limits(
+        points,
+        *,
+        limits: Optional[Union[tuple, list, np.ndarray]] = None,
+        x_limits: Optional[Union[tuple, list, np.ndarray]] = None,
+        y_limits: Optional[Union[tuple, list, np.ndarray]] = None,
+        xmin: Optional[float] = None,
+        xmax: Optional[float] = None,
+        ymin: Optional[float] = None,
+        ymax: Optional[float] = None,
+        limit_to_pi: bool = False,
+        pad_fraction: float = 0.08,
+    ) -> Tuple[tuple, tuple]:
+        """
+        Resolve visible ``(xlim, ylim)`` for planar data.
+
+        Parameters
+        ----------
+        points : array-like
+            Planar sample points shaped like ``(N, 2)`` or ``(N, D)``.
+        limits : sequence, optional
+            Explicit bounds. Length 2 means shared ``(min, max)`` for both axes.
+            Length 4 means ``(xmin, xmax, ymin, ymax)``.
+        x_limits, y_limits : sequence, optional
+            Explicit bounds for each axis separately.
+        xmin, xmax, ymin, ymax : float, optional
+            Scalar axis bound overrides. These take precedence over inferred
+            limits and can refine ``limits`` / ``x_limits`` / ``y_limits``.
+        limit_to_pi : bool, default=False
+            If True and ``limits`` is not provided, use ``[-pi, pi]`` on both axes.
+        pad_fraction : float, default=0.08
+            Relative padding applied when limits are inferred from ``points``.
+        """
+        if limits is not None:
+            resolved = tuple(float(v) for v in limits)
+            if len(resolved) == 2:
+                return (resolved[0], resolved[1]), (resolved[0], resolved[1])
+            if len(resolved) == 4:
+                return (resolved[0], resolved[1]), (resolved[2], resolved[3])
+            raise ValueError("limits must have length 2 or 4.")
+
+        if limit_to_pi:
+            xlim, ylim = (-np.pi, np.pi), (-np.pi, np.pi)
+        else:
+            pts = np.asarray(points, dtype=float)
+            if pts.ndim != 2 or pts.shape[1] < 2:
+                raise ValueError("points must be shaped like (N, 2) or (N, D) with D >= 2.")
+
+            mins = np.min(pts[:, :2], axis=0)
+            maxs = np.max(pts[:, :2], axis=0)
+            span = np.maximum(maxs - mins, 1e-12)
+            pad = float(pad_fraction) * span
+            xlim, ylim = (mins[0] - pad[0], maxs[0] + pad[0]), (mins[1] - pad[1], maxs[1] + pad[1])
+
+        if x_limits is not None:
+            resolved = tuple(float(v) for v in x_limits)
+            if len(resolved) != 2:
+                raise ValueError("x_limits must have length 2.")
+            xlim = (resolved[0], resolved[1])
+        if y_limits is not None:
+            resolved = tuple(float(v) for v in y_limits)
+            if len(resolved) != 2:
+                raise ValueError("y_limits must have length 2.")
+            ylim = (resolved[0], resolved[1])
+
+        xlim = (
+            float(xmin) if xmin is not None else float(xlim[0]),
+            float(xmax) if xmax is not None else float(xlim[1]),
+        )
+        ylim = (
+            float(ymin) if ymin is not None else float(ylim[0]),
+            float(ymax) if ymax is not None else float(ylim[1]),
+        )
+        return xlim, ylim
     
     ###########################################################
     #! Filter results
@@ -1418,6 +1495,67 @@ class Plotter:
         ax.scatter(x, y, linewidths = linewidths,
                 s=s, c=c, marker=marker, 
                 alpha=alpha, label=label if label_cond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
+
+    @staticmethod
+    def tripcolor_field(
+        ax,
+        points,
+        values,
+        *,
+        triangles=None,
+        mask=None,
+        shading: str = "gouraud",
+        **kwargs,
+    ):
+        """
+        Plot a scalar field sampled on irregular planar points using triangulation.
+
+        This helper is meant for 2D scattered data where `imshow` is not
+        appropriate because the samples do not lie on a regular rectangular grid.
+        Matplotlib first builds a triangulation of the point cloud and then
+        interpolates values inside each triangle.
+
+        Typical use cases:
+        - real-space lattice-site scalar fields
+        - Brillouin-zone data on irregular planar k-point sets
+        - any scattered 2D measurement data
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Target axis.
+        points : array-like
+            Sample positions shaped like `(N, 2)` or `(N, D)` with `D >= 2`.
+            Only the first two Cartesian components are used.
+        values : array-like
+            Scalar values of length `N`.
+        triangles : array-like, optional
+            Explicit connectivity passed to `matplotlib.tri.Triangulation`.
+        mask : array-like of bool, optional
+            Triangle mask. `True` hides the corresponding triangle.
+        shading : {'flat', 'gouraud'}, default='gouraud'
+            Interpolation mode inside triangles.
+        **kwargs
+            Forwarded to `Axes.tripcolor`.
+
+        Returns
+        -------
+        matplotlib.collections.Collection | None
+            The created artist, or `None` if fewer than three points are given.
+        """
+        pts = np.asarray(points, dtype=float)
+        vals = np.asarray(values)
+        if pts.ndim != 2 or pts.shape[1] < 2:
+            raise ValueError("points must be shaped like (N, 2) or (N, D) with D >= 2.")
+        if len(pts) != len(vals):
+            raise ValueError("points and values must have the same length.")
+        if len(pts) < 3:
+            return None
+
+        tri = mtri.Triangulation(pts[:, 0], pts[:, 1], triangles=triangles)
+        if mask is not None:
+            tri.set_mask(np.asarray(mask, dtype=bool))
+        return ax.tripcolor(tri, vals, shading=shading, **kwargs)
     
     #################### P L O T S ####################
     

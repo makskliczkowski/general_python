@@ -136,11 +136,18 @@ def select_kpoints_along_path(
         periodic=not use_extend,
     )
 
+    label_positions = []
+    label_texts = []
+    for idx, label in selection.labels:
+        pos_idx = min(int(idx), max(len(selection.k_dist) - 1, 0))
+        label_positions.append(selection.k_dist[pos_idx] if len(selection.k_dist) > 0 else 0.0)
+        label_texts.append(label)
+
     return {
         'indices'           : np.asarray(selection.matched_indices, dtype=int),
         'distances'         : np.asarray(selection.k_dist, dtype=float),
-        'label_positions'   : np.asarray(selection.label_positions, dtype=float),
-        'label_texts'       : list(selection.label_texts),
+        'label_positions'   : np.asarray(label_positions, dtype=float),
+        'label_texts'       : label_texts,
         'k_cart'            : np.asarray(selection.matched_cart if selection.matched_cart is not None else selection.path_cart, dtype=float),
     }
 

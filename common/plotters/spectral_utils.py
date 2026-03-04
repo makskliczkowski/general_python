@@ -26,7 +26,7 @@ except ImportError:
 
 if TYPE_CHECKING:
     from general_python.lattices.lattice    import Lattice
-    from .config                            import PlotStyle, KSpaceConfig, SpectralConfig
+    from .config                            import PlotStyle, KSpaceConfig, KPathConfig, SpectralConfig
     
 # ==============================================================================
 # SPECTRAL BROADENING
@@ -241,6 +241,8 @@ def plot_spectral_function_2d(
         mode            : Literal['kpath', 'grid']      = 'kpath',
         path_info       : Optional[dict]                = None,
         style           : Optional['PlotStyle']         = None,
+        ks_config       : Optional['KSpaceConfig']      = None,
+        kpath_config    : Optional['KPathConfig']       = None,
         spectral_config : Optional['SpectralConfig']    = None,
         lattice         : Optional["Lattice"]           = None,
         use_extend      : bool                          = False,
@@ -289,19 +291,30 @@ def plot_spectral_function_2d(
     """
     try:
         from ..plot     import Plotter
-        from .config    import PlotStyle, SpectralConfig
+        from .config    import PlotStyle, KPathConfig, KSpaceConfig, SpectralConfig
     except ImportError as e:
         raise ImportError("Failed to import plotting configurations: " + str(e))
     
-    if style is None:               style = PlotStyle()
-    if spectral_config is None:     spectral_config = SpectralConfig()
+    if style is None:
+        style = PlotStyle()
+    if ks_config is None:
+        ks_config = KSpaceConfig()
+    if kpath_config is None:
+        kpath_config = KPathConfig()
+    if spectral_config is None:
+        spectral_config = SpectralConfig()
+
+    intensity_arr = np.asarray(intensity)
+    omega_arr = np.asarray(omega, dtype=float).ravel()
     
     # Determine color scale
-    vmin                            = style.vmin if style.vmin is not None else np.nanmin(intensity)
-    vmax                            = style.vmax if style.vmax is not None else np.nanmax(intensity)
+    cmap = spectral_config.cmap_spectral if spectral_config.cmap_spectral else style.cmap
+    vmin = style.vmin if style.vmin is not None else np.nanmin(intensity_arr)
+    vmax = style.vmax if style.vmax is not None else np.nanmax(intensity_arr)
     
     if spectral_config.log_scale and vmin <= 0:
-        vmin = np.nanmin(intensity[intensity > 0]) if np.any(intensity > 0) else 1e-10
+        positive = intensity_arr[intensity_arr > 0]
+        vmin = np.nanmin(positive) if positive.size > 0 else 1e-10
     
     # Log normalization if requested
     if spectral_config.log_scale:
@@ -311,15 +324,21 @@ def plot_spectral_function_2d(
         norm = None
     
     if mode == 'kpath':
-        # Path mode: k_values are 1D path distances
-        
-        if k_values.ndim > 1:
-            k_values = k_values[:, 0]  # Extract distance
-        
-        K, Omega    = np.meshgrid(k_values, omega, indexing='ij')
+        path_dist = np.asarray(k_values, dtype=float).ravel()
+        if intensity_arr.ndim != 2:
+            raise ValueError("kpath spectral plots expect intensity with shape (Npath, Nomega).")
+        if intensity_arr.shape != (len(path_dist), len(omega_arr)):
+            raise ValueError(
+                f"kpath spectral intensity must have shape {(len(path_dist), len(omega_arr))}, "
+                f"got {intensity_arr.shape}."
+            )
+
+        K, Omega    = np.meshgrid(path_dist, omega_arr, indexing='ij')
         im          = ax.pcolormesh(
-                        K, Omega, intensity,
-                        cmap    =   style.cmap,
+                        K,
+                        Omega,
+                        intensity_arr,
+                        cmap    =   cmap,
                         vmin    =   vmin if not spectral_config.log_scale else None,
                         vmax    =   vmax if not spectral_config.log_scale else None,
                         norm    =   norm,
@@ -330,7 +349,7 @@ def plot_spectral_function_2d(
             xlabel          =   r'$k$',
             ylabel          =   spectral_config.omega_label,
             fontsize        =   style.fontsize_label,
-            xlim            =   (k_values.min(), k_values.max())
+            xlim            =   (float(path_dist.min()), float(path_dist.max()))
         )
         
         # Add high-symmetry separators
@@ -339,38 +358,45 @@ def plot_spectral_function_2d(
             label_texts         = path_info.get('label_texts',      [])
             
             if len(label_positions) > 0:
+                separator_kw = dict(kpath_config.get_separator_kwargs())
+                separator_kw.update(kwargs.pop('separator_style', {}))
                 for xv in label_positions:
-                    ax.axvline(xv, color='k', ls='--', lw=kwargs.get('linewidth', 1.0), alpha=kwargs.get('alpha', 0.7))
+                    ax.axvline(float(xv), **separator_kw)
                 Plotter.set_tickparams(ax, xticks=label_positions, xticklabels=label_texts)
         
     elif mode == 'grid':
-        
-        if k_values.ndim == 1:
-            raise ValueError("For mode='grid', k_values must include Cartesian k-point coordinates.")
+        if np.asarray(k_values).ndim < 2:
+            raise ValueError("Grid spectral plots require explicit k-point coordinates.")
+        if intensity_arr.ndim != 2:
+            raise ValueError("Grid spectral plots expect intensity with shape (Nk, Nomega).")
+        if intensity_arr.shape[1] != len(omega_arr):
+            raise ValueError(
+                f"Grid spectral intensity must have omega as the last axis with length {len(omega_arr)}, "
+                f"got {intensity_arr.shape}."
+            )
 
-        if spectral_config.omega_grid is not None:
-            omega0          = spectral_config.energy_shift
-            idx             = np.argmin(np.abs(omega - omega0))
-            intensity_2d    = intensity[:, idx]
+        omega_value = kwargs.pop('omega_value', spectral_config.omega_value)
+        if omega_value is not None:
+            idx = int(np.argmin(np.abs(omega_arr - float(omega_value))))
+            intensity_2d = intensity_arr[:, idx]
         else:
-            intensity_2d    = np.trapezoid(intensity, omega, axis=1)
+            intensity_2d = np.trapezoid(intensity_arr, omega_arr, axis=1)
+
+        grid_kwargs = dict(kwargs)
+        grid_kwargs.pop('fig', None)
+        show_extended_bz = grid_kwargs.pop('show_extended_bz', use_extend)
+        bz_copies = grid_kwargs.pop('bz_copies', extend_copies)
 
         im = plot_kspace_intensity(
             ax,
-            k2                  =   k_values,
+            k_values            =   k_values,
             intensity           =   intensity_2d,
             style               =   style,
+            ks_config           =   ks_config,
             lattice             =   lattice,
-            show_extended_bz    =   use_extend,
-            bz_copies           =   extend_copies,
-            grid_n              =   kwargs.get('grid_n', 0),
-            point_size          =   kwargs.get('point_size', style.markersize * 8),
-            point_alpha         =   kwargs.get('point_alpha', style.alpha),
-            draw_bz_outline     =   kwargs.get('draw_bz_outline', True),
-            label_high_symmetry =   kwargs.get('label_high_symmetry', True),
-            mask_outside_bz     =   kwargs.get('mask_outside_bz', True),
-            interp_method       =   kwargs.get('interp_method', 'linear'),
-            imshow_interp       =   kwargs.get('imshow_interp', 'bilinear'),
+            show_extended_bz    =   show_extended_bz,
+            bz_copies           =   bz_copies,
+            **grid_kwargs,
         )
     
     # Energy limits
@@ -382,12 +408,11 @@ def plot_spectral_function_2d(
     
     ax.tick_params(labelsize=style.fontsize_tick)
     
-    if colorbar and kwargs.get('fig', None) is not None:
-        Plotter.add_colorbar(
-            fig         = kwargs.get('fig', None),
-            mappable    = im,
-            label       = spectral_config.colorbar_label,
-        )
+    colorbar_fig = kwargs.get('fig', None)
+    if colorbar and colorbar_fig is not None:
+        cbar = colorbar_fig.colorbar(im, ax=ax, pad=0.02)
+        cbar.set_label(spectral_config.get_colorbar_label(), fontsize=style.fontsize_colorbar)
+        cbar.ax.tick_params(labelsize=style.fontsize_tick)
     
     return im
 
