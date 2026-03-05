@@ -1531,6 +1531,7 @@ def plot_high_symmetry_points(
     lattice                 : Lattice,
     *,
     path                    : Optional[Union[List[str], str, Iterable[Tuple[str, Iterable[float]]]]] = None,
+    selection               : Optional[Any]                 = None,
     ax                      : Optional[Axes]                = None,
     show_kpoints            : bool                          = True,
     show_bz                 : bool                          = True,
@@ -1592,6 +1593,9 @@ def plot_high_symmetry_points(
     path : list[str], str, or iterable[(label, frac)], optional
         High-symmetry path specification. If omitted, the lattice default path
         is used.
+    selection : object, optional
+        Precomputed output of ``lattice.bz_path_points(...)``. When provided,
+        this exact matched set is used for path and matched-point rendering.
     ax : Axes, optional
         Existing matplotlib axes. If omitted, a new figure and axes are created.
     show_kpoints : bool, default=True
@@ -1680,10 +1684,16 @@ def plot_high_symmetry_points(
         copy_spec = copy_values[:dim]
 
     # Check the BZ path and find the nearest k-points along it.
-    selection       = lattice.bz_path_points(path=path, points_per_seg=points_per_seg, k_vectors=kvecs_full, k_vectors_frac=kfrac, tol=path_match_tol, periodic=False,)
+    if selection is None:
+        selection = lattice.bz_path_points(
+            path=path, points_per_seg=points_per_seg, k_vectors=kvecs_full, k_vectors_frac=kfrac, tol=path_match_tol, periodic=False,
+        )
     hs              = lattice.high_symmetry_points()
     resolved_path   = lattice.default_resolve_path(path if path is not None else hs)
     legend_kwargs   = {} if legend_kwargs is None else dict(legend_kwargs)
+    label_kmesh     = kwargs.get("label_kmesh", "k-mesh")
+    label_extended  = kwargs.get("label_extended", "extended mesh")
+    label_matched   = kwargs.get("label_matched", "matched path points")
     plotted_coords  = [coords]
     round_scale     = 1e-10
 
@@ -1749,13 +1759,13 @@ def plot_high_symmetry_points(
             
             if dim == 1:
                 axis.scatter(ext_coords[:, 0], np.zeros(len(ext_coords)), s=kpoint_size, color=extended_kpoint_color,
-                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label='extended mesh')
+                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label=label_extended)
             elif dim == 2:
                 axis.scatter(ext_coords[:, 0], ext_coords[:, 1], s=kpoint_size, color=extended_kpoint_color,
-                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label='extended mesh')
+                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label=label_extended)
             else:
                 axis.scatter(ext_coords[:, 0], ext_coords[:, 1], ext_coords[:, 2], s=kpoint_size, color=extended_kpoint_color,
-                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label='extended mesh')
+                             alpha=extended_kpoint_alpha, marker=marker_extend, edgecolors=edgecolor_extend, zorder=zorder_extend, label=label_extended)
 
     # Plot the original k-points on top of everything else (if requested) so they are visible even if they overlap with the path or extended points
     if show_kpoints:
@@ -1764,11 +1774,11 @@ def plot_high_symmetry_points(
         edgecolor_kpoints   = kwargs.get("edgecolor_kpoints", "none")
         
         if dim == 1:
-            axis.scatter(coords[:, 0], np.zeros(len(coords)), s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label='k-mesh')
+            axis.scatter(coords[:, 0], np.zeros(len(coords)), s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label=label_kmesh)
         elif dim == 2:
-            axis.scatter(coords[:, 0], coords[:, 1], s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label='k-mesh')
+            axis.scatter(coords[:, 0], coords[:, 1], s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label=label_kmesh)
         else:
-            axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label='k-mesh')
+            axis.scatter(coords[:, 0], coords[:, 1], coords[:, 2], s=kpoint_size, color=kpoint_color, alpha=kpoint_alpha, marker=marker_kpoints, edgecolors=edgecolor_kpoints, zorder=zorder_kpoints, label=label_kmesh)
 
     # Plot the matched k-points along the path with a distinct style, ensuring we only plot them if there are matches and if the option is enabled
     if show_matched_kpoints and selection.has_matches:
@@ -1791,15 +1801,15 @@ def plot_high_symmetry_points(
             if dim == 1:
                 axis.scatter(matched[:, 0], np.zeros(len(matched)), s=matched_kpoint_size, color=matched_kpoint_color,
                              alpha=matched_kpoint_alpha, marker=matched_kpoint_marker, edgecolors=matched_kpoint_edgecolor,
-                             linewidths=0.9, zorder=7, label='matched path points')
+                             linewidths=0.9, zorder=7, label=label_matched)
             elif dim == 2:
                 axis.scatter(matched[:, 0], matched[:, 1], s=matched_kpoint_size, color=matched_kpoint_color,
                              alpha=matched_kpoint_alpha, marker=matched_kpoint_marker, edgecolors=matched_kpoint_edgecolor,
-                             linewidths=0.9, zorder=7, label='matched path points')
+                             linewidths=0.9, zorder=7, label=label_matched)
             else:
                 axis.scatter(matched[:, 0], matched[:, 1], matched[:, 2], s=matched_kpoint_size, color=matched_kpoint_color,
                              alpha=matched_kpoint_alpha, marker=matched_kpoint_marker, edgecolors=matched_kpoint_edgecolor,
-                             linewidths=0.9, zorder=7, label='matched path points')
+                             linewidths=0.9, zorder=7, label=label_matched)
 
     # Plot exact high-symmetry vertices, not the nearest interpolated path samples.
     if hs_plot != "none":
@@ -1845,14 +1855,27 @@ def plot_high_symmetry_points(
                     hs_dict = hs_label_kwargs.copy() if hs_label_kwargs else {}
                     hs_fw   = hs_dict.pop("fontweight", "bold")
                     hs_zord = hs_dict.pop("zorder", 8)
-                    bbox    = hs_dict.pop("bbox", dict(boxstyle='round,pad=0.15', fc='white', ec='none', alpha=0.75))
+                    bbox    = hs_dict.pop("bbox", None)
                     hs_xy   = hs_dict.pop("xy", (8, 8))
                     hs_xy   = hs_xy if isinstance(hs_xy, tuple) else (hs_xy.get(lbl, (8, 8)) if isinstance(hs_xy, dict) else (8, 8))
-                    print(f"Placing HS label '{text} [{lbl}]' at {cart} with offset {hs_xy} and style {hs_dict}")
                     if dim == 3:
-                        axis.text(cart[0], cart[1], cart[2], text, fontsize=hs_font_size, fontweight=hs_fw, zorder=hs_zord, bbox=bbox, ha='center', va='center', **hs_dict)
+                        text_kwargs = dict(fontsize=hs_font_size, fontweight=hs_fw, zorder=hs_zord, ha='center', va='center', **hs_dict)
+                        if bbox is not None:
+                            text_kwargs["bbox"] = bbox
+                        axis.text(cart[0], cart[1], cart[2], text, **text_kwargs)
                     else:
-                        axis.annotate(text, xy=(cart[0], cart[1] if dim > 1 else 0.0), textcoords='offset points', xytext=hs_xy, fontsize=hs_font_size, fontweight=hs_fw, zorder=hs_zord, bbox=bbox, **hs_dict)
+                        ann_kwargs = dict(
+                            xy=(cart[0], cart[1] if dim > 1 else 0.0),
+                            textcoords='offset points',
+                            xytext=hs_xy,
+                            fontsize=hs_font_size,
+                            fontweight=hs_fw,
+                            zorder=hs_zord,
+                            **hs_dict,
+                        )
+                        if bbox is not None:
+                            ann_kwargs["bbox"] = bbox
+                        axis.annotate(text, **ann_kwargs)
 
     # Final spatial limits and legend
     plotted_stack = np.vstack([np.asarray(arr, dtype=float).reshape(-1, dim) for arr in plotted_coords if np.asarray(arr).size > 0])

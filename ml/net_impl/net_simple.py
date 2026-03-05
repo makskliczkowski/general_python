@@ -9,7 +9,8 @@ Methods:
     apply(x): Applies the "network" to input data by generating random complex numbers.
     __call__(x): Wrapper for apply method to make the class instance callable.
 
-Parameters:
+Parameters
+----------
     x: Input data array. Can be a single sample or a batch.
 
 Returns:

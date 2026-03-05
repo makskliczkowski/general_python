@@ -270,7 +270,9 @@ def plot_spectral_function_2d(
         - 'kpath' : Plot along high-symmetry path with vertical separators
         - 'grid'  : 2D k-space grid with optional BZ extension
     path_info : dict, optional
-        For mode='kpath': {label_positions, label_texts} from select_kpoints_along_path
+        For mode='kpath': expected keys include:
+        - ``label_positions``, ``label_texts`` for high-symmetry ticks
+        - ``sampled_positions`` and sampled overlay style knobs
     style : PlotStyle, optional
         Styling configuration
     spectral_config : SpectralConfig, optional
@@ -304,17 +306,17 @@ def plot_spectral_function_2d(
     if spectral_config is None:
         spectral_config = SpectralConfig()
 
-    intensity_arr = np.asarray(intensity)
-    omega_arr = np.asarray(omega, dtype=float).ravel()
+    intensity_arr   = np.asarray(intensity)
+    omega_arr       = np.asarray(omega, dtype=float).ravel()
     
     # Determine color scale
-    cmap = spectral_config.cmap_spectral if spectral_config.cmap_spectral else style.cmap
-    vmin = style.vmin if style.vmin is not None else np.nanmin(intensity_arr)
-    vmax = style.vmax if style.vmax is not None else np.nanmax(intensity_arr)
+    cmap            = spectral_config.cmap_spectral if spectral_config.cmap_spectral else style.cmap
+    vmin            = style.vmin if style.vmin is not None else np.nanmin(intensity_arr)
+    vmax            = style.vmax if style.vmax is not None else np.nanmax(intensity_arr)
     
     if spectral_config.log_scale and vmin <= 0:
-        positive = intensity_arr[intensity_arr > 0]
-        vmin = np.nanmin(positive) if positive.size > 0 else 1e-10
+        positive    = intensity_arr[intensity_arr > 0]
+        vmin        = np.nanmin(positive) if positive.size > 0 else 1e-10
     
     # Log normalization if requested
     if spectral_config.log_scale:
@@ -363,6 +365,67 @@ def plot_spectral_function_2d(
                 for xv in label_positions:
                     ax.axvline(float(xv), **separator_kw)
                 Plotter.set_tickparams(ax, xticks=label_positions, xticklabels=label_texts)
+
+            if bool(path_info.get('show_sampled_points', False)):
+                sample_pos = np.asarray(path_info.get('sampled_positions', []), dtype=float).ravel()
+                if sample_pos.size > 0:
+                    sample_pos = sample_pos[np.isfinite(sample_pos)]
+                    if sample_pos.size > 0:
+                        sample_pos = np.unique(np.round(sample_pos, decimals=12))
+                        sample_pos.sort()
+                        alpha = float(path_info.get('sampled_points_alpha', 0.16))
+                        color = path_info.get('sampled_points_color', 'auto')
+                        lw = float(path_info.get('sampled_points_lw', 0.35))
+                        ms = float(path_info.get('sampled_points_ms', 2.0))
+                        style_mode = str(path_info.get('sampled_points_style', 'rug')).lower()
+                        guide_alpha = float(path_info.get('sampled_points_guide_alpha', 0.08))
+                        guide_lw = float(path_info.get('sampled_points_guide_lw', 0.5))
+                        where = str(path_info.get('sampled_points_where', 'bottom')).lower()
+
+                        # Auto mode uses dual-contrast strokes, so support remains visible on dark and bright regions.
+                        use_auto_contrast = isinstance(color, str) and color.lower() == 'auto'
+
+                        if style_mode in ('guides', 'both'):
+                            if use_auto_contrast:
+                                ax.vlines(sample_pos, omega_arr.min(), omega_arr.max(), colors='k', linewidth=max(guide_lw + 0.35, guide_lw),
+                                          alpha=max(0.03, guide_alpha * 0.45), zorder=27)
+                                ax.vlines(sample_pos, omega_arr.min(), omega_arr.max(), colors='w', linewidth=guide_lw,
+                                          alpha=guide_alpha, zorder=28)
+                            else:
+                                ax.vlines(sample_pos, omega_arr.min(), omega_arr.max(), colors=color, linewidth=guide_lw,
+                                          alpha=guide_alpha, zorder=28)
+
+                        if style_mode in ('rug', 'both'):
+                            if where in ('bottom', 'both'):
+                                if use_auto_contrast:
+                                    ax.vlines(sample_pos, 0.0, 0.04, transform=ax.get_xaxis_transform(), colors='k',
+                                              linewidth=max(lw + 0.45, lw), alpha=max(0.12, alpha * 0.65), zorder=28)
+                                    ax.vlines(sample_pos, 0.0, 0.04, transform=ax.get_xaxis_transform(), colors='w',
+                                              linewidth=lw, alpha=alpha, zorder=29)
+                                    ax.plot(sample_pos, np.zeros_like(sample_pos), linestyle='None', marker='o', markersize=ms,
+                                            markerfacecolor='w', markeredgecolor='k', markeredgewidth=0.25,
+                                            alpha=min(1.0, alpha * 1.1), transform=ax.get_xaxis_transform(), zorder=30)
+                                else:
+                                    ax.vlines(sample_pos, 0.0, 0.04, transform=ax.get_xaxis_transform(), colors=color, linewidth=lw,
+                                              alpha=alpha, zorder=29)
+                                    ax.plot(sample_pos, np.zeros_like(sample_pos), linestyle='None', marker='o', markersize=ms,
+                                            markerfacecolor=color, markeredgewidth=0.0, alpha=min(1.0, alpha * 1.1),
+                                            transform=ax.get_xaxis_transform(), zorder=30)
+                            if where in ('top', 'both'):
+                                if use_auto_contrast:
+                                    ax.vlines(sample_pos, 0.96, 1.0, transform=ax.get_xaxis_transform(), colors='k',
+                                              linewidth=max(lw + 0.45, lw), alpha=max(0.12, alpha * 0.65), zorder=28)
+                                    ax.vlines(sample_pos, 0.96, 1.0, transform=ax.get_xaxis_transform(), colors='w',
+                                              linewidth=lw, alpha=alpha, zorder=29)
+                                    ax.plot(sample_pos, np.ones_like(sample_pos), linestyle='None', marker='o', markersize=ms,
+                                            markerfacecolor='w', markeredgecolor='k', markeredgewidth=0.25,
+                                            alpha=min(1.0, alpha * 1.1), transform=ax.get_xaxis_transform(), zorder=30)
+                                else:
+                                    ax.vlines(sample_pos, 0.96, 1.0, transform=ax.get_xaxis_transform(), colors=color, linewidth=lw,
+                                              alpha=alpha, zorder=29)
+                                    ax.plot(sample_pos, np.ones_like(sample_pos), linestyle='None', marker='o', markersize=ms,
+                                            markerfacecolor=color, markeredgewidth=0.0, alpha=min(1.0, alpha * 1.1),
+                                            transform=ax.get_xaxis_transform(), zorder=30)
         
     elif mode == 'grid':
         if np.asarray(k_values).ndim < 2:
@@ -370,22 +433,20 @@ def plot_spectral_function_2d(
         if intensity_arr.ndim != 2:
             raise ValueError("Grid spectral plots expect intensity with shape (Nk, Nomega).")
         if intensity_arr.shape[1] != len(omega_arr):
-            raise ValueError(
-                f"Grid spectral intensity must have omega as the last axis with length {len(omega_arr)}, "
-                f"got {intensity_arr.shape}."
-            )
+            raise ValueError(f"Grid spectral intensity must have omega as the last axis with length {len(omega_arr)}, got {intensity_arr.shape}.")
 
         omega_value = kwargs.pop('omega_value', spectral_config.omega_value)
+        print(f"Plotting grid spectral function with omega_value={omega_value} (overrides: {kwargs.get('omega_value', 'not set')}, spectral_config: {spectral_config.omega_value})")
         if omega_value is not None:
-            idx = int(np.argmin(np.abs(omega_arr - float(omega_value))))
-            intensity_2d = intensity_arr[:, idx]
+            idx             = int(np.argmin(np.abs(omega_arr - float(omega_value))))
+            intensity_2d    = intensity_arr[:, idx]
         else:
-            intensity_2d = np.trapezoid(intensity_arr, omega_arr, axis=1)
+            intensity_2d    = np.trapezoid(intensity_arr, omega_arr, axis=1)
 
-        grid_kwargs = dict(kwargs)
+        grid_kwargs         = dict(kwargs)
         grid_kwargs.pop('fig', None)
-        show_extended_bz = grid_kwargs.pop('show_extended_bz', use_extend)
-        bz_copies = grid_kwargs.pop('bz_copies', extend_copies)
+        show_extended_bz    = grid_kwargs.pop('show_extended_bz', use_extend)
+        bz_copies           = grid_kwargs.pop('bz_copies', extend_copies)
 
         im = plot_kspace_intensity(
             ax,

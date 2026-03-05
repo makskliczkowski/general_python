@@ -257,7 +257,7 @@ def label_high_sym_points(ax, lattice: "Lattice", bz_copies: int = 2, show_label
                         markerfacecolor =   kwargs.get('markerfacecolor', 'white'),
                         markeredgecolor =   kwargs.get('markeredgecolor', 'black'),
                         markeredgewidth =   kwargs.get('markeredgewidth', 1.0),
-                        zorder          =   25
+                        zorder          =   kwargs.get('marker_zorder', 25)
                     )
                     
                     # Add label - show for center BZ, and others only if explicitly requested
@@ -269,11 +269,11 @@ def label_high_sym_points(ax, lattice: "Lattice", bz_copies: int = 2, show_label
                             point.latex_label,
                             color       =   kwargs.get('label_color', 'black'),
                             fontsize    =   kwargs.get('label_fontsize', 11),
-                            fontweight  =   'bold',
+                            fontweight  =   kwargs.get('label_fontweight', 'normal'),
                             ha          =   'center',
                             va          =   'bottom',
                             bbox        =   kwargs.get('label_bbox', None),
-                            zorder      =   26
+                            zorder      =   kwargs.get('label_zorder', 26)
                         )
     except Exception:
         pass

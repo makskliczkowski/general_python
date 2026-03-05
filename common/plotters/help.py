@@ -19,7 +19,8 @@ Topics (use Plotter.help('topic_name') for details):
 'color'   - Colors: add_colorbar, get_colormap, discrete_colormap,
             Color cycles: colorsCycle, colorsCyclePlastic, etc.
 
-'layout'  - Subplots: get_subplots, make_grid, GridBuilder, get_inset
+'layout'  - Subplots: get_subplots (AxesList + mosaic/spans), make_grid, GridBuilder, get_inset
+            aliases: subplots(...), subplot_mosaic(...)
 
 'grid'    - Advanced grids: make_grid (full control), GridBuilder (nested)
             width_ratios, height_ratios, wspace, hspace, margins
@@ -28,7 +29,10 @@ Topics (use Plotter.help('topic_name') for details):
 
 'annotate'- Annotations: set_annotate, set_annotate_letter, set_arrow
 
-'style'   - configure_style('nature'), configure_style('science'), 'prl', 'aps'
+'style'   - configure_style('publication'|'presentation'|'poster'|'minimal')
+            plus Plotter style/config factories
+
+'plotters'- Access plotter subpackage via Plotter.plotters()
 
 'save'    - Saving: save_fig(directory, filename, format='pdf', dpi=300)
 
@@ -190,6 +194,27 @@ Simple Subplots (recommended for quick plots):
         constrained_layout=True,          # Auto-adjust spacing
     )
     # axes is always a flat list: [ax0, ax1, ax2, ...]
+    # and also an AxesList wrapper:
+    #   axes[1, 2], axes.row(0), axes.col(1), axes.span(slice(0,2), slice(1,3))
+
+Aliases:
+    fig, axes = Plotter.subplots(2, 2, sizex=7, sizey=6)
+    fig, axes = Plotter.subplot_mosaic([['A', 'A'], ['B', 'C']], sizex=7, sizey=5)
+
+Non-Standard Layouts:
+    fig, axes = Plotter.get_subplots(
+        mosaic=[['A', 'A', 'B'],
+                ['C', 'D', 'D']],
+        sizex=8, sizey=4,
+    )
+    axes['A'].set_title('Main panel')
+
+    fig, axes = Plotter.get_subplots(
+        nrows=3, ncols=4,
+        spans={'main': (0, 2, 0, 3), 'side': (0, 2, 3, 4), 'bot': (2, 3, 0, 4)},
+        sizex=9, sizey=5,
+    )
+    axes['main'].plot(x, y)
 
 ──────────────────────────────────────────────────────────────────────────────
 ADVANCED GRIDS - Full Control Over Layout
@@ -407,10 +432,10 @@ PUBLICATION STYLES
 
 Configure global Matplotlib style for different journals.
 
-    configure_style('nature')    # Nature, Science, Cell
-    configure_style('science')   # Science-family journals
-    configure_style('prl')       # Physical Review Letters
-    configure_style('aps')       # APS journals (PRB, PRX, etc.)
+    configure_style('publication')   # default publication-like style
+    configure_style('presentation')  # larger fonts/strokes
+    configure_style('poster')        # very large plotting scale
+    configure_style('minimal')       # stripped-down visual style
     configure_style('default')   # Matplotlib defaults
 
 What it Sets:
@@ -424,11 +449,18 @@ What it Sets:
 Example:
     from QES.general_python.common.plot import configure_style, Plotter
     
-    configure_style('nature')  # Apply once at start
+    configure_style('publication', font_size=10, dpi=150)  # Apply once at start
     
     fig, ax = Plotter.get_subplots(1, 1)
     Plotter.plot(ax, x, y)
     Plotter.save_fig('.', 'figure1', format='pdf')
+
+Factory Methods for Typed Plotter Configs:
+    style_cfg    = Plotter.plot_style(cmap='viridis', linewidth=1.3)
+    ks_cfg       = Plotter.kspace_config(grid_n=260, point_size=10.0)
+    kp_cfg       = Plotter.kpath_config(points_per_seg=80)
+    spec_cfg     = Plotter.spectral_config(omega_value=0.0)
+    fig_cfg      = Plotter.figure_config(max_cols=3, constrained_layout=True)
 
 Custom Adjustments:
     After configure_style(), you can fine-tune with:
@@ -436,6 +468,20 @@ Custom Adjustments:
     import matplotlib.pyplot as plt
     plt.rcParams['font.size'] = 11
     plt.rcParams['axes.linewidth'] = 0.8
+''',
+            'plotters': r'''
+===================
+PLOTTERS EXPOSURE
+===================
+
+Access the ``QES.general_python.common.plotters`` package directly:
+
+    plotters = Plotter.plotters()
+
+Typical usage:
+    cfg = plotters.config.PlotStyle(cmap='magma')
+    # or via Plotter factory:
+    cfg = Plotter.plot_style(cmap='magma')
 ''',
 }
 

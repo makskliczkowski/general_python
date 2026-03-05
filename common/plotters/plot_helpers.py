@@ -46,6 +46,15 @@ _KSPACE_CONFIG_KEYS     = set(KSpaceConfig.__dataclass_fields__.keys())
 _KPATH_CONFIG_KEYS      = set(KPathConfig.__dataclass_fields__.keys())
 _SPECTRAL_CONFIG_KEYS   = set(SpectralConfig.__dataclass_fields__.keys())
 
+# Publication-oriented draw order defaults
+_ZORDER_GRID_GUIDE      = 2
+_ZORDER_MAP             = 8
+_ZORDER_BZ_OUTLINE      = 14
+_ZORDER_POINTS          = 18
+_ZORDER_HS_MARKER       = 24
+_ZORDER_HS_LABEL        = 26
+_ZORDER_REFERENCE       = 30
+_ZORDER_LINES           = 10
 
 # -----------------------------------------------------------------------------
 # Internal helpers
@@ -165,61 +174,6 @@ def _extract_scalar_kfield(values: np.ndarray, grid_shape: tuple[int, ...], *,
 
     return np.asarray(field, dtype=float)
 
-def _extract_spectral_matrix(
-    intensity   : np.ndarray,
-    omega       : np.ndarray,
-    *,
-    grid_shape  : Optional[tuple[int, ...]] = None,
-    batch_index : Optional[Any] = None,
-) -> np.ndarray:
-    """
-    Canonicalize spectral data to shape ``(Nk, Nomega)``.
-
-    Supported common layouts include:
-    - ``(Nk, Nw)``
-    - ``(Nw, Nk)``
-    - ``(Lx, Ly, Lz, Nw)``
-    - ``(Nw, Lx, Ly, Lz)``
-    - the same with leading batch axes, selected through ``batch_index``
-    """
-    arr     = np.asarray(intensity)
-    n_omega = int(np.asarray(omega).size)
-    if arr.ndim < 2:
-        raise ValueError("Spectral intensity must have at least k and omega axes.")
-
-    if grid_shape is None:
-        omega_axes = [axis for axis, size in enumerate(arr.shape) if int(size) == n_omega]
-        if not omega_axes:
-            raise ValueError(f"Could not identify an omega axis of length {n_omega} in shape {arr.shape}.")
-        omega_axis  = omega_axes[-1]
-        arr         = np.moveaxis(arr, omega_axis, -1) # move omega to the last axis 
-        return arr.reshape(-1, n_omega)
-
-    grid_axis, grid_span    = _find_kgrid_axes(arr.shape, grid_shape)
-    outside_axes            = [axis for axis in range(arr.ndim) if not (grid_axis <= axis < grid_axis + grid_span)]
-    omega_candidates        = [axis for axis in outside_axes if int(arr.shape[axis]) == n_omega]
-    if not omega_candidates:
-        raise ValueError(f"Could not identify an omega axis of length {n_omega} outside k-grid axes {grid_shape} in intensity shape {arr.shape}.")
-    omega_axis              = omega_candidates[-1]
-    extra_axes              = [axis for axis in outside_axes if axis != omega_axis]
-    if extra_axes:
-        if batch_index is None:
-            batch_index = tuple(0 for _ in extra_axes)
-        elif not isinstance(batch_index, tuple):
-            batch_index = (batch_index,)
-        if len(batch_index) != len(extra_axes):
-            raise ValueError(f"batch_index must have length {len(extra_axes)} for intensity shape {arr.shape}.")
-        
-        indexer = [slice(None)] * arr.ndim
-        for axis, idx in zip(extra_axes, batch_index):
-            indexer[axis] = idx
-        arr = arr[tuple(indexer)]
-        return _extract_spectral_matrix(arr, omega, grid_shape=grid_shape, batch_index=None)
-
-    arr = np.moveaxis(arr, omega_axis, -1)
-    nk  = int(np.prod(grid_shape))
-    return arr.reshape(nk, n_omega)
-
 def _deduplicate_xy_samples(points: np.ndarray, values: np.ndarray, *, decimals: int = 12) -> tuple[np.ndarray, np.ndarray]:
     """
     Average duplicate planar samples before interpolation. This is used to clean up the extended k-space samples, 
@@ -259,6 +213,24 @@ def _compress_path_runs(k_dist: np.ndarray, values: np.ndarray, indices: np.ndar
             val_out.append(np.mean(vals[start:pos], axis=0))
             start = pos
     return np.asarray(x_out, dtype=float), np.asarray(val_out)
+
+def _gather_nn_edges_lattice(lattice: Optional["Lattice"]) -> list[tuple[int, int]]:
+    """Extract unique nearest-neighbor edges from a lattice-like object."""
+    if lattice is None or not hasattr(lattice, "Ns") or not hasattr(lattice, "get_nn"):
+        return []
+
+    edges = set()
+    for i in range(int(lattice.Ns)):
+        neighbors = lattice.get_nn(i)
+        if not neighbors:
+            continue
+        for j in neighbors:
+            if hasattr(lattice, "wrong_nei") and lattice.wrong_nei(j):
+                continue
+            a, b = sorted((int(i), int(j)))
+            if a != b:
+                edges.add((a, b))
+    return sorted(edges)
 
 # -----------------------------------------------------------------------------
 
@@ -387,6 +359,11 @@ def plot_realspace_correlations(
           ``line_color``, ``map_alpha``, ``color_points_by_value``,
           ``point_size``, ``point_alpha``, ``point_facecolor``, ``edgecolor``,
           ``linewidths``, ``ref_point_size``, ``ref_point_color``, ``axis_off``
+        - lattice-bond styling (``mode='lattice'``):
+          ``show_bonds``, ``bond_colors`` (dict by bond type), ``edge_color``,
+          ``edge_alpha``, ``bond_linewidth``, ``bond_linestyle``,
+          ``bond_zorder``, ``show_periodic_bonds``, ``periodic_linestyle``,
+          ``periodic_alpha``, ``periodic_color``
     """
     _, ax, _    = _prepare_axes(ax, figsize=figsize, dpi=dpi)
     style       = PlotStyle() if style is None else style
@@ -423,16 +400,19 @@ def plot_realspace_correlations(
         order   = np.argsort(x)
         (line,) = ax.plot(x[order], site_vals[order],
             marker=style.marker, ms=style.markersize, lw=style.linewidth, ls=style.linestyle, alpha=style.alpha,
+            mfc=overrides.pop("marker_facecolor", "white"),
+            mec=overrides.pop("marker_edgecolor", "white"), mew=overrides.pop("marker_edgewidth", 0.45),
             color=overrides.pop("line_color", "C0"),
+            zorder=overrides.pop("line_zorder", _ZORDER_LINES),
         )
         
         if relative_coordinates:
-            ax.axvline(0.0, color="0.35", ls="--", lw=1.0, alpha=0.5)
+            ax.axvline(0.0, color="0.35", ls="--", lw=0.9, alpha=0.6, zorder=overrides.pop("guide_zorder", _ZORDER_GRID_GUIDE))
         Plotter.set_ax_params(ax,
             xlabel=overrides.pop("xlabel", r"$\Delta x$" if relative_coordinates else r"$x$"),
             ylabel=overrides.pop("ylabel", r"$C(\Delta x)$" if relative_coordinates else r"$C(x)$"),
             fontsize=style.fontsize_label,
-            grid=True, grid_alpha=style.grid_alpha, grid_color="0.8",
+            grid=True, grid_alpha=style.grid_alpha, grid_color="0.85",
         )
         Plotter.set_tickparams(ax, labelsize=style.fontsize_tick)
         return line
@@ -454,37 +434,88 @@ def plot_realspace_correlations(
     if use_interp:
         shading = "flat" if str(interpolation).lower() == "nearest" else "gouraud"
         artist  = _masked_tripcolor(ax, pos, site_vals,
-            cmap=style.cmap, vmin=style.vmin, vmax=style.vmax, alpha=overrides.pop("map_alpha", 0.95), shading=shading)
+            cmap=style.cmap, vmin=style.vmin, vmax=style.vmax, alpha=overrides.pop("map_alpha", 0.9), shading=shading,
+            zorder=overrides.pop("map_zorder", _ZORDER_MAP), rasterized=overrides.pop("map_rasterized", True))
+
+    # Optional lattice bonds overlay to emphasize geometry/connectivity.
+    if bool(overrides.pop("show_bonds", False)) and lattice is not None:
+        edges = _gather_nn_edges_lattice(lattice)
+        if edges:
+            edge_color = overrides.pop("edge_color", "0.5")
+            edge_alpha = float(overrides.pop("edge_alpha", 0.75))
+            bond_lw = float(overrides.pop("bond_linewidth", 1.0))
+            bond_ls = overrides.pop("bond_linestyle", "-")
+            bond_colors = overrides.pop("bond_colors", {0: "tab:red", 1: "tab:blue", 2: "tab:green"})
+            show_periodic_bonds = bool(overrides.pop("show_periodic_bonds", True))
+            periodic_ls = overrides.pop("periodic_linestyle", "--")
+            periodic_alpha = float(overrides.pop("periodic_alpha", edge_alpha))
+            periodic_color = overrides.pop("periodic_color", edge_color)
+            bond_zorder = float(overrides.pop("bond_zorder", _ZORDER_BZ_OUTLINE + 0.5))
+
+            # Heuristic: detect likely wrap-around bonds by long distance.
+            dists = [float(np.linalg.norm(pos[j] - pos[i])) for i, j in edges if np.linalg.norm(pos[j] - pos[i]) > 1e-12]
+            typical = min(dists) if dists else None
+
+            for i, j in edges:
+                start = pos[i]
+                end = pos[j]
+                dist = float(np.linalg.norm(end - start))
+                is_periodic = bool(typical is not None and dist > 1.5 * typical)
+                if is_periodic and not show_periodic_bonds:
+                    continue
+
+                line_color = periodic_color if is_periodic else edge_color
+                if hasattr(lattice, "bond_type"):
+                    try:
+                        bt = lattice.bond_type(i, j)
+                        line_color = bond_colors.get(bt, line_color) if not is_periodic else line_color
+                    except Exception:
+                        pass
+
+                ax.plot(
+                    [start[0], end[0]],
+                    [start[1], end[1]],
+                    color=line_color,
+                    alpha=periodic_alpha if is_periodic else edge_alpha,
+                    linestyle=periodic_ls if is_periodic else bond_ls,
+                    linewidth=bond_lw,
+                    zorder=bond_zorder,
+                )
 
     # if not showing an interpolated map, color the points by their value by default to make them more visible. 
-    color_points_by_value = bool(overrides.pop("color_points_by_value", not use_interp))
+    color_points_by_value = bool(overrides.pop("color_points_by_value", True))
+    if use_interp:
+        color_points_by_value = True
     if color_points_by_value:
         scatter = ax.scatter(pos[:, 0], pos[:, 1], c=site_vals, cmap=style.cmap, vmin=style.vmin, vmax=style.vmax,
-            s=overrides.pop("point_size", point_size), edgecolors=overrides.pop("edgecolor", "k"), linewidths=overrides.pop("linewidths", 0.5),
-            zorder=20,
+            s=overrides.pop("point_size", point_size), edgecolors=overrides.pop("edgecolor", "white"), linewidths=overrides.pop("linewidths", 0.35),
+            alpha=overrides.pop("point_alpha", 0.95 if use_interp else 1.0), zorder=overrides.pop("point_zorder", _ZORDER_POINTS),
+            rasterized=overrides.pop("point_rasterized", False),
         )
     else:
         scatter = ax.scatter(pos[:, 0], pos[:, 1], s=overrides.pop("point_size", point_size),
             facecolors=overrides.pop("point_facecolor", "none"),
-            edgecolors=overrides.pop("edgecolor", "k"),
-            linewidths=overrides.pop("linewidths", 0.8),
+            edgecolors=overrides.pop("edgecolor", "0.15"),
+            linewidths=overrides.pop("linewidths", 0.75),
             alpha=overrides.pop("point_alpha", 1.0),
-            zorder=20,
+            zorder=overrides.pop("point_zorder", _ZORDER_POINTS),
+            rasterized=overrides.pop("point_rasterized", False),
         )
         
     # mark the reference site with a star, using the same relative coordinates as the other points if applicable
     ref_xy = np.zeros(2, dtype=float) if relative_coordinates else ref_pos[:2]
-    ax.scatter(ref_xy[0], ref_xy[1], marker="*", s=overrides.pop("ref_point_size", point_size * 1.8), c=overrides.pop("ref_point_color", "yellow"),
-        edgecolors="k", linewidths=0.8, zorder=21)
+    ax.scatter(ref_xy[0], ref_xy[1], marker="*", s=overrides.pop("ref_point_size", point_size * 1.7), c=overrides.pop("ref_point_color", "#F2C14E"),
+        edgecolors=overrides.pop("ref_point_edgecolor", "0.15"), linewidths=overrides.pop("ref_point_edgewidth", 0.75),
+        zorder=overrides.pop("ref_point_zorder", _ZORDER_REFERENCE))
     
     # set axis parameters and return the artist for the interpolated map if it exists, otherwise the scatter plot artist
     Plotter.set_ax_params(ax,
         xlabel=overrides.pop("xlabel", r"$\Delta x$" if relative_coordinates else r"$x$"),
         ylabel=overrides.pop("ylabel", r"$\Delta y$" if relative_coordinates else r"$y$"),
         fontsize=style.fontsize_label, aspect="equal", xlim=xlim, ylim=ylim,
-        show_spines=not bool(overrides.pop("axis_off", True)),
+        show_spines=not bool(overrides.pop("axis_off", False)),
     )
-    if kwargs.get("axis_off", True):
+    if kwargs.get("axis_off", False):
         ax.axis("off")
     Plotter.set_tickparams(ax, labelsize=style.fontsize_tick)
     return artist if artist is not None else scatter
@@ -509,6 +540,7 @@ def plot_kspace_intensity(
     value_mode              : Literal["auto", "real", "imag", "abs", "phase"] = "auto",
     # bz info
     show_extended_bz        : Optional[bool] = None,
+    show_extended_bz_points : Optional[bool] = None,
     bz_copies               : Optional[int] = None,
     # plotting
     show_interpolated_map   : Optional[bool] = None,
@@ -590,31 +622,26 @@ def plot_kspace_intensity(
     _apply_overrides(style, overrides, _PLOT_STYLE_KEYS)
     _apply_overrides(ks_config, overrides, _KSPACE_CONFIG_KEYS)
 
-    if show_extended_bz is None:
-        show_extended_bz = ks_config.extend_bz
-    if bz_copies is None:
-        bz_copies = ks_config.bz_copies
-    if show_interpolated_map is None:
-        show_interpolated_map = ks_config.grid_n > 0
-    if interpolation is None:
-        interpolation = ks_config.interp_method
-    if limit_to_pi is None:
-        limit_to_pi = getattr(ks_config, "limit_to_pi", False)
-    if k_limits is None:
-        k_limits = getattr(ks_config, "k_limits", None)
-
+    if show_extended_bz is None:        show_extended_bz        = ks_config.extend_bz
+    if bz_copies is None:               bz_copies               = ks_config.bz_copies
+    if show_interpolated_map is None:   show_interpolated_map   = ks_config.grid_n > 0
+    if interpolation is None:           interpolation           = ks_config.interp_method
+    if limit_to_pi is None:             limit_to_pi             = getattr(ks_config, "limit_to_pi", False)
+    if k_limits is None:                k_limits                = getattr(ks_config, "k_limits", None)
+    if show_extended_bz_points is None: show_extended_bz_points = ks_config.show_discrete_points
+    
     # get k-space points to (Nk, D) and the corresponding scalar field values on the grid
     flat_k, grid_shape  = _flatten_kspace_points(k_values)
     xy                  = _planar_xy(flat_k) # raises if not planar
-    field               = _extract_scalar_kfield(intensity, grid_shape, batch_index=batch_index,
-                            component_index=component_index, value_mode=value_mode)
+    field               = _extract_scalar_kfield(intensity, grid_shape, batch_index=batch_index, component_index=component_index, value_mode=value_mode)
     
-    extend_points       = bool(overrides.pop("extend_points", False))
+    # for extended zone plotting and interpolation masking, 
+    # we need to identify the unique Wigner-Seitz shifts that map the planar coordinates back into the first Brillouin zone.
     if lattice is not None:
         if show_extended_bz and int(bz_copies) > 0:
             shifts_arr  = np.asarray(lattice.wigner_seitz_shifts(copies=(int(bz_copies), int(bz_copies)), include_origin=True), dtype=float,)
             if shifts_arr.size == 0:
-                shifts  = [np.zeros(2, dtype=float)]
+                shifts          = [np.zeros(2, dtype=float)]
             else:
                 shifts_arr      = shifts_arr.reshape(-1, shifts_arr.shape[-1])[:, :2]
                 rounded         = np.round(shifts_arr, decimals=12)
@@ -625,25 +652,26 @@ def plot_kspace_intensity(
     else:
         shifts = [np.zeros(2, dtype=float)]
 
+    # apply the Wigner-Seitz shifts to the original points and field values to get the extended zone coordinates 
     if show_extended_bz:
         if lattice is not None:
-            final_k, final_field = lattice.wigner_seitz_extend(k_points=xy, data=field, copies=(int(bz_copies), int(bz_copies)))
+            final_k, final_field    = lattice.wigner_seitz_extend(k_points=xy, data=field, copies=(int(bz_copies), int(bz_copies)))
         else:
             from ...lattices.tools.lattice_kspace import extend_kspace_data
-
-            k1_vec = np.asarray(overrides.pop("k1_vec"), dtype=float)[:2]
-            k2_vec = np.asarray(overrides.pop("k2_vec"), dtype=float)[:2]
-            final_k, final_field = extend_kspace_data(xy, field, b1=k1_vec, b2=k2_vec, nx=int(bz_copies), ny=int(bz_copies))
+            k1_vec                  = np.asarray(overrides.pop("k1_vec"), dtype=float)[:2]
+            k2_vec                  = np.asarray(overrides.pop("k2_vec"), dtype=float)[:2]
+            final_k, final_field    = extend_kspace_data(xy, field, b1=k1_vec, b2=k2_vec, nx=int(bz_copies), ny=int(bz_copies))
     else:
         final_k, final_field = xy, field
 
     # for point plotting and axis limit calculations, use the extended points if applicable and requested, otherwise the original points
-    point_k         = final_k if (show_extended_bz and extend_points) else xy
-    point_field     = final_field if (show_extended_bz and extend_points) else field
+    point_k         = final_k if (show_extended_bz and show_extended_bz_points) else xy
+    point_field     = final_field if (show_extended_bz and show_extended_bz_points) else field
     xlim, ylim      = Plotter.resolve_planar_limits(final_k, limits=k_limits, x_limits=overrides.pop("x_limits", None), y_limits=overrides.pop("y_limits", None),
         xmin=overrides.pop("xmin", None), xmax=overrides.pop("xmax", None), ymin=overrides.pop("ymin", None), ymax=overrides.pop("ymax", None), limit_to_pi=bool(limit_to_pi),
     )
 
+    # determine the min/max values
     vmin            = style.vmin if style.vmin is not None else float(np.nanmin(final_field))
     vmax            = style.vmax if style.vmax is not None else float(np.nanmax(final_field))
     image_artist    = None
@@ -652,40 +680,47 @@ def plot_kspace_intensity(
     # using a masked triangulation if lattice WS cell information is available, otherwise using griddata interpolation on a regular grid. The original or extended points can be used for interpolation depending on the show_extended_bz and extend_points options, but the final extended points are always used for masking to ensure consistency.
     if show_interpolated_map and ks_config.grid_n > 0:
         shading     = "flat" if str(interpolation).lower() == "nearest" else "gouraud"
-        map_alpha   = overrides.pop("map_alpha", 0.95)
+        map_alpha   = overrides.pop("map_alpha", 0.9)
         if lattice is not None:
             ext_xy, ext_field   = np.asarray(final_k, dtype=float), np.asarray(final_field, dtype=float)
             ext_xy, ext_field   = _deduplicate_xy_samples(ext_xy[:, :2], ext_field)
             image_artist        = _masked_tripcolor(ax, ext_xy, ext_field, lattice=lattice,
-                shifts=shifts, shells=ks_config.ws_shells, shading=shading, cmap=style.cmap, vmin=vmin, vmax=vmax, alpha=map_alpha, zorder=15,
+                shifts=shifts, shells=ks_config.ws_shells, shading=shading, cmap=style.cmap, vmin=vmin, vmax=vmax, alpha=map_alpha,
+                zorder=overrides.pop("map_zorder", _ZORDER_MAP), rasterized=overrides.pop("map_rasterized", True),
             )
         else:
             raise ValueError("Grid interpolation requires lattice information for masking. Provide a lattice or disable interpolation.")
 
     # if not showing an interpolated map, color the points by their value by default to make them more visible. If showing an interpolated map, use a single color for the points by default to avoid overplotting the colormap.
-    scatter_artist = None
+    scatter_artist  = None
+    point_zorder    = overrides.pop("point_zorder", _ZORDER_POINTS)
     if ks_config.show_discrete_points:
-        color_points_by_value = bool(overrides.pop("color_points_by_value", not show_interpolated_map))
+        color_points_by_value   = bool(overrides.pop("color_points_by_value", True))
+        if show_interpolated_map:
+            color_points_by_value = True
+        point_alpha             = overrides.pop("point_alpha", ks_config.point_alpha)
         if color_points_by_value:
-            scatter_artist = ax.scatter(point_k[:, 0], point_k[:, 1],
-                c=point_field, cmap=style.cmap, vmin=vmin, vmax=vmax, s=ks_config.point_size,
-                alpha=ks_config.point_alpha, marker=ks_config.point_marker,
-                edgecolors=overrides.pop("point_edgecolor", "none"), linewidths=overrides.pop("point_edgewidth", 0.0),
-                zorder=120,
+            scatter_artist = ax.scatter(point_k[:, 0], point_k[:, 1], c=point_field, cmap=style.cmap, vmin=vmin, vmax=vmax, s=ks_config.point_size,
+                alpha=point_alpha, marker=ks_config.point_marker,
+                edgecolors=overrides.pop("point_edgecolor", "white"), linewidths=overrides.pop("point_edgewidth", 0.25),
+                zorder=point_zorder,
+                rasterized=overrides.pop("point_rasterized", False),
             )
         else:
             scatter_artist = ax.scatter(
                 point_k[:, 0], point_k[:, 1],
-                s=ks_config.point_size, alpha=ks_config.point_alpha,
+                s=ks_config.point_size, alpha=point_alpha,
                 marker=ks_config.point_marker, facecolors=overrides.pop("point_facecolor", "none"),
-                edgecolors=overrides.pop("point_edgecolor", "k"), linewidths=overrides.pop("point_edgewidth", 0.8),
-                zorder=120,
+                edgecolors=overrides.pop("point_edgecolor", "0.15"), linewidths=overrides.pop("point_edgewidth", 0.75),
+                zorder=point_zorder,
+                rasterized=overrides.pop("point_rasterized", False),
             )
 
     if ks_config.draw_bz_outline and lattice is not None:
-        bz_edgecolor    = overrides.pop("bz_edgecolor", "0.35")
-        bz_linewidth    = overrides.pop("bz_linewidth", 1.0)
-        bz_alpha        = overrides.pop("bz_alpha", 0.9)
+        bz_edgecolor    = overrides.pop("bz_edgecolor", "0.25")
+        bz_linewidth    = overrides.pop("bz_linewidth", 0.9)
+        bz_alpha        = overrides.pop("bz_alpha", 0.85)
+        bz_zorder       = overrides.pop("bz_zorder", _ZORDER_BZ_OUTLINE)
         outline_n       = max(int(ks_config.grid_n), 160)
         GX, GY          = np.meshgrid(
             np.linspace(xlim[0], xlim[1], outline_n),
@@ -693,21 +728,30 @@ def plot_kspace_intensity(
         )
         for shift in shifts:
             mask = lattice.wigner_seitz_mask(GX - shift[0], GY - shift[1], shells=ks_config.ws_shells)
-            ax.contour(GX, GY, mask.astype(float), levels=[0.5], colors=[bz_edgecolor], linewidths=bz_linewidth, alpha=bz_alpha, zorder=40,)
+            ax.contour(
+                GX, GY, mask.astype(float), levels=[0.5], colors=[bz_edgecolor], linewidths=bz_linewidth, alpha=bz_alpha,
+                zorder=bz_zorder,
+            )
 
     if ks_config.label_high_symmetry and lattice is not None:
+        hs_marker_zorder = max(_ZORDER_HS_MARKER, point_zorder + 2)
+        hs_label_zorder = max(_ZORDER_HS_LABEL, hs_marker_zorder + 2)
         label_high_sym_points(
             ax,
             lattice,
-            bz_copies=int(bz_copies) if show_extended_bz else 0,
-            show_labels=bool(overrides.pop("show_hs_labels", True)),
-            markersize=ks_config.hs_marker_size,
-            markerfacecolor=ks_config.hs_marker_color,
-            markeredgecolor=ks_config.hs_marker_edge,
-            label_offset_x=ks_config.hs_label_offset_x,
-            label_offset_y=ks_config.hs_label_offset_y,
-            label_fontsize=ks_config.hs_label_fontsize,
-            label_color=ks_config.hs_label_color,
+            bz_copies           =   0,
+            show_labels         =   bool(overrides.pop("show_hs_labels", True)),
+            markersize          =   ks_config.hs_marker_size,
+            markerfacecolor     =   ks_config.hs_marker_color,
+            markeredgecolor     =   ks_config.hs_marker_edge,
+            label_offset_x      =   ks_config.hs_label_offset_x,
+            label_offset_y      =   ks_config.hs_label_offset_y,
+            label_fontsize      =   ks_config.hs_label_fontsize,
+            label_color         =   ks_config.hs_label_color,
+            marker_zorder       =   hs_marker_zorder,
+            label_zorder        =   hs_label_zorder,
+            label_fontweight    =   "normal",
+            label_bbox          =   None,
             **overrides,
         )
 
@@ -838,19 +882,28 @@ def plot_kspace_path(
         x_values, path_values = _compress_path_runs(x_values, path_values, result.indices)
 
     if line_kw is None:
+        line_color = overrides.pop("line_color", "0.10")
         line_kw = {
             "lw": style.linewidth,
             "ls": style.linestyle,
-            "color": overrides.pop("line_color", "C0"),
+            "color": line_color,
             "marker": style.marker,
             "ms": style.markersize,
-            "mfc": overrides.pop("marker_facecolor", "C0"),
-            "mec": overrides.pop("marker_edgecolor", "white"),
-            "mew": overrides.pop("marker_edgewidth", 0.5),
+            "mfc": overrides.pop("marker_facecolor", "white"),
+            "mec": overrides.pop("marker_edgecolor", line_color),
+            "mew": overrides.pop("marker_edgewidth", 0.7),
             "alpha": style.alpha,
+            "zorder": overrides.pop("line_zorder", _ZORDER_LINES),
         }
     if hsline_kw is None:
         hsline_kw = kpath_config.get_separator_kwargs()
+        sep_color = str(hsline_kw.get("color", "")).strip().lower()
+        if sep_color in {"white", "w", "#fff", "#ffffff"}:
+            hsline_kw["color"] = "0.75"
+        hsline_kw.setdefault("ls", "--")
+        hsline_kw.setdefault("lw", 0.9)
+        hsline_kw.setdefault("alpha", 0.8)
+        hsline_kw.setdefault("zorder", _ZORDER_GRID_GUIDE)
 
     ax.plot(x_values, path_values, **line_kw)
     for xv in result.label_positions:
@@ -865,7 +918,7 @@ def plot_kspace_path(
         grid=True,
         grid_alpha=style.grid_alpha,
         grid_style=style.grid_linestyle,
-        grid_color="0.8",
+        grid_color="0.85",
     )
     Plotter.set_tickparams(
         ax,
@@ -1001,35 +1054,104 @@ def plot_correlation(
         )
     raise ValueError(f"Unknown correlation plot mode '{mode}'.")
 
-
 # -----------------------------------------------------------------------------
 # Spectral plots
 # -----------------------------------------------------------------------------
 
+def _extract_spectral_matrix(
+    intensity   : np.ndarray,
+    omega       : np.ndarray,
+    *,
+    grid_shape  : Optional[tuple[int, ...]] = None,
+    batch_index : Optional[Any] = None,
+) -> np.ndarray:
+    """
+    Canonicalize spectral data to shape ``(Nk, Nomega)``.
+
+    Supported common layouts include:
+    - ``(Nk, Nw)``
+    - ``(Nw, Nk)``
+    - ``(Lx, Ly, Lz, Nw)``
+    - ``(Nw, Lx, Ly, Lz)``
+    - the same with leading batch axes, selected through ``batch_index``
+    """
+    arr     = np.asarray(intensity)
+    n_omega = int(np.asarray(omega).size)
+    if arr.ndim < 2:
+        raise ValueError("Spectral intensity must have at least k and omega axes.")
+
+    if grid_shape is None:
+        omega_axes = [axis for axis, size in enumerate(arr.shape) if int(size) == n_omega]
+        if not omega_axes:
+            raise ValueError(f"Could not identify an omega axis of length {n_omega} in shape {arr.shape}.")
+        omega_axis  = omega_axes[-1]
+        arr         = np.moveaxis(arr, omega_axis, -1) # move omega to the last axis 
+        return arr.reshape(-1, n_omega)
+
+    grid_axis, grid_span    = _find_kgrid_axes(arr.shape, grid_shape)
+    outside_axes            = [axis for axis in range(arr.ndim) if not (grid_axis <= axis < grid_axis + grid_span)]
+    omega_candidates        = [axis for axis in outside_axes if int(arr.shape[axis]) == n_omega]
+    if not omega_candidates:
+        raise ValueError(f"Could not identify an omega axis of length {n_omega} outside k-grid axes {grid_shape} in intensity shape {arr.shape}.")
+    omega_axis              = omega_candidates[-1]
+    extra_axes              = [axis for axis in outside_axes if axis != omega_axis]
+    if extra_axes:
+        if batch_index is None:
+            batch_index = tuple(0 for _ in extra_axes)
+        elif not isinstance(batch_index, tuple):
+            batch_index = (batch_index,)
+        if len(batch_index) != len(extra_axes):
+            raise ValueError(f"batch_index must have length {len(extra_axes)} for intensity shape {arr.shape}.")
+        
+        indexer = [slice(None)] * arr.ndim
+        for axis, idx in zip(extra_axes, batch_index):
+            indexer[axis] = idx
+        arr = arr[tuple(indexer)]
+        return _extract_spectral_matrix(arr, omega, grid_shape=grid_shape, batch_index=None)
+
+    arr = np.moveaxis(arr, omega_axis, -1)
+    nk  = int(np.prod(grid_shape))
+    return arr.reshape(nk, n_omega)
+
 def plot_spectral_function(
     ax=None,
     *,
-    omega: np.ndarray,
-    intensity: np.ndarray,
-    k_values: Optional[np.ndarray] = None,
-    lattice: Optional["Lattice"] = None,
-    mode: Literal["sum", "single", "kpath", "grid"] = "sum",
-    sum_axis: int = 0,
-    k_indices: Optional[list[int]] = None,
-    k_labels: Optional[list[str]] = None,
-    path_labels: Optional[list[str]] = None,
-    use_extend: bool = False,
-    extend_copies: int = 2,
-    sampled_only: bool = True,
-    batch_index: Optional[Any] = None,
-    style: Optional[PlotStyle] = None,
-    ks_config: Optional[KSpaceConfig] = None,
-    kpath_config: Optional[KPathConfig] = None,
-    spectral_config: Optional[SpectralConfig] = None,
-    figsize: tuple[float, float] = (4.0, 3.5),
-    dpi: Optional[int] = None,
-    colorbar: bool = False,
-    fig=None,
+    omega                       : np.ndarray,
+    intensity                   : np.ndarray,
+    k_values                    : Optional[np.ndarray] = None,
+    lattice                     : Optional["Lattice"] = None,
+    mode                        : Literal["sum", "single", "kpath", "grid"] = "sum",
+    sum_axis                    : int = 0,
+    k_indices                   : Optional[list[int]] = None,
+    k_labels                    : Optional[list[str]] = None,
+    path_labels                 : Optional[list[str]] = None,
+    use_extend                  : bool = False,
+    extend_copies               : int = 2,
+    sampled_only                : bool = True,
+    # sampled points evidence overlay for k-paths
+    show_sampled_points         : bool = True,
+    sampled_points_every        : int = 1,
+    sampled_points_alpha        : float = 0.16,
+    sampled_points_color        : str = "white",
+    sampled_points_lw           : float = 0.35,
+    sampled_points_ms           : float = 2.0,
+    sampled_points_style        : Literal["rug", "guides", "both"] = "rug",
+    sampled_points_guide_alpha  : float = 0.08,
+    sampled_points_guide_lw     : float = 0.5,
+    sampled_points_where        : Literal["top", "bottom", "both"] = "bottom",
+    # other
+    batch_index                 : Optional[Any] = None,
+    # configs
+    style                       : Optional[PlotStyle] = None,
+    ks_config                   : Optional[KSpaceConfig] = None,
+    kpath_config                : Optional[KPathConfig] = None,
+    spectral_config             : Optional[SpectralConfig] = None,
+    insetax                     : Optional[plt.Axes] = None,
+    inset_kwargs                : Optional[dict[str, Any]] = None,
+    figsize                     : tuple[float, float] = (4.0, 3.5),
+    dpi                         : Optional[int] = None,
+    colorbar                    : bool = False,
+    fig                         = None,
     **kwargs,
 ):
     """
@@ -1075,10 +1197,29 @@ def plot_spectral_function(
         Extended-zone matching options for path/grid views.
     sampled_only:
         If True, compress consecutive repeated path matches in ``mode='kpath'``.
+    show_sampled_points:
+        For ``mode='kpath'``, overlay subtle markers at the x-positions of the
+        sampled k-points that were actually used to build the path intensity.
+    sampled_points_every:
+        Keep every Nth sampled marker (>=1) to avoid over-plotting on dense paths.
+    sampled_points_alpha, sampled_points_color, sampled_points_lw, sampled_points_ms:
+        Visual controls for sampled-point evidence overlay.
+    sampled_points_style:
+        ``rug`` draws short edge ticks, ``guides`` draws faint full-height
+        support lines, ``both`` combines both.
+    sampled_points_guide_alpha, sampled_points_guide_lw:
+        Style controls for full-height guide lines.
+    sampled_points_where:
+        Where to place sampled-point markers: top, bottom, or both panel edges.
     batch_index:
         Batch selector for spectral arrays with extra leading axes.
     style, ks_config, kpath_config, spectral_config:
         Optional style/config objects.
+    insetax, inset_kwargs:
+        Optional inset axis and style overrides for reciprocal-space context.
+        When provided in ``mode='kpath'``, the function tries to call
+        ``lattices.visualization.plotting.plot_high_symmetry_points`` using the
+        same path and tolerance used for k-path matching.
     figsize, dpi:
         Figure creation parameters used only when ``ax`` is None.
     colorbar, fig:
@@ -1102,70 +1243,56 @@ def plot_spectral_function(
     if fig is None:
         fig = fig_local
 
-    style = PlotStyle() if style is None else style
-    ks_config = KSpaceConfig() if ks_config is None else ks_config
-    kpath_config = KPathConfig() if kpath_config is None else kpath_config
+    style           = PlotStyle() if style is None else style
+    ks_config       = KSpaceConfig() if ks_config is None else ks_config
+    kpath_config    = KPathConfig() if kpath_config is None else kpath_config
     spectral_config = SpectralConfig() if spectral_config is None else spectral_config
-    overrides = dict(kwargs)
+    overrides       = dict(kwargs)
+    if "tol" in overrides and "tolerance" not in overrides:
+        overrides["tolerance"] = overrides.pop("tol")
     _apply_overrides(style, overrides, _PLOT_STYLE_KEYS)
     _apply_overrides(ks_config, overrides, _KSPACE_CONFIG_KEYS)
     _apply_overrides(kpath_config, overrides, _KPATH_CONFIG_KEYS)
     _apply_overrides(spectral_config, overrides, _SPECTRAL_CONFIG_KEYS)
 
-    omega_arr = np.asarray(omega, dtype=float).ravel()
-    mode_key = mode.lower().strip()
+    omega_arr       = np.asarray(omega, dtype=float).ravel()
+    mode_key        = mode.lower().strip()
+
+    # -----------------------------------------------------------------------------
+    # Single or sum
+    # -----------------------------------------------------------------------------
 
     if mode_key in {"sum", "single"}:
         spec_matrix = _extract_spectral_matrix(np.asarray(intensity), omega_arr, batch_index=batch_index)
         if mode_key == "sum":
             y = np.sum(np.real_if_close(spec_matrix), axis=sum_axis)
             if np.asarray(y).ndim != 1 or len(np.asarray(y).ravel()) != len(omega_arr):
-                raise ValueError(
-                    "sum mode must reduce the k-axis and leave one omega-resolved curve. "
-                    "Use the canonical spectral layout or choose a sum_axis that leaves length Nomega."
-                )
-            (line,) = ax.plot(
-                omega_arr,
-                y,
-                lw=style.linewidth,
-                color=overrides.pop("line_color", "C0"),
-                alpha=style.alpha,
-            )
+                raise ValueError("Sum mode must reduce the k-axis and leave one omega-resolved curve. Use the canonical spectral layout or choose a sum_axis that leaves length Nomega.")
+            
+            (line,) = ax.plot(omega_arr, y, lw=style.linewidth, color=overrides.pop("line_color", "C0"), alpha=style.alpha, zorder=overrides.pop("line_zorder", _ZORDER_LINES),)
             Plotter.set_ax_params(
-                ax,
-                xlabel=overrides.pop("xlabel", spectral_config.omega_label),
-                ylabel=overrides.pop(
-                    "ylabel",
+                ax, xlabel=overrides.pop("xlabel", spectral_config.omega_label), ylabel=overrides.pop( "ylabel",
                     spectral_config.colorbar_label
                     if getattr(spectral_config, "colorbar_label", None)
                     else spectral_config.intensity_label,
                 ),
-                fontsize=style.fontsize_label,
-                grid=True,
-                grid_alpha=style.grid_alpha,
-                grid_color="0.8",
+                fontsize=style.fontsize_label, grid=True, grid_alpha=style.grid_alpha, grid_color="0.85",
             )
             Plotter.set_tickparams(ax, labelsize=style.fontsize_tick)
             return line
 
-        indices = [0] if k_indices is None else list(k_indices)
-        lines = []
+        indices             = [0] if k_indices is None else list(k_indices)
+        marker_edge_color   = overrides.pop("marker_edgecolor", "white")
+        marker_edge_width   = overrides.pop("marker_edgewidth", 0.45)
+        line_zorder         = overrides.pop("line_zorder", _ZORDER_LINES)
+        lines               = []
         for ii, idx in enumerate(indices):
             if idx >= spec_matrix.shape[0]:
                 continue
-            label = (
-                f"k{idx}"
-                if k_labels is None or ii >= len(k_labels)
-                else k_labels[ii]
-            )
-            (line,) = ax.plot(
-                omega_arr,
-                np.real_if_close(spec_matrix[idx]),
-                lw=style.linewidth,
-                marker=style.marker,
-                ms=style.markersize,
-                alpha=style.alpha,
-                label=label,
+            label   = f"k{idx}" if k_labels is None or ii >= len(k_labels) else k_labels[ii]
+            (line,) = ax.plot(omega_arr, np.real_if_close(spec_matrix[idx]),
+                lw=style.linewidth, marker=style.marker, ms=style.markersize, alpha=style.alpha,
+                label=label, mec=marker_edge_color, mew=marker_edge_width, zorder=line_zorder,
             )
             lines.append(line)
         Plotter.set_ax_params(
@@ -1177,11 +1304,7 @@ def plot_spectral_function(
                 if getattr(spectral_config, "colorbar_label", None)
                 else spectral_config.intensity_label,
             ),
-            fontsize=style.fontsize_label,
-            grid=True,
-            grid_alpha=style.grid_alpha,
-            grid_color="0.8",
-            legend=len(lines) > 1,
+            fontsize=style.fontsize_label, grid=True, grid_alpha=style.grid_alpha, grid_color="0.85", legend=len(lines) > 1,
         )
         Plotter.set_tickparams(ax, labelsize=style.fontsize_tick)
         if len(lines) > 1:
@@ -1191,13 +1314,12 @@ def plot_spectral_function(
     if k_values is None:
         raise ValueError(f"k_values is required for mode='{mode_key}'.")
 
-    flat_k, grid_shape = _flatten_kspace_points(k_values)
-    spec_matrix = _extract_spectral_matrix(
-        intensity,
-        omega_arr,
-        grid_shape=grid_shape,
-        batch_index=batch_index,
-    )
+    flat_k, grid_shape  = _flatten_kspace_points(k_values)
+    spec_matrix         = _extract_spectral_matrix(intensity, omega_arr, grid_shape=grid_shape, batch_index=batch_index,)
+
+    # -----------------------------------------------------------------------------
+    # k-path
+    # -----------------------------------------------------------------------------
 
     if mode_key == "kpath":
         if lattice is None:
@@ -1205,44 +1327,109 @@ def plot_spectral_function(
         if path_labels is not None:
             kpath_config.path = path_labels
 
-        selection = lattice.bz_path_points(
-            path=kpath_config.path,
-            points_per_seg=kpath_config.points_per_seg or 40,
-            k_vectors=flat_k,
-            tol=kpath_config.tolerance,
-            periodic=not (use_extend or kpath_config.use_extend),
-        )
+        selection           = lattice.bz_path_points(path=kpath_config.path, points_per_seg=kpath_config.points_per_seg or 40, k_vectors=flat_k,
+                                tol=kpath_config.tolerance, periodic=not (use_extend or kpath_config.use_extend))
         if not selection.has_matches:
             raise ValueError("Could not match the requested path to the sampled k-grid.")
 
-        path_dist = np.asarray(selection.k_dist, dtype=float)
-        path_indices = np.asarray(selection.matched_indices, dtype=int)
-        path_matrix = spec_matrix[path_indices]
+        path_dist           = np.asarray(selection.k_dist, dtype=float)
+        path_indices        = np.asarray(selection.matched_indices, dtype=int)
+        path_matrix         = spec_matrix[path_indices]
+
+        sampled_positions, _ = _compress_path_runs(
+            path_dist,
+            np.asarray(path_dist, dtype=float)[:, None],
+            path_indices,
+        )
+        sampled_positions   = np.asarray(sampled_positions, dtype=float)
+        step                = int(max(1, sampled_points_every))
+        sampled_positions   = sampled_positions[::step]
+
         if sampled_only:
             path_dist, path_matrix = _compress_path_runs(path_dist, path_matrix, path_indices)
 
         path_info = {
-            "label_positions": np.asarray(
-                [
-                    selection.k_dist[min(idx, len(selection.k_dist) - 1)]
-                    for idx, _ in selection.labels
-                ],
-                dtype=float,
-            ),
-            "label_texts": [label for _, label in selection.labels],
+            "label_positions"           : np.asarray([selection.k_dist[min(idx, len(selection.k_dist) - 1)] for idx, _ in selection.labels], dtype=float),
+            "label_texts"               : [label for _, label in selection.labels],
+            "sampled_positions"         : sampled_positions,
+            "show_sampled_points"       : bool(show_sampled_points),
+            "sampled_points_alpha"      : float(sampled_points_alpha),
+            "sampled_points_color"      : sampled_points_color,
+            "sampled_points_lw"         : float(sampled_points_lw),
+            "sampled_points_ms"         : float(sampled_points_ms),
+            "sampled_points_style"      : sampled_points_style,
+            "sampled_points_guide_alpha": float(sampled_points_guide_alpha),
+            "sampled_points_guide_lw"   : float(sampled_points_guide_lw),
+            "sampled_points_where"      : sampled_points_where,
         }
+
+        if insetax is not None:
+
+
+            local_inset_kwargs = {
+                "show_kpoints"          : True,
+                "show_bz"               : True,
+                "show_path"             : True,
+                "show_matched_kpoints"  : True,
+                "hs_plot"               : "markers",
+                "hs_label_kwargs"       : {"bbox": None, "color": "white"},
+                "bz_facecolor"          : "none",
+                "bz_edgecolor"          : "white",
+                "bz_alpha"              : 0.5,
+                "kpoint_color"          : "white",
+                "kpoint_alpha"          : 0.60,
+                "kpoint_size"           : 12,
+                "matched_kpoint_color"  : "orange",
+                "matched_kpoint_alpha"  : 1.0,
+                "matched_kpoint_size"   : 24,
+                "label_kmesh"           : None,
+                "label_extended"        : None,
+                "label_matched"         : None,
+                "points_per_seg"        : int(kpath_config.points_per_seg or 40),
+                "path_match_tol"        : None if kpath_config.tolerance is None else float(kpath_config.tolerance),
+                "extend"                : False,
+                "extend_copies"         : int(extend_copies),
+                "tight_layout"          : False,
+                "title"                 : None,
+            }
+            if inset_kwargs:
+                local_inset_kwargs.update(dict(inset_kwargs))
+            inset_clean = bool(local_inset_kwargs.pop("clean_axes", True))
+            inset_keep_labels = bool(local_inset_kwargs.pop("keep_labels", False))
+
+            lattice.plot_high_symmetry(
+                path=path_labels if path_labels is not None else kpath_config.path,
+                selection=selection,
+                ax=insetax,
+                **local_inset_kwargs,
+            )
+            # Slight extra margin so the full first BZ is always visible in inset.
+            x0, x1      = insetax.get_xlim()
+            y0, y1      = insetax.get_ylim()
+            padx        = 0.12 * max(1e-12, abs(x1 - x0))
+            pady        = 0.12 * max(1e-12, abs(y1 - y0))
+            insetax.set_xlim(min(x0, x1) - padx, max(x0, x1) + padx)
+            insetax.set_ylim(min(y0, y1) - pady, max(y0, y1) + pady)
+            leg         = insetax.get_legend()
+            if leg is not None:
+                leg.remove()
+                
+            if inset_clean:
+                insetax.set_facecolor("none")
+                insetax.patch.set_alpha(0.0)
+                insetax.set_xticks([])
+                insetax.set_yticks([])
+                for spine in insetax.spines.values():
+                    spine.set_visible(False)
+                if not inset_keep_labels:
+                    insetax.set_xlabel("")
+                    insetax.set_ylabel("")
+                    insetax.set_title("")
+
         return plot_spectral_function_2d(
-            ax,
-            k_values=path_dist,
-            omega=omega_arr,
-            intensity=path_matrix,
-            mode="kpath",
-            path_info=path_info,
-            style=style,
-            kpath_config=kpath_config,
-            spectral_config=spectral_config,
-            colorbar=colorbar,
-            fig=fig,
+            ax, k_values=path_dist, omega=omega_arr, intensity=path_matrix, mode="kpath",
+            path_info=path_info, style=style, kpath_config=kpath_config, spectral_config=spectral_config,
+            colorbar=colorbar, fig=fig,
             **overrides,
         )
 
@@ -1266,6 +1453,7 @@ def plot_spectral_function(
 
     raise ValueError(f"Unknown spectral plot mode '{mode}'.")
 
+# -----------------------------------------------------------------------------
 
 __all__ = [
     "compute_correlation_kspace",
@@ -1275,3 +1463,7 @@ __all__ = [
     "plot_correlation",
     "plot_spectral_function",
 ]
+
+# -----------------------------------------------------------------------------
+#! EOF
+# -----------------------------------------------------------------------------

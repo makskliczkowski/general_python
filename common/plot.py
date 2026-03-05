@@ -51,10 +51,11 @@ Email               : maxgrom97@gmail.com
 
 
 import  json
+import  string
 import  itertools
 import  numpy as np
 from    math import fsum
-from    typing import Tuple, Union, Optional, List, Literal, TYPE_CHECKING
+from    typing import Tuple, Union, Optional, List, Literal, TYPE_CHECKING, Dict, Any
 
 try:
     import scienceplots
@@ -76,6 +77,9 @@ from matplotlib.ticker          import FixedLocator, NullFormatter, LogLocator, 
 from matplotlib.legend          import Legend
 from matplotlib.legend_handler  import HandlerBase, HandlerPatch
 
+if TYPE_CHECKING:
+    from .plotters.config import FigureConfig, KPathConfig, KSpaceConfig, PlotStyle, SpectralConfig
+
 # -------------------------------------------
 # MATPLOTLIB CONFIGURATION
 # -------------------------------------------
@@ -94,21 +98,29 @@ def configure_style(style       : str = 'publication',
     
     Parameters
     ----------
-    style : str, default='publication'
-        Preset style to use:
-        - 'publication': Nature/Science journal style (compact, clean)
-        - 'presentation': Larger fonts for slides
-        - 'poster': Very large fonts for posters
-        - 'minimal': Bare minimum styling
-        - 'default': Reset to matplotlib defaults
-    font_size : int, default=10
-        Base font size. Other sizes are scaled relative to this.
-    use_latex : bool, default=False
-        If True, use LaTeX for text rendering (slower but prettier).
-    dpi : int, default=150
-        Figure resolution for display.
-    **overrides
-        Additional rcParams to override. E.g., `axes.linewidth=2`.
+    style       : str, default='publication'
+        Style preset to apply.
+        - 'publication'   : compact Nature/Science-like defaults
+        - 'presentation'  : larger text and strokes for talks
+        - 'poster'        : very large sizes for posters
+        - 'minimal'       : stripped-down axes visuals
+        - 'default'       : reset to Matplotlib defaults
+    font_size   : int, default=10
+        Base typographic scale. Label/tick/title/legend sizes are derived
+        from this value in each preset.
+    use_latex   : bool, default=False
+        If True, tries LaTeX-backed rendering via scienceplots profile.
+        If unavailable, falls back gracefully to non-LaTeX settings.
+    dpi         : int, default=150
+        Screen/display DPI used in interactive rendering.
+    **overrides : dict
+        Additional rcParams overrides. Underscores are accepted and converted
+        to dots, e.g. `axes_linewidth=1.0` -> `axes.linewidth`.
+        Typical high-impact keys:
+        - 'savefig.dpi'
+        - 'axes.prop_cycle'
+        - 'figure.constrained_layout.use'
+        - 'font.family'
     
     Examples
     --------
@@ -159,15 +171,26 @@ def configure_style(style       : str = 'publication',
         'savefig.edgecolor'     : 'white',
         'savefig.bbox'          : 'tight',
         'savefig.pad_inches'    : 0.05,
+        'savefig.transparent'   : False,
+        'pdf.fonttype'          : 42,
+        'ps.fonttype'           : 42,
+        'svg.fonttype'          : 'none',
         
         # Axes
         'axes.facecolor'        : 'white',
         'axes.edgecolor'        : 'black',
         'axes.labelcolor'       : 'black',
+        'axes.unicode_minus'    : True,
         'axes.axisbelow'        : True,
         'axes.grid'             : False,
         'axes.spines.top'       : True,
         'axes.spines.right'     : True,
+        'axes.titlelocation'    : 'left',
+        'axes.titleweight'      : 'regular',
+        'axes.formatter.limits' : (-3, 4),
+        'axes.formatter.use_mathtext': True,
+        'axes.formatter.useoffset': False,
+        'axes.prop_cycle'       : mpl.cycler(color=["#1F77B4", "#D62728", "#2CA02C", "#FF7F0E", "#9467BD", "#8C564B", "#17BECF"]),
         
         # Ticks
         'xtick.direction'       : 'in',
@@ -176,19 +199,43 @@ def configure_style(style       : str = 'publication',
         'ytick.right'           : True,
         'xtick.color'           : 'black',
         'ytick.color'           : 'black',
+        'xtick.minor.visible'   : True,
+        'ytick.minor.visible'   : True,
         
         # Grid
-        'grid.color'            : '#E0E0E0',
+        'grid.color'            : '#D9D9D9',
         'grid.linestyle'        : '-',
-        'grid.linewidth'        : 0.5,
-        'grid.alpha'            : 0.8,
+        'grid.linewidth'        : 0.6,
+        'grid.alpha'            : 0.55,
         
         # Lines
-        'lines.linewidth'       : 1.5,
-        'lines.markersize'      : 5,
+        'lines.linewidth'       : 1.25,
+        'lines.markersize'      : 4.5,
+        'lines.markeredgewidth' : 0.75,
+        'lines.solid_capstyle'  : 'round',
+        'lines.solid_joinstyle' : 'round',
         
-        # Fonts
-        'font.family'           : 'sans-serif' if not use_latex else 'serif',
+        # Scatter / Error bars / Hist
+        'scatter.marker'        : 'o',
+        'errorbar.capsize'      : 2.5,
+        'hist.bins'             : 40,
+        
+        # Images
+        'image.cmap'            : 'viridis',
+        'image.interpolation'   : 'nearest',
+        'image.origin'          : 'lower',
+        
+        # Patches
+        'patch.linewidth'       : 0.8,
+        
+        # Rendering behavior
+        'path.simplify'         : True,
+        'path.simplify_threshold': 0.0,
+        'agg.path.chunksize'    : 20000,
+        
+        # Fonts: keep serif text + STIX math for consistent publication look.
+        'font.family'           : 'serif',
+        'font.serif'            : ['STIXGeneral', 'DejaVu Serif', 'Times New Roman', 'Times', 'Computer Modern Roman'],
         'mathtext.fontset'      : 'stix',
         
         # Legend
@@ -196,6 +243,10 @@ def configure_style(style       : str = 'publication',
         'legend.framealpha'     : 1.0,
         'legend.edgecolor'      : 'none',
         'legend.fancybox'       : False,
+        'legend.borderaxespad'  : 0.4,
+        'legend.handlelength'   : 1.6,
+        'legend.handletextpad'  : 0.5,
+        'legend.columnspacing'  : 1.0,
     }
     
     # Style-specific configurations
@@ -207,17 +258,21 @@ def configure_style(style       : str = 'publication',
             'xtick.labelsize'       : font_size - 1,
             'ytick.labelsize'       : font_size - 1,
             'legend.fontsize'       : font_size - 1,
-            'axes.linewidth'        : 0.8,
-            'xtick.major.width'     : 0.8,
-            'ytick.major.width'     : 0.8,
-            'xtick.minor.width'     : 0.5,
-            'ytick.minor.width'     : 0.5,
+            'axes.linewidth'        : 0.9,
+            'axes.spines.top'       : True,
+            'axes.spines.right'     : True,
+            'xtick.top'             : True,
+            'ytick.right'           : True,
+            'xtick.major.width'     : 0.9,
+            'ytick.major.width'     : 0.9,
+            'xtick.minor.width'     : 0.6,
+            'ytick.minor.width'     : 0.6,
             'xtick.major.size'      : 4,
             'ytick.major.size'      : 4,
             'xtick.minor.size'      : 2,
             'ytick.minor.size'      : 2,
-            'lines.linewidth'       : 1.2,
-            'lines.markersize'      : 4,
+            'lines.linewidth'       : 1.3,
+            'lines.markersize'      : 4.2,
         },
         'presentation': {
             'font.size'             : font_size,
@@ -302,9 +357,13 @@ def get_rcparams_summary() -> dict:
         'font.size', 'axes.labelsize', 'axes.titlesize', 
         'xtick.labelsize', 'ytick.labelsize', 'legend.fontsize',
         'lines.linewidth', 'lines.markersize',
+        'scatter.marker', 'errorbar.capsize',
+        'image.cmap', 'image.interpolation',
         'axes.linewidth', 'xtick.major.size', 'ytick.major.size',
+        'axes.formatter.limits', 'axes.formatter.use_mathtext', 'axes.formatter.useoffset',
         'figure.dpi', 'savefig.dpi',
         'axes.spines.top', 'axes.spines.right',
+        'savefig.transparent', 'pdf.fonttype', 'svg.fonttype',
     ]
     return {k: mpl.rcParams.get(k, 'N/A') for k in keys}
 
@@ -362,7 +421,8 @@ except Exception:
 # Safely set additional rcParams (for compatibility with documentation build systems)
 try:
     mpl.rcParams['mathtext.fontset']    = 'stix'
-    mpl.rcParams['font.family']         = 'STIXGeneral'
+    mpl.rcParams['font.family']         = 'serif'
+    mpl.rcParams['font.serif']          = ['STIXGeneral', 'DejaVu Serif', 'Times New Roman', 'Times', 'Computer Modern Roman']
 except (TypeError, AttributeError, KeyError):
     # Handle cases where rcParams doesn't support item assignment (e.g., during doc builds)
     pass
@@ -583,6 +643,358 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
 
 ########################### plotter ###########################
 
+class AxesList(list):
+    """
+    List-like container for subplot axes with optional grid-aware helpers.
+
+    Behaviors:
+    - Inherits from ``list`` (all list operations remain available).
+    - Supports 2D indexing when grid metadata is available: ``axes[row, col]``.
+    - Forwards unknown attribute access to the first axis, enabling
+      single-axis-like usage in quick scripts.
+    """
+
+    def __init__(
+        self,
+        axes,
+        nrows: Optional[int] = None,
+        ncols: Optional[int] = None,
+        panel_map: Optional[Dict[str, Any]] = None,
+    ):
+        '''
+        Initialize the AxesList.
+        '''
+        super().__init__(list(axes))
+        self.nrows          = int(nrows) if nrows is not None else None
+        self.ncols          = int(ncols) if ncols is not None else None
+        self._panel_map     = dict(panel_map or {})
+
+    @property
+    def shape(self) -> Optional[Tuple[int, int]]:
+        if self.nrows is None or self.ncols is None:
+            return None
+        return (self.nrows, self.ncols)
+
+    def first(self):
+        if len(self) == 0:
+            raise IndexError("AxesList is empty.")
+        return self[0]
+
+    # ---------------------------------
+    # Panel management
+    # ---------------------------------
+
+    @property
+    def panel_names(self) -> List[str]:
+        return list(self._panel_map.keys())
+
+    def has_panel(self, name: str) -> bool:
+        return str(name) in self._panel_map
+
+    def panel(self, name: str):
+        key = str(name)
+        if key not in self._panel_map:
+            raise KeyError(f"Unknown panel '{name}'. Available: {self.panel_names}")
+        return self._panel_map[key]
+
+    def panels(self) -> Dict[str, Any]:
+        return dict(self._panel_map)
+
+    def rename_panel(self, old: str, new: str):
+        old_k, new_k = str(old), str(new)
+        if old_k not in self._panel_map:
+            raise KeyError(f"Unknown panel '{old}'.")
+        if new_k in self._panel_map and new_k != old_k:
+            raise KeyError(f"Panel '{new}' already exists.")
+        self._panel_map[new_k] = self._panel_map.pop(old_k)
+        return self
+
+    # ---------------------------------
+    # Selection and indexing
+    # ---------------------------------
+
+    def select(self, *names: str):
+        selected = [self.panel(name) for name in names]
+        flat = []
+        for entry in selected:
+            if isinstance(entry, AxesList):
+                flat.extend(entry)
+            elif isinstance(entry, list):
+                flat.extend(entry)
+            else:
+                flat.append(entry)
+        sub_map = {str(name): self.panel(name) for name in names}
+        return AxesList(flat, panel_map=sub_map)
+
+    # ---------------------------------
+    # Operations
+    # ---------------------------------
+
+    def as_grid(self):
+        if self.shape is None:
+            raise ValueError("Grid shape is unknown for this AxesList.")
+        return np.asarray(self, dtype=object).reshape(self.nrows, self.ncols)
+
+    def at(self, row: int, col: int):
+        if self.shape is None:
+            raise ValueError("Grid shape is unknown for this AxesList.")
+        return self[row, col]
+
+    def span(self, rows, cols):
+        """
+        Return axes in a rectangular grid window.
+
+        Examples:
+        - ``axes.span(slice(0, 2), slice(1, 3))``
+        - ``axes.span(0, slice(None))``
+        """
+        return self[rows, cols]
+
+    def row(self, row: int):
+        if self.shape is None:
+            raise ValueError("Grid shape is unknown for this AxesList.")
+        start   = row * self.ncols
+        end     = start + self.ncols
+        return AxesList(self[start:end], nrows=1, ncols=self.ncols)
+
+    def col(self, col: int):
+        if self.shape is None:
+            raise ValueError("Grid shape is unknown for this AxesList.")
+        return AxesList([self[r, col] for r in range(self.nrows)], nrows=self.nrows, ncols=1)
+
+    # Convenience methods for applying functions to all axes
+
+    def apply(self, fn, *args, **kwargs):
+        """Apply ``fn`` to each axis and return self."""
+        for ax in self:
+            fn(ax, *args, **kwargs)
+        return self
+
+    def _subset(self, items):
+        """Return an AxesList subset while preserving matching panel aliases."""
+        items_list = list(items)
+        kept_ids = {id(ax) for ax in items_list}
+        sub_map = {name: ax for name, ax in self._panel_map.items() if id(ax) in kept_ids}
+        return AxesList(items_list, panel_map=sub_map)
+
+    def adjust(
+        self,
+        same: str = "xy",
+        *,
+        hide: str = "both",
+        keep_x: str = "bottom",
+        keep_y: str = "left",
+        xlabel: Optional[str] = None,
+        ylabel: Optional[str] = None,
+        xlabel_kwargs: Optional[dict] = None,
+        ylabel_kwargs: Optional[dict] = None,
+        x_label_position: Optional[str] = None,
+        y_label_position: Optional[str] = None,
+        x_label_coords: Optional[Tuple[float, float]] = None,
+        y_label_coords: Optional[Tuple[float, float]] = None,
+        x_label_coords_system: str = "axes",
+        y_label_coords_system: str = "axes",
+        x_tick_params: Optional[dict] = None,
+        y_tick_params: Optional[dict] = None,
+        interior_x_tick_params: Optional[dict] = None,
+        interior_y_tick_params: Optional[dict] = None,
+    ):
+        """
+        Remove duplicated axis labels/ticklabels for multi-panel layouts.
+
+        Parameters
+        ----------
+        same : {'x', 'y', 'xy'}, default='xy'
+            Which directions should be de-duplicated.
+        hide : {'both', 'labels', 'ticklabels'}, default='both'
+            What to hide on interior panels.
+        keep_x : {'bottom', 'top', 'all', 'vbottom', 'vtop'}, default='bottom'
+            Which row keeps x-axis labels/ticklabels.
+            ``vbottom``/``vtop`` additionally force visible labels/ticks to be
+            drawn at the corresponding side (not only by grid-edge selection).
+        keep_y : {'left', 'right', 'all', 'vleft', 'vright'}, default='left'
+            Which column keeps y-axis labels/ticklabels.
+            ``vleft``/``vright`` additionally force visible labels/ticks to be
+            drawn at the corresponding side (not only by grid-edge selection).
+        xlabel, ylabel : str, optional
+            Label text applied to kept outer x/y axes.
+        xlabel_kwargs, ylabel_kwargs : dict, optional
+            Forwarded to ``ax.set_xlabel`` / ``ax.set_ylabel`` on kept axes.
+        x_label_position, y_label_position : str, optional
+            Manual label side position (x: ``top|bottom``, y: ``left|right``).
+        x_label_coords, y_label_coords : tuple(float, float), optional
+            Manual label coordinates for x/y labels.
+        x_label_coords_system, y_label_coords_system : {'axes', 'data'}
+            Coordinate system used for manual label coordinates.
+        x_tick_params, y_tick_params : dict, optional
+            Tick styling applied to kept x/y axes via ``ax.tick_params``.
+        interior_x_tick_params, interior_y_tick_params : dict, optional
+            Tick styling for interior x/y axes after de-duplication. Useful to
+            keep ticks but hide labels, adjust lengths, etc.
+        """
+        key = str(same).lower().strip()
+        do_x = "x" in key
+        do_y = "y" in key
+        hide_key = str(hide).lower().strip()
+        hide_labels = hide_key in {"both", "label", "labels"}
+        hide_ticklabels = hide_key in {"both", "tick", "ticks", "ticklabel", "ticklabels"}
+        xlabel_kwargs = dict(xlabel_kwargs or {})
+        ylabel_kwargs = dict(ylabel_kwargs or {})
+        x_tick_params = dict(x_tick_params or {})
+        y_tick_params = dict(y_tick_params or {})
+        interior_x_tick_params = dict(interior_x_tick_params or {})
+        interior_y_tick_params = dict(interior_y_tick_params or {})
+
+        keep_x = str(keep_x).lower().strip()
+        keep_y = str(keep_y).lower().strip()
+        if keep_x not in {"bottom", "top", "all", "vbottom", "vtop"}:
+            raise ValueError("keep_x must be one of: 'bottom', 'top', 'all', 'vbottom', 'vtop'.")
+        if keep_y not in {"left", "right", "all", "vleft", "vright"}:
+            raise ValueError("keep_y must be one of: 'left', 'right', 'all', 'vleft', 'vright'.")
+
+        force_x_side = None
+        if keep_x in {"vbottom", "vtop"}:
+            force_x_side = "bottom" if keep_x == "vbottom" else "top"
+            keep_x = force_x_side
+        force_y_side = None
+        if keep_y in {"vleft", "vright"}:
+            force_y_side = "left" if keep_y == "vleft" else "right"
+            keep_y = force_y_side
+
+        def _edge_flags(ax, idx):
+            # Prefer subplot-spec edge info for spans/mosaic layouts.
+            try:
+                ss = ax.get_subplotspec()
+                return {
+                    "first_row": bool(ss.is_first_row()),
+                    "last_row": bool(ss.is_last_row()),
+                    "first_col": bool(ss.is_first_col()),
+                    "last_col": bool(ss.is_last_col()),
+                }
+            except Exception:
+                pass
+
+            # Fallback for regular flattened grids.
+            if self.shape is not None and self.ncols is not None and self.ncols > 0:
+                row = idx // self.ncols
+                col = idx % self.ncols
+                return {
+                    "first_row": row == 0,
+                    "last_row": row == (self.nrows - 1),
+                    "first_col": col == 0,
+                    "last_col": col == (self.ncols - 1),
+                }
+            return {"first_row": True, "last_row": True, "first_col": True, "last_col": True}
+
+        for idx, ax in enumerate(self):
+            flags = _edge_flags(ax, idx)
+
+            if do_x:
+                keep_this_x = (
+                    True
+                    if keep_x == "all"
+                    else flags["last_row"] if keep_x == "bottom"
+                    else flags["first_row"]
+                )
+                if not keep_this_x:
+                    if hide_ticklabels:
+                        ax.tick_params(axis="x", which="both", labelbottom=False, labeltop=False)
+                    if interior_x_tick_params:
+                        ax.tick_params(axis="x", which="both", **interior_x_tick_params)
+                    if hide_labels:
+                        ax.set_xlabel("")
+                else:
+                    if xlabel is not None:
+                        ax.set_xlabel(xlabel, **xlabel_kwargs)
+                    if x_label_position in {"top", "bottom"}:
+                        ax.xaxis.set_label_position(x_label_position)
+                    elif force_x_side is not None:
+                        ax.xaxis.set_label_position(force_x_side)
+                    if x_label_coords is not None:
+                        x_t = ax.transData if str(x_label_coords_system).lower() == "data" else ax.transAxes
+                        ax.xaxis.set_label_coords(float(x_label_coords[0]), float(x_label_coords[1]), transform=x_t)
+                    if force_x_side is not None:
+                        if force_x_side == "top":
+                            ax.tick_params(axis="x", which="both", top=True, bottom=False, labeltop=True, labelbottom=False)
+                        else:
+                            ax.tick_params(axis="x", which="both", top=False, bottom=True, labeltop=False, labelbottom=True)
+                    if x_tick_params:
+                        ax.tick_params(axis="x", which="both", **x_tick_params)
+
+            if do_y:
+                keep_this_y = (
+                    True
+                    if keep_y == "all"
+                    else flags["first_col"] if keep_y == "left"
+                    else flags["last_col"]
+                )
+                if not keep_this_y:
+                    if hide_ticklabels:
+                        ax.tick_params(axis="y", which="both", labelleft=False, labelright=False)
+                    if interior_y_tick_params:
+                        ax.tick_params(axis="y", which="both", **interior_y_tick_params)
+                    if hide_labels:
+                        ax.set_ylabel("")
+                else:
+                    if ylabel is not None:
+                        ax.set_ylabel(ylabel, **ylabel_kwargs)
+                    if y_label_position in {"left", "right"}:
+                        ax.yaxis.set_label_position(y_label_position)
+                    elif force_y_side is not None:
+                        ax.yaxis.set_label_position(force_y_side)
+                    if y_label_coords is not None:
+                        y_t = ax.transData if str(y_label_coords_system).lower() == "data" else ax.transAxes
+                        ax.yaxis.set_label_coords(float(y_label_coords[0]), float(y_label_coords[1]), transform=y_t)
+                    if force_y_side is not None:
+                        if force_y_side == "right":
+                            ax.tick_params(axis="y", which="both", right=True, left=False, labelright=True, labelleft=False)
+                        else:
+                            ax.tick_params(axis="y", which="both", right=False, left=True, labelright=False, labelleft=True)
+                    if y_tick_params:
+                        ax.tick_params(axis="y", which="both", **y_tick_params)
+
+        return self
+
+    def __getitem__(self, key):
+        ''' Support panel name access and 2D grid indexing.'''
+        
+        if isinstance(key, str):
+            return self.panel(key)
+        
+        if isinstance(key, tuple):
+            if self.shape is None:
+                raise ValueError("Tuple indexing requires known grid shape.")
+        
+            if len(key) != 2:
+                raise IndexError("Use axes[row, col] for 2D indexing.")
+            row, col    = key
+            grid        = self.as_grid()
+            result      = grid[row, col]
+            if isinstance(result, np.ndarray):
+                flat = result.ravel().tolist()
+                return self._subset(flat)
+            return result
+
+        # Standard slicing / fancy indexing should stay AxesList-aware.
+        if isinstance(key, slice):
+            return self._subset(super().__getitem__(key))
+        if isinstance(key, (list, tuple, np.ndarray)):
+            arr = np.asarray(key)
+            if arr.dtype == bool:
+                if arr.size != len(self):
+                    raise IndexError("Boolean index length must match AxesList length.")
+                idx = np.flatnonzero(arr)
+                return self._subset([super().__getitem__(int(i)) for i in idx])
+            return self._subset([super().__getitem__(int(i)) for i in arr.ravel()])
+
+        return super().__getitem__(key)
+
+    def __getattr__(self, name):
+        # Convenience passthrough for quick one-axis-like usage.
+        if len(self) == 0:
+            raise AttributeError(name)
+        return getattr(self[0], name)
+
 class Plotter:
     """
     Publication-quality plotting utilities for scientific computing.
@@ -610,12 +1022,12 @@ class Plotter:
     
     # Publication-ready default settings
     _PUBLICATION_DEFAULTS = {
-        'linewidth'     : 1.5,
-        'markersize'    : 5,
-        'capsize'       : 2,
+        'linewidth'     : 1.3,
+        'markersize'    : 4.2,
+        'capsize'       : 2.5,
         'fontsize'      : 10,
         'tick_length'   : 4,
-        'tick_width'    : 0.8,
+        'tick_width'    : 0.9,
     }
     
     def __init__(self, default_cmap='viridis', font_size=12, dpi=200):
@@ -683,11 +1095,223 @@ class Plotter:
         elif topic.lower() in PLOTTER_HELP:
             print(PLOTTER_HELP[topic.lower()])
         else:
-            print(f"Unknown topic: '{topic}'. Available: plot, axis, color, layout, grid, legend, annotate, style, save")
+            print(f"Unknown topic: '{topic}'. Available: plot, axis, color, layout, grid, legend, annotate, style, plotters, save")
     
     ###########################################################
     #! Utilities for plotting
     ###########################################################
+
+    @staticmethod
+    def plot_style(**kwargs) -> "PlotStyle":
+        """Return a PlotStyle config instance."""
+        from .plotters.config import PlotStyle
+        return PlotStyle(**kwargs)
+
+    @staticmethod
+    def kspace_config(**kwargs) -> "KSpaceConfig":
+        """Return a KSpaceConfig instance."""
+        from .plotters.config import KSpaceConfig
+        return KSpaceConfig(**kwargs)
+
+    @staticmethod
+    def kpath_config(**kwargs) -> "KPathConfig":
+        """Return a KPathConfig instance."""
+        from .plotters.config import KPathConfig
+        return KPathConfig(**kwargs)
+
+    @staticmethod
+    def spectral_config(**kwargs) -> "SpectralConfig":
+        """Return a SpectralConfig instance."""
+        from .plotters.config import SpectralConfig
+        return SpectralConfig(**kwargs)
+
+    @staticmethod
+    def figure_config(**kwargs) -> "FigureConfig":
+        """Return a FigureConfig instance."""
+        from .plotters.config import FigureConfig
+        return FigureConfig(**kwargs)
+
+    @staticmethod
+    def plotters():
+        """Expose the ``general_python.common.plotters`` package."""
+        from . import plotters
+        return plotters
+
+    @staticmethod
+    def math(label: str, *, auto_wrap: bool = True, escape_text: bool = True, **values: Any) -> str:
+        r"""
+        Build a LaTeX-ready math label from a template.
+
+        This method extends Python ``str.format``-style placeholders with simple
+        math filters for scientific labels.
+
+        Parameters
+        ----------
+        label : str
+            Template string. Standard format fields are supported, e.g.
+            ``{J:.3g}``, and can be combined with filters, e.g.
+            ``{point|vec:.2f}``, ``{kpoint|sym}``.
+            Greek-name values (for example ``Gamma`` or ``omega``) are
+            automatically rendered as LaTeX variables.
+        auto_wrap : bool, default=True
+            If True, wrap the final string with ``$...$`` when no dollar sign is
+            present in the rendered output.
+        escape_text : bool, default=True
+            If True, plain substituted strings are LaTeX-escaped by default.
+            Use ``|raw`` or ``|tex`` to bypass escaping for a specific field.
+        **values : Any
+            Values used by template fields.
+
+        Supported filters
+        -----------------
+        ``raw`` / ``tex``
+            Insert value as-is (no escaping).
+        ``sym``
+            Force symbol conversion for common Greek names
+            (e.g. ``Gamma`` -> ``\Gamma``).
+        ``num``
+            Numeric formatting helper. Uses format spec if provided, otherwise
+            ``.6g``.
+        ``vec``
+            Render iterable as ``\left(v_1, v_2, ...\right)``.
+        ``set``
+            Render iterable as ``\left\{v_1, v_2, ...\right\}``.
+
+        Returns
+        -------
+        str
+            Rendered LaTeX/mathtext-compatible label.
+
+        Examples
+        --------
+        >>> Plotter.math(r"\\langle S_i^z \\rangle = {value|num:.3e}", value=1.2e-4)
+        '$\\langle S_i^z \\rangle = 1.200e-04$'
+        >>> Plotter.math(r"{kx|sym}-{ky|sym} path, q={q|vec:.2f}", kx="Gamma", ky="K", q=[0, 1/3])
+        '$\\Gamma-K path, q=\\left(0, 0.33\\right)$'
+        >>> Plotter.math(r"E={expr|raw}", expr=r"E_0 + \\Delta")
+        '$E=E_0 + \\Delta$'
+        """
+
+        greek_map = {
+            "alpha": r"\alpha", "beta": r"\beta", "gamma": r"\gamma", "delta": r"\delta",
+            "epsilon": r"\epsilon", "zeta": r"\zeta", "eta": r"\eta", "theta": r"\theta",
+            "iota": r"\iota", "kappa": r"\kappa", "lambda": r"\lambda", "mu": r"\mu",
+            "nu": r"\nu", "xi": r"\xi", "pi": r"\pi", "rho": r"\rho", "sigma": r"\sigma",
+            "tau": r"\tau", "upsilon": r"\upsilon", "phi": r"\phi", "chi": r"\chi",
+            "psi": r"\psi", "omega": r"\omega",
+            # large letters
+            "Gamma": r"\Gamma", "Delta": r"\Delta", "Theta": r"\Theta", "Lambda": r"\Lambda",
+            "Xi": r"\Xi", "Pi": r"\Pi", "Sigma": r"\Sigma", "Upsilon": r"\Upsilon",
+            "Phi": r"\Phi", "Psi": r"\Psi", "Omega": r"\Omega",
+            "Gamma'": r"\Gamma^{\prime}", "Kp" : r'K^{\prime}', "M'": r"M^{\prime}",
+        }
+
+        tex_escape_map = {
+            "&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
+            "_": r"\_", "{": r"\{", "}": r"\}", "~": r"\textasciitilde{}",
+            "^": r"\textasciicircum{}",
+        }
+
+        def _escape_tex(text: str) -> str:
+            return "".join(tex_escape_map.get(ch, ch) for ch in text)
+
+        def _resolve_field(name: str) -> Any:
+            current: Any = values
+            for token in name.split("."):
+                if isinstance(current, dict):
+                    if token not in current:
+                        raise KeyError(
+                            f"Missing key '{token}' while resolving field '{name}'. "
+                            f"Available top-level keys: {sorted(values.keys())}"
+                        )
+                    current = current[token]
+                elif isinstance(current, (list, tuple, np.ndarray)) and token.isdigit():
+                    current = current[int(token)]
+                else:
+                    if not hasattr(current, token):
+                        raise KeyError(f"Cannot resolve '{token}' in field '{name}'.")
+                    current = getattr(current, token)
+            return current
+
+        def _fmt_scalar(v: Any, spec: str = "") -> str:
+            if isinstance(v, (int, float, np.integer, np.floating)):
+                return format(v, spec if spec else ".6g")
+            txt = str(v)
+            return greek_map.get(txt, txt)
+
+        def _iterable(v: Any) -> bool:
+            return isinstance(v, (list, tuple, np.ndarray))
+
+        formatter       = string.Formatter()
+        out: List[str]  = []
+        has_fields      = False
+
+        for literal_text, field_name, format_spec, conversion in formatter.parse(label):
+            out.append(literal_text)
+            if field_name is None:
+                continue
+            has_fields = True
+
+            field_expr = field_name.strip()
+            if not field_expr:
+                raise ValueError("Empty field expression '{}' is not supported in Plotter.math().")
+
+            name, *filters  = [part.strip() for part in field_expr.split("|")]
+            value           = _resolve_field(name)
+            if conversion:
+                value       = formatter.convert_field(value, conversion)
+
+            raw_mode = False
+            for flt in filters:
+                if flt in ("raw", "tex"):
+                    raw_mode = True
+                elif flt == "sym":
+                    vtxt        = str(value)
+                    value       = greek_map.get(vtxt, vtxt)
+                    raw_mode    = True
+                elif flt == "num":
+                    value       = _fmt_scalar(value, format_spec)
+                    format_spec = ""
+                elif flt == "vec":
+                    if _iterable(value):
+                        items   = [_fmt_scalar(v, format_spec) for v in value]
+                        value   = r"\left(" + ", ".join(items) + r"\right)"
+                    else:
+                        value   = r"\left(" + _fmt_scalar(value, format_spec) + r"\right)"
+                    format_spec = ""
+                    raw_mode    = True
+                elif flt == "set":
+                    if _iterable(value):
+                        items   = [_fmt_scalar(v, format_spec) for v in value]
+                        value   = r"\left\{" + ", ".join(items) + r"\right\}"
+                    else:
+                        value   = r"\left\{" + _fmt_scalar(value, format_spec) + r"\right\}"
+                    format_spec = ""
+                    raw_mode    = True
+                elif flt:
+                    raise ValueError(f"Unknown Plotter.math() filter '{flt}'. Supported filters: raw, tex, sym, num, vec, set.")
+
+            if format_spec and not isinstance(value, str):
+                value = format(value, format_spec)
+            elif format_spec and isinstance(value, str):
+                value = format(value, format_spec)
+
+            text = str(value)
+            if not raw_mode and text in greek_map:
+                text        = greek_map[text]
+                raw_mode    = True
+            if escape_text and (not raw_mode):
+                text        = _escape_tex(text)
+            out.append(text)
+
+        rendered = "".join(out)
+        if not has_fields:
+            stripped = rendered.strip()
+            if stripped in greek_map:
+                rendered = rendered.replace(stripped, greek_map[stripped], 1)
+        if auto_wrap and "$" not in rendered:
+            rendered = f"${rendered}$"
+        return rendered
     
     @staticmethod
     def ensure_list(x):
@@ -715,15 +1339,15 @@ class Plotter:
     def resolve_planar_limits(
         points,
         *,
-        limits: Optional[Union[tuple, list, np.ndarray]] = None,
-        x_limits: Optional[Union[tuple, list, np.ndarray]] = None,
-        y_limits: Optional[Union[tuple, list, np.ndarray]] = None,
-        xmin: Optional[float] = None,
-        xmax: Optional[float] = None,
-        ymin: Optional[float] = None,
-        ymax: Optional[float] = None,
-        limit_to_pi: bool = False,
-        pad_fraction: float = 0.08,
+        limits          : Optional[Union[tuple, list, np.ndarray]] = None,
+        x_limits        : Optional[Union[tuple, list, np.ndarray]] = None,
+        y_limits        : Optional[Union[tuple, list, np.ndarray]] = None,
+        xmin            : Optional[float] = None,
+        xmax            : Optional[float] = None,
+        ymin            : Optional[float] = None,
+        ymax            : Optional[float] = None,
+        limit_to_pi     : bool = False,
+        pad_fraction    : float = 0.08,
     ) -> Tuple[tuple, tuple]:
         """
         Resolve visible ``(xlim, ylim)`` for planar data.
@@ -820,10 +1444,10 @@ class Plotter:
         if hf is None:
             hf = aspect_ratio
 
-        fig_width_pt = columnwidth * wf
-        inches_per_pt = 1.0 / 72.27  # Convert pt to inch
-        fig_width = fig_width_pt * inches_per_pt  # width in inches
-        fig_height = fig_width * hf  # height in inches
+        fig_width_pt    = columnwidth * wf
+        inches_per_pt   = 1.0 / 72.27  # Convert pt to inch
+        fig_width       = fig_width_pt * inches_per_pt  # width in inches
+        fig_height      = fig_width * hf  # height in inches
         return [fig_width, fig_height]
     
     ###########################################################
@@ -1081,7 +1705,8 @@ class Plotter:
     
     @staticmethod
     def get_colormap(values: Optional[np.ndarray] = None, vmin=None, vmax=None, *,
-            cmap='PuBu', elsecolor='blue', get_mappable=False, norm=None, scale='linear', **kwargs):
+            cmap='PuBu', elsecolor='blue', get_mappable: bool = False, return_mappable: Optional[bool] = None,
+            norm=None, scale='linear', **kwargs):
         """
         Get a colormap for the given values.
         
@@ -1089,17 +1714,28 @@ class Plotter:
         - values (array-like): The values to map to colors.
         - cmap (str, optional): The colormap to use. Defaults to 'PuBu'.
         - elsecolor (str, optional): The color to use if there is only one value. Defaults to 'blue'.
+        - get_mappable (bool, optional): If True, also return a ScalarMappable as
+          the 4th item, ready to pass into `Plotter.add_colorbar(..., mappable=...)`.
+        - return_mappable (bool, optional): Alias for `get_mappable`.
         
         Returns:
         - getcolor (function): A function that maps a value to a color.
         - colors (Colormap): The colormap object.
         - norm (Normalize): The normalization object.
+        - mappable (ScalarMappable, optional): Returned when `get_mappable=True`
+          (or `return_mappable=True`).
         
         Example:
         >>> getcolor, colors, norm = Plotter.get_colormap([1, 2, 3], cmap='viridis')
         >>> color = getcolor(2.5)
+        >>> getcolor, colors, norm, mappable = Plotter.get_colormap(
+        ...     [1, 2, 3], cmap='viridis', return_mappable=True
+        ... )
         """
         from matplotlib.colors import Normalize, LogNorm, SymLogNorm
+
+        if return_mappable is not None:
+            get_mappable = bool(return_mappable)
         
         # Resolve vmin/vmax
         if values is None and (vmin is None or vmax is None):
@@ -1128,8 +1764,12 @@ class Plotter:
         else:
             getcolor = lambda x: colors(norm(x))
 
-        # Create Mappable
+        # Create Mappable for downstream colorbar reuse.
         mappable = plt.cm.ScalarMappable(norm=norm, cmap=colors)
+        if values is not None:
+            mappable.set_array(np.asarray(values))
+        else:
+            mappable.set_array(np.asarray([vmin, vmax], dtype=float))
         
         if get_mappable:
             return getcolor, colors, norm, mappable
@@ -1451,6 +2091,13 @@ class Plotter:
         zorder      =   5,
         label_cond   =   True,
         linewidths  =   1.0,
+        cmap        =   None,
+        norm        =   None,
+        vmin        =   None,
+        vmax        =   None,
+        plotnonfinite = False,
+        clip_on     =   True,
+        rasterized  =   False,
         **kwargs):
         """
         Creates a scatter plot on the provided axis, styled for Nature-like plots.
@@ -1492,9 +2139,13 @@ class Plotter:
         if label is None or label == '':
             label_cond = False    
         
-        ax.scatter(x, y, linewidths = linewidths,
-                s=s, c=c, marker=marker, 
-                alpha=alpha, label=label if label_cond else '', edgecolor=edgecolor, zorder=zorder, **kwargs)
+        ax.scatter(
+            x, y, linewidths=linewidths,
+            s=s, c=c, marker=marker,
+            alpha=alpha, label=label if label_cond else '', edgecolor=edgecolor, zorder=zorder,
+            cmap=cmap, norm=norm, vmin=vmin, vmax=vmax, plotnonfinite=plotnonfinite,
+            clip_on=clip_on, rasterized=rasterized, **kwargs
+        )
 
     @staticmethod
     def tripcolor_field(
@@ -1563,17 +2214,24 @@ class Plotter:
     def plot(  ax, 
                 x, 
                 y,
-                ls          = '-',
-                lw          = 2.0,
-                color       = 'black',
+                ls              = '-',
+                lw              = 2.0,
+                color           = 'black',
                 # label 
-                label       = None,
-                label_cond   = True,
+                label           = None,
+                label_cond      = True,
                 # marker
-                marker      = None,
-                ms          = None,
+                marker          = None,
+                ms              = None,
                 # other
-                zorder      = 5,
+                zorder          = 5,
+                drawstyle       = 'default',
+                markevery       = None,
+                clip_on         = True,
+                rasterized      = False,
+                antialiased     = True,
+                solid_capstyle  = None,
+                solid_joinstyle = None,
                 **kwargs):
         '''
         plot the data
@@ -1609,11 +2267,29 @@ class Plotter:
         if isinstance(marker, int):
             marker = markersList[marker % len(markersList)]
         
-        ax.plot(x, y, 
-                ls      = ls, 
-                lw      = lw, 
-                color   = color, 
-                label   = label if label_cond else '', zorder = zorder, marker = marker, ms = ms, **kwargs)
+        line_style_kwargs = {}
+        if solid_capstyle is not None:
+            line_style_kwargs["solid_capstyle"] = solid_capstyle
+        if solid_joinstyle is not None:
+            line_style_kwargs["solid_joinstyle"] = solid_joinstyle
+
+        ax.plot(
+            x, y,
+            ls=ls,
+            lw=lw,
+            color=color,
+            label=label if label_cond else '',
+            zorder=zorder,
+            marker=marker,
+            ms=ms,
+            drawstyle=drawstyle,
+            markevery=markevery,
+            clip_on=clip_on,
+            rasterized=rasterized,
+            antialiased=antialiased,
+            **line_style_kwargs,
+            **kwargs
+        )
 
     @staticmethod
     def fill_between(
@@ -1623,6 +2299,14 @@ class Plotter:
         y2,
         color       =   'blue',
         alpha       =   0.5,
+        where       =   None,
+        interpolate =   False,
+        step        =   None,
+        linewidth   =   0.0,
+        edgecolor   =   None,
+        zorder      =   4,
+        clip_on     =   True,
+        rasterized  =   False,
         **kwargs):
         """
         Fills the area between two curves on the provided axis.
@@ -1640,7 +2324,13 @@ class Plotter:
             fill_between(ax, x_data, y1_data, y2_data, color='red', alpha=0.3)
         """
         ax = Plotter.ax(ax)
-        ax.fill_between(x, y1, y2, color=color, alpha=alpha, **kwargs)
+        ax.fill_between(
+            x, y1, y2, color=color, alpha=alpha,
+            where=where, interpolate=interpolate, step=step,
+            linewidth=linewidth, edgecolor=edgecolor,
+            zorder=zorder, clip_on=clip_on, rasterized=rasterized,
+            **kwargs
+        )
     
     # ################ LOG SCALE PLOTS ################
     
@@ -1780,7 +2470,9 @@ class Plotter:
     # -------------------- ERROR BARS --------------------
     
     @staticmethod
-    def errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', color='black', capsize=2, capthick=1.0, elinewidth=1.0, markersize=5, label=None, label_cond=True, alpha=1.0, zorder=5, **kwargs):
+    def errorbar(ax, x, y, yerr=None, xerr=None, fmt='o', color='black', capsize=2, capthick=1.0, elinewidth=1.0, markersize=5, label=None, label_cond=True, alpha=1.0, zorder=5,
+                 ecolor=None, errorevery=1, barsabove=False, uplims=False, lolims=False, xuplims=False, xlolims=False,
+                 clip_on=True, rasterized=False, **kwargs):
         """
         Plot data with error bars.
         
@@ -1837,13 +2529,18 @@ class Plotter:
                     capsize=capsize, capthick=capthick,
                     elinewidth=elinewidth, markersize=markersize,
                     label=label if label_cond else '',
-                    alpha=alpha, zorder=zorder, **kwargs)
+                    alpha=alpha, zorder=zorder,
+                    ecolor=ecolor, errorevery=errorevery, barsabove=barsabove,
+                    uplims=uplims, lolims=lolims, xuplims=xuplims, xlolims=xlolims,
+                    clip_on=clip_on, rasterized=rasterized, **kwargs)
     
     # -------------------- HISTOGRAM --------------------
     
     @staticmethod
     def histogram(ax, data, bins=50, density=True, histtype='stepfilled', alpha=0.7, color='C0', edgecolor='black',
-                linewidth=1.0, label=None, orientation='vertical', cumulative=False, log=False, label_cond=True, zorder=5, **kwargs):
+                linewidth=1.0, label=None, orientation='vertical', cumulative=False, log=False, label_cond=True, zorder=5,
+                weights=None, range=None, align='mid', rwidth=None, stacked=False, hatch=None,
+                **kwargs):
         """
         Plot a histogram.
         
@@ -1910,6 +2607,7 @@ class Plotter:
                     label=label if label_cond else '',
                     orientation=orientation,
                     cumulative=cumulative, log=log,
+                    weights=weights, range=range, align=align, rwidth=rwidth, stacked=stacked, hatch=hatch,
                     zorder=zorder, **kwargs)
 
     ###################################################
@@ -2462,24 +3160,149 @@ class Plotter:
                 pass  # Some backends don't support tight_layout
 
     @staticmethod
+    def set_xlabel(
+        ax,
+        xlabel,
+        fontsize=None,
+        labelpad=0,
+        loc=None,
+        x=None,
+        y=None,
+        coords: str = "axes",
+        transform=None,
+        **kwargs,
+    ):
+        """
+        Set x-axis label with optional alignment and explicit coordinates.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Target axis.
+        xlabel : str
+            Label text.
+        fontsize : int, optional
+            Label font size.
+        labelpad : float, default=0
+            Padding in points.
+        loc : {'left', 'center', 'right'}, optional
+            Matplotlib label location argument.
+        x, y : float, optional
+            Explicit label coordinates (if either is provided).
+        coords : {'axes', 'data'}, default='axes'
+            Coordinate system used for ``x``/``y`` when ``transform`` is not provided.
+        transform : matplotlib transform, optional
+            Explicit transform for label coordinates.
+        **kwargs
+            Forwarded to ``ax.set_xlabel``.
+        """
+        ax = Plotter.ax(ax)
+        if loc is not None:
+            kwargs.setdefault("loc", loc)
+        ax.set_xlabel(xlabel, fontsize=fontsize, labelpad=labelpad if labelpad != 0 else None, **kwargs)
+
+        if x is not None or y is not None:
+            x0, y0 = ax.xaxis.get_label().get_position()
+            x_set = x0 if x is None else x
+            y_set = y0 if y is None else y
+            t = transform
+            if t is None:
+                t = ax.transData if str(coords).lower() == "data" else ax.transAxes
+            ax.xaxis.set_label_coords(x_set, y_set, transform=t)
+        
+    @staticmethod
+    def set_ylabel(
+        ax,
+        ylabel,
+        fontsize=None,
+        labelpad=0,
+        loc=None,
+        x=None,
+        y=None,
+        coords: str = "axes",
+        transform=None,
+        **kwargs,
+    ):
+        """
+        Set y-axis label with optional alignment and explicit coordinates.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes
+            Target axis.
+        ylabel : str
+            Label text.
+        fontsize : int, optional
+            Label font size.
+        labelpad : float, default=0
+            Padding in points.
+        loc : {'bottom', 'center', 'top'}, optional
+            Matplotlib label location argument.
+        x, y : float, optional
+            Explicit label coordinates (if either is provided).
+        coords : {'axes', 'data'}, default='axes'
+            Coordinate system used for ``x``/``y`` when ``transform`` is not provided.
+        transform : matplotlib transform, optional
+            Explicit transform for label coordinates.
+        **kwargs
+            Forwarded to ``ax.set_ylabel``.
+        """
+        ax = Plotter.ax(ax)
+        if loc is not None:
+            kwargs.setdefault("loc", loc)
+        ax.set_ylabel(ylabel, fontsize=fontsize, labelpad=labelpad if labelpad != 0 else None, **kwargs)
+
+        if x is not None or y is not None:
+            x0, y0 = ax.yaxis.get_label().get_position()
+            x_set = x0 if x is None else x
+            y_set = y0 if y is None else y
+            t = transform
+            if t is None:
+                t = ax.transData if str(coords).lower() == "data" else ax.transAxes
+            ax.yaxis.set_label_coords(x_set, y_set, transform=t)
+
+    @staticmethod
     def set_ax_labels(  ax,
                         fontsize    =   None,
                         xlabel      =   "",
                         ylabel      =   "",
                         title       =   "",
                         xPad        =   0,
-                        yPad        =   0):
+                        yPad        =   0,
+                        xloc        =   None,
+                        yloc        =   None,
+                        xcoords     : str = "axes",
+                        ycoords     : str = "axes",
+                        x_pos       =   None,
+                        y_pos       =   None):
         '''
         Sets the labels of the x and y axes
         '''
+        ax = Plotter.ax(ax)
         if xlabel != "":
-            ax.set_xlabel(xlabel, 
-                            fontsize = fontsize,
-                            labelpad = xPad if xPad != 0 else None)
+            x_kwargs = {}
+            if isinstance(x_pos, (tuple, list)) and len(x_pos) == 2:
+                x_kwargs.update({"x": x_pos[0], "y": x_pos[1], "coords": xcoords})
+            Plotter.set_xlabel(
+                ax,
+                xlabel,
+                fontsize=fontsize,
+                labelpad=xPad,
+                loc=xloc,
+                **x_kwargs,
+            )
         if ylabel != "":
-            ax.set_ylabel(ylabel, 
-                            fontsize = fontsize,
-                            labelpad = yPad if yPad != 0 else None)
+            y_kwargs = {}
+            if isinstance(y_pos, (tuple, list)) and len(y_pos) == 2:
+                y_kwargs.update({"x": y_pos[0], "y": y_pos[1], "coords": ycoords})
+            Plotter.set_ylabel(
+                ax,
+                ylabel,
+                fontsize=fontsize,
+                labelpad=yPad,
+                loc=yloc,
+                **y_kwargs,
+            )
         # check the title
         if len(title) != 0:
             ax.set_title(title)    
@@ -3943,22 +4766,87 @@ class Plotter:
                         share_y         =   False,
                         width_ratios    =   None,                   # list of relative widths for columns (overrides sizex if provided)
                         height_ratios   =   None,                   # list of relative heights for rows (overrides sizey if provided)
-                        **kwargs) -> Tuple[plt.Figure, List[plt.Axes]]:
+                        constrained_layout = None,                  # explicit layout-engine override
+                        tight_layout    =   False,                  # call fig.tight_layout() at the end
+                        layout          =   None,                   # mpl>=3.6 layout engine, e.g. 'constrained', 'tight'
+                        mosaic          =   None,                   # subplot_mosaic specification
+                        spans           =   None,                   # dict[name] -> span spec on nrows x ncols grid
+                        named_panels    =   None,                   # names for regular grid panels
+                        **kwargs) -> Tuple[plt.Figure, AxesList]:
         """
-        Flexible subplot factory that *always* returns (fig, flat_axes_list).
+        Create subplot layouts and return a list-like ``AxesList`` wrapper.
 
-        Other (all optional, via kwargs):
-        - width_ratios/height_ratios via sizex/sizey if they are sequences
-        - hspace/wspace/left/right/top/bottom (mapped to gridspec_kw)
-        - constrained_layout=True by default (unless tight_layout is explicitly set)
-        - panel_labels=True or a list/tuple (strings) to annotate axes (A,B,C,...)
-        - grid=True to enable grid on all axes (use grid_kws for kwargs)
-        - despine=True to hide top/right spines, axis_off=True to turn entire axes off
-        - suptitle="...", suptitle_kws={...}
-        - dpi=..., sharex=..., sharey=..., subplot_kw={...}, gridspec_kw={...}
-        - post_hook=<callable(fig, axes_list)> for custom last-mile tweaks
-        - single_if_1=True to return ax instead of [ax] when nrows=ncols=1 for convenience
-        - annot_x_pos, annot_y_pos to control panel label positions (can be single value or list/tuple matching number of axes)
+        Parameters
+        ----------
+        nrows, ncols : int, default=(1, 1)
+            Grid shape used for regular subplot creation and for ``spans``.
+        sizex, sizey : float or sequence, default=10.0
+            Figure width/height in inches, or ratio sequences per column/row.
+        sizex_def, sizey_def : float, default=3
+            Inch scaling used when ``sizex``/``sizey`` are ratio sequences.
+        annot_x_pos, annot_y_pos : float or sequence, optional
+            Position(s) for panel label annotations in axes-fraction units.
+        panel_labels : bool or sequence, default=False
+            If truthy, annotate each axis with labels (auto or user-provided).
+        single_if_1 : bool, default=False
+            If True and only one axis is created, return that axis instead of
+            an ``AxesList``.
+        share_x, share_y : bool, default=False
+            Share x/y axes across created panels.
+        width_ratios, height_ratios : sequence, optional
+            GridSpec ratios overriding ratios inferred from ``sizex``/``sizey``.
+        constrained_layout : bool, optional
+            Explicitly control constrained layout engine.
+        tight_layout : bool, default=False
+            Call ``fig.tight_layout()`` after creation (when compatible).
+        layout : str, optional
+            Matplotlib layout engine name (e.g. ``'constrained'``, ``'tight'``).
+        mosaic : subplot-mosaic spec, optional
+            Use ``plt.subplot_mosaic`` with named panels.
+        spans : dict, optional
+            Named span panels on a regular grid.
+            Example: ``{'main': (0, 2, 0, 3), 'side': (0, 2, 3, 4)}``.
+        named_panels : sequence or dict, optional
+            Panel aliases for regular grids or mosaic alias remapping.
+        **kwargs : dict
+            Forwarded Matplotlib options. Common keys include:
+            ``dpi``, ``subplot_kw``, ``gridspec_kw``, ``hspace``, ``wspace``,
+            ``left/right/top/bottom``, ``grid``, ``grid_kws``, ``despine``,
+            ``axis_off``, ``suptitle``, ``suptitle_kws``, ``post_hook``.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure
+            Created figure.
+        axes : AxesList or matplotlib.axes.Axes
+            ``AxesList`` wrapper (list-compatible, grid-aware, named-panel
+            access). Returns single axis only when ``single_if_1=True``.
+
+        Notes
+        -----
+        ``AxesList`` supports:
+        - list operations (iterate, append-like access, slicing)
+        - grid indexing: ``axes[row, col]``
+        - named access: ``axes['main']``
+        - helpers: ``row()``, ``col()``, ``span()``, ``select()``, ``apply()``
+
+        Examples
+        --------
+        Standard grid:
+        ``fig, axes = Plotter.get_subplots(2, 3, sizex=9, sizey=5)``
+        ``axes[1, 2].plot(x, y)``
+
+        Named aliases:
+        ``fig, axes = Plotter.get_subplots(1, 3, named_panels=['left', 'mid', 'right'])``
+        ``axes['mid'].set_title('Center')``
+
+        Mosaic:
+        ``fig, axes = Plotter.get_subplots(mosaic=[['A', 'A', 'B'], ['C', 'D', 'D']])``
+        ``axes['A'].plot(x, y)``
+
+        Spans:
+        ``fig, axes = Plotter.get_subplots(nrows=3, ncols=4, spans={'main': (0, 2, 0, 3), 'side': (0, 2, 3, 4), 'bottom': (2, 3, 0, 4)})``
+        ``axes['main'].plot(x, y)``
         """
 
         #! Extract utility kwargs (do not pass to plt.subplots)
@@ -3978,9 +4866,20 @@ class Plotter:
         share_y         = kwargs.pop('sharey', share_y)
         wspace          = kwargs.pop('wspace', None)
         hspace          = kwargs.pop('hspace', None)
+        layout          = kwargs.pop('layout', layout)
+        constrained_layout = kwargs.pop('constrained_layout', constrained_layout)
+        tight_layout    = bool(kwargs.pop('tight_layout', tight_layout))
+        mosaic          = kwargs.pop('mosaic', mosaic)
+        spans           = kwargs.pop('spans', spans)
+        named_panels    = kwargs.pop('named_panels', named_panels)
+
+        if layout is not None:
+            kwargs['layout'] = layout
+        elif constrained_layout is not None:
+            kwargs['constrained_layout'] = bool(constrained_layout)
 
         # Use constrained_layout by default unless user opted for tight_layout or already set it
-        if 'constrained_layout' not in kwargs and not kwargs.get('tight_layout', False):
+        if 'layout' not in kwargs and 'constrained_layout' not in kwargs and not tight_layout:
             kwargs['constrained_layout'] = True
 
         # Map spacing/bounds kwargs into gridspec_kw if provided
@@ -3989,13 +4888,14 @@ class Plotter:
                 gridspec_kw[k] = kwargs.pop(k)
 
         #! Figure size & ratios
-        width_ratios = height_ratios = None
+        width_ratios_local = None
+        height_ratios_local = None
         # sizex can be total inches (number) or per-column *ratios* (sequence)
         if isinstance(sizex, (list, tuple)):
             if len(sizex) != ncols:
                 raise ValueError(f"sizex length {len(sizex)} != ncols {ncols}")
-            width_ratios    = list(sizex)
-            total_w         = sizex_def * fsum(width_ratios)
+            width_ratios_local = list(sizex)
+            total_w         = sizex_def * fsum(width_ratios_local)
         else:
             # If set to None, infer from defaults
             total_w         = float(sizex if sizex is not None else sizex_def * ncols)
@@ -4004,30 +4904,131 @@ class Plotter:
         if isinstance(sizey, (list, tuple)):
             if len(sizey) != nrows:
                 raise ValueError(f"sizey length {len(sizey)} != nrows {nrows}")
-            height_ratios   = list(sizey)
-            total_h         = sizey_def * fsum(height_ratios)
+            height_ratios_local = list(sizey)
+            total_h         = sizey_def * fsum(height_ratios_local)
         else:
             total_h         = float(sizey if sizey is not None else sizey_def * nrows)
 
         if width_ratios is not None:
-            gridspec_kw['width_ratios']     = width_ratios
+            width_ratios_local = list(width_ratios)
         if height_ratios is not None:
-            gridspec_kw['height_ratios']    = height_ratios
+            height_ratios_local = list(height_ratios)
+
+        if width_ratios_local is not None:
+            gridspec_kw['width_ratios'] = width_ratios_local
+        if height_ratios_local is not None:
+            gridspec_kw['height_ratios'] = height_ratios_local
 
         figsize                             = kwargs.pop('figsize', (total_w, total_h))
 
-        #! Create
-        fig, ax = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize, width_ratios=width_ratios, height_ratios=height_ratios,
-                gridspec_kw=gridspec_kw, subplot_kw=subplot_kw, sharex=share_x, sharey=share_y, **kwargs)
+        panel_map: Dict[str, Any] = {}
 
-        #! Normalize axes to a flat list, regardless of (1,1), (1,N), (M,1), (M,N)
-        if isinstance(ax, (list, tuple)):
-            axes_list = list(ax)
+        def _parse_span(spec):
+            # Supported:
+            # - (r0, r1, c0, c1)
+            # - ((r0, r1), (c0, c1))
+            # - {'rows': (r0, r1), 'cols': (c0, c1)}
+            if isinstance(spec, dict):
+                rows = spec.get("rows", spec.get("row"))
+                cols = spec.get("cols", spec.get("col"))
+                if rows is None or cols is None:
+                    raise ValueError(f"Invalid span dict {spec}.")
+                if isinstance(rows, int):
+                    rows = (rows, rows + 1)
+                if isinstance(cols, int):
+                    cols = (cols, cols + 1)
+                return slice(int(rows[0]), int(rows[1])), slice(int(cols[0]), int(cols[1]))
+            if isinstance(spec, tuple) and len(spec) == 4:
+                r0, r1, c0, c1 = spec
+                return slice(int(r0), int(r1)), slice(int(c0), int(c1))
+            if isinstance(spec, tuple) and len(spec) == 2:
+                rs, cs = spec
+                if isinstance(rs, int):
+                    rs = slice(rs, rs + 1)
+                if isinstance(cs, int):
+                    cs = slice(cs, cs + 1)
+                if isinstance(rs, slice) and isinstance(cs, slice):
+                    return rs, cs
+            raise ValueError(f"Unsupported span spec: {spec}")
+
+        #! Create
+        if mosaic is not None:
+            fig, axd = plt.subplot_mosaic(
+                mosaic,
+                figsize=figsize,
+                gridspec_kw=gridspec_kw,
+                subplot_kw=subplot_kw,
+                sharex=share_x,
+                sharey=share_y,
+                **kwargs,
+            )
+            panel_map = {str(k): v for k, v in axd.items()}
+            if isinstance(named_panels, dict):
+                for alias, target in named_panels.items():
+                    if isinstance(target, str) and target in panel_map:
+                        panel_map[str(alias)] = panel_map[target]
+            # Keep insertion order and unique axes
+            axes_flat = list(dict.fromkeys(panel_map.values()))
+            axes_list = AxesList(axes_flat, nrows=None, ncols=None, panel_map=panel_map)
+        elif spans is not None:
+            fig = plt.figure(figsize=figsize, **kwargs)
+            gs = fig.add_gridspec(nrows=nrows, ncols=ncols, **gridspec_kw)
+            sharex_ref = None
+            sharey_ref = None
+            for name, spec in dict(spans).items():
+                rs, cs = _parse_span(spec)
+                add_kw = dict(subplot_kw)
+                if bool(share_x) and sharex_ref is not None:
+                    add_kw["sharex"] = sharex_ref
+                if bool(share_y) and sharey_ref is not None:
+                    add_kw["sharey"] = sharey_ref
+                ax_one = fig.add_subplot(gs[rs, cs], **add_kw)
+                if sharex_ref is None:
+                    sharex_ref = ax_one
+                if sharey_ref is None:
+                    sharey_ref = ax_one
+                panel_map[str(name)] = ax_one
+            axes_flat = list(dict.fromkeys(panel_map.values()))
+            axes_list = AxesList(axes_flat, nrows=nrows, ncols=ncols, panel_map=panel_map)
         else:
-            try:
-                axes_list = ax.ravel().tolist()     # ndarray of Axes
-            except Exception:
-                axes_list = [ax]                    # single Axes
+            fig, ax = plt.subplots(
+                nrows=nrows,
+                ncols=ncols,
+                figsize=figsize,
+                gridspec_kw=gridspec_kw,
+                subplot_kw=subplot_kw,
+                sharex=share_x,
+                sharey=share_y,
+                **kwargs,
+            )
+
+            #! Normalize axes to a flat list, regardless of (1,1), (1,N), (M,1), (M,N)
+            if isinstance(ax, (list, tuple)):
+                axes_flat = list(ax)
+            else:
+                try:
+                    axes_flat = ax.ravel().tolist()     # ndarray of Axes
+                except Exception:
+                    axes_flat = [ax]                    # single Axes
+            axes_list = AxesList(axes_flat, nrows=nrows, ncols=ncols)
+
+            # Optional name aliases for standard grids
+            if named_panels is not None:
+                if isinstance(named_panels, (list, tuple)):
+                    if len(named_panels) != len(axes_list):
+                        raise ValueError("named_panels list length must match number of axes.")
+                    panel_map.update({str(name): axes_list[idx] for idx, name in enumerate(named_panels)})
+                elif isinstance(named_panels, dict):
+                    for name, spec in named_panels.items():
+                        if isinstance(spec, int):
+                            panel_map[str(name)] = axes_list[spec]
+                        elif isinstance(spec, tuple) and len(spec) == 2:
+                            panel_map[str(name)] = axes_list[spec[0], spec[1]]
+                        else:
+                            raise ValueError(f"Unsupported named panel selector: {spec}")
+                else:
+                    raise ValueError("named_panels must be list/tuple or dict.")
+                axes_list._panel_map = panel_map
 
         #! Optional cosmetics
         if grid_on:
@@ -4042,6 +5043,9 @@ class Plotter:
         if axis_off:
             for a in axes_list:
                 a.axis('off')
+
+        if tight_layout and not kwargs.get('constrained_layout', False) and kwargs.get('layout', None) != 'constrained':
+            fig.tight_layout()
 
         #! Panel labels
         if panel_labels is not None and (panel_labels != False):
@@ -4082,6 +5086,24 @@ class Plotter:
             post_hook(fig, axes_list)
         
         return fig, axes_list if not (single_if_1 and len(axes_list) == 1) else axes_list[0]
+
+    @staticmethod
+    def subplots(*args, **kwargs):
+        """
+        Alias of :meth:`Plotter.get_subplots`.
+        """
+        return Plotter.get_subplots(*args, **kwargs)
+
+    @staticmethod
+    def subplot_mosaic(mosaic, *args, **kwargs):
+        """
+        Convenience alias for mosaic layouts.
+
+        Equivalent to:
+        ``Plotter.get_subplots(mosaic=mosaic, *args, **kwargs)``
+        """
+        kwargs["mosaic"] = mosaic
+        return Plotter.get_subplots(*args, **kwargs)
 
     ######### S A V I N G #########
 
