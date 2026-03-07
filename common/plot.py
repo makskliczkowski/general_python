@@ -493,9 +493,12 @@ def get_color_cycle(which=None):
 #####################################
 markersList                         =   ['o','s','v', '+', 'o', '*'] + ['D', 'h', 'H', 'p', 'P', 'X', 'd', '|', '_']
 markersCycle                        =   itertools.cycle(["4", "2", "3", "1", "+", "x", "."] + markersList)
+markerNorm                          =   lambda x: markersList[int(x[1:])] if (x is not None and x.startswith("M") and x[1:].isdigit() and int(x[1:]) >= 0 and int(x[1:]) <= len(markersList) - 1) else x
+
 linestylesList                      =   ['-', '--', '-.', ':']
 linestylesCycle                     =   itertools.cycle(['-', '--', '-.', ':'])
 linestylesCycleExtended             =   itertools.cycle(['-', '--', '-.', ':'] + list(ADDITIONAL_LINESTYLES.keys()))
+linestyleNorm                       =   lambda x: linestylesList[int(x[1:])] if (x is not None and x.startswith("L") and x[1:].isdigit() and int(x[1:]) >= 0 and int(x[1:]) <= len(linestylesList) - 1) else (ADDITIONAL_LINESTYLES.get(x, x) if x in ADDITIONAL_LINESTYLES else x)
 @staticmethod
 def reset_linestyles(which=None):
     '''
@@ -764,6 +767,10 @@ class AxesList(list):
 
     # Convenience methods for applying functions to all axes
 
+    def set_title(self, title, **kwargs):
+        """Set the title for all axes."""
+        return self.apply(lambda ax: ax.set_title(title, **kwargs))
+    
     def apply(self, fn, *args, **kwargs):
         """Apply ``fn`` to each axis and return self."""
         for ax in self:
@@ -1411,6 +1418,554 @@ class Plotter:
         )
         return xlim, ylim
     
+    ###########################################################
+    
+    @staticmethod
+    def markers():
+        ''' Markers with common options for line and scatter plots.'''
+        return markersList
+    @staticmethod
+    def markersC():
+        ''' Markers cycle with common options for line and scatter plots.'''
+        return markersCycle
+    
+    @staticmethod
+    def colors():
+        ''' Colors with common options for line and scatter plots.'''
+        return colorsList
+
+    @staticmethod
+    def linestyles():
+        ''' Linestyles with solid and dashed options.'''
+        return linestylesList
+    @staticmethod
+    def linestylesC():
+        ''' Linestyles cycle with solid and dashed options.'''
+        return linestylesCycle
+    @staticmethod
+    def linestylesCE():
+        ''' Extended linestyles cycle with more options for dashed lines.'''
+        return linestylesCycleExtended
+
+    ###########################################################
+    #! Color Utilities
+    ###########################################################
+
+    # ------------------------------------------------------------------
+    # Named Palettes registry
+    # Carefully curated for scientific publication use. All entries have
+    # been verified against colorblindness simulators where noted.
+    # ------------------------------------------------------------------
+    _PALETTES: Dict[str, List[str]] = {
+        # ---- Colorblind-safe (recommended for all publications) ------
+        # Wong (2011) Nature Methods – the gold standard for CBF plots
+        'wong':         ["#000000","#E69F00","#56B4E9","#009E73",
+                         "#F0E442","#0072B2","#D55E00","#CC79A7"],
+        # Identical to wong; alias used by Okabe & Ito (2008)
+        'okabe':        ["#000000","#E69F00","#56B4E9","#009E73",
+                         "#F0E442","#0072B2","#D55E00","#CC79A7"],
+        # Paul Tol muted qualitative – great for dark backgrounds too
+        'tol':          ["#332288","#88CCEE","#44AA99","#117733",
+                         "#999933","#DDCC77","#CC6677","#882255",
+                         "#AA4499","#DDDDDD"],
+        # Paul Tol bright – higher contrast on white
+        'tol_bright':   ["#4477AA","#EE6677","#228833","#CCBB44",
+                         "#66CCEE","#AA3377","#BBBBBB"],
+        # IBM Carbon accessible palette (5 colors)
+        'ibm':          ["#648FFF","#785EF0","#DC267F","#FE6100","#FFB000"],
+        # ---- Perceptual / seaborn-style ----------------------------
+        # seaborn colorblind-10
+        'colorblind':   ["#0173B2","#DE8F05","#029E73","#D55E00",
+                         "#CC78BC","#CA9161","#FBAFE4","#949494",
+                         "#ECE133","#56B4E9"],
+        # seaborn deep-10
+        'deep':         ["#4C72B0","#DD8452","#55A868","#C44E52",
+                         "#8172B3","#937860","#DA8BC3","#8C8C8C",
+                         "#CCB974","#64B5CD"],
+        # seaborn muted-10 (toned-down, print-friendly)
+        'muted':        ["#4878D0","#EE854A","#6ACC65","#D65F5F",
+                         "#956CB4","#8C613C","#DC7EC0","#797979",
+                         "#D5BB67","#82C6E2"],
+        # ---- Standard Matplotlib cycles ----------------------------
+        'tableau':      list(mcolors.TABLEAU_COLORS.values()),
+        'classic':      ["#1F77B4","#FF7F0E","#2CA02C","#D62728",
+                         "#9467BD","#8C564B","#E377C2","#7F7F7F",
+                         "#BCBD22","#17BECF"],
+        # ---- Journal-style palettes --------------------------------
+        # Nature / BioRxiv warm editorial tones
+        'nature':       ["#E64B35","#4DBBD5","#00A087","#3C5488",
+                         "#F39B7F","#8491B4","#91D1C2","#DC0000",
+                         "#7E6148","#B09C85"],
+        # Science journal-inspired muted palette
+        'science':      ["#3B4992","#EE0000","#008B45","#631879",
+                         "#008280","#BB0021","#5F559B","#A20056",
+                         "#808180","#1B1919"],
+        # ---- Presentation / poster --------------------------------
+        # Soft pastel – good for talk backgrounds
+        'pastel':       ["#AEC6CF","#FFD1DC","#B5EAD7","#FFDAC1",
+                         "#C7CEEA","#E2F0CB","#F8C8D4","#D4E6F1"],
+        # ---- Diverging sequences ----------------------------------
+        # 9-stop cool→warm (Blue→Red) diverging run
+        'sunset':       ["#364B9A","#4A7BB7","#98CAE1","#EAECCC",
+                         "#FEDA8B","#FDB366","#F67E4B","#DD3D2D","#A50026"],
+    }
+
+    @staticmethod
+    def palette(name: str = 'tableau', n: Optional[int] = None) -> List[str]:
+        """
+        Return a named color palette as a list of hex strings.
+
+        Parameters
+        ----------
+        name : str, default='tableau'
+            Palette name. Built-in options:
+
+            =============== =====================================================
+            Name            Description
+            =============== =====================================================
+            ``wong``        Wong (2011) 8-color CBF palette (Nature Methods)
+            ``okabe``       Okabe & Ito – identical to ``wong``
+            ``tol``         Paul Tol's muted 10-color qualitative set
+            ``tol_bright``  Paul Tol's bright 7-color high-contrast set
+            ``ibm``         IBM Carbon 5-color accessible palette
+            ``colorblind``  seaborn *colorblind* 10-color cycle
+            ``deep``        seaborn *deep* 10-color perceptual palette
+            ``muted``       seaborn *muted* toned-down palette
+            ``tableau``     Matplotlib default Tableau-10 cycle
+            ``classic``     Matplotlib pre-2.0 default cycle
+            ``nature``      Nature/BioRxiv warm editorial palette
+            ``science``     Science journal-inspired muted palette
+            ``pastel``      Soft pastel tones for presentations
+            ``sunset``      9-stop cool→warm diverging gradient
+            =============== =====================================================
+
+        n : int, optional
+            Return exactly ``n`` colors. When ``n > len(palette)`` colors are
+            repeated cyclically.
+
+        Returns
+        -------
+        list[str]
+            Hex color strings.
+
+        Examples
+        --------
+        >>> Plotter.palette('wong')           # 8 colorblind-safe colors
+        >>> Plotter.palette('nature', n=4)    # first 4 of nature palette
+        >>> Plotter.palette('deep', n=12)     # 12 colors (cycles)
+        """
+        p = Plotter._PALETTES.get(name)
+        if p is None:
+            raise ValueError(
+                f"Unknown palette '{name}'. "
+                f"Available: {sorted(Plotter._PALETTES.keys())}"
+            )
+        if n is None:
+            return list(p)
+        return [p[i % len(p)] for i in range(n)]
+
+    @staticmethod
+    def palette_cycle(name: str = 'tableau') -> itertools.cycle:
+        """
+        Return an infinite ``itertools.cycle`` over a named palette.
+
+        Parameters
+        ----------
+        name : str
+            Same keys as :meth:`palette`.
+
+        Examples
+        --------
+        >>> cyc   = Plotter.palette_cycle('wong')
+        >>> color = next(cyc)
+        """
+        return itertools.cycle(Plotter.palette(name))
+
+    @staticmethod
+    def colorsC(palette: str = 'tableau') -> itertools.cycle:
+        """
+        Return a color cycle for a named palette.
+
+        Alias for :meth:`palette_cycle`.
+
+        Examples
+        --------
+        >>> cyc = Plotter.colorsC('wong')
+        >>> c1  = next(cyc)
+        """
+        return Plotter.palette_cycle(palette)
+
+    @staticmethod
+    def colorsN(n: int, palette: str = 'tableau') -> List[str]:
+        """
+        Return exactly ``n`` colors from a named palette (cycling if needed).
+
+        Parameters
+        ----------
+        n : int
+        palette : str
+            Named palette (see :meth:`palette`).
+
+        Examples
+        --------
+        >>> c5 = Plotter.colorsN(5, 'wong')
+        """
+        return Plotter.palette(palette, n=n)
+
+    @staticmethod
+    def set_color_cycle(ax, palette: Union[str, List] = 'tableau') -> None:
+        """
+        Set the Matplotlib color cycle on one or more axes.
+
+        This makes subsequent ``ax.plot(...)`` calls auto-pick colors from the
+        selected palette in order.
+
+        Parameters
+        ----------
+        ax : axes or list of axes
+        palette : str or list of colors, default='tableau'
+            Named palette string (see :meth:`palette`) or an explicit list of
+            any Matplotlib-compatible color specs.
+
+        Examples
+        --------
+        >>> Plotter.set_color_cycle(ax, 'wong')
+        >>> ax.plot(x1, y1)   # first wong color
+        >>> ax.plot(x2, y2)   # second wong color
+        """
+        colors = Plotter.palette(palette) if isinstance(palette, str) else list(palette)
+        cycler = mpl.cycler(color=colors)
+        for a in Plotter.ensure_list(ax):
+            a.set_prop_cycle(cycler)
+
+    @staticmethod
+    def apply_palette(axes, palette: str = 'tableau') -> None:
+        """
+        Apply a named color palette as the default color cycle for one or
+        more axes. Shorthand for :meth:`set_color_cycle`.
+
+        Examples
+        --------
+        >>> fig, axes = Plotter.get_subplots(1, 3)
+        >>> Plotter.apply_palette(axes, 'wong')
+        """
+        Plotter.set_color_cycle(axes, palette)
+
+    # ------------------------------------------------------------------
+    # Color Conversion
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def to_rgba(color, alpha: Optional[float] = None) -> Tuple[float, float, float, float]:
+        """
+        Convert any Matplotlib-compatible color spec to an ``(r, g, b, a)`` tuple.
+
+        Parameters
+        ----------
+        color : color spec
+            Named string, hex, RGB/RGBA tuple, ``'C0'``-style, etc.
+        alpha : float, optional
+            Override the alpha channel (0–1).
+
+        Returns
+        -------
+        tuple[float, float, float, float]
+
+        Examples
+        --------
+        >>> Plotter.to_rgba('C0')
+        >>> Plotter.to_rgba('#E64B35', alpha=0.5)
+        """
+        r, g, b, a = mcolors.to_rgba(color)
+        if alpha is not None:
+            a = float(alpha)
+        return (r, g, b, a)
+
+    @staticmethod
+    def to_hex(color, keep_alpha: bool = False) -> str:
+        """
+        Convert any Matplotlib-compatible color spec to a hex string.
+
+        Parameters
+        ----------
+        color : color spec
+        keep_alpha : bool, default=False
+            If True, return an 8-character ``#RRGGBBAA`` string.
+
+        Examples
+        --------
+        >>> Plotter.to_hex('C0')              # '#1f77b4'
+        >>> Plotter.to_hex((0.2, 0.4, 0.6, 0.8), keep_alpha=True)
+        """
+        return mcolors.to_hex(color, keep_alpha=keep_alpha)
+
+    # ------------------------------------------------------------------
+    # Color Manipulation (HLS-based, perceptually motivated)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def adjust_color(
+        color,
+        *,
+        lighten     : float = 0.0,
+        darken      : float = 0.0,
+        saturate    : float = 0.0,
+        desaturate  : float = 0.0,
+        alpha       : Optional[float] = None,
+    ) -> Tuple[float, float, float, float]:
+        """
+        Perceptually adjust a color in HLS space.
+
+        Each parameter shifts the corresponding channel by a *fraction of the
+        remaining headroom*, so operations compose gracefully and values are
+        always clamped to [0, 1].
+
+        Parameters
+        ----------
+        color : color spec
+            Any Matplotlib-compatible color.
+        lighten : float, default=0.0
+            Push lightness toward 1 (white). 0 = no change, 1 = white.
+        darken : float, default=0.0
+            Push lightness toward 0 (black). 0 = no change, 1 = black.
+        saturate : float, default=0.0
+            Push saturation toward 1. 0 = no change, 1 = fully saturated.
+        desaturate : float, default=0.0
+            Push saturation toward 0 (grey). 0 = no change, 1 = grey.
+        alpha : float, optional
+            Override alpha channel (0–1).
+
+        Returns
+        -------
+        tuple[float, float, float, float]
+            Adjusted RGBA color.
+
+        Examples
+        --------
+        >>> Plotter.adjust_color('C0', lighten=0.3)
+        >>> Plotter.adjust_color('#E64B35', darken=0.4)
+        >>> Plotter.adjust_color('C2', desaturate=0.5, alpha=0.7)
+        """
+        import colorsys
+        r, g, b, a = mcolors.to_rgba(color)
+        h, l, s    = colorsys.rgb_to_hls(r, g, b)
+
+        l = l + (1.0 - l) * max(0.0, min(1.0, float(lighten)))
+        l = l * (1.0 - max(0.0, min(1.0, float(darken))))
+        s = s + (1.0 - s) * max(0.0, min(1.0, float(saturate)))
+        s = s * (1.0 - max(0.0, min(1.0, float(desaturate))))
+
+        r2, g2, b2 = colorsys.hls_to_rgb(h, l, s)
+        return (r2, g2, b2, float(alpha) if alpha is not None else a)
+
+    @staticmethod
+    def lighten(color, amount: float = 0.3) -> Tuple[float, float, float, float]:
+        """
+        Return a lightened version of *color* (push lightness toward white).
+
+        Parameters
+        ----------
+        color : color spec
+        amount : float, default=0.3
+            0 = no change, 1 = white.
+
+        Examples
+        --------
+        >>> fill = Plotter.lighten('C0', 0.5)
+        >>> Plotter.fill_between(ax, x, y1, y2, color=fill)
+        """
+        return Plotter.adjust_color(color, lighten=amount)
+
+    @staticmethod
+    def darken(color, amount: float = 0.3) -> Tuple[float, float, float, float]:
+        """
+        Return a darkened version of *color* (push lightness toward black).
+
+        Parameters
+        ----------
+        color : color spec
+        amount : float, default=0.3
+            0 = no change, 1 = black.
+
+        Examples
+        --------
+        >>> edge = Plotter.darken('C0', 0.25)
+        """
+        return Plotter.adjust_color(color, darken=amount)
+
+    @staticmethod
+    def desaturate(color, amount: float = 0.5) -> Tuple[float, float, float, float]:
+        """
+        Return a desaturated (greyed-out) version of *color*.
+
+        Parameters
+        ----------
+        color : color spec
+        amount : float, default=0.5
+            0 = original, 1 = fully grey.
+
+        Examples
+        --------
+        >>> faded = Plotter.desaturate('C1', 0.6)
+        """
+        return Plotter.adjust_color(color, desaturate=amount)
+
+    @staticmethod
+    def with_alpha(color, a: float = 0.5) -> Tuple[float, float, float, float]:
+        """
+        Return *color* with a modified alpha channel.
+
+        Parameters
+        ----------
+        color : color spec
+        a : float
+            New alpha value (0–1).
+
+        Examples
+        --------
+        >>> Plotter.fill_between(ax, x, y1, y2, color=Plotter.with_alpha('C0', 0.25))
+        """
+        return Plotter.to_rgba(color, alpha=a)
+
+    @staticmethod
+    def blend(
+        c1,
+        c2,
+        t   : float = 0.5,
+        *,
+        n   : Optional[int] = None,
+    ) -> Union[Tuple[float, float, float, float], List[Tuple[float, float, float, float]]]:
+        """
+        Linearly interpolate between two colors in linear RGB space.
+
+        Parameters
+        ----------
+        c1, c2 : color spec
+            Start and end colors.
+        t : float, default=0.5
+            Blend position: 0 → ``c1``, 1 → ``c2``. Ignored when ``n`` is set.
+        n : int, optional
+            If provided, return ``n`` evenly-spaced colors from ``c1`` to ``c2``
+            (inclusive of both endpoints).
+
+        Returns
+        -------
+        tuple or list[tuple]
+            Single RGBA tuple when ``n`` is None; list of ``n`` tuples otherwise.
+
+        Examples
+        --------
+        >>> mid      = Plotter.blend('red', 'blue')
+        >>> gradient = Plotter.blend('#E64B35', '#4DBBD5', n=7)
+        """
+        a = np.array(mcolors.to_rgba(c1))
+        b = np.array(mcolors.to_rgba(c2))
+        if n is not None:
+            ts = np.linspace(0.0, 1.0, int(n))
+            return [tuple((1.0 - s) * a + s * b) for s in ts]
+        return tuple((1.0 - float(t)) * a + float(t) * b)
+
+    # ------------------------------------------------------------------
+    # Sampling colors from a continuous colormap
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def n_colors(
+        n       : int,
+        cmap    : Union[str, mpl.colors.Colormap] = 'viridis',
+        vmin    : float = 0.0,
+        vmax    : float = 1.0,
+        *,
+        as_hex  : bool = False,
+    ) -> List:
+        """
+        Sample ``n`` evenly-spaced colors from a colormap.
+
+        Ideal for encoding a continuous parameter (temperature, time, β …) as
+        line colors when you want a smooth gradient rather than a categorical
+        palette.
+
+        Parameters
+        ----------
+        n : int
+            Number of colors to sample.
+        cmap : str or Colormap, default='viridis'
+            Source colormap.
+        vmin, vmax : float, default 0.0, 1.0
+            Fraction range to sample from (allows using only a sub-range of the
+            colormap, e.g. ``vmin=0.1, vmax=0.9`` avoids the near-white ends of
+            sequential maps).
+        as_hex : bool, default=False
+            If True, return hex strings instead of RGBA tuples.
+
+        Returns
+        -------
+        list[tuple] or list[str]
+
+        Examples
+        --------
+        >>> colors = Plotter.n_colors(5, 'plasma')
+        >>> for c, (x, y) in zip(colors, datasets):
+        ...     Plotter.plot(ax, x, y, color=c)
+
+        >>> # Avoid extreme ends of the colormap
+        >>> colors = Plotter.n_colors(8, 'RdBu_r', vmin=0.1, vmax=0.9)
+        """
+        cmap_obj = plt.get_cmap(cmap) if isinstance(cmap, str) else cmap
+        values   = np.linspace(float(vmin), float(vmax), int(n))
+        if as_hex:
+            return [mcolors.to_hex(cmap_obj(v)) for v in values]
+        return [cmap_obj(v) for v in values]
+
+    @staticmethod
+    def cmap_colors(
+        cmap    : Union[str, mpl.colors.Colormap],
+        values  : np.ndarray,
+        *,
+        vmin    : Optional[float] = None,
+        vmax    : Optional[float] = None,
+        norm    : Optional[mpl.colors.Normalize] = None,
+        scale   : str = 'linear',
+    ) -> List[Tuple]:
+        """
+        Map an array of scalar values to RGBA colors via a colormap.
+
+        Convenience wrapper around :meth:`get_colormap` when you only need
+        the list of colors (not the full ``getcolor / norm / mappable`` bundle).
+
+        Parameters
+        ----------
+        cmap : str or Colormap
+        values : array-like
+            Scalar values to map.
+        vmin, vmax : float, optional
+            Color limits. Default to ``min / max(values)``.
+        norm : Normalize, optional
+            Explicit normalization. Takes precedence over ``scale``.
+        scale : {'linear', 'log', 'symlog'}, default='linear'
+
+        Returns
+        -------
+        list[tuple]
+            RGBA tuples, one per value.
+
+        Examples
+        --------
+        >>> beta_values = np.linspace(0.1, 2.0, 8)
+        >>> colors      = Plotter.cmap_colors('plasma', beta_values)
+        >>> for val, c in zip(beta_values, colors):
+        ...     Plotter.plot(ax, x, data[val], color=c, label=rf'$\\beta={val:.1f}$')
+        """
+        getcolor, _, _ = Plotter.get_colormap(
+            values  = np.asarray(values),
+            vmin    = vmin,
+            vmax    = vmax,
+            cmap    = cmap,
+            norm    = norm,
+            scale   = scale,
+        )
+        return [getcolor(v) for v in values]
+
     ###########################################################
     #! Filter results
     ###########################################################
@@ -2081,7 +2636,7 @@ class Plotter:
     ################## S C A T T E R ##################
     
     @staticmethod
-    def scatter(ax, x, y,
+    def scatter(ax, x, y, *,
         s           =   10,
         c           =   'blue',
         marker      =   'o',
@@ -2211,9 +2766,9 @@ class Plotter:
     #################### P L O T S ####################
     
     @staticmethod
-    def plot(  ax, 
-                x, 
-                y,
+    def plot(  ax, *args,
+                y               = None,
+                x               = None,
                 ls              = '-',
                 lw              = 2.0,
                 color           = 'black',
@@ -2237,9 +2792,14 @@ class Plotter:
         plot the data
         '''
         ax  = Plotter.ax(ax)
+        if len(args) == 1:
+            y = args[0]
+        elif len(args) >= 2:
+            x = args[0]
+            y = args[1]
         
         if 'linestyle' in kwargs:
-            ls = kwargs['linestyle']
+            ls = linestyleNorm(kwargs['linestyle'])
             kwargs.pop('linestyle')
             
         if 'linewidth' in kwargs:
@@ -2266,12 +2826,21 @@ class Plotter:
         
         if isinstance(marker, int):
             marker = markersList[marker % len(markersList)]
+        marker = markerNorm(marker)
         
         line_style_kwargs = {}
         if solid_capstyle is not None:
             line_style_kwargs["solid_capstyle"] = solid_capstyle
         if solid_joinstyle is not None:
             line_style_kwargs["solid_joinstyle"] = solid_joinstyle
+
+        if x is None and y is None:
+            x = [None]
+            y = [None]
+        elif x is None:
+            x = np.arange(len(y))
+        elif y is None:
+            raise ValueError("y cannot be None if x is provided.")
 
         ax.plot(
             x, y,
