@@ -183,6 +183,7 @@ class FlaxInterface(GeneralNet):
                 accepted_kwargs["dtype"] = self._dtype
         except Exception:
             accepted_kwargs = dict(net_kwargs_processed)
+        self._net_kwargs = dict(accepted_kwargs)
 
         #! Create the internal Flax module.
         try:

@@ -41,28 +41,20 @@ except ImportError as e:
 # Lazy import aliases for common submodules
 
 _LAZY_MODULES = {
-    'activation_functions'      : 'general_python.ml.net_impl.activation_functions',
-    'interface_net_flax'        : 'general_python.ml.net_impl.interface_net_flax',
-    'net_general'               : 'general_python.ml.net_impl.net_general',
-    'net_simple'                : 'general_python.ml.net_impl.net_simple',
-    'networks'                  : 'general_python.ml.networks',
-    'schedulers'                : 'general_python.ml.schedulers',
-    'training_phases'           : 'general_python.ml.training_phases',
+    'activation_functions'      : '.net_impl.activation_functions',
+    'interface_net_flax'        : '.net_impl.interface_net_flax',
+    'net_general'               : '.net_impl.net_general',
+    'net_simple'                : '.net_impl.net_simple',
+    'networks'                  : '.networks',
+    'schedulers'                : '.schedulers',
+    'training_phases'           : '.training_phases',
     # Add more aliases as needed
 }
 
 def __getattr__(name):
     if name in _LAZY_MODULES:
-        return importlib.import_module(_LAZY_MODULES[name])
+        return importlib.import_module(_LAZY_MODULES[name], package=__name__)
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
-
-__all__ = list(_LAZY_MODULES.keys()) + [
-    'networks',
-    'schedulers', 
-    '__general__',
-    '__loss__',
-    'net_impl'
-]
 
 # ------------------------------------------------------------------------------
 # Direct import of net_impl for easier access
@@ -72,8 +64,13 @@ from . import net_impl
 
 # Define what's available when importing with "from general_python.ml import *"
 __all__ = [
+    'activation_functions',
+    'interface_net_flax',
+    'net_general',
+    'net_simple',
     'networks',
     'schedulers',
+    'training_phases',
     'net_impl'
 ]
 

@@ -102,6 +102,7 @@ class GeneralNet(ABC):
         self._in_activation     = in_activation
         self._net_module_class  = None
         self._net_args          = None
+        self._net_kwargs        = None
         self._seed              = seed
         
     # ---------------------------------------------------
@@ -418,6 +419,16 @@ class GeneralNet(ABC):
             object: Network arguments.
         """
         return self._net_args
+
+    @property
+    def net_kwargs(self):
+        """
+        Get the keyword arguments used to instantiate the network module.
+
+        Returns:
+            object: Network keyword arguments.
+        """
+        return self._net_kwargs
     
     @property
     def seed(self):

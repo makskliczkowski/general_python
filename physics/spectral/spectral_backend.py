@@ -214,16 +214,16 @@ def greens_function_manybody(
             # A_mn = <m|A|n>, B_nm = <n|B|m>
             A_mn        = A[m, :]
             B_nm        = B[:, m]
+            denom_pos   = (omega[:, None] - deltaE[None, :]).astype(be.complex128)
 
             # Term 1: Particle (w - deltaE)
-            denom_pos   = omega[:, None] - deltaE[None, :]
             if kind == "retarded": denom_pos += 1j * eta
             elif kind == "advanced": denom_pos -= 1j * eta
             
             G[i, :] += be.sum((A_mn[None, :] * B_nm[None, :]) / denom_pos, axis=1)
 
             # Term 2: Hole (w + deltaE) - irrelevant for T=0 structure factor usually
-            denom_neg = omega[:, None] + deltaE[None, :]
+            denom_neg = (omega[:, None] + deltaE[None, :]).astype(be.complex128)
             if kind == "retarded": denom_neg += 1j * eta
             elif kind == "advanced": denom_neg -= 1j * eta
 
@@ -1417,7 +1417,11 @@ class SpectralModule:
                 trans_R = trans_L
             
             return greens_function_manybody(
-                omega, self.energies, trans_L, trans_R, eta=eta
+                omega=omega,
+                eigenvalues=self.energies,
+                operator_a=trans_L,
+                operator_b=trans_R,
+                eta=eta,
             )
     
     def spectral_function(self,
