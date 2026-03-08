@@ -515,8 +515,18 @@ class RK(IVP):
         return cls(a, b, c, dt=dt, backend=backend, rhs_prefactor=rhs_prefactor)
 
     def step(self, f, t: float, y, **rhs_args):
-        """
+        r"""
         Perform one Runge-Kutta step.
+
+        The right-hand side prefactor is treated as part of the ODE,
+        ``dy/dt = a f(t, y)``, not as a final post-processing multiplier.
+        This matters for complex real-time evolution in TDVP, where the stage
+        states must be evaluated at
+
+            y_i = y_n + h a \sum_{j < i} a_{ij} k_j
+
+        in order for RK2 / RK4 to integrate the same physical time variable as
+        Euler and exact diagonalization.
         
         Returns
         -------
@@ -535,7 +545,7 @@ class RK(IVP):
             ti = t + self.c[i] * h
             yi = y
             for j in range(i):
-                yi = yi + h * self.a[i, j] * k[j]
+                yi = yi + (self._rhs_prefactor * h) * self.a[i, j] * k[j]
             k[i], step_info, other = f(yi, ti, **rhs_args, int_step=i)
 
         #! Combine
