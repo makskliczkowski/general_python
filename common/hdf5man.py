@@ -1421,19 +1421,21 @@ class HDF5Manager:
             return y_combined_averaged, x_common_grid
 
         else: # Non-interpolation method (original logic)
-            # For a direct port of original non-interpolation:
-            combined_dict = {} # x_value -> (sum_y, count)
-            for y_s, x_s in processed_series:
-                for i, x_val in enumerate(x_s):
-                    if x_val not in combined_dict:
-                        combined_dict[x_val] = [0.0, 0]
-                    combined_dict[x_val][0] += y_s[i]
-                    combined_dict[x_val][1] += 1
+            if not processed_series:
+                return np.array([]), np.array([])
+
+            # Vectorized aggregation using np.unique and np.bincount
+            all_y = np.concatenate([s[0] for s in processed_series])
+            all_x = np.concatenate([s[1] for s in processed_series])
+
+            if all_x.size == 0:
+                return np.array([]), np.array([])
+
+            unique_x, inverse = np.unique(all_x, return_inverse=True)
+            sum_y = np.bincount(inverse, weights=all_y)
+            counts = np.bincount(inverse)
             
-            sorted_x = sorted(combined_dict.keys())
-            x_final = np.array(sorted_x)
-            y_final = np.array([combined_dict[x][0] / combined_dict[x][1] for x in sorted_x])
-            return y_final, x_final
+            return sum_y / counts, unique_x
 
     @staticmethod
     def align_and_fill_histograms(
