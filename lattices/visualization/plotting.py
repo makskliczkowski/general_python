@@ -1700,6 +1700,22 @@ def plot_high_symmetry_points(
     if show_bz:
         _draw_bz_region(axis, coords, dim=dim, lattice=lattice, facecolor=bz_facecolor, edgecolor=bz_edgecolor, alpha=bz_alpha, fix_aspect=fix_aspect, show_points=False, zorder=0.0, **kwargs)
 
+        # Ensure the BZ is fully contained in the auto-scaling plotted_coords
+        b_norms = []
+        for i in range(1, 4):
+            vec = getattr(lattice, f"k{i}", None)
+            if vec is not None:
+                b_norms.append(np.linalg.norm(vec[:dim]))
+
+        if b_norms:
+            # Use a factor that ensures BZ and some margin is visible.
+            # 0.5*b is the BZ face, 0.75*b covers corners, 1.1*b is a generous margin matching demo preferences.
+            kmax_padding = kwargs.get("bz_upscale", 1.1)
+            kmax         = max(b_norms) * kmax_padding
+            bbox         = np.eye(dim) * kmax
+            plotted_coords.append(bbox)
+            plotted_coords.append(-bbox)
+
     if show_background_bz:
         bz_centers       = lattice.wigner_seitz_shifts(copies=copy_spec, include_origin=False)
         seen_shifts     = set()
