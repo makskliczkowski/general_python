@@ -357,13 +357,6 @@ def _bz_path_comprehensive_demo():
         lat.plot.bz_high_symmetry(ax=ax_bz, title=f"{ltype.capitalize()} BZ", 
                                   show_kpoints=True, tight_layout=False)
         
-        # Fix BZ scaling
-        b1_norm = np.linalg.norm(lat.k1[:2])
-        b2_norm = np.linalg.norm(lat.k2[:2])
-        kmax    = max(b1_norm, b2_norm) * 1.1
-        ax_bz.set_xlim(-kmax, kmax)
-        ax_bz.set_ylim(-kmax, kmax)
-        
         # Panel B: Path coordinates components
         ax_path = axes[1]
         hs = lat.high_symmetry_points()
