@@ -157,9 +157,9 @@ class DataHandler:
         :param threshold        : The threshold value for filtering y values (default: 1.0).
         :returns                : Combined y values and x bins after averaging.
         """
-        # chack the instances
-        if not isinstance(y_list, list) or not isinstance(x_list, list) or not isinstance(typical, np.ndarray) or not isinstance(use_interpolation, np.ndarray):
-            raise ValueError("Input lists must be of type list or numpy.ndarray.")
+        # check the instances
+        if not isinstance(y_list, (list, np.ndarray)) or not isinstance(x_list, (list, np.ndarray)) or not isinstance(typical, bool) or not isinstance(use_interpolation, bool):
+            raise ValueError("Input lists must be of type list or numpy.ndarray, and flags must be boolean.")
             
         # check if the arrays are already one dimensional and return them
         if len(y_list[0].shape) == 1:
