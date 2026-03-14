@@ -230,8 +230,19 @@ class Timer:
             raise ValueError("unit must be one of {'auto','s','ms','us','ns'}")
 
     def format_elapsed(self) -> str:
-        v, u = self._format_unit(self.elapsed_s())
-        return f"{v:.6f} {u}"
+        v, u    = self._format_unit(self.elapsed_s())
+        if u == "s":
+            hours_dot_min_sec = v / 3600
+        elif u == "ms":
+            hours_dot_min_sec = v / (3600 * 1e3)
+        elif u == "us":
+            hours_dot_min_sec = v / (3600 * 1e6)
+        elif u == "ns":
+            hours_dot_min_sec = v / (3600 * 1e9)
+        
+        if hours_dot_min_sec >= 0.1:
+            return f"{v:.6f} {u} ({hours_dot_min_sec:.2f}h)"
+        return f"{v:.6f} {u} (<0.1h)"
 
     ################################################################################
 
