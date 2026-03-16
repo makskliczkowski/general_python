@@ -51,10 +51,12 @@ def mask_subsystem(
     """
     if isinstance(va, (int, np.integer)):
         if contiguous:
-            sites_a = np.arange(va)
+            sites_a = np.arange(va, dtype=np.int64)
         else:
-            # Treat as bitmask
-            sites_a = np.where([(va >> i) & 1 for i in range(ns)])[0]
+            # Treat as bitmask - vectorized extraction
+            bits    = np.arange(ns, dtype=np.uint64)
+            mask    = ((va >> bits) & 1) != 0
+            sites_a = np.where(mask)[0]
     else:
         sites_a = np.sort(np.asarray(va, dtype=np.int64))
     
@@ -98,11 +100,21 @@ def psi_numpy(
     dB          = local_dim**(ns - size_a)
 
     if order is None or order == tuple(range(ns)):
+        # Fast path: no permutation needed
         psi         = state.reshape(dA, dB, order="F")
     else:
-        psi_nd      = state.reshape((local_dim,) * ns, order="F")
-        psi_perm    = psi_nd.transpose(order)
-        psi         = psi_perm.reshape(dA, dB, order="F")
+        # Check if order is contiguous (a0, a1, ..., aK, b0, b1, ...) -> can avoid full ND reshape
+        is_contiguous_a = order[:size_a] == tuple(range(size_a))
+        is_contiguous_b = order[size_a:] == tuple(range(size_a, ns))
+        
+        if is_contiguous_a and is_contiguous_b:
+            # Order is trivial after all - just reshape
+            psi         = state.reshape(dA, dB, order="F")
+        else:
+            # General permutation: reshape ND, transpose, reshape back
+            psi_nd      = state.reshape((local_dim,) * ns, order="F")
+            psi_perm    = psi_nd.transpose(order)
+            psi         = psi_perm.reshape(dA, dB, order="F")
     
     return psi
 
@@ -167,6 +179,8 @@ def schmidt(
 ) -> Tuple[np.ndarray, Any]:
     """
     Compute the Schmidt decomposition of a state vector.
+    SVD path (default, eig=False) is faster for values-only; best overall for most cases.
+    RDM+eig path is useful only if you already have an RDM and want eigenvectors.
     """
     if ns is None:
         ns = int(np.round(np.log(state.size) / np.log(local_dim)))
@@ -174,15 +188,18 @@ def schmidt(
     (size_a, size_b), order = mask_subsystem(va, ns, local_dim, contiguous)
 
     if not eig:
+        # SVD path: fast, avoids RDM computation
         psi_mat = psi_numpy(state, order, size_a, ns, local_dim)
         if return_vecs:
             u, s, vh    = la.svd(psi_mat, full_matrices=False)
             return s**2 if square else s, (u, vh), psi_mat
         else:
+            # For values only, use more efficient SVD call (no full decomposition)
             s           = la.svdvals(psi_mat)
             return s**2 if square else s
     else:
-        # RDM approach
+        # RDM+eigenvalue path: slower but useful if RDM is already cached
+        # Note: For typical use, SVD path is recommended for speed.
         rho_A = rho(state, va, ns, local_dim, contiguous)
         if return_vecs:
             vals, vecs  = la.eigh(rho_A)
