@@ -11,13 +11,21 @@ Author:     Maksymilian Kliczkowski
 Desc:       Backend-agnostic operations for linear algebra solvers.
 '''
 
-from typing import Tuple, Any, Callable, Union
+from typing import Tuple, Optional, Union
 import numpy as np
+
+try:
+    import jax
+    import jax.numpy as jnp
+    JAX_AVAILABLE   = True
+except ImportError:
+    JAX_AVAILABLE   = False
+    jax             = None
+    jnp             = None
 
 # Import from the existing backend infrastructure
 try:
     from ..utils import (
-        JAX_AVAILABLE,
         backend_mgr,
         get_backend,
         Array,
@@ -282,6 +290,176 @@ class BackendOps:
         """Check if all elements are True."""
         return self.backend.all(x)
     
+    # ------------------------------------------------------------------------
+    #! Matrix-Vector Operations
+    # ------------------------------------------------------------------------
+    
+    def matvec(self, A: Array, x: Array) -> Array:
+        """Matrix-vector product."""
+        return self.backend.dot(A, x)
+    
+    def rmatvec(self, A: Array, x: Array) -> Array:
+        """Right matrix-vector product (x^H @ A)."""
+        return self.backend.dot(self.backend.conj(x), A)
+    
+    def matmat(self, A: Array, B: Array) -> Array:
+        """Matrix-matrix product."""
+        return self.backend.dot(A, B)
+    
+    def rmatmat(self, A: Array, B: Array) -> Array:
+        """Right matrix-matrix product (A^H @ B)."""
+        return self.backend.dot(self.backend.conj(A), B)
+    
+    def vec(self, x: Array) -> Array:
+        """Flatten array to 1D vector."""
+        return x.flatten()
+    
+    def unvec(self, x: Array, shape: Tuple[int, ...]) -> Array:
+        """Reshape 1D vector to given shape."""
+        return x.reshape(shape)
+    
+    def diag(self, x: Array, k: int = 0) -> Array:
+        """Extract diagonal elements."""
+        return self.backend.diag(x, k=k)
+
+    def diag_embed(self, x: Array, offset: int = 0) -> Array:
+        """Embed 1D array as diagonal of a matrix."""
+        return self.backend.diag(x, k=offset)
+    
+    def trace(self, x: Array) -> Union[float, complex]:
+        """Compute trace of a matrix."""
+        return self.backend.trace(x)
+    
+    def identity(self, n: int, dtype=None) -> Array:
+        """Identity matrix of size n."""
+        return self.backend.eye(n, dtype=dtype)
+    
+    def eye(self, n: int, dtype=None) -> Array:
+        """Identity matrix of size n (alias for identity)."""
+        return self.backend.eye(n, dtype=dtype)
+    
+    def diag_indices(self, n: int) -> Tuple[Array, Array]:
+        """Return indices to access the diagonal of an (n, n) array."""
+        return self.backend.diag_indices(n)
+    
+    def diag_indices_from(self, arr: Array) -> Tuple[Array, Array]:
+        """Return indices to access the diagonal of an array."""
+        return self.backend.diag_indices_from(arr)
+    
+    def arange(self, start, stop=None, step=1, dtype=None) -> Array:
+        """Return evenly spaced values within a given interval."""
+        return self.backend.arange(start, stop=stop, step=step, dtype=dtype)
+    
+    def linspace(self, start, stop, num=50, endpoint=True, retstep=False, dtype=None) -> Array:
+        """Return evenly spaced numbers over a specified interval."""
+        return self.backend.linspace(start, stop, num=num, endpoint=endpoint, retstep=retstep, dtype=dtype)
+    
+    def meshgrid(self, *arrays, indexing='xy') -> Tuple[Array, ...]:
+        """Return coordinate matrices from coordinate vectors."""
+        return self.backend.meshgrid(*arrays, indexing=indexing)
+    
+    # ------------------------------------------------------------------------
+    
+    def overlap(self, v1: Array, mat: Array, v2: Optional[Array] = None) -> Union[float, complex]:
+        """
+        Compute the overlap v1^H @ mat @ v2 using the active backend.
+        
+        If v2 is None, computes v1^H @ mat @ v1.
+        
+        Parameters:
+        -----------
+        v1: Array
+            First vector (will be conjugated).
+        mat: Array
+            Matrix to apply.
+        v2: Optional[Array]
+            Second vector. If None, uses v1.
+        
+        Returns:
+        --------
+        overlap: float or complex
+            The computed overlap value.
+        """
+        if v2 is None:
+            v2 = v1
+        
+        return self.dot(self.conj(v1), self.matvec(mat, v2))
+
+    def norm2(self, x: Array) -> float:
+        """Compute the squared 2-norm of a vector."""
+        return self.vdot(x, x).real
+    
+    def normalize(self, x: Array) -> Array:
+        """Normalize a vector to have unit norm."""
+        norm_x = self.norm(x)
+        if norm_x == 0:
+            return x
+        return x / norm_x
+    
+    def orthogonalize(self, v: Array, basis: Array) -> Array:
+        """
+        Orthogonalize vector v against a set of basis vectors.
+        
+        Parameters:
+        -----------
+        v: Array
+            Vector to orthogonalize.
+        basis: Array
+            2D array where each column is a basis vector.
+        
+        Returns:
+        --------
+        v_orth: Array
+            The orthogonalized vector.
+        """
+        for i in range(basis.shape[1]):
+            b       = basis[:, i]
+            proj    = self.dot(self.conj(b), v) / self.dot(self.conj(b), b)
+            v       = v - proj * b
+        return v
+
+    def orthonormalize(self, v: Array, basis: Array) -> Array:
+        """
+        Orthonormalize vector v against a set of basis vectors.
+        
+        Parameters:
+        -----------
+        v: Array
+            Vector to orthonormalize.
+        basis: Array
+            2D array where each column is a basis vector.
+        
+        Returns:
+        --------
+        v_orthonorm: Array
+            The orthonormalized vector.
+        """
+        v_orth = self.orthogonalize(v, basis)
+        return self.normalize(v_orth)
+    
+    def project(self, v: Array, basis: Array) -> Array:
+        """
+        Project vector v onto the subspace spanned by the basis vectors.
+        
+        Parameters:
+        -----------
+        v: Array
+            Vector to project.
+        basis: Array
+            2D array where each column is a basis vector.
+        
+        Returns:
+        --------
+        v_proj: Array
+            The projected vector.
+        """
+        v_proj = self.zeros_like(v)
+        for i in range(basis.shape[1]):
+            b       = basis[:, i]
+            proj    = self.dot(self.conj(b), v) / self.dot(self.conj(b), b)
+            v_proj  = v_proj + proj * b
+        return v_proj
+
     # ------------------------------------------------------------------------
     #! Special Solver Operations
     # ------------------------------------------------------------------------

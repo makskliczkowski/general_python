@@ -25,8 +25,8 @@ roundoff; small differences can appear due to kernel fusion and reduction order.
 The module uses lazy imports to keep import time low.
 """
 
-from typing import TYPE_CHECKING
 import importlib
+from typing import TYPE_CHECKING, Optional
 from ..common.lazy import LazyImporter
 
 # -----------------------------------------------------------------------------------------------
@@ -36,12 +36,12 @@ from ..common.lazy import LazyImporter
 # Mapping of attribute names to their module paths and actual attribute names
 _LAZY_IMPORTS = {
     # Solver-related imports
-    'SolverType'            : ('.solvers', 'SolverType'),
-    'choose_solver'         : ('.solvers', 'choose_solver'),
-    'get_backend_ops'       : ('.solvers.backend_ops', 'get_backend_ops'),
-    'BackendOps'            : ('.solvers.backend_ops', 'BackendOps'),
-    'default_ops'           : ('.solvers.backend_ops', 'default_ops'),
-    'choose_precond'        : ('.preconditioners', 'choose_precond'),
+    'SolverType'            : ('.solvers',              'SolverType'),
+    'choose_solver'         : ('.solvers',              'choose_solver'),
+    'get_backend_ops'       : ('.solvers.backend_ops',  'get_backend_ops'),
+    'BackendOps'            : ('.solvers.backend_ops',  'BackendOps'),
+    'default_ops'           : ('.solvers.backend_ops',  'default_ops'),
+    'choose_precond'        : ('.preconditioners',      'choose_precond'),
     # Linalg module (heavy)
     'LinalgModule'          : ('.backend_linalg', None),  # None means import the whole module
     'backend_linalg'        : ('.backend_linalg', None),
@@ -49,18 +49,18 @@ _LAZY_IMPORTS = {
     'MatrixPrinter'         : ('..common.plot', 'MatrixPrinter'),
     'get_logger'            : ('..common.flog', 'get_global_logger'),
     # Utils module exports (lazy - these are heavy)
-    'backend_mgr'           : ('.utils', 'backend_mgr'),
-    'get_backend'           : ('.utils', 'get_backend'),
-    'get_global_backend'    : ('.utils', 'get_global_backend'),
-    'ACTIVE_BACKEND_NAME'   : ('.utils', 'ACTIVE_BACKEND_NAME'),
-    'ACTIVE_NP_MODULE'      : ('.utils', 'ACTIVE_NP_MODULE'),
-    'ACTIVE_RANDOM'         : ('.utils', 'ACTIVE_RANDOM'),
-    'ACTIVE_SCIPY_MODULE'   : ('.utils', 'ACTIVE_SCIPY_MODULE'),
-    'ACTIVE_JIT'            : ('.utils', 'ACTIVE_JIT'),
-    'ACTIVE_JAX_KEY'        : ('.utils', 'ACTIVE_JAX_KEY'),
-    'ACTIVE_INT_TYPE'       : ('.utils', 'ACTIVE_INT_TYPE'),
-    'ACTIVE_FLOAT_TYPE'     : ('.utils', 'ACTIVE_FLOAT_TYPE'),
-    'ACTIVE_COMPLEX_TYPE'   : ('.utils', 'ACTIVE_COMPLEX_TYPE'),
+    'backend_mgr'           : ('.utils',        'backend_mgr'),
+    'get_backend'           : ('.utils',        'get_backend'),
+    'get_global_backend'    : ('.utils',        'get_global_backend'),
+    'ACTIVE_BACKEND_NAME'   : ('.utils',        'ACTIVE_BACKEND_NAME'),
+    'ACTIVE_NP_MODULE'      : ('.utils',        'ACTIVE_NP_MODULE'),
+    'ACTIVE_RANDOM'         : ('.utils',        'ACTIVE_RANDOM'),
+    'ACTIVE_SCIPY_MODULE'   : ('.utils',        'ACTIVE_SCIPY_MODULE'),
+    'ACTIVE_JIT'            : ('.utils',        'ACTIVE_JIT'),
+    'ACTIVE_JAX_KEY'        : ('.utils',        'ACTIVE_JAX_KEY'),
+    'ACTIVE_INT_TYPE'       : ('.utils',        'ACTIVE_INT_TYPE'),
+    'ACTIVE_FLOAT_TYPE'     : ('.utils',        'ACTIVE_FLOAT_TYPE'),
+    'ACTIVE_COMPLEX_TYPE'   : ('.utils',        'ACTIVE_COMPLEX_TYPE'),
     # Submodules (lazy)
     'solvers'               : ('.solvers', None),
     'preconditioners'       : ('.preconditioners', None),
@@ -100,6 +100,31 @@ def _get_backend_and_logger():
 
 # --------------------------------------------------------------------------------------------------
 
+def overlap(v1, mat, v2: Optional[object] = None):
+    """Compute the overlap v1^H @ mat @ v2 using the active backend."""
+    if v2 is None:
+        v2 = v1
+    
+    ops = get_backend_ops()
+    return ops.overlap(v1, mat, v2)
+
+def norm(v, ord=None):
+    """Compute the norm of vector v using the active backend."""
+    ops = get_backend_ops()
+    return ops.norm(v, ord=ord)
+
+def matvec(mat, vec):
+    """Compute the matrix-vector product mat @ vec using the active backend."""
+    ops = get_backend_ops()
+    return ops.matvec(mat, vec)
+
+def project(v, basis):
+    """Project vector v onto the subspace spanned by the basis vectors."""
+    ops = get_backend_ops()
+    return ops.project(v, basis)
+
+# --------------------------------------------------------------------------------------------------
+
 __all__ = [
     # Lazy-loaded from utils
     "backend_mgr", "get_backend", "get_global_backend",
@@ -118,6 +143,10 @@ __all__ = [
     "solvers", "preconditioners", "ode",
     "ran_wrapper", "ran_matrices",
     "eigen", "utilities", "utils",
+    # Common utilities (lazy)
+    "MatrixPrinter", "get_logger",
+    # Direct imports (not lazy)
+    "overlap", "norm", "matvec", "project",
 ]
 
 # --------------------------------------------------------------------------------------------------
