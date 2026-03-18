@@ -407,13 +407,22 @@ def ldos(
     if not degenerate:
         return np.abs(overlaps) ** 2
     
-    N = energies.size
-    ldos_arr = np.empty(N, dtype=float)
-    for i in range(N):
-        mask = np.abs(energies - energies[i]) < tol
-        ldos_arr[i] = np.sum(np.abs(overlaps[mask]) ** 2)
+    # Energies are assumed to be sorted.
+    # We find the window [E_i - tol, E_i + tol] for each energy E_i using binary search,
+    # and compute the sum of |overlap|^2 in this window using a cumulative sum.
+    # This reduces the complexity from O(N^2) to O(N log N).
     
-    return ldos_arr
+    # strictly less than tol:
+    # E > E_i - tol  => index where E > E_i - tol => side='right'
+    # E < E_i + tol  => index where E >= E_i + tol => side='left'
+    left_idx = np.searchsorted(energies, energies - tol, side='right')
+    right_idx = np.searchsorted(energies, energies + tol, side='left')
+
+    overlaps_sq = np.abs(overlaps) ** 2
+    # Prepend 0.0 to handle left_idx=0 easily without boundary checks
+    cumsum = np.concatenate(([0.0], np.cumsum(overlaps_sq)))
+
+    return cumsum[right_idx] - cumsum[left_idx]
 
 
 # =============================================================================
