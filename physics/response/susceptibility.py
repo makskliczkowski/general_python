@@ -99,17 +99,21 @@ def susceptibility_lehmann(
         rho[0]  = 1.0
 
     # Lehmann representation
-    chi = 0.0 + 0.0j
+    rho_diff = rho[:, np.newaxis] - rho[np.newaxis, :]
+    omega_nm = eigvals[np.newaxis, :] - eigvals[:, np.newaxis]
     
-    for m in range(N):
-        for n in range(N):
-            if np.abs(rho[m] - rho[n]) < 1e-12:
-                continue
-            
-            omega_nm        = eigvals[n] - eigvals[m]
-            matrix_element  = A_q_eigen[m, n] * np.conj(A_q_eigen[m, n])
-            
-            chi += (rho[m] - rho[n]) * matrix_element / (omega - omega_nm + 1j * eta)
+    # |<m|A_q|n>|^2
+    matrix_element = np.abs(A_q_eigen)**2
+
+    # Calculate terms where rho difference is significant
+    mask = np.abs(rho_diff) >= 1e-12
+
+    numerator = rho_diff * matrix_element
+    denominator = omega - omega_nm + 1j * eta
+
+    # Apply mask to avoid unnecessary computations or numerical issues
+    terms = np.where(mask, numerator / denominator, 0.0)
+    chi = np.sum(terms)
     
     return chi
 
