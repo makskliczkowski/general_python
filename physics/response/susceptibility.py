@@ -112,7 +112,8 @@ def susceptibility_lehmann(
     denominator = omega - omega_nm + 1j * eta
 
     # Apply mask to avoid unnecessary computations or numerical issues
-    terms = np.where(mask, numerator / denominator, 0.0)
+    terms = np.zeros_like(denominator, dtype=complex)
+    np.divide(numerator, denominator, out=terms, where=mask)
     chi = np.sum(terms)
     
     return chi
