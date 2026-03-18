@@ -1,6 +1,6 @@
 import time
 import numpy as np
-from physics.thermal import thermal_scan
+from general_python.physics.thermal import thermal_scan
 
 def run_benchmark():
     energies = np.linspace(-10, 10, 10000)
