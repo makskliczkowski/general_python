@@ -459,6 +459,13 @@ def thermal_scan(energies: Array, temperatures: Array, observables: Optional[dic
     if observables is not None:
         for name, obs_diag in observables.items():
             obs_diag = np.asarray(obs_diag)
+            # Ensure observable diagonal has same shape as energies to avoid
+            # unintended NumPy broadcasting and silent wrong results.
+            if obs_diag.shape != energies.shape:
+                raise ValueError(
+                    f"Observable '{name}' has shape {obs_diag.shape}, but "
+                    f"energies have shape {energies.shape}. They must match."
+                )
             obs_arrays[name] = (obs_diag, obs_diag ** 2)
             results[f'{name}_avg'] = np.zeros(n_temps)
             results[f'{name}_chi'] = np.zeros(n_temps)
