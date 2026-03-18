@@ -1640,6 +1640,9 @@ def plot_high_symmetry_points(
     nx, ny, nz : int, default=(1, 1, 1)
         Legacy per-direction extension counts used when ``extend_copies`` is
         not specified.
+    bz_upscale : float, default=1.1
+        Factor by which the maximum reciprocal-vector norm is multiplied to
+        determine the plot limits when ``show_bz=True``.
     extended_kpoint_color, extended_kpoint_alpha
         Style of translated mesh points.
     extended_bz_facecolor, extended_bz_edgecolor, extended_bz_alpha
@@ -1697,21 +1700,24 @@ def plot_high_symmetry_points(
     plotted_coords  = [coords]
     round_scale     = 1e-10
 
+    # Determine the BZ extent for auto-scaling
+    bz_upscale      = kwargs.pop("bz_upscale", 1.1)
+
     if show_bz:
         _draw_bz_region(axis, coords, dim=dim, lattice=lattice, facecolor=bz_facecolor, edgecolor=bz_edgecolor, alpha=bz_alpha, fix_aspect=fix_aspect, show_points=False, zorder=0.0, **kwargs)
 
         # Ensure the BZ is fully contained in the auto-scaling plotted_coords
         b_norms = []
         for i in range(1, 4):
-            vec = getattr(lattice, f"k{i}", None)
+            # Reciprocal vectors are always 3D in the Lattice class, but may be 2D/1D for others
+            vec = getattr(lattice, f"k{i}", getattr(lattice, f"b{i}", None))
             if vec is not None:
-                b_norms.append(np.linalg.norm(vec[:dim]))
+                b_norms.append(np.linalg.norm(np.asarray(vec)[:dim]))
 
         if b_norms:
             # Use a factor that ensures BZ and some margin is visible.
-            # 0.5*b is the BZ face, 0.75*b covers corners, 1.1*b is a generous margin matching demo preferences.
-            kmax_padding = kwargs.get("bz_upscale", 1.1)
-            kmax         = max(b_norms) * kmax_padding
+            # 0.5*b is the BZ face, 0.75*b covers corners, 1.1*b is a generous margin.
+            kmax         = max(b_norms) * bz_upscale
             bbox         = np.eye(dim) * kmax
             plotted_coords.append(bbox)
             plotted_coords.append(-bbox)
