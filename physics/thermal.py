@@ -450,9 +450,16 @@ def thermal_scan(energies: Array, temperatures: Array, observables: Optional[dic
         'C_V'   : np.zeros(n_temps),
     }
     
-    # Initialize observable arrays
+    # Precompute squared arrays and shifted energies
+    energies_sq = energies ** 2
+    E_min = np.min(energies)
+    energies_shifted = energies - E_min
+
+    obs_arrays = {}
     if observables is not None:
-        for name in observables.keys():
+        for name, obs_diag in observables.items():
+            obs_diag = np.asarray(obs_diag)
+            obs_arrays[name] = (obs_diag, obs_diag ** 2)
             results[f'{name}_avg'] = np.zeros(n_temps)
             results[f'{name}_chi'] = np.zeros(n_temps)
     
@@ -460,18 +467,40 @@ def thermal_scan(energies: Array, temperatures: Array, observables: Optional[dic
     for i, T in enumerate(temperatures):
         beta = 1.0 / T
         
-        results['F'][i] = free_energy(energies, beta)
-        results['U'][i] = internal_energy(energies, beta)
-        results['S'][i] = entropy_thermal(energies, beta)
-        results['C_V'][i] = heat_capacity(energies, beta)
+        exp_factors = np.exp(-beta * energies_shifted)
+        Z = np.sum(exp_factors)
+
+        if Z > 0:
+            probs = exp_factors / Z
+            F = -np.log(Z) / beta + E_min
+            U = np.sum(energies * probs)
+            S = beta * (U - F)
+            U2 = np.sum(energies_sq * probs)
+            C_V = (beta ** 2) * (U2 - U ** 2)
+        else:
+            probs = np.zeros_like(exp_factors)
+            F = np.inf
+            U = 0.0
+            S = 0.0
+            C_V = 0.0
+
+        results['F'][i] = F
+        results['U'][i] = U
+        results['S'][i] = S
+        results['C_V'][i] = C_V
         
         if observables is not None:
-            for name, obs_diag in observables.items():
-                avg, _ = thermal_average_diagonal(energies, obs_diag, beta)
-                avg2, _ = thermal_average_diagonal(energies, obs_diag**2, beta)
+            for name, (obs, obs_sq) in obs_arrays.items():
+                if Z > 0:
+                    avg = np.sum(obs * probs)
+                    avg2 = np.sum(obs_sq * probs)
+                    chi = beta * (avg2 - avg ** 2)
+                else:
+                    avg = 0.0
+                    chi = 0.0
                 
                 results[f'{name}_avg'][i] = avg
-                results[f'{name}_chi'][i] = beta * (avg2 - avg**2)
+                results[f'{name}_chi'][i] = chi
     
     return results
 
