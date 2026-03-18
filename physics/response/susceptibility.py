@@ -22,10 +22,11 @@ from typing import Optional, Union, Tuple
 import numpy as np
 
 try:
-    from ...algebra.utils import JAX_AVAILABLE, Array
+    from ...algebra.utils import JAX_AVAILABLE, Array, get_backend
 except ImportError:
     JAX_AVAILABLE   = False
     Array           = Union[np.ndarray, list, tuple]
+    get_backend     = lambda x="default": np
 
 if JAX_AVAILABLE:
     import jax.numpy as jnp
@@ -34,6 +35,54 @@ if JAX_AVAILABLE:
 else:
     jax = None
     jnp = np
+
+# =============================================================================
+# Internal Core Functions
+# =============================================================================
+
+def _compute_lehmann_components(
+        hamiltonian_eigvals : Array,
+        hamiltonian_eigvecs : Array,
+        operator_q          : Array,
+        temperature         : float,
+        be                  : any) -> Tuple[Array, Array]:
+    """
+    Precompute frequency-independent components for Lehmann representation.
+    """
+    eigvals     = be.asarray(hamiltonian_eigvals)
+    eigvecs     = be.asarray(hamiltonian_eigvecs, dtype=complex)
+    A_q         = be.asarray(operator_q, dtype=complex)
+    N           = len(eigvals)
+
+    # Transform operator to eigenbasis
+    A_q_eigen   = eigvecs.conj().T @ A_q @ eigvecs
+
+    # Thermal weights
+    if temperature > 0:
+        beta    = 1.0 / temperature
+        E_min   = be.min(eigvals)
+        rho     = be.exp(-beta * (eigvals - E_min))
+        Z       = be.sum(rho)
+        rho    /= Z
+    else:
+        # T=0: only ground state occupied
+        if be is jnp and jax is not None:
+            rho = be.zeros(N).at[0].set(1.0)
+        else:
+            rho = np.zeros(N)
+            rho[0] = 1.0
+            rho = be.asarray(rho)
+
+    # Precompute matrix elements and energy differences
+    R           = rho[:, None] - rho[None, :]
+    M           = be.abs(A_q_eigen)**2
+    Omega_nm    = eigvals[None, :] - eigvals[:, None]
+
+    mask        = be.abs(R) > 1e-12
+    weighted    = R[mask] * M[mask]
+    Omega_flat  = Omega_nm[mask]
+
+    return weighted, Omega_flat
 
 # =============================================================================
 # Dynamical Susceptibility chi(q,\Omega)
@@ -45,7 +94,8 @@ def susceptibility_lehmann(
         operator_q              : Array,
         omega                   : float,
         eta                     : float = 0.01,
-        temperature             : float = 0.0) -> complex:
+        temperature             : float = 0.0,
+        backend                 : str = "default") -> complex:
     r"""
     Compute dynamical susceptibility using Lehmann representation.
     
@@ -67,51 +117,22 @@ def susceptibility_lehmann(
         Broadening parameter (default: 0.01).
     temperature : float, optional
         Temperature (default: 0 for T=0).
+    backend : str, optional
+        Numerical backend to use (default: "default").
         
     Returns
     -------
     complex
         Dynamical susceptibility chi(q,\Omega).
-        
-    Notes
-    -----
-    At T=0, only ground state contributes: chi ~ \sum _n |<n|A|0>|^2 / (\Omega - \Omega_n0 + ieta ).
     """
-    eigvals     = np.asarray(hamiltonian_eigvals)
-    eigvecs     = np.asarray(hamiltonian_eigvecs, dtype=complex)
-    A_q         = np.asarray(operator_q, dtype=complex)
+    be = get_backend(backend)
+    weighted, Omega_flat = _compute_lehmann_components(
+        hamiltonian_eigvals, hamiltonian_eigvecs, operator_q, temperature, be
+    )
     
-    N           = len(eigvals)
+    chi = be.sum(weighted / (omega - Omega_flat + 1j * eta))
     
-    # Transform operator to eigenbasis
-    A_q_eigen   = eigvecs.conj().T @ A_q @ eigvecs
-    
-    # Thermal weights
-    if temperature > 0:
-        beta    = 1.0 / temperature
-        E_min   = np.min(eigvals)
-        rho     = np.exp(-beta * (eigvals - E_min))
-        Z       = np.sum(rho)
-        rho    /= Z
-    else:
-        # T=0: only ground state occupied
-        rho     = np.zeros(N)
-        rho[0]  = 1.0
-
-    # Lehmann representation
-    chi = 0.0 + 0.0j
-    
-    for m in range(N):
-        for n in range(N):
-            if np.abs(rho[m] - rho[n]) < 1e-12:
-                continue
-            
-            omega_nm        = eigvals[n] - eigvals[m]
-            matrix_element  = A_q_eigen[m, n] * np.conj(A_q_eigen[m, n])
-            
-            chi += (rho[m] - rho[n]) * matrix_element / (omega - omega_nm + 1j * eta)
-    
-    return chi
+    return complex(chi)
 
 def susceptibility_multi_omega(
         hamiltonian_eigvals : Array,
@@ -119,7 +140,8 @@ def susceptibility_multi_omega(
         operator_q          : Array,
         omega_grid          : Array,
         eta                 : float = 0.01,
-        temperature         : float = 0.0) -> Array:
+        temperature         : float = 0.0,
+        backend             : str = "default") -> Array:
     r"""
     Compute chi(q,\Omega) for multiple frequencies.
     
@@ -137,27 +159,40 @@ def susceptibility_multi_omega(
         Broadening (default: 0.01).
     temperature : float, optional
         Temperature (default: 0).
+    backend : str, optional
+        Numerical backend to use (default: "default").
         
     Returns
     -------
     Array, shape (n_omega,), complex
         chi(q,\Omega) for each frequency.
     """
-    omega_grid  = np.asarray(omega_grid)
+    be          = get_backend(backend)
+    omega_grid  = be.asarray(omega_grid)
     n_omega     = len(omega_grid)
     
-    chi = np.zeros(n_omega, dtype=complex)
+    # 1-3. Precompute frequency-independent components once
+    weighted, Omega_flat = _compute_lehmann_components(
+        hamiltonian_eigvals, hamiltonian_eigvecs, operator_q, temperature, be
+    )
     
-    for i, omega in enumerate(omega_grid):
-        chi[i] = susceptibility_lehmann(
-            hamiltonian_eigvals,
-            hamiltonian_eigvecs,
-            operator_q,
-            omega,
-            eta=eta,
-            temperature=temperature
-        )
+    num_trans   = len(Omega_flat)
     
+    # 4. Vectorize over frequencies (with memory safety check)
+    if n_omega * num_trans < 10**7:
+        # Full vectorization: (n_omega, 1) - (1, num_trans)
+        denom   = omega_grid[:, None] - Omega_flat[None, :] + 1j * eta
+        chi     = be.sum(weighted[None, :] / denom, axis=1)
+    else:
+        # Loop over frequencies to save memory, still vectorized over transitions
+        chi = be.zeros(n_omega, dtype=complex)
+        for i in range(n_omega):
+            val = be.sum(weighted / (omega_grid[i] - Omega_flat + 1j * eta))
+            if be is jnp and jax is not None:
+                chi = chi.at[i].set(val)
+            else:
+                chi[i] = val
+
     return chi
 
 # =============================================================================
@@ -244,7 +279,8 @@ def magnetic_susceptibility(
         magnetization_q     : Array,
         omega_grid          : Array,
         eta                 : float = 0.01,
-        temperature         : float = 0.0) -> Array:
+        temperature         : float = 0.0,
+        backend             : str = "default") -> Array:
     r"""
     Compute magnetic susceptibility chi_M(q,\Omega).
     
@@ -264,6 +300,8 @@ def magnetic_susceptibility(
         Broadening (default: 0.01).
     temperature : float, optional
         Temperature (default: 0).
+    backend : str, optional
+        Numerical backend to use (default: "default").
         
     Returns
     -------
@@ -276,7 +314,8 @@ def magnetic_susceptibility(
         magnetization_q,
         omega_grid,
         eta=eta,
-        temperature=temperature
+        temperature=temperature,
+        backend=backend
     )
 
 def charge_susceptibility(
@@ -285,7 +324,8 @@ def charge_susceptibility(
         density_q           : Array,
         omega_grid          : Array,
         eta                 : float = 0.01,
-        temperature         : float = 0.0) -> Array:
+        temperature         : float = 0.0,
+        backend             : str = "default") -> Array:
     r"""
     Compute charge susceptibility chi_c(q,\Omega).
     
@@ -305,6 +345,8 @@ def charge_susceptibility(
         Broadening (default: 0.01).
     temperature : float, optional
         Temperature (default: 0).
+    backend : str, optional
+        Numerical backend to use (default: "default").
         
     Returns
     -------
@@ -317,7 +359,8 @@ def charge_susceptibility(
         density_q,
         omega_grid,
         eta=eta,
-        temperature=temperature
+        temperature=temperature,
+        backend=backend
     )
 
 # =============================================================================
