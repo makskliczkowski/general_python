@@ -11,6 +11,8 @@ email       : maxgrom97@gmail.com
 version     : 1.0.0
 '''
 
+from __future__ import annotations
+
 import os
 from typing                     import Optional, Union, TYPE_CHECKING
 
