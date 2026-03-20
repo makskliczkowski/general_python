@@ -1,8 +1,12 @@
 '''
 Directories handler. Reading, writing, creating directories.
-file    : directories.py
+
+----------------------------------------------
+file    : general_python/common/directories.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
+version : 2.0
+----------------------------------------------
 '''
 
 import os
@@ -15,7 +19,17 @@ from typing import Callable, Iterable, List, Optional, Union, Iterator, Any, Dic
 PathLike    = Union[str, Path]
 kPS         = os.sep
 
-#######################################################################################################################
+#################################################################################
+
+class staticproperty(property):
+    def __get__(self, owner_self, owner_cls):         
+        return self.fget()
+
+class classproperty(property):
+    def __get__(self, owner_self, owner_cls):
+        return self.fget(owner_cls)
+
+#################################################################################
 
 class Directories(object):
     """ 
@@ -173,6 +187,7 @@ class Directories(object):
             new_path.mkdir(parents=True, exist_ok=True)
         return Directories(new_path)
 
+    @property
     def parent(self) -> "Directories":
         """
         Return Directories for parent directory (..).
@@ -413,48 +428,56 @@ class Directories(object):
     #! Convenience
     ################################################################################
 
+    @property
     def exists(self) -> bool:
         """
         Check if the path exists.
         """
         return self.path.exists()
 
+    @property
     def as_path(self) -> Path:
         '''
         Return the path as a Path object.
         '''
         return self.path
     
+    @property
     def is_empty(self) -> bool:
         """
         Check if the directory is empty.
         """
         return not any(self.path.iterdir())
 
+    @property
     def is_dir(self) -> bool:
         """
         Check if the path is a directory.
         """
         return self.path.is_dir()
     
+    @property
     def is_file(self) -> bool:
         """
         Check if the path is a file.
         """
         return self.path.is_file()
     
+    @property
     def is_symlink(self) -> bool:
         """
         Check if the path is a symlink.
         """
         return self.path.is_symlink()
     
+    @property
     def size(self) -> int:
         """
         Return the size of the directory in bytes.
         """
         return sum(f.stat().st_size for f in self.path.glob('*') if f.is_file())
     
+    @property
     def size_human(self) -> str:
         """
         Return the size of the directory in a human-readable format.
@@ -466,6 +489,7 @@ class Directories(object):
             size /= 1024
         return f"{size:.2f} PB"
     
+    @property
     def disk_usage(self) -> str:
         """
         Return the disk usage of the directory in a human-readable format.
@@ -473,6 +497,7 @@ class Directories(object):
         total, used, free = shutil.disk_usage(self.path)
         return f"Total: {total // (2**30)} GB, Used: {used // (2**30)} GB, Free: {free // (2**30)} GB"
     
+    @property
     def checksum(self) -> str:
         """
         Return the checksum of the directory.
@@ -485,6 +510,84 @@ class Directories(object):
                     for chunk in iter(lambda: file.read(4096), b""):
                         hash_md5.update(chunk)
         return hash_md5.hexdigest()
+
+    # --------------------------------------------------------------------------
+    #! Convenience methods (static)
+    # --------------------------------------------------------------------------
+    
+    @staticmethod
+    def temp_dir(prefix: str = "tmp") -> "Directories":
+        """
+        Create and return a temporary directory with the given prefix.
+        """
+        import tempfile
+        temp_path = tempfile.mkdtemp(prefix=prefix)
+        return Directories(temp_path)
+    
+    @staticproperty
+    def current() -> "Directories":
+        """
+        Return the current working directory as a Directories object.
+        """
+        return Directories(Path.cwd())
+    
+    @staticproperty
+    def home() -> "Directories":
+        """
+        Return the user's home directory as a Directories object.
+        """
+        return Directories(Path.home())
+    
+    @staticproperty
+    def root() -> "Directories":
+        """
+        Return the root directory as a Directories object.
+        """
+        return Directories(Path("/"))
+    
+    @staticmethod
+    def from_env(var_name: str) -> Optional["Directories"]:
+        """
+        Create a Directories object from an environment variable.
+        Returns None if the variable is not set or the path does not exist.
+        """
+        value = os.environ.get(var_name)
+        if value and Path(value).exists():
+            return Directories(value)
+        return None
+    
+    @staticmethod
+    def from_config(config: dict, key: str) -> Optional["Directories"]:
+        """
+        Create a Directories object from a configuration dictionary.
+        Returns None if the key is not found or the path does not exist.
+        """
+        value = config.get(key)
+        if value and Path(value).exists():
+            return Directories(value)
+        return None
+    
+    @staticmethod
+    def from_string(s: str) -> "Directories":
+        """
+        Create a Directories object from a string path.
+        """
+        return Directories(s)
+    
+    @staticmethod
+    def from_parts(*parts: PathLike) -> "Directories":
+        """
+        Create a Directories object from multiple path components.
+        """
+        return Directories(*parts)
+    
+    @staticmethod
+    def from_path(p: PathLike) -> "Directories":
+        """
+        Create a Directories object from a Path-like object.
+        """
+        return Directories(p)
+
 
 ################################################################################
 
