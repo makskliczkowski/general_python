@@ -187,15 +187,25 @@ def greens_function_quadratic(
     # Double sum over m,n with occupation factors
     # Computes the Green's function <A| 1 / (w + i eta - (H - E0)) |B>
     # where <A| = <c0| A and |B> = B |c0>
-    for m in range(N):
-        if not occ[m]:    # needs to be occupied
-            continue
-        for n in range(N):
-            if occ[n]:    # needs to be empty
-                continue
 
-            deltaE = ev[n] - ev[m]
-            G     += (A[m, n] * B[n, m]) / (z - deltaE)
+    # Vectorized computation
+    # Mask for occupied m and empty n
+    mask_m = occ == 1
+    mask_n = occ == 0
+
+    if be.any(mask_m) and be.any(mask_n):
+        ev_m = ev[mask_m]
+        ev_n = ev[mask_n]
+
+        deltaE = ev_n[None, :] - ev_m[:, None]
+
+        A_sub = A[mask_m, :][:, mask_n]
+        B_sub = B[mask_n, :][:, mask_m].T
+
+        num = A_sub * B_sub
+        denom = z - deltaE
+
+        G += be.sum(num / denom)
 
     return G
 
@@ -382,18 +392,17 @@ def greens_function_quadratic_finite_T(
     # build Fermi factor f_m
     f = be.asarray(1.0 / (1.0 + be.exp(beta * (ev.real - mu))))
 
-    for m in range(N):
-        em = ev[m]
-        fm = f[m]
+    # Vectorized computation
+    weight_matrix = f[:, None] * (1.0 - f[None, :])
+    mask = weight_matrix != 0
 
-        for n in range(N):
-            fn      = f[n]
-            weight  = fm * (1.0 - fn)
-            if weight == 0:
-                continue
+    if be.any(mask):
+        deltaE = ev[None, :] - ev[:, None]
+        num = weight_matrix * A * B.T
+        denom = z - deltaE
 
-            deltaE = ev[n] - em
-            G     += weight * (A[m,n] * B[n,m]) / (z - deltaE)
+        G += be.sum((num[mask]) / denom[mask])
+
     return G
 
 # -----------------------------------------
