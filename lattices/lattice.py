@@ -2671,15 +2671,15 @@ class Lattice(ABC):
         
         # Wilson loop along X (at y=0, z=0)
         if is_pbc_x and self.lx > 0:
-            loops.append([x for x in range(self.lx)])
+            loops.append(list(range(self.lx)))
             
         # Wilson loop along Y (at x=0, z=0)
         if is_pbc_y and self.dim >= 2 and self.ly > 0:
-            loops.append([y * self.lx for y in range(self.ly)])
+            loops.append(list(range(0, self.ly * self.lx, self.lx)))
             
         # Wilson loop along Z (at x=0, y=0)
         if is_pbc_z and self.dim >= 3 and self.lz > 0:
-            loops.append([z * self.lx * self.ly for z in range(self.lz)])
+            loops.append(list(range(0, self.lz * self.lx * self.ly, self.lx * self.ly)))
             
         return loops
 
