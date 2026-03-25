@@ -1564,8 +1564,8 @@ class Lattice(ABC):
         list[int]
             List of middle-site indices (can be 0, 1, or 2 elements).
         """
-        nn_i = [self.get_nn(i, k) for k in range(self.get_nn_num(i))]
-        nn_j = [self.get_nn(j, k) for k in range(self.get_nn_num(j))]
+        nn_i = self.get_nn(i)
+        nn_j = self.get_nn(j)
         mids = list(set(nn_i).intersection(nn_j))
         if not mids or orientation is None:
             return mids
