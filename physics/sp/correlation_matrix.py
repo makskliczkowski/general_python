@@ -844,9 +844,10 @@ def _haar_complex_unit_vector(n: int, rng: Optional[np.random.Generator] = None)
 
 def corr_superposition(
     W_A                 : np.ndarray,                   # (Ls, La)
-    occ_list            : Sequence[np.ndarray],         # list/tuple of bool arrays, each (Ls,)
+    occ_list            : Optional[Sequence[np.ndarray]] = None, # list/tuple of bool arrays, each (Ls,)
     coeff               : Optional[np.ndarray] = None,  # 1D complex array of coefficients (a_k) for the superposition, length len(occ_list)
     *,
+    occ_list_packed     : Optional[np.ndarray] = None,  # optional pre-packed occupations, shape (gamma, Ls), dtype convertible to uint8
     W_A_CT              : Optional[np.ndarray] = None,  # (La, Ls)
     subtract_identity   : bool = True,
     raw                 : bool = True,
@@ -874,17 +875,28 @@ def corr_superposition(
     if mode != "slater":
         raise NotImplementedError("corr_superposition currently supports mode='slater' only.")
 
-    gamma = len(occ_list)
+    Ls, La          = W_A.shape[0], W_A.shape[1]
+    if occ_list_packed is not None:
+        occ_list_packed = np.ascontiguousarray(np.asarray(occ_list_packed, dtype=np.uint8))
+        if occ_list_packed.ndim != 2 or occ_list_packed.shape[1] != Ls:
+            raise ValueError(f"occ_list_packed must have shape (gamma, Ls={Ls}).")
+        gamma = occ_list_packed.shape[0]
+    else:
+        if occ_list is None:
+            raise ValueError("Either occ_list or occ_list_packed must be provided.")
+        gamma = len(occ_list)
+        if gamma == 0:
+            raise ValueError("occ_list is empty")
+        occ_bool_list = []
+        for k, occ in enumerate(occ_list):
+            occ = np.asarray(occ, dtype=bool)
+            if occ.ndim != 1 or occ.size != Ls:
+                raise ValueError(f"Occupation vector #{k} must be 1D of length Ls={Ls}.")
+            occ_bool_list.append(occ)
+        occ_list_packed = np.ascontiguousarray(np.array([occ.astype(np.uint8) for occ in occ_bool_list], dtype=np.uint8))
+
     if gamma == 0:
         raise ValueError("occ_list is empty")
-
-    Ls, La          = W_A.shape[0], W_A.shape[1]
-    occ_bool_list   = []
-    for k, occ in enumerate(occ_list):
-        occ = np.asarray(occ, dtype=bool)
-        if occ.ndim != 1 or occ.size != Ls:
-            raise ValueError(f"Occupation vector #{k} must be 1D of length Ls={Ls}.")
-        occ_bool_list.append(occ)
         
     # Coefficients: use user-supplied, else draw Haar-random complex and normalize.
     if coeff is None:
@@ -910,8 +922,6 @@ def corr_superposition(
     #   C_diag = 2 * W_A^H diag(s) W_A,  s_q = sum_{k: q in occ_k} |a_k|^2
     # --------------------------------------------------------------------------------
     
-    # Pack occupations into uint8 array for Numba compatibility
-    occ_list_packed = np.array([occ.astype(np.uint8) for occ in occ_bool_list], dtype=np.uint8)
     coeffs_abs_sq   = np.abs(coeff)**2
     
     _corr_superposition_diagonal(W_A, W_A_CT, occ_list_packed, coeffs_abs_sq, C)

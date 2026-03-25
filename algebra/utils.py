@@ -1207,37 +1207,42 @@ def _qes_initialize_utils():
         _log_message(f"Using default spin value {BACKEND_REPR}", 1)
 
     # 3. JAX Detection and Import
-    # Always try to import JAX if available, but only prefer it if explicitly requested
-    try:
-        import jax
-        from jax import config as jax_config
-        jcfg = jax_config
-
-        if PREFER_64BIT:
-            # Enable 64-bit precision when JAX is available
-            jcfg.update("jax_enable_x64", True)
-            _log_message("JAX 64-bit precision enabled.", 1)
-
-        logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
-        logging.getLogger('jax').setLevel(logging.WARNING)
-
+    if PY_JAX_DONT_USE:
+        JAX_AVAILABLE                    = False
+        jax = jnp = jsp = jrn = jcfg     = None
+        os.environ[PY_JAX_AVAILABLE_STR] = '0'
+        _log_message("JAX import skipped because PY_JAX_DONT_USE is enabled.", 0)
+    else:
         try:
-            import jax.numpy    as jnp
-            import jax.scipy    as jsp
-            import jax.random   as jrn
-        except ImportError as ie:
-            _log_message(f"JAX submodules could not be imported: {ie}", 0)
-            raise ie
+            import jax
+            from jax import config as jax_config
+            jcfg = jax_config
 
-        JAX_AVAILABLE = True
-        if PREFER_JAX:
-            JIT = jax.jit  # Overwrite the global JIT function
-        os.environ[PY_JAX_AVAILABLE_STR] = '1'
-        _log_message("JAX backend available and successfully imported.", 0)
+            if PREFER_64BIT:
+                # Enable 64-bit precision when JAX is available
+                jcfg.update("jax_enable_x64", True)
+                _log_message("JAX 64-bit precision enabled.", 1)
 
-    except ImportError:
-        JAX_AVAILABLE = False
-        _log_message("JAX backend not available.", 0)
+            logging.getLogger('jax._src.xla_bridge').setLevel(logging.WARNING)
+            logging.getLogger('jax').setLevel(logging.WARNING)
+
+            try:
+                import jax.numpy    as jnp
+                import jax.scipy    as jsp
+                import jax.random   as jrn
+            except ImportError as ie:
+                _log_message(f"JAX submodules could not be imported: {ie}", 0)
+                raise ie
+
+            JAX_AVAILABLE = True
+            if PREFER_JAX:
+                JIT = jax.jit  # Overwrite the global JIT function
+            os.environ[PY_JAX_AVAILABLE_STR] = '1'
+            _log_message("JAX backend available and successfully imported.", 0)
+
+        except ImportError:
+            JAX_AVAILABLE = False
+            _log_message("JAX backend not available.", 0)
 
     if JAX_AVAILABLE:
         # Type aliases for JAX

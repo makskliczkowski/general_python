@@ -17,6 +17,7 @@ import numpy.random as npr
 import numba
 
 import scipy as sp
+import os
 from enum import Enum, unique
 
 # random matrices
@@ -37,23 +38,31 @@ from ..algebra.utils    import DEFAULT_BACKEND, get_backend
 
 # Initialize JAX_RND_DEFAULT_KEY
 JAX_RND_DEFAULT_KEY = None
+_DISABLE_JAX = os.environ.get("PY_JAX_DONT_USE", "0") in ("1", "true", "True")
 
-try:
-    import  jax
-    import  jax.numpy as jnp
-    from    jax import random as random_jp
-    
-    # Initialize default JAX PRNG key
-    try:
-        JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42) # Default seed
-    except Exception as e:
-        JAX_RND_DEFAULT_KEY = None
-        
-    JAX_AVAILABLE = True
-except ImportError:
+if _DISABLE_JAX:
     JAX_AVAILABLE = False
+    jax = None
+    jnp = None
+    random_jp = None
 else:
-    JAX_RND_DEFAULT_KEY = None
+    try:
+        import  jax
+        import  jax.numpy as jnp
+        from    jax import random as random_jp
+
+        # Initialize default JAX PRNG key
+        try:
+            JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42) # Default seed
+        except Exception:
+            JAX_RND_DEFAULT_KEY = None
+
+        JAX_AVAILABLE = True
+    except ImportError:
+        JAX_AVAILABLE = False
+        jax = None
+        jnp = None
+        random_jp = None
 
 ###############################################################################
 #! Registry for RNGs and Random Generators

@@ -198,16 +198,15 @@ def schmidt(
             s           = la.svdvals(psi_mat)
             return s**2 if square else s
     else:
-        # RDM+eigenvalue path: slower but useful if RDM is already cached
-        # Note: For typical use, SVD path is recommended for speed.
         rho_A = rho(state, va, ns, local_dim, contiguous)
         if return_vecs:
-            vals, vecs  = la.eigh(rho_A)
+            vals, vecs  = np.linalg.eigh(rho_A)
             vals        = np.clip(vals, 0.0, 1.0)
             idx         = np.argsort(vals)[::-1]
             return vals[idx], vecs[:, idx], rho_A
         else:
-            w           = la.eigvalsh(rho_A)
+            # Values-only path: NumPy's Hermitian eigensolver is markedly faster than SciPy's wrapper
+            w           = np.linalg.eigvalsh(rho_A)
             w           = np.clip(w, 0.0, 1.0)
             return np.sort(w[w > 1e-15])[::-1]
 
@@ -215,7 +214,7 @@ def rho_spectrum(rho_mat: np.ndarray, eps: float = 1e-15) -> np.ndarray:
     """
     Compute the eigenvalue spectrum of a density matrix.
     """
-    w = la.eigvalsh(rho_mat)
+    w = np.linalg.eigvalsh(rho_mat)
     w = np.clip(w, 0.0, 1.0)
     return np.sort(w[w > eps])[::-1]
 
