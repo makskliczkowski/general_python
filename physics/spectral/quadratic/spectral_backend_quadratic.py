@@ -187,15 +187,29 @@ def greens_function_quadratic(
     # Double sum over m,n with occupation factors
     # Computes the Green's function <A| 1 / (w + i eta - (H - E0)) |B>
     # where <A| = <c0| A and |B> = B |c0>
-    for m in range(N):
-        if not occ[m]:    # needs to be occupied
-            continue
-        for n in range(N):
-            if occ[n]:    # needs to be empty
+
+    # Vectorized computation, blocked over 'm' to save memory
+    mask_n = occ == 0
+
+    if be.any(mask_n):
+        ev_n = ev[mask_n]
+        B_sub = B[mask_n, :]
+
+        for m in range(N):
+            if not occ[m]:    # needs to be occupied
                 continue
 
-            deltaE = ev[n] - ev[m]
-            G     += (A[m, n] * B[n, m]) / (z - deltaE)
+            deltaE = ev_n - ev[m]
+
+            # Extract row m of A for empty n columns
+            A_sub_m = A[m, mask_n]
+            # Extract column m of B for empty n rows
+            B_sub_nm = B_sub[:, m]
+
+            num = A_sub_m * B_sub_nm
+            denom = z - deltaE
+
+            G += be.sum(num / denom)
 
     return G
 
@@ -382,18 +396,27 @@ def greens_function_quadratic_finite_T(
     # build Fermi factor f_m
     f = be.asarray(1.0 / (1.0 + be.exp(beta * (ev.real - mu))))
 
+    # Vectorized computation, blocked over 'm' to save memory
+    f_1_minus_f = 1.0 - f
+
     for m in range(N):
-        em = ev[m]
         fm = f[m]
+        if fm == 0:
+            continue
 
-        for n in range(N):
-            fn      = f[n]
-            weight  = fm * (1.0 - fn)
-            if weight == 0:
-                continue
+        weights = fm * f_1_minus_f
+        mask = weights != 0
 
-            deltaE = ev[n] - em
-            G     += weight * (A[m,n] * B[n,m]) / (z - deltaE)
+        if not be.any(mask):
+            continue
+
+        deltaE = ev - ev[m]
+
+        num = weights[mask] * A[m, mask] * B[mask, m]
+        denom = z - deltaE[mask]
+
+        G += be.sum(num / denom)
+
     return G
 
 # -----------------------------------------

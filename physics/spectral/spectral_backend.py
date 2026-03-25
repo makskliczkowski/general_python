@@ -907,14 +907,20 @@ def operator_spectral_function_lehmann(
         return (eta / np.pi) / (delta_E**2 + eta**2)
     
     # Lehmann sum over all transitions
+    # Block vectorization over 'm' to avoid N^2 memory allocations
     A = 0.0
     for m in range(N):
-        for n in range(N):
-            if be.abs(rho[m] - rho[n]) < 1e-14:
-                continue
-            delta_E = omega - (eigenvalues[n] - eigenvalues[m])
-            matrix_element_sq = be.abs(O_eigen[m, n])**2
-            A += (rho[m] - rho[n]) * matrix_element_sq * lorentzian(delta_E)
+        rho_diff = rho[m] - rho
+        mask = be.abs(rho_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        delta_E = omega - (eigenvalues - eigenvalues[m])
+        matrix_element_sq = be.abs(O_eigen[m, :])**2
+
+        A_vec = rho_diff[mask] * matrix_element_sq[mask] * lorentzian(delta_E[mask])
+        A += be.sum(A_vec)
     
     return float(be.real(A))
 
@@ -1065,14 +1071,20 @@ def susceptibility_bubble(
         occupation = be.asarray(occupation, dtype=be.float64)
     
     # Bubble: χ⁰ = \Sum _{mn} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
+    # Block vectorization over 'm' to avoid N^2 memory allocations
     chi = 0.0 + 0.0j
     for m in range(N):
-        for n in range(N):
-            if be.abs(occupation[m] - occupation[n]) < 1e-14:
-                continue
-            denom = omega_complex + 1j * eta_complex - (eigenvalues[n] - eigenvalues[m])
-            V_mn_sq = be.abs(vertex[m, n])**2
-            chi += (occupation[m] - occupation[n]) * V_mn_sq / denom
+        occ_diff = occupation[m] - occupation
+        mask = be.abs(occ_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        denom = omega_complex + 1j * eta_complex - (eigenvalues - eigenvalues[m])
+        V_mn_sq = be.abs(vertex[m, :])**2
+
+        chi_vec = occ_diff[mask] * V_mn_sq[mask] / denom[mask]
+        chi += be.sum(chi_vec)
     
     return complex(chi)
 
