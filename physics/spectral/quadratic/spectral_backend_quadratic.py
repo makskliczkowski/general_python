@@ -188,24 +188,28 @@ def greens_function_quadratic(
     # Computes the Green's function <A| 1 / (w + i eta - (H - E0)) |B>
     # where <A| = <c0| A and |B> = B |c0>
 
-    # Vectorized computation
-    # Mask for occupied m and empty n
-    mask_m = occ == 1
+    # Vectorized computation, blocked over 'm' to save memory
     mask_n = occ == 0
 
-    if be.any(mask_m) and be.any(mask_n):
-        ev_m = ev[mask_m]
+    if be.any(mask_n):
         ev_n = ev[mask_n]
+        B_sub = B[mask_n, :]
 
-        deltaE = ev_n[None, :] - ev_m[:, None]
+        for m in range(N):
+            if not occ[m]:    # needs to be occupied
+                continue
 
-        A_sub = A[mask_m, :][:, mask_n]
-        B_sub = B[mask_n, :][:, mask_m].T
+            deltaE = ev_n - ev[m]
 
-        num = A_sub * B_sub
-        denom = z - deltaE
+            # Extract row m of A for empty n columns
+            A_sub_m = A[m, mask_n]
+            # Extract column m of B for empty n rows
+            B_sub_nm = B_sub[:, m]
 
-        G += be.sum(num / denom)
+            num = A_sub_m * B_sub_nm
+            denom = z - deltaE
+
+            G += be.sum(num / denom)
 
     return G
 
@@ -392,16 +396,26 @@ def greens_function_quadratic_finite_T(
     # build Fermi factor f_m
     f = be.asarray(1.0 / (1.0 + be.exp(beta * (ev.real - mu))))
 
-    # Vectorized computation
-    weight_matrix = f[:, None] * (1.0 - f[None, :])
-    mask = weight_matrix != 0
+    # Vectorized computation, blocked over 'm' to save memory
+    f_1_minus_f = 1.0 - f
 
-    if be.any(mask):
-        deltaE = ev[None, :] - ev[:, None]
-        num = weight_matrix * A * B.T
-        denom = z - deltaE
+    for m in range(N):
+        fm = f[m]
+        if fm == 0:
+            continue
 
-        G += be.sum((num[mask]) / denom[mask])
+        weights = fm * f_1_minus_f
+        mask = weights != 0
+
+        if not be.any(mask):
+            continue
+
+        deltaE = ev - ev[m]
+
+        num = weights[mask] * A[m, mask] * B[mask, m]
+        denom = z - deltaE[mask]
+
+        G += be.sum(num / denom)
 
     return G
 
