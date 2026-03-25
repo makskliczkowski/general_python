@@ -392,7 +392,10 @@ class HDF5Manager:
         data_to_save        : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
         target_shape        : Optional[Tuple[int, ...]] = None,
         dataset_names_config: Optional[Union[List[str], str]] = None, # Used if data_to_save is list/ndarray
-        overwrite           : bool = True):
+        overwrite           : bool = True,
+        *args,
+        data                : Optional[Dict[str, Any]] = None
+        ):
         """
         Saves data to an HDF5 file.
 
@@ -418,6 +421,10 @@ class HDF5Manager:
             except OSError as e:
                 logging.error(f"Could not create directory {directory}: {e}")
                 return
+
+        # If data_to_save is not provided, use 'data' if it's given, otherwise default to empty dict.
+        if data_to_save is None:
+            data_to_save = data if data is not None else {}
 
         base, ext = os.path.splitext(filename)
         if ext.lower() not in ['.h5', '.hdf5']:
@@ -474,7 +481,10 @@ class HDF5Manager:
         new_data                    : Union[np.ndarray, List[np.ndarray], Dict[str, np.ndarray]],
         dataset_names_config        : Optional[Union[List[str], str]] = None, # Used if new_data is list/ndarray
         overwrite_existing_datasets : bool = True, # If dataset exists, overwrite or append rows
-        allow_dataset_creation      : bool = True # If dataset does not exist, create it
+        allow_dataset_creation      : bool = True, # If dataset does not exist, create it,
+        *,
+        data                        : Optional[Dict[str, Any]] = None
+        
     ):
         """
         Appends data to an existing HDF5 file or creates it if it doesn't exist.
@@ -500,6 +510,13 @@ class HDF5Manager:
         if ext.lower() not in ['.h5', '.hdf5']:
             filename = base + '.h5'
         file_path = os.path.join(directory, filename)
+
+        if new_data is None:
+            if data is not None:
+                new_data = data
+            else:
+                logging.error("No new data provided to append.")
+                return
 
         if not os.path.exists(file_path):
             if allow_dataset_creation:
