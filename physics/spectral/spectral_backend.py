@@ -823,7 +823,8 @@ def operator_spectral_function_lehmann(
         operator            : Array,
         eta                 : float = 0.01,
         temperature         : float = 0.0,
-        backend             : str = "default"
+        backend             : str = "default",
+        block_size          : int = 128
 ) -> float:
     r"""
     Compute operator-projected spectral function using Lehmann representation.
@@ -851,6 +852,11 @@ def operator_spectral_function_lehmann(
         Temperature in energy units (default: 0).
     backend : str, optional
         Numerical backend (default: 'default').
+    block_size : int, optional
+        Number of rows to process per chunk (default: 128). Controls the
+        trade-off between vectorization speed and peak memory usage: smaller
+        values reduce peak memory (O(block_size × N) instead of O(N²)) at
+        a modest runtime cost.
         
     Returns
     -------
@@ -906,17 +912,24 @@ def operator_spectral_function_lehmann(
     def lorentzian(delta_E):
         return (eta / np.pi) / (delta_E**2 + eta**2)
     
-    # Lehmann sum over all transitions
-    rho_diff = rho[:, None] - rho[None, :]
-    mask = be.abs(rho_diff) >= 1e-14
+    # Lehmann sum over all transitions, processed in chunks of rows to bound
+    # peak memory at O(block_size × N) instead of O(N²).
+    A = 0.0
+    for m_start in range(0, N, block_size):
+        m_end = min(m_start + block_size, N)
+        rho_m = rho[m_start:m_end]                              # (chunk,)
+        E_m   = eigenvalues[m_start:m_end]                      # (chunk,)
+        O_m   = O_eigen[m_start:m_end, :]                       # (chunk, N)
 
-    delta_E = omega - (eigenvalues[None, :] - eigenvalues[:, None])
-    matrix_element_sq = be.abs(O_eigen)**2
+        rho_diff = rho_m[:, None] - rho[None, :]                # (chunk, N)
+        mask     = be.abs(rho_diff) >= 1e-14
 
-    A_matrix = rho_diff[mask] * matrix_element_sq[mask] * lorentzian(delta_E[mask])
-    A = be.sum(A_matrix)
+        delta_E       = omega - (eigenvalues[None, :] - E_m[:, None])  # (chunk, N)
+        mat_sq        = be.abs(O_m)**2                                  # (chunk, N)
+        A_chunk       = rho_diff[mask] * mat_sq[mask] * lorentzian(delta_E[mask])
+        A += float(be.real(be.sum(A_chunk)))
     
-    return float(be.real(A))
+    return A
 
 def operator_spectral_function_multi_omega(
         omegas              : Array,
@@ -990,7 +1003,8 @@ def susceptibility_bubble(
         vertex              : Optional[Array] = None,
         occupation          : Optional[Array] = None,
         eta                 : float = 0.01,
-        backend             : str = "default"
+        backend             : str = "default",
+        block_size          : int = 128
 ) -> complex:
     r"""
     Compute bare susceptibility (Lindhard function) from single-particle spectrum.
@@ -1016,6 +1030,11 @@ def susceptibility_bubble(
         Broadening (default: 0.01).
     backend : str, optional
         Numerical backend (default: 'default').
+    block_size : int, optional
+        Number of rows to process per chunk (default: 128). Controls the
+        trade-off between vectorization speed and peak memory usage: smaller
+        values reduce peak memory (O(block_size × N) instead of O(N²)) at
+        a modest runtime cost.
         
     Returns
     -------
@@ -1065,16 +1084,23 @@ def susceptibility_bubble(
         occupation = be.asarray(occupation, dtype=be.float64)
     
     # Bubble: χ⁰ = \Sum _{mn} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
-    occ_diff = occupation[:, None] - occupation[None, :]
-    mask = be.abs(occ_diff) >= 1e-14
+    # Processed in chunks of rows to bound peak memory at O(block_size × N).
+    chi = complex(0.0)
+    for m_start in range(0, N, block_size):
+        m_end = min(m_start + block_size, N)
+        occ_m = occupation[m_start:m_end]                       # (chunk,)
+        E_m   = eigenvalues[m_start:m_end]                      # (chunk,)
+        V_m   = vertex[m_start:m_end, :]                        # (chunk, N)
 
-    denom = omega_complex + 1j * eta_complex - (eigenvalues[None, :] - eigenvalues[:, None])
-    V_mn_sq = be.abs(vertex)**2
+        occ_diff = occ_m[:, None] - occupation[None, :]         # (chunk, N)
+        mask     = be.abs(occ_diff) >= 1e-14
 
-    chi_matrix = occ_diff[mask] * V_mn_sq[mask] / denom[mask]
-    chi = be.sum(chi_matrix)
+        denom   = omega_complex + 1j * eta_complex - (eigenvalues[None, :] - E_m[:, None])
+        V_mn_sq = be.abs(V_m)**2
+        chi_chunk = occ_diff[mask] * V_mn_sq[mask] / denom[mask]
+        chi += complex(be.sum(chi_chunk))
     
-    return complex(chi)
+    return chi
 
 def susceptibility_bubble_multi_omega(
         omegas              : Array,
