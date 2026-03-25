@@ -2459,7 +2459,8 @@ class Lattice(ABC):
         '''
         self._bonds = []
         for i in range(self.Ns):
-            for idx in range(self.get_nn_forward_num(i)):
+            nn_num = self.get_nn_forward_num(i)
+            for idx in range(nn_num):
                 j = self.get_nn_forward(i, idx)
                 if self.wrong_nei(j):
                     continue
