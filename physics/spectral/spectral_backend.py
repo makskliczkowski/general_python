@@ -1065,19 +1065,14 @@ def susceptibility_bubble(
         occupation = be.asarray(occupation, dtype=be.float64)
     
     # Bubble: χ⁰ = \Sum _{mn} (f_m - f_n) |V_{mn}|² / (omega  + i\eta - (E_n - E_m))
-    # Use a loop over m to avoid constructing multiple full N×N intermediate arrays.
-    chi = be.array(0.0 + 0.0j, dtype=be.complex128)
-    for m in range(N):
-        f_m = occupation[m]
-        # (f_m - f_n) for all n
-        occ_diff_row = f_m - occupation
-        mask_row = be.abs(occ_diff_row) >= 1e-14
-        # omega + i*eta - (E_n - E_m) for all n
-        denom_row = omega_complex + 1j * eta_complex - (eigenvalues - eigenvalues[m])
-        V_row_sq = be.abs(vertex[m, :]) ** 2
-        # Zero out terms with negligible occupation difference to avoid unnecessary divisions
-        contrib_row = be.where(mask_row, occ_diff_row * V_row_sq / denom_row, 0.0)
-        chi = chi + be.sum(contrib_row)
+    occ_diff = occupation[:, None] - occupation[None, :]
+    mask = be.abs(occ_diff) >= 1e-14
+
+    denom = omega_complex + 1j * eta_complex - (eigenvalues[None, :] - eigenvalues[:, None])
+    V_mn_sq = be.abs(vertex)**2
+
+    chi_matrix = occ_diff[mask] * V_mn_sq[mask] / denom[mask]
+    chi = be.sum(chi_matrix)
     
     return complex(chi)
 

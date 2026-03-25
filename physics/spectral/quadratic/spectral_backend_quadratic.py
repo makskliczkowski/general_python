@@ -193,18 +193,19 @@ def greens_function_quadratic(
     mask_m = occ == 1
     mask_n = occ == 0
 
-    ev_m = ev[mask_m]
-    ev_n = ev[mask_n]
+    if be.any(mask_m) and be.any(mask_n):
+        ev_m = ev[mask_m]
+        ev_n = ev[mask_n]
 
-    deltaE = ev_n[None, :] - ev_m[:, None]
+        deltaE = ev_n[None, :] - ev_m[:, None]
 
-    A_sub = A[mask_m, :][:, mask_n]
-    B_sub = B[mask_n, :][:, mask_m].T
+        A_sub = A[mask_m, :][:, mask_n]
+        B_sub = B[mask_n, :][:, mask_m].T
 
-    num = A_sub * B_sub
-    denom = z - deltaE
+        num = A_sub * B_sub
+        denom = z - deltaE
 
-    G += be.sum(num / denom)
+        G += be.sum(num / denom)
 
     return G
 
