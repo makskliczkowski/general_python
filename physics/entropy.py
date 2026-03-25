@@ -69,6 +69,16 @@ def _clean_probs(p: np.ndarray, eps: float = 1e-15) -> np.ndarray:
     if s <= 0:  return q
     return q / s if abs(s - 1.0) > 1e-14 else q
 
+# ----------------------------------
+
+def hn(x: float) -> float:
+    """Binary entropy function."""
+    if x <= 0.0 or x >= 1.0:
+        return 0.0
+    return -x * math.log(x) - (1.0 - x) * math.log(1.0 - x)
+
+# ----------------------------------
+
 @numba.njit(cache=True, fastmath=True)
 def vn_entropy(lam: np.ndarray, base: float = None) -> float:
     r"""
@@ -306,7 +316,7 @@ def participation_entropy(states: np.ndarray, q: float = 1.0, threshold: float =
             # protect against acc==0 (all below threshold)
             out[j] = math.log(acc) / (1.0 - q) if acc > 0.0 else 0.0
     return out
-
+    
 #! Purity - a sum of squares of eigenvalues, related to Rényi-2 entropy
 
 @numba.njit(cache=True)

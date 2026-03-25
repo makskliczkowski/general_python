@@ -2,8 +2,9 @@
 Parsers and string utilities for general use.
 
 -------------------------
-Author : Maksymilian Kliczkowski
-Date   : 2026-01-15
+Author  : Maksymilian Kliczkowski
+Date    : 2026-01-15
+Version : 2.0
 -------------------------
 """
 from    __future__  import annotations
@@ -11,6 +12,7 @@ from    __future__  import annotations
 from    dataclasses import dataclass
 from    typing      import Callable, Tuple, Optional, Sequence, Any, List, Union, Dict, Type, Union, TYPE_CHECKING
 import  re
+import  math
 
 import  os
 import  sys
@@ -27,13 +29,138 @@ if TYPE_CHECKING:
 # ─────────────────────────────────────────────────────────────────────────────
 
 Number  = Union[int, float]
-Context = dict[str, int]
+Context = Dict[str, Union[int, float]]
 
 # ─────────────────────────────────────────────────────────────────────────────
 # suppress pandas PerformanceWarning
 simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _evaluate_expression(tok: str, ctx: Context) -> float:
+    """
+    Evaluate one token as a mathematical expression in the supplied context.
+
+    The token is first normalized with `_normalize_math_expression`, then
+    evaluated with a restricted namespace containing:
+
+    - numeric names from `ctx`, for example `ns`, `nh`, `N`, `L`
+    - selected Python builtins: `abs`, `min`, `max`, `round`, `int`, `float`, `pow`
+    - public functions/constants from `math`, for example `sqrt`, `pi`, `sin`
+
+    This helper is intended as the final fallback in `parse_int_list` after
+    simpler token forms such as plain numbers, ranges, or prefix/suffix specs
+    have already been checked.
+
+    Examples
+    --------
+    >>> _evaluate_expression("N/2", {"N": 8})
+    4.0
+    >>> _evaluate_expression("L^2", {"L": 6})
+    36.0
+    >>> _evaluate_expression("max(ns, nh/10)", {"ns": 8, "nh": 70})
+    8.0
+
+    Step by step for ``"L^2"``:
+    1. `_normalize_math_expression("L^2")` converts it to ``"L**2"``.
+    2. `ctx["L"]` is injected into the safe namespace.
+    3. The normalized expression is evaluated and converted to `float`.
+    """
+    expr        = _normalize_math_expression(tok)
+    
+    # Safe namespace construction
+    safe_dict   = {
+        'abs': abs, 'min': min, 'max': max, 'round': round,
+        'int': int, 'float': float, 'pow': pow,
+    }
+    
+    # Add math functions
+    for name in dir(math):
+        if not name.startswith('_'):
+            safe_dict[name] = getattr(math, name)
+            
+    # Add everything from ctx
+    safe_dict.update(ctx)
+    
+    # Eval with no builtins for security
+    try:
+        return float(eval(expr, {"__builtins__": {}}, safe_dict))
+    except Exception as e:
+        raise ValueError(f"Expression evaluation failed for '{tok}': {e}")
+
+def _normalize_math_expression(expr: str) -> str:
+    """
+    Normalize common mathematical Unicode/operator variants into Python syntax.
+
+    This keeps CLI/config expressions readable while still evaluating them
+    through the same safe expression path.
+
+    Conversions currently include:
+
+    - `^ -> **`
+    - `×, · -> *`
+    - `÷ -> /`
+    - common Unicode minus variants to ASCII `-`
+    - full-width `+`, `-`, `*`, `/` to ASCII operators
+
+    Examples
+    --------
+    >>> _normalize_math_expression("N^2")
+    'N**2'
+    >>> _normalize_math_expression("L×L − 1")
+    'L*L - 1'
+    >>> _normalize_math_expression("Dq÷10")
+    'Dq/10'
+    """
+    return (
+        expr
+        .replace("^", "**")
+        .replace("×", "*")
+        .replace("·", "*")
+        .replace("÷", "/")
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("＋", "+")
+        .replace("－", "-")
+        .replace("＊", "*")
+        .replace("／", "/")
+    )
+
+def _normalize_operator_token(expr: str) -> str:
+    """
+    Normalize operator glyph variants while preserving parser control chars
+    like '^', '*', 'x', and 'v' for prefix/suffix token handling.
+
+    This helper is narrower than `_normalize_math_expression`: it deliberately
+    does not rewrite `^` into `**`, because tokens like `^0.5` and `2^`
+    have special meaning for `parse_int_list`.
+
+    Examples
+    --------
+    >>> _normalize_operator_token("L×L")
+    'L*L'
+    >>> _normalize_operator_token("N−1")
+    'N-1'
+    >>> _normalize_operator_token("^0.5")
+    '^0.5'
+    """
+    return (
+        expr
+        .replace("×", "*")
+        .replace("·", "*")
+        .replace("÷", "/")
+        .replace("−", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .replace("＋", "+")
+        .replace("－", "-")
+        .replace("＊", "*")
+        .replace("／", "/")
+    )
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 def filter_dataframe(df     : pd.DataFrame,
                 criteria    : Dict[str, Sequence[Any]],
                 *,
@@ -133,7 +260,11 @@ def approx_equal(val1: Union[str, float], val2: Union[str, float], precision: in
 
 class StringParser:
     """
-    Utilities for formatting and splitting parameterized strings.
+    Small utilities for formatting and parsing parameterized strings.
+
+    The methods here are intentionally simple and deterministic. They are used
+    for filename fragments and display formatting rather than for full CLI math
+    expressions. For expression-like command-line parsing, see `parse_int_list`.
     """
 
     @staticmethod
@@ -182,6 +313,20 @@ class StringParser:
         Returns
         -------
         (key, value)
+
+        Examples
+        --------
+        >>> StringParser.parse_filename_param("run_ns=12,gamma=5_seed=1.h5", 1, 0)
+        ('ns', 12.0)
+        >>> StringParser.parse_filename_param("run_ns=12,gamma=5_seed=1.h5", 1, 1)
+        ('gamma', 5.0)
+
+        Step by step for ``section=1, param_idx=1``:
+        1. Split the filename by `_`.
+        2. Take section `1`, here ``"ns=12,gamma=5"``.
+        3. Split that section by `,`.
+        4. Take parameter `1`, here ``"gamma=5"``.
+        5. Split by `=` and convert the value to `float`.
         """
         part = filename.split(_DIV)[section]
         kv   = part.split(_MULT)[param_idx].split("=")
@@ -201,12 +346,34 @@ class ParseSpec:
       - suffix op:    "0.5^"  or "2.0*"   -> base_key_suffix op value
 
     where base_key and base_key_suffix may differ (e.g. ns vs nh).
+
+    Examples
+    --------
+    >>> spec = ParseSpec(op_char="^", base_key_prefix="ns", base_key_suffix="nh")
+    >>> spec.op_char
+    '^'
+
+    With `ctx = {"ns": 8, "nh": 70}` this spec means:
+    - `^2`   -> `int(8 ** 2)`  -> `64`
+    - `2^`   -> `int(70 ** 2)` -> `4900`
+
+    The actual bounds check is performed later by `parse_int_list`.
     """
     op_char         : str       # '^' or '*'
     base_key_prefix : str       # which base to use for prefix form, e.g. "ns"
     base_key_suffix : str       # which base to use for suffix form, e.g. "nh"
 
 def _to_float(s: str) -> float:
+    """
+    Convert a token to `float` and raise a parser-friendly error on failure.
+
+    Examples
+    --------
+    >>> _to_float("3")
+    3.0
+    >>> _to_float("0.25")
+    0.25
+    """
     try:
         return float(s)
     except Exception as e:
@@ -230,28 +397,132 @@ def parse_int_list(
     """
     General CLI-style parser that produces a list of positive integers in [1, ctx[max_key]].
 
-    Token grammar (comma-separated by default):
-      1) Integer / float >= 1:
-           "32"   -> 32
-           "32.0" -> 32
+    This function is meant for CLI/config inputs such as:
 
-      2) Base exponentiation:
-           "^p"   -> int(ctx[spec.base_key_prefix] ** p)   for op_char='^'
-           "p^"   -> int(ctx[spec.base_key_suffix] ** p)
+    - `"1,2,5"`
+    - `"1-10:2"`
+    - `"^0.5,*2"`
+    - `"N/2,N-1,L*L,Dq/10"`
 
-      3) Base multiplication:
-           "*a"   -> int(ctx[spec.base_key_prefix] * a)    for op_char='*'
-           "a*"   -> int(ctx[spec.base_key_suffix] * a)
+    Parsing order
+    -------------
+    Each comma-separated token is processed in this order:
 
-      4) Ranges (optional):
-           "a-b"         -> a, a+1, ..., b
-           "a-b:step"    -> a, a+step, ..., <= b
+    1. Range parsing, if enabled:
+       - `"3-6"`      -> `3, 4, 5, 6`
+       - `"3-9:2"`    -> `3, 5, 7, 9`
+    2. Prefix/suffix operator specs from `specs`:
+       - `^0.5` with base `ns=16` -> `int(16 ** 0.5)` -> `4`
+       - `2*` with base `nh=70`   -> `int(70 * 2)`    -> `140`
+    3. Plain numeric token:
+       - `"32"` or `"32.0"` -> `32`
+    4. General expression fallback with `_evaluate_expression`:
+       - `"N/2"`   -> `int(ctx["N"] / 2)`
+       - `"L*L"`   -> `int(ctx["L"] * ctx["L"])`
+       - `"max(L,N)"` -> `int(max(ctx["L"], ctx["N"]))`
 
-    Notes:
-      - ctx is a dictionary of named integer bases, e.g. {"ns": ns, "nh": 2**ns}.
-      - max_key names the variable providing the upper bound, typically "nh".
-      - default_ctx optionally computes missing ctx keys from existing ones.
-      - clamp=True clamps out-of-range values into [1, max], otherwise rejects them.
+    Bounds and deduplication
+    ------------------------
+    Every accepted integer is validated against `[1, ctx[max_key]]`.
+
+    - If `clamp=False`, out-of-range values raise `ValueError`.
+    - If `clamp=True`, out-of-range values are clipped into the valid interval.
+    - If `allow_duplicates=False`, duplicates are removed while preserving
+      first appearance order.
+    - If `sort_unique=True`, the final output becomes a sorted unique list.
+
+    Ambiguities
+    -----------
+    Purely numeric forms of the shape `"a-b"` are reserved for ranges, not
+    subtraction. This means:
+
+    - `"1-5"` -> range expansion `[1, 2, 3, 4, 5]`
+    - `"N-1"` -> subtraction expression `ctx["N"] - 1`
+    - `"L-2"` -> subtraction expression `ctx["L"] - 2`
+
+    In practice, symbolic left-hand sides such as `N`, `L`, `D`, or `Dq`
+    are safe and do not collide with the numeric range parser.
+
+    Parameters
+    ----------
+    s : str
+        Input string containing tokens separated by `sep`.
+    ctx : dict
+        Context of named numeric values used by special forms and expressions,
+        for example `{"ns": 16, "nh": 70, "N": 4, "L": 8}`.
+    max_key : str
+        Name of the context entry that defines the allowed upper bound.
+    specs : sequence of ParseSpec
+        Prefix/suffix token rules. Typical examples are `^`, `*`, `x`, `v`.
+    default_ctx : dict[str, callable], optional
+        Lazy context fillers. If a key is missing or set to `None`, the callable
+        is evaluated and stored into `ctx`.
+    sep : str, default=","
+        Token separator.
+    allow_ranges : bool, default=True
+        Whether forms like `"a-b"` and `"a-b:step"` are accepted.
+    range_step_sep : str, default=":"
+        Reserved range step separator. The current range parser expects `:`.
+    allow_duplicates : bool, default=False
+        Whether repeated values should be preserved.
+    sort_unique : bool, default=False
+        Whether to replace the output with `sorted(set(out))` at the end.
+    clamp : bool, default=False
+        Whether to clamp values into `[1, ctx[max_key]]` instead of rejecting them.
+
+    Returns
+    -------
+    list[int]
+        Parsed integer values.
+
+    Examples
+    --------
+    Basic numbers:
+    >>> parse_int_list("1,2,5", ctx={"nh": 10}, max_key="nh", specs=[])
+    [1, 2, 5]
+
+    Range expansion:
+    >>> parse_int_list("2-6:2", ctx={"nh": 10}, max_key="nh", specs=[])
+    [2, 4, 6]
+
+    Prefix/suffix parsing:
+    >>> specs = [ParseSpec("^", "ns", "nh"), ParseSpec("*", "ns", "nh")]
+    >>> parse_int_list("^2,*0.5", ctx={"ns": 8, "nh": 100}, max_key="nh", specs=specs)
+    [64, 4]
+
+    Expression fallback:
+    >>> parse_int_list("N/2,L*L,max(L,N)", ctx={"N": 4, "L": 8, "nh": 100}, max_key="nh", specs=[])
+    [2, 64, 8]
+
+    Unicode operators are normalized:
+    >>> parse_int_list("L×L,N−1,D÷10", ctx={"L": 8, "N": 4, "D": 70, "nh": 100}, max_key="nh", specs=[])
+    [64, 3, 7]
+
+    Step-by-step example
+    --------------------
+    Suppose:
+
+    >>> ctx = {"ns": 8, "nh": 70, "N": 4, "L": 8}
+    >>> specs = [ParseSpec("^", "ns", "nh"), ParseSpec("*", "ns", "nh")]
+
+    Then parsing ``"^2,N/2,3-5"`` proceeds as:
+
+    1. `^2`
+       - matched by the `^` spec as a prefix token
+       - uses `ctx["ns"] = 8`
+       - computes `int(8 ** 2) = 64`
+    2. `N/2`
+       - not a range, not a prefix/suffix spec
+       - evaluated as an expression with `ctx["N"] = 4`
+       - computes `int(4 / 2) = 2`
+    3. `3-5`
+       - matched as a range
+       - expands to `3, 4, 5`
+
+    Final result:
+
+    >>> parse_int_list("^2,N/2,3-5", ctx=ctx, max_key="nh", specs=specs)
+    [64, 2, 3, 4, 5]
     """
     
     if not isinstance(s, str):
@@ -259,7 +530,7 @@ def parse_int_list(
 
     if default_ctx is not None:
         for k, fn in default_ctx.items():
-            if k not in ctx:
+            if k not in ctx or ctx[k] is None:
                 ctx[k] = int(fn(ctx))
 
     if max_key not in ctx:
@@ -306,50 +577,55 @@ def parse_int_list(
                         v += step
                 continue
 
-        # Operator-based forms: '^' or '*'
-        op_used = None
-        for op in spec_map:
-            if op in tok:
-                op_used = op
-                break
+        # Operator-based forms (prefix/suffix only)
+        matched_spec    = False
+        tok_ops         = _normalize_operator_token(tok)
+        for op, sp in spec_map.items():
+            if op in tok_ops:
+                parts   = tok_ops.split(op)
+                if len(parts) == 2:
+                    left, right = parts[0].strip(), parts[1].strip()
+                    # prefix form: "^p" or "*a"
+                    if left == "" and right != "":
+                        x               = _to_float(right)
+                        base_key        = sp.base_key_prefix
+                        if base_key not in ctx:
+                            raise ValueError(f"Missing ctx['{base_key}'] for token '{tok}'.")
+                        base            = float(ctx[base_key])
+                        v               = int(base ** x) if op == "^" else int(base * x)
+                        matched_spec    = True
+                        accept(v, out)
+                        break
+                    
+                    # suffix form: "p^" or "a*"
+                    elif right == "" and left != "":
+                        x               = _to_float(left)
+                        base_key        = sp.base_key_suffix
+                        if base_key not in ctx:
+                            raise ValueError(f"Missing ctx['{base_key}'] for token '{tok}'.")
+                        base            = float(ctx[base_key])
+                        v               = int(base ** x) if op == "^" else int(base * x)
+                        matched_spec    = True
+                        accept(v, out)
+                        break
+        if matched_spec:
+            continue
 
-        if op_used is not None:
-            sp      = spec_map[op_used]
-            parts   = tok.split(op_used)
-            if len(parts) != 2:
-                raise ValueError(f"Malformed token '{tok}' (too many '{op_used}').")
-
-            left, right = parts[0].strip(), parts[1].strip()
-
-            # prefix form: "^p" or "*a"
-            if left == "" and right != "":
-                x         = _to_float(right)
-                base_key  = sp.base_key_prefix
-                if base_key not in ctx:
-                    raise ValueError(f"Missing ctx['{base_key}'] for token '{tok}'.")
-                base      = float(ctx[base_key])
-                v         = int(base ** x) if op_used == "^" else int(base * x)
-                accept(v, out)
-                continue
-
-            # suffix form: "p^" or "a*"
-            if right == "" and left != "":
-                x         = _to_float(left)
-                base_key  = sp.base_key_suffix
-                if base_key not in ctx:
-                    raise ValueError(f"Missing ctx['{base_key}'] for token '{tok}'.")
-                base      = float(ctx[base_key])
-                v         = int(base ** x) if op_used == "^" else int(base * x)
-                accept(v, out)
-                continue
-
-            raise ValueError(f"Malformed token '{tok}'. Use '{op_used}<x>' or '<x>{op_used}'.")
-
-        # Plain number token
-        x = _to_float(tok)
-        if x < 1:
-            raise ValueError(f"Value must be >= 1, got {x} in '{tok}'.")
-        accept(int(x), out)
+        # Plain number token or expression evaluation
+        try:
+            x = _to_float(tok)
+            if x < 1:
+                raise ValueError(f"Value must be >= 1, got {x} in '{tok}'.")
+            accept(int(x), out)
+        except ValueError:
+            # Fallback: try evaluating as expression using ctx
+            try:
+                val = _evaluate_expression(tok, ctx)
+                if val < 1:
+                    raise ValueError(f"Value evaluated to {val}, must be >= 1 in '{tok}'.")
+                accept(int(val), out)
+            except Exception as e:
+                raise ValueError(f"Cannot parse token '{tok}' from '{s}'. Reason: {e}")
 
     if not allow_duplicates:
         out = list(dict.fromkeys(out))  # preserves order

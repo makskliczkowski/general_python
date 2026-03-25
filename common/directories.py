@@ -338,6 +338,107 @@ class Directories(object):
             dirs = [str(p) for p in dirs]
         return dirs
 
+    @staticmethod
+    def list_data_roots(base: PathLike, *, sort: bool = True, as_dirs: bool = True) -> List["Directories"] | List[Path]:
+        """
+        List all first-level directories inside base...
+
+        Parameters
+        ----------
+        base : PathLike
+            Root directory (e.g. data_path)
+        sort : bool
+            Sort lexicographically (useful for YYYYMMDD)
+        as_dirs : bool
+            Return Directories objects instead of Path
+
+        Returns
+        -------
+        List of directories
+        """
+        base = Path(base)
+
+        try:
+            dirs = [p for p in base.iterdir() if p.is_dir()]
+        except Exception:
+            return []
+
+        if sort:
+            dirs.sort()
+
+        if as_dirs:
+            return [Directories(p) for p in dirs]
+        return dirs
+
+    @staticmethod
+    def expand_data_roots(base: PathLike, *subpath: PathLike, require_exist: bool = True) -> List["Directories"]:
+        """
+        Expand a relative subpath across all first-level directories.
+
+        Parameters
+        ----------
+        base : PathLike
+            Root directory (e.g. data_path)
+        subpath : PathLike
+            Relative path to append to each root (e.g. hamil/occ/ns/sp)
+        require_exist : bool
+            If True, only include paths that exist on disk.
+
+        Example
+        -------
+        expand_data_roots(data_path, 'data', hamil, ..., 'sp')
+
+        Returns list of:
+            base/<date>/data/.../sp
+        """
+        roots   = Directories.list_data_roots(base)
+        out     = []
+        for r in roots:
+            p   = r.join(*subpath)
+            if not require_exist or p.exists:
+                out.append(p)
+
+        return out
+
+    @staticmethod
+    def collect_files(dirs: List["Directories"], *, prefix: str = None, suffix: str = None, filters: List[Callable[[Path], bool]] = None, sort: bool = False) -> List[Path]:
+        """
+        Collect files from multiple directories.
+
+        Parameters
+        ----------
+        dirs
+            list of Directories
+        prefix
+            optional filename prefix filter
+        suffix
+            optional filename suffix filter
+        filters
+            additional filters (Path -> bool)
+        sort
+            global sorting
+
+        Returns
+        -------
+        Flat list of Paths
+        """
+        files = []
+
+        for d in dirs:
+            local = d.list_files(filters=filters)
+            if prefix is not None:
+                local = [p for p in local if p.name.startswith(prefix) and p.is_file()]
+            if suffix is not None:
+                local = [p for p in local if p.name.endswith(suffix) and p.is_file()]
+            files.extend(local)
+
+        if sort:
+            files.sort()
+
+        return files
+
+    ##############################################################################
+
     def clear_empty(self) -> List[Path]:
         """
         Remove all zero-length files in this directory.
