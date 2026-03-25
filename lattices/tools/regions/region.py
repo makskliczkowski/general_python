@@ -649,7 +649,7 @@ class KitaevPreskillRegion(Region):
         if not isinstance(region, KitaevPreskillRegion):
             return False
         
-        if any(len(R) == 0 for R in [region.A, region.B, region.C]):
+        if any(len(R) == 0 for R in (region.A, region.B, region.C)):
             return False
 
         return super().is_valid_region(region, adj, extra)
@@ -707,7 +707,7 @@ class LevinWenRegion(Region):
         if not isinstance(region, LevinWenRegion):
             return False
         
-        if any(len(R) == 0 for R in [region.A, region.B, region.C]):
+        if any(len(R) == 0 for R in (region.A, region.B, region.C)):
             return False
 
         return super().is_valid_region(region, adj, extra)
