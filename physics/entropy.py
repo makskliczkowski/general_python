@@ -12,17 +12,25 @@ email       : maksymilian.kliczkowski@pwr.edu.pl
 from    __future__      import annotations
 
 from    enum            import Enum, unique
+import  os
 import  numpy           as np
 import  numba
 import  math
 from    typing          import List, Dict, Tuple, Optional, Any, TYPE_CHECKING, Union
 
-try:
-    import jax
-    import jax.numpy as jnp
-    JAX_AVAILABLE = True
-except ImportError:
+if os.environ.get("PY_JAX_DONT_USE", "0") in ("1", "true", "True"):
     JAX_AVAILABLE = False
+    jax = None
+    jnp = None
+else:
+    try:
+        import jax
+        import jax.numpy as jnp
+        JAX_AVAILABLE = True
+    except ImportError:
+        JAX_AVAILABLE = False
+        jax = None
+        jnp = None
     
 if TYPE_CHECKING:
     from ..lattices.tools.regions.region    import Region

@@ -121,11 +121,14 @@ def list_capabilities():
     List available physics capabilities and modules.
     """
     # Check JAX availability dynamically
-    try:
-        import jax
-        jax_available = True
-    except ImportError:
+    if os.environ.get("PY_JAX_DONT_USE", "0") in ("1", "true", "True"):
         jax_available = False
+    else:
+        try:
+            import jax
+            jax_available = True
+        except ImportError:
+            jax_available = False
 
     capabilities = {
         'modules': [

@@ -40,6 +40,16 @@ from ..algebra.utils    import DEFAULT_BACKEND, get_backend
 JAX_RND_DEFAULT_KEY = None
 _DISABLE_JAX = os.environ.get("PY_JAX_DONT_USE", "0") in ("1", "true", "True")
 
+
+def _safe_jax_prng_key(seed: Optional[int]):
+    """Create a JAX key if available; otherwise fall back cleanly."""
+    if not JAX_AVAILABLE or random_jp is None:
+        return None
+    try:
+        return random_jp.PRNGKey(42 if seed is None else int(seed))
+    except Exception:
+        return None
+
 if _DISABLE_JAX:
     JAX_AVAILABLE = False
     jax = None
@@ -52,10 +62,7 @@ else:
         from    jax import random as random_jp
 
         # Initialize default JAX PRNG key
-        try:
-            JAX_RND_DEFAULT_KEY = random_jp.PRNGKey(42) # Default seed
-        except Exception:
-            JAX_RND_DEFAULT_KEY = None
+        JAX_RND_DEFAULT_KEY = _safe_jax_prng_key(42)
 
         JAX_AVAILABLE = True
     except ImportError:
@@ -134,7 +141,7 @@ def initialize(backend  : str           = "default",
             rnd_module = npr
         else:
             from jax import random as rnd_module
-            key = rnd_module.PRNGKey(seed)
+            key = _safe_jax_prng_key(seed)
     return rnd_module, key
 
 # -----------------------------------------------------------------------------
@@ -164,7 +171,7 @@ def set_global_seed(seed: int, backend: str = "default"):
             npr.default_rng(seed)
     else:
         from jax import random as rnd_module
-        JAX_RND_DEFAULT_KEY = rnd_module.PRNGKey(seed)
+        JAX_RND_DEFAULT_KEY = _safe_jax_prng_key(seed)
 
 # -----------------------------------------------------------------------------
 
@@ -860,7 +867,7 @@ def random_vector(shape, typek: str, backend="default", dtype = None, separator 
 # Register defaults in the registry
 _registry.register_rng("numpy", lambda seed=None: (npr.default_rng(seed), None))
 if JAX_AVAILABLE:
-    _registry.register_rng("jax", lambda seed=None: (random_jp, random_jp.PRNGKey(42 if seed is None else seed)))
+    _registry.register_rng("jax", lambda seed=None: (random_jp, _safe_jax_prng_key(seed)))
 
 _registry.register_matrix("GOE", goe)
 _registry.register_matrix("GUE", gue)

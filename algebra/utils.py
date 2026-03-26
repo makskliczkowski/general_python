@@ -774,7 +774,7 @@ class BackendManager:
         """
         if JAX_AVAILABLE and jrn:
             try:
-                return jrn.PRNGKey(seed)
+                return jrn.PRNGKey(int(seed))
             except Exception as e:
                 log.warning(f"Failed to create JAX PRNGKey with seed {seed}: {e}")
         return None
@@ -1240,9 +1240,10 @@ def _qes_initialize_utils():
             os.environ[PY_JAX_AVAILABLE_STR] = '1'
             _log_message("JAX backend available and successfully imported.", 0)
 
-        except ImportError:
+        except Exception as e:
             JAX_AVAILABLE = False
-            _log_message("JAX backend not available.", 0)
+            os.environ[PY_JAX_AVAILABLE_STR] = '0'
+            _log_message(f"JAX backend not available: {e}", 0)
 
     if JAX_AVAILABLE:
         # Type aliases for JAX
