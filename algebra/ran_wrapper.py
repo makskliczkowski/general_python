@@ -39,6 +39,10 @@ from ..algebra.utils    import DEFAULT_BACKEND, get_backend
 # Initialize JAX_RND_DEFAULT_KEY
 JAX_RND_DEFAULT_KEY = None
 _DISABLE_JAX = os.environ.get("PY_JAX_DONT_USE", "0") in ("1", "true", "True")
+JAX_AVAILABLE = False
+jax = None
+jnp = None
+random_jp = None
 
 
 def _safe_jax_prng_key(seed: Optional[int]):
