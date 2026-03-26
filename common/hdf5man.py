@@ -907,28 +907,32 @@ class HDF5Manager:
         """
         Collects arrays from iterable of mappings and concatenates them robustly.
 
-        Parameters:
-            - data
-                iterable of dict-like objects
-            - keys: 
-                key or list of possible keys to try (first available is used)
-            - throw_if_bad: 
-                whether to throw if no valid arrays are found
-            - unpack: 
-                whether to flatten nested arrays along first axis
-            - expected_ndim: 
-                enforce specific ndim (1 or 2). If None, auto-infer from first valid array.
-                This is stricter than just checking consistency.
-            - expected_dim0: 
-                enforce first dimension length (skip mismatches)
-            - expected_dim1: 
-                enforce second dimension length (skip mismatches)
-            - return_skipped: 
-                if True, return (array, skipped_filenames)
+        Parameters
+        ----------
+        data
+            iterable of dict-like objects
+        keys: 
+            key or list of possible keys to try (first available is used)
+        throw_if_bad: 
+            whether to throw if no valid arrays are found
+        unpack: 
+            whether to flatten nested arrays along first axis
+        expected_ndim: 
+            enforce specific ndim (1 or 2). If None, auto-infer from first valid array.
+            This is stricter than just checking consistency.
+        expected_dim0: 
+            enforce first dimension length (skip mismatches)
+        expected_dim1: 
+            enforce second dimension length (skip mismatches)
+        expected_first_val:
+            if not None, enforce that the first value of the array is close to this (skip mismatches)
+        return_skipped: 
+            if True, return (array, skipped_filenames)
 
-        Returns:
-            - ndarray (default)
-            - (ndarray, skipped_filenames) if return_skipped=True
+        Returns
+        -------
+        - ndarray (default)
+        - (ndarray, skipped_filenames) if return_skipped=True
         
         Example:
         >>> energies = HDF5Manager.process_data(data, "energies")
@@ -967,6 +971,7 @@ class HDF5Manager:
                     else:
                         skipped.append(fname)
                         continue
+                    
                     if not np.isclose(first_val, target_first_val):
                         skipped.append(fname)
                         continue
