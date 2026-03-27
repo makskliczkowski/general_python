@@ -652,7 +652,6 @@ class ResultProxy(LazyDataEntry):
     def __repr__(self):
         return f"ResultProxy(filepath='{self.filepath}', params={self.params}, keys={list(self._data.keys())})"
 
-
 def prepare_results_for_plotting(
     data_array          : np.ndarray,
     x_param_values      : list,
@@ -695,7 +694,6 @@ def prepare_results_for_plotting(
             )
             idx += 1
     return ResultSet(results, name="memory_results")
-
 
 class PlotData:
     """Convenience helpers that work with Lazy* entries and ResultProxy."""
@@ -867,7 +865,6 @@ class PlotData:
         fig.savefig(out_path, dpi=dpi, bbox_inches="tight")
         _log(logger, "info", f"Saved figure: {out_path}", color="green")
         return out_path
-
 
 __all__ = [
     "parse_filename",

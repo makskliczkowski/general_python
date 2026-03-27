@@ -53,6 +53,7 @@ Email               : maxgrom97@gmail.com
 import  json
 import  string
 import  itertools
+import  warnings
 import  numpy as np
 from    math import fsum
 from    typing import Tuple, Union, Optional, List, Literal, TYPE_CHECKING, Dict, Any
@@ -72,7 +73,7 @@ import matplotlib.tri           as mtri
 # Grids
 from matplotlib.colors          import Normalize, ListedColormap
 from matplotlib.gridspec        import GridSpec, GridSpecFromSubplotSpec
-from matplotlib.patches         import Rectangle
+from matplotlib.patches         import Rectangle, Circle
 from matplotlib.ticker          import FixedLocator, NullFormatter, LogLocator, LogFormatterMathtext
 from matplotlib.legend          import Legend
 from matplotlib.legend_handler  import HandlerBase, HandlerPatch
@@ -644,7 +645,91 @@ def set_formatter(ax, formatter_type="sci", fmt="%1.2e", axis='xy'):
     if 'x' in axis:
         ax.xaxis.set_major_formatter(formatter)
 
-########################### plotter ###########################
+###############################################
+
+class _IgnoredAxisAttr:
+    """Chainable no-op attribute proxy used by disabled axes."""
+
+    def __init__(self, owner, path: str):
+        self._owner = owner
+        self._path  = str(path)
+
+    def __call__(self, *args, **kwargs):
+        self._owner._warn(self._path)
+        return self
+
+    def __getattr__(self, name):
+        return _IgnoredAxisAttr(self._owner, f"{self._path}.{name}")
+
+    def __getitem__(self, key):
+        # Prevent Python's legacy sequence iteration fallback from looping forever
+        # on proxies (e.g., tuple unpacking of ignored return values).
+        if isinstance(key, int):
+            raise IndexError(key)
+        self._owner._warn(f"{self._path}[{key!r}]")
+        return self
+
+    def __setitem__(self, key, value):
+        self._owner._warn(f"{self._path}[{key!r}]=...")
+
+class IgnoredAxis:
+    """
+    No-op stand-in for a disabled axis.
+
+    Any call or chained attribute access is ignored by default. Optionally,
+    warnings can be emitted to make ignored operations explicit.
+    """
+
+    def __init__(self, *, index: Optional[int] = None, row_col: Optional[Tuple[int, int]] = None, names: Optional[List[str]] = None, warn: bool = False, reason: Optional[str] = None):
+        self._qes_axis_disabled = True
+        self._qes_axis_index    = index
+        self._qes_axis_row_col  = row_col
+        self._qes_axis_names    = list(names or [])
+        self._qes_axis_warn     = bool(warn)
+        self._qes_axis_reason   = str(reason) if reason else None
+
+    @property
+    def is_disabled(self) -> bool:
+        return True
+
+    def set_warn(self, enabled: bool = True):
+        self._qes_axis_warn = bool(enabled)
+        return self
+
+    def description(self) -> str:
+        bits = []
+        if self._qes_axis_names:
+            bits.append(f"name={self._qes_axis_names}")
+        if self._qes_axis_row_col is not None:
+            bits.append(f"position={self._qes_axis_row_col}")
+        if self._qes_axis_index is not None:
+            bits.append(f"index={self._qes_axis_index}")
+        if self._qes_axis_reason:
+            bits.append(f"reason='{self._qes_axis_reason}'")
+        return ", ".join(bits) if bits else "unknown axis"
+
+    def _warn(self, op: str):
+        if not self._qes_axis_warn:
+            return
+        warnings.warn(f"Ignored call '{op}' on disabled axis ({self.description()}).", RuntimeWarning, stacklevel=3,)
+
+    def __call__(self, *args, **kwargs):
+        self._warn("__call__")
+        return self
+
+    def __getattr__(self, name):
+        # Do not emulate NumPy array protocol attributes; returning a proxy here
+        # breaks np.asarray(..., dtype=object) used by AxesList grid indexing.
+        if str(name).startswith("__array"):
+            raise AttributeError(name)
+        
+        return _IgnoredAxisAttr(self, str(name))
+
+    def __bool__(self):
+        return False
+
+    def __repr__(self):
+        return f"IgnoredAxis({self.description()})"
 
 class AxesList(list):
     """
@@ -716,6 +801,7 @@ class AxesList(list):
     # Selection and indexing
     # ---------------------------------
 
+ 
     def select(self, *names: str):
         selected = [self.panel(name) for name in names]
         flat = []
@@ -736,6 +822,10 @@ class AxesList(list):
     def as_grid(self):
         if self.shape is None:
             raise ValueError("Grid shape is unknown for this AxesList.")
+        
+        expected      = int(self.nrows) * int(self.ncols)
+        if len(self) != expected:
+            raise ValueError(f"AxesList grid shape mismatch: len={len(self)} but nrows*ncols={expected}. Use flat indexing or ensure the layout has full rectangular occupancy.")
         return np.asarray(self, dtype=object).reshape(self.nrows, self.ncols)
 
     def at(self, row: int, col: int):
@@ -784,27 +874,124 @@ class AxesList(list):
         sub_map = {name: ax for name, ax in self._panel_map.items() if id(ax) in kept_ids}
         return AxesList(items_list, panel_map=sub_map)
 
+    def disable(self, target, *, warn: bool = False, hide: bool = True, reason: Optional[str] = None):
+        """
+        Disable one or more axes by replacing them with no-op placeholders.
+
+        Parameters
+        ----------
+        target : int | tuple[int, int] | str | Axes | list-like
+            Axis selector. Supported forms:
+            - flat index (int)
+            - grid index ``(row, col)``
+            - panel name (str)
+            - an axis instance already contained in this AxesList
+            - list/tuple/ndarray of the above (disabled recursively)
+        warn : bool, default=False
+            If True, any later operation on the disabled axis emits a warning.
+        hide : bool, default=True
+            If True and target is a real matplotlib axis, call ``set_axis_off``
+            before disabling.
+        reason : str, optional
+            Optional note included in warning messages.
+
+        Returns
+        -------
+        AxesList
+            Returns ``self`` for chaining.
+        """
+
+        def _panel_names_for_axis(ax_obj) -> List[str]:
+            return [name for name, ref in self._panel_map.items() if ref is ax_obj]
+
+        def _row_col_for_index(index: int) -> Optional[Tuple[int, int]]:
+            if self.shape is None or self.ncols in (None, 0):
+                return None
+            return (int(index // self.ncols), int(index % self.ncols))
+
+        def _disable_index(index: int):
+            if index < 0 or index >= len(self):
+                raise IndexError(f"Axis index out of range: {index}")
+
+            axis_obj = super(AxesList, self).__getitem__(index)
+            if isinstance(axis_obj, IgnoredAxis):
+                axis_obj.set_warn(warn)
+                return
+
+            if hide:
+                try:
+                    axis_obj.set_axis_off()
+                except Exception:
+                    pass
+
+            names = _panel_names_for_axis(axis_obj)
+            proxy = IgnoredAxis(index=index, row_col=_row_col_for_index(index), names=names, warn=warn, reason=reason)
+
+            super(AxesList, self).__setitem__(index, proxy)
+
+            for name, ref in list(self._panel_map.items()):
+                if ref is axis_obj:
+                    self._panel_map[name] = proxy
+
+        if isinstance(target, tuple) and len(target) == 2:
+            if self.shape is None:
+                raise ValueError("Tuple indexing requires known grid shape.")
+            row, col = target
+            flat_idx = np.ravel_multi_index((int(row), int(col)), (self.nrows, self.ncols))
+            _disable_index(int(flat_idx))
+            return self
+
+        if isinstance(target, (list, tuple, np.ndarray)):
+            for item in list(np.asarray(target, dtype=object).ravel()):
+                self.disable(item, warn=warn, hide=hide, reason=reason)
+            return self
+
+        if isinstance(target, str):
+            item = self.panel(target)
+            if isinstance(item, (AxesList, list, tuple, np.ndarray)):
+                self.disable(item, warn=warn, hide=hide, reason=reason)
+                return self
+            try:
+                idx = self.index(item)
+            except ValueError as exc:
+                raise KeyError(f"Panel '{target}' is not mapped to a direct axis.") from exc
+            _disable_index(int(idx))
+            return self
+
+        if isinstance(target, (int, np.integer)):
+            _disable_index(int(target))
+            return self
+
+        try:
+            idx = self.index(target)
+        except ValueError as exc:
+            raise TypeError(
+                "Unsupported target for AxesList.disable. Use index, (row,col), panel name, axis, or list-like of these."
+            ) from exc
+        _disable_index(int(idx))
+        return self
+
     def adjust(
         self,
         same: str = "xy",
         *,
-        hide: str = "both",
-        keep_x: str = "bottom",
-        keep_y: str = "left",
-        xlabel: Optional[str] = None,
-        ylabel: Optional[str] = None,
-        xlabel_kwargs: Optional[dict] = None,
-        ylabel_kwargs: Optional[dict] = None,
-        x_label_position: Optional[str] = None,
-        y_label_position: Optional[str] = None,
-        x_label_coords: Optional[Tuple[float, float]] = None,
-        y_label_coords: Optional[Tuple[float, float]] = None,
-        x_label_coords_system: str = "axes",
-        y_label_coords_system: str = "axes",
-        x_tick_params: Optional[dict] = None,
-        y_tick_params: Optional[dict] = None,
-        interior_x_tick_params: Optional[dict] = None,
-        interior_y_tick_params: Optional[dict] = None,
+        hide                    : str = "both",
+        keep_x                  : str = "bottom",
+        keep_y                  : str = "left",
+        xlabel                  : Optional[str] = None,
+        ylabel                  : Optional[str] = None,
+        xlabel_kwargs           : Optional[dict] = None,
+        ylabel_kwargs           : Optional[dict] = None,
+        x_label_position        : Optional[str] = None,
+        y_label_position        : Optional[str] = None,
+        x_label_coords          : Optional[Tuple[float, float]] = None,
+        y_label_coords          : Optional[Tuple[float, float]] = None,
+        x_label_coords_system   : str = "axes",
+        y_label_coords_system   : str = "axes",
+        x_tick_params           : Optional[dict] = None,
+        y_tick_params           : Optional[dict] = None,
+        interior_x_tick_params  : Optional[dict] = None,
+        interior_y_tick_params  : Optional[dict] = None,
     ):
         """
         Remove duplicated axis labels/ticklabels for multi-panel layouts.
@@ -839,18 +1026,18 @@ class AxesList(list):
             Tick styling for interior x/y axes after de-duplication. Useful to
             keep ticks but hide labels, adjust lengths, etc.
         """
-        key = str(same).lower().strip()
-        do_x = "x" in key
-        do_y = "y" in key
-        hide_key = str(hide).lower().strip()
-        hide_labels = hide_key in {"both", "label", "labels"}
-        hide_ticklabels = hide_key in {"both", "tick", "ticks", "ticklabel", "ticklabels"}
-        xlabel_kwargs = dict(xlabel_kwargs or {})
-        ylabel_kwargs = dict(ylabel_kwargs or {})
-        x_tick_params = dict(x_tick_params or {})
-        y_tick_params = dict(y_tick_params or {})
-        interior_x_tick_params = dict(interior_x_tick_params or {})
-        interior_y_tick_params = dict(interior_y_tick_params or {})
+        key                     = str(same).lower().strip()
+        do_x                    = "x" in key
+        do_y                    = "y" in key
+        hide_key                = str(hide).lower().strip()
+        hide_labels             = hide_key in {"both", "label", "labels"}
+        hide_ticklabels         = hide_key in {"both", "tick", "ticks", "ticklabel", "ticklabels"}
+        xlabel_kwargs           = dict(xlabel_kwargs or {})
+        ylabel_kwargs           = dict(ylabel_kwargs or {})
+        x_tick_params           = dict(x_tick_params or {})
+        y_tick_params           = dict(y_tick_params or {})
+        interior_x_tick_params  = dict(interior_x_tick_params or {})
+        interior_y_tick_params  = dict(interior_y_tick_params or {})
 
         keep_x = str(keep_x).lower().strip()
         keep_y = str(keep_y).lower().strip()
@@ -873,10 +1060,10 @@ class AxesList(list):
             try:
                 ss = ax.get_subplotspec()
                 return {
-                    "first_row": bool(ss.is_first_row()),
-                    "last_row": bool(ss.is_last_row()),
-                    "first_col": bool(ss.is_first_col()),
-                    "last_col": bool(ss.is_last_col()),
+                    "first_row" : bool(ss.is_first_row()),
+                    "last_row"  : bool(ss.is_last_row()),
+                    "first_col" : bool(ss.is_first_col()),
+                    "last_col"  : bool(ss.is_last_col()),
                 }
             except Exception:
                 pass
@@ -886,10 +1073,10 @@ class AxesList(list):
                 row = idx // self.ncols
                 col = idx % self.ncols
                 return {
-                    "first_row": row == 0,
-                    "last_row": row == (self.nrows - 1),
-                    "first_col": col == 0,
-                    "last_col": col == (self.ncols - 1),
+                    "first_row" : row == 0,
+                    "last_row"  : row == (self.nrows - 1),
+                    "first_col" : col == 0,
+                    "last_col"  : col == (self.ncols - 1),
                 }
             return {"first_row": True, "last_row": True, "first_col": True, "last_col": True}
 
@@ -975,6 +1162,12 @@ class AxesList(list):
             if len(key) != 2:
                 raise IndexError("Use axes[row, col] for 2D indexing.")
             row, col    = key
+
+            # Fast path for scalar tuple indexing without grid reshape.
+            if isinstance(row, (int, np.integer)) and isinstance(col, (int, np.integer)):
+                flat_idx = int(np.ravel_multi_index((int(row), int(col)), (self.nrows, self.ncols)))
+                return super().__getitem__(flat_idx)
+
             grid        = self.as_grid()
             result      = grid[row, col]
             if isinstance(result, np.ndarray):
@@ -1001,6 +1194,8 @@ class AxesList(list):
         if len(self) == 0:
             raise AttributeError(name)
         return getattr(self[0], name)
+
+# ---------------------------------
 
 class Plotter:
     """
@@ -1058,6 +1253,20 @@ class Plotter:
         self.default_cmap   = default_cmap
         self.font_size      = font_size
         self.dpi            = dpi
+        
+    def ax_off(self, ax: Union[plt.Axes, List[plt.Axes]]):
+        """
+        Completely turn off the axis (no ticks, labels, spines, data)."""
+        """"""
+        if isinstance(ax, (list, tuple)):
+            for a in ax:
+                self.ax_off(a)
+        elif isinstance(ax, plt.Axes):
+            ax.set_axis_off()
+        elif is_callable(ax):
+            ax(self.ax_off)
+        else:
+            raise TypeError("ax must be a matplotlib Axes, list of Axes, or callable that accepts an ax_off function.")
     
     @staticmethod
     def ax(ax: Union[plt.Axes, List[plt.Axes]], *args, **kwargs):
@@ -1066,12 +1275,48 @@ class Plotter:
         """
         if isinstance(ax, (list, tuple)):
             return ax[kwargs.get('index', 0)]
+        elif isinstance(ax, IgnoredAxis):
+            return ax
         elif isinstance(ax, plt.Axes):
             return ax
         elif is_callable(ax):
             return ax(*args, **kwargs)
         else:
             return ax
+
+    @staticmethod
+    def disable(axes, target, *,
+        warn    : bool = False,
+        hide    : bool = True,
+        reason  : Optional[str] = None,
+    ) -> AxesList:
+        """
+        Convenience wrapper for ``AxesList.disable``.
+
+        Parameters
+        ----------
+        axes : AxesList or list-like of axes
+            Axes container to operate on.
+        target : selector
+            Forwarded to :meth:`AxesList.disable`.
+        warn : bool, default=False
+            Emit warnings when disabled axes are used.
+        hide : bool, default=True
+            Hide underlying axes before disabling.
+        reason : str, optional
+            Optional warning context.
+
+        Returns
+        -------
+        AxesList
+            The modified axes list.
+        """
+        if isinstance(axes, AxesList):
+            return axes.disable(target, warn=warn, hide=hide, reason=reason)
+        if isinstance(axes, (list, tuple, np.ndarray)):
+            wrapped = AxesList(list(axes))
+            return wrapped.disable(target, warn=warn, hide=hide, reason=reason)
+        raise TypeError("axes must be an AxesList or list-like of axes.")
     
     @staticmethod
     def help(topic: str = None):
@@ -1143,6 +1388,17 @@ class Plotter:
         """Expose the ``general_python.common.plotters`` package."""
         from . import plotters
         return plotters
+
+    @staticmethod
+    def statistical_fitter():
+        """Backward-compatible alias for :meth:`fitter`."""
+        return Plotter.fitter()
+
+    @staticmethod
+    def fitter():
+        """Expose shared fitting/scaling helpers from ``general_python.maths.math_utils``."""
+        from QES.general_python.maths.math_utils import Fitter
+        return Fitter
 
     @staticmethod
     def math(label: str, *, auto_wrap: bool = True, escape_text: bool = True, **values: Any) -> str:
@@ -2469,7 +2725,7 @@ class Plotter:
         addit       = '',
         condition   = True,
         zorder      = 50,
-        boxaround   = True,
+        boxaround   = False,
         fontweight  = 'normal',
         color       = 'black',
         **kwargs        
@@ -2552,6 +2808,89 @@ class Plotter:
                     xy       =   xyend, 
                     xytext   =   xyend_T, 
                     color    =   endcolor)
+
+    @staticmethod
+    def callout(ax, text: str, xy, xytext=None, *, xycoords: str = 'data', textcoords: Optional[str] = None, arrowstyle: str = '->',
+        color: str = 'black', lw: float = 1.0, boxaround: bool = True, box_alpha: float = 0.85, zorder: int = 20, **kwargs,
+    ):
+        """Add a compact callout (text + optional arrow) to an axis."""
+        ax = Plotter.ax(ax)
+        if xytext is None:
+            xytext = xy
+        if textcoords is None:
+            textcoords = xycoords
+
+        bbox = None
+        if boxaround:
+            bbox = dict(facecolor='white', edgecolor='none', boxstyle='round,pad=0.25', alpha=box_alpha)
+
+        arrowprops = None
+        if xytext != xy:
+            arrowprops = dict(arrowstyle=arrowstyle, color=color, lw=lw)
+
+        return ax.annotate(text, xy=xy, xytext=xytext, xycoords=xycoords, textcoords=textcoords,
+            color=color, arrowprops=arrowprops, bbox=bbox, zorder=zorder, **kwargs,
+        )
+
+    @staticmethod
+    def highlight_box(
+        ax, x: float, y: float, width: float, height: float,
+        *,
+        coords: str = 'data', edgecolor='crimson', facecolor='none', lw: float = 1.3, ls='-', alpha: float = 0.95, zorder: int = 15,
+        **kwargs,
+    ):
+        """Draw a highlighted rectangular region in data or axes coordinates."""
+        ax          = Plotter.ax(ax)
+        transform   = ax.transAxes if str(coords).lower().startswith('axes') else ax.transData
+        rect = Rectangle(
+            (x, y),
+            width,
+            height,
+            transform=transform,
+            edgecolor=edgecolor,
+            facecolor=facecolor,
+            lw=lw,
+            ls=ls,
+            alpha=alpha,
+            zorder=zorder,
+            **kwargs,
+        )
+        ax.add_patch(rect)
+        return rect
+
+    @staticmethod
+    def highlight_circle(
+        ax,
+        x: float,
+        y: float,
+        radius: float,
+        *,
+        coords: str = 'data',
+        edgecolor='darkorange',
+        facecolor='none',
+        lw: float = 1.3,
+        ls='-',
+        alpha: float = 0.95,
+        zorder: int = 15,
+        **kwargs,
+    ):
+        """Draw a highlighted circular region in data or axes coordinates."""
+        ax = Plotter.ax(ax)
+        transform = ax.transAxes if str(coords).lower().startswith('axes') else ax.transData
+        circ = Circle(
+            (x, y),
+            radius,
+            transform=transform,
+            edgecolor=edgecolor,
+            facecolor=facecolor,
+            lw=lw,
+            ls=ls,
+            alpha=alpha,
+            zorder=zorder,
+            **kwargs,
+        )
+        ax.add_patch(circ)
+        return circ
 
     ##################### F I T S #####################
     
@@ -5227,6 +5566,10 @@ class Plotter:
         - ncol            : Number of columns in the legend.
         - kwargs          : Additional arguments passed to `ax.legend()`.
         '''
+        ax = Plotter.ax(ax)
+        if isinstance(ax, IgnoredAxis):
+            return None
+
         # Get legend handles and labels
         handles, labels = ax.get_legend_handles_labels()
         if reverse:
@@ -5298,6 +5641,10 @@ class Plotter:
         - markerfirst:  marker first or not
         - framealpha:   alpha of the frame
         '''
+        ax = Plotter.ax(ax)
+        if isinstance(ax, IgnoredAxis):
+            return None
+
         lines, labels   = ax.get_legend_handles_labels()
 
         # go through the conditions'
@@ -5561,15 +5908,15 @@ class Plotter:
             axes_list = AxesList(axes_flat, nrows=nrows, ncols=ncols, panel_map=panel_map)
         else:
             fig, ax = plt.subplots(
-                nrows=nrows,
-                ncols=ncols,
-                figsize=figsize,
-                gridspec_kw=gridspec_kw,
-                subplot_kw=subplot_kw,
-                sharex=share_x,
-                sharey=share_y,
-                **kwargs,
-            )
+                        nrows=nrows,
+                        ncols=ncols,
+                        figsize=figsize,
+                        gridspec_kw=gridspec_kw,
+                        subplot_kw=subplot_kw,
+                        sharex=share_x,
+                        sharey=share_y,
+                        **kwargs,
+                    )
 
             #! Normalize axes to a flat list, regardless of (1,1), (1,N), (M,1), (M,N)
             if isinstance(ax, (list, tuple)):

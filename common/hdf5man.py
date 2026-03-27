@@ -105,13 +105,16 @@ class HDF5Manager:
         dataset_keys            : Optional[List[str]]   = None,
         verbose                 : bool                  = False,
         remove_corrupted_file   : bool                  = False,
-        strict_keys             : bool                  = True) -> Dict[str, Any]:
+        strict_keys             : bool                  = True,
+        include_missing_keys    : bool                  = False,
+        missing_value           : Any                   = np.nan) -> Dict[str, Any]:
         """
         Reads data from an HDF5 file.
 
         - If `dataset_keys` is provided:
             * strict_keys=True  -> skip file entirely if any key is missing
             * strict_keys=False -> load only available keys
+            * include_missing_keys=True -> attach missing keys with `missing_value`
         """
         data: Dict[str, Any] = {}
         if not HDF5Manager._validate_file(file_path, verbose):
@@ -126,9 +129,9 @@ class HDF5Manager:
                     # Only scan tree if we want EVERYTHING
                     keys_to_read = HDF5Manager._get_all_dataset_paths(hf)
 
-                # strict key check
+                # strict key check against the actual file content
                 if dataset_keys and strict_keys:
-                    missing = [k for k in dataset_keys if k not in keys_to_read]
+                    missing = [k for k in dataset_keys if k not in hf]
                     if missing:
                         if verbose:
                             _logger.warning(f"Skipping file {file_path}: missing keys {missing}")
@@ -146,6 +149,10 @@ class HDF5Manager:
                         if verbose: 
                             _logger.warning(f"Missing strict key: {key}")
                         return {} # Fail fast
+                    elif include_missing_keys:
+                        data[key] = missing_value
+                    elif verbose:
+                        _logger.warning(f"Missing key '{key}' in {file_path}; key omitted.")
 
             if data:  # only attach filename if some data loaded
                 data["filename"] = file_path
@@ -183,9 +190,26 @@ class HDF5Manager:
         Yields:
             numpy.ndarray: The dataset corresponding to the key.
         """
+
+        def _is_missing_value(v: Any) -> bool:
+            if v is None:
+                return True
+            try:
+                arr = np.asarray(v)
+            except Exception:
+                return False
+            if arr.size == 0:
+                return True
+            if np.issubdtype(arr.dtype, np.number):
+                return np.all(np.isnan(arr))
+            return False
+
         for data_dict in loaded_hdf5_data_list:
             if key in data_dict:
-                yield data_dict[key]
+                value = data_dict[key]
+                if _is_missing_value(value):
+                    continue
+                yield value
             else:
                 _logger.warning(f"Key '{key}' not found in loaded data from file: {data_dict.get('filename', 'Unknown file')}")
 
@@ -311,23 +335,29 @@ class HDF5Manager:
 
     @staticmethod
     def stream_data_from_multiple_files(
-            file_paths      : List[str],
-            dataset_keys    : Optional[List[str]] = None,
-            sort_files      : bool = True,
-            verbose         : bool = False,
-            strict_keys     : bool = True,     # pass-through
+            file_paths              : List[str],
+            dataset_keys            : Optional[List[str]] = None,
+            sort_files              : bool = True,
+            verbose                 : bool = False,
+            strict_keys             : bool = True,     # pass-through
+            include_missing_keys    : bool = True,
+            missing_value           : Any = np.nan,
         ) -> Generator[Dict[str, Any], None, None]:
         """
         Streams data dictionary (from 'load_file_data') for each HDF5 file found in specified paths.
 
-        Args:
-            file_paths:
-                List of HDF5 file paths.
-            dataset_keys:
-                Specific dataset keys to load from each file. If None, loads all datasets.
-                If a single key, it will be converted to a list.
-            sort_files: Whether to sort the found files by name.
-            verbose: If True, log detailed information.
+        Parameters
+        ----------
+        file_paths:
+            List of HDF5 file paths.
+        dataset_keys:
+            Specific dataset keys to load from each file. If None, loads all datasets.
+            If a single key, it will be converted to a list.
+        sort_files: Whether to sort the found files by name.
+        verbose: If True, log detailed information.
+        strict_keys: If True, skip files that are missing any of the specified keys.
+        include_missing_keys: If True, include missing keys with a specified value instead of skipping.
+        missing_value: The value to use for missing keys if include_missing_keys is True.
 
         Yields:
             dict: Data dictionary from each processed HDF5 file.
@@ -341,7 +371,7 @@ class HDF5Manager:
         for file_path in file_paths:
             if verbose:
                 _logger.info(f"Processing file: {file_path}")
-            data = HDF5Manager.load_file_data(file_path, dataset_keys, verbose=verbose, strict_keys=strict_keys)
+            data = HDF5Manager.load_file_data(file_path, dataset_keys, verbose=verbose, strict_keys=strict_keys, include_missing_keys=include_missing_keys, missing_value=missing_value)
             if data: # Only yield if data was successfully loaded
                 yield data
 
@@ -350,12 +380,66 @@ class HDF5Manager:
         file_paths            : List[str] | list[str],
         dataset_keys          : Optional[List[str]] = None,
         sort_files            : bool = True,
-        verbose               : bool = False) -> List[Dict[str, Any]]:
+        verbose               : bool = False,
+        strict_keys           : bool = True,
+        include_missing_keys  : bool = True,
+        missing_value         : Any = np.nan) -> List[Dict[str, Any]]:
         """
         Loads data from multiple HDF5 files into a list of dictionaries. Eager evaluation.
         (This was 'read_multiple_hdf5' before)
         """
-        return list(HDF5Manager.stream_data_from_multiple_files(file_paths, dataset_keys, sort_files, verbose))
+        return list(HDF5Manager.stream_data_from_multiple_files(file_paths, dataset_keys, sort_files, verbose, strict_keys=strict_keys, include_missing_keys=include_missing_keys, missing_value=missing_value,))
+
+    @staticmethod
+    def stream_lazy_from_multiple_files(
+        file_paths      : List[str] | list[str],
+        dataset_keys    : Optional[List[str]] = None,
+        sort_files      : bool = True,
+        verbose         : bool = False,
+    ) -> Generator[Any, None, None]:
+        """
+        Stream lazy HDF5 entries, optionally filtered by dataset key presence.
+
+        Notes
+        -----
+        - Does not read datasets eagerly.
+        - If `dataset_keys` is provided, files are kept only when all listed keys
+          are present (checked via lazy key listing).
+        """
+        from .lazy_entry import LazyHDF5Entry
+
+        paths = list(file_paths)
+        if sort_files:
+            paths.sort()
+
+        required = None
+        if dataset_keys is not None:
+            required = [dataset_keys] if isinstance(dataset_keys, str) else list(dataset_keys)
+
+        for file_path in paths:
+            if verbose:
+                _logger.info(f"Processing lazy file: {file_path}")
+            if not HDF5Manager._validate_file(file_path, verbose=verbose):
+                continue
+
+            entry = LazyHDF5Entry(str(file_path), params={})
+            if required is not None:
+                try:
+                    if not all((k in entry) for k in required):
+                        continue
+                except Exception:
+                    continue
+            yield entry
+
+    @staticmethod
+    def load_lazy_from_multiple_files(
+        file_paths      : List[str] | list[str],
+        dataset_keys    : Optional[List[str]] = None,
+        sort_files      : bool = True,
+        verbose         : bool = False,
+    ) -> List[Any]:
+        """Eagerly collect lazy HDF5 entries into a list."""
+        return list(HDF5Manager.stream_lazy_from_multiple_files(file_paths, dataset_keys, sort_files, verbose))
 
     # ---------------------------------
     #! Saving Methods
@@ -958,8 +1042,22 @@ class HDF5Manager:
                     skipped.append(fname)
                     continue
 
-                arr = np.asarray(x[found_key])
+                val = x[found_key]
+                if val is None:
+                    skipped.append(fname)
+                    continue
+
+                arr = np.asarray(val)
                 if arr.size == 0:
+                    skipped.append(fname)
+                    continue
+
+                # Missing-key sentinels are represented as scalar/flat NaN values.
+                # Skip those entries so downstream concatenation ignores only bad files.
+                if arr.ndim == 0 and np.issubdtype(arr.dtype, np.number) and np.isnan(arr.item()):
+                    skipped.append(fname)
+                    continue
+                if arr.ndim >= 1 and np.issubdtype(arr.dtype, np.number) and np.all(np.isnan(arr)):
                     skipped.append(fname)
                     continue
                 

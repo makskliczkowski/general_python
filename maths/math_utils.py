@@ -157,6 +157,8 @@ class FitterParams(object):
     def __str__(self):
         return 'FitterParams: ' + str(self._popt) + ' ' + str(self._pcov)
     
+# -----------------------------------------------------------------------------    
+    
 class Fitter:
     '''
     Class that contains the fit functions and their general usage.
@@ -196,6 +198,157 @@ class Fitter:
         xfit            =       x[skipF if skipF!= 0 else None : -skipL if skipL!= 0 else None]
         yfit            =       y[skipF if skipF!= 0 else None : -skipL if skipL!= 0 else None]
         return xfit, yfit
+
+    # ------------------------------------------------------------------
+    # Robust helpers for scaling analysis
+    # ------------------------------------------------------------------
+
+    _MEAN_ALIASES   = {
+        'arithmetic'    : {'arithmetic', 'arith', 'avg', 'average', 'mean'},
+        'typical'       : {'typical', 'typ', 'geometric', 'geo', 'log-mean', 'logmean'},
+        'median'        : {'median', 'med'},
+        'harmonic'      : {'harmonic', 'harm'},
+    }
+
+    @staticmethod
+    def _canonical_mean(mean_type: str) -> str:
+        key = str(mean_type).strip().lower()
+        
+        for canon, aliases in Fitter._MEAN_ALIASES.items():
+            if key in aliases:
+                return canon
+        raise ValueError(f"Unknown mean_type '{mean_type}'. Use one of: arithmetic/avg/mean, typical/typ/geometric, median, harmonic.")
+
+    @staticmethod
+    def _as_1d(a, dtype=float):
+        return np.asarray(a, dtype=dtype).ravel()
+
+    @staticmethod
+    def _prepare_xy(x, y, *, require_positive_x: bool = False, require_positive_y: bool = False, eps: float = 1e-300, dtype=float):
+        """Prepare x and y arrays for fitting by filtering out non-finite values and optionally enforcing positivity. Returns the filtered x and y arrays."""
+        
+        x_arr = Fitter._as_1d(x, dtype=dtype)
+        y_arr = Fitter._as_1d(y, dtype=dtype)
+        if x_arr.size != y_arr.size:
+            raise ValueError(f"x and y must have same length, got {x_arr.size} and {y_arr.size}.")
+
+        mask = np.isfinite(x_arr) & np.isfinite(y_arr)
+        if require_positive_x and x_arr.dtype in [np.float32, np.float64]:
+            mask &= x_arr > 0.0
+        if require_positive_y and y_arr.dtype in [np.float32, np.float64]:
+            mask &= y_arr > eps
+
+        x_ok = x_arr[mask]
+        y_ok = y_arr[mask]
+        if x_ok.size < 2:
+            raise ValueError("Need at least 2 valid points after filtering.")
+        return x_ok, y_ok
+
+    @staticmethod
+    def aggregate(values, *, mean_type: str = 'arithmetic', weights=None, trim_fraction: float = 0.0, eps: float = 1e-300):
+        """
+        Aggregate samples with configurable averaging convention.
+
+        Parameters
+        ----------
+        values : array-like
+            Input samples.
+        mean_type : str
+            One of arithmetic/avg/mean, typical/typ/geometric, median, harmonic.
+        weights : array-like, optional
+            Optional weights for arithmetic averaging only.
+        trim_fraction : float, default=0.0
+            Fraction trimmed from each tail for arithmetic mean (0 <= trim < 0.5).
+        eps : float, default=1e-300
+            Positivity cutoff for logarithmic/harmonic aggregations.
+        """
+        arr     = Fitter._as_1d(values, dtype=float)
+        arr     = arr[np.isfinite(arr)]
+        if arr.size == 0:
+            return np.nan
+
+        mode    = Fitter._canonical_mean(mean_type)
+
+        if mode == 'median':
+            return float(np.median(arr))
+
+        if mode == 'typical':
+            pos = arr[arr > eps]
+            if pos.size == 0:
+                return np.nan
+            return float(np.exp(np.mean(np.log(pos))))
+
+        if mode == 'harmonic':
+            pos = arr[arr > eps]
+            if pos.size == 0:
+                return np.nan
+            return float(pos.size / np.sum(1.0 / pos))
+
+        # arithmetic
+        trim = float(trim_fraction)
+        if trim < 0.0 or trim >= 0.5:
+            raise ValueError("trim_fraction must satisfy 0 <= trim_fraction < 0.5.")
+
+        if trim > 0.0 and arr.size >= 3:
+            arr = np.sort(arr)
+            k = int(trim * arr.size)
+            if 2 * k < arr.size:
+                arr = arr[k: arr.size - k]
+
+        if weights is None:
+            return float(np.mean(arr))
+
+        w = Fitter._as_1d(weights, dtype=float)
+        if w.size != Fitter._as_1d(values, dtype=float).size:
+            raise ValueError("weights must have the same length as values.")
+        
+        # apply mask to both values and weights
+        mask    = np.isfinite(Fitter._as_1d(values, dtype=float)) & np.isfinite(w)
+        v       = Fitter._as_1d(values, dtype=float)[mask]
+        wv      = w[mask]
+        s       = np.sum(wv)
+        if s == 0.0:
+            return np.nan
+        return float(np.dot(v, wv) / s)
+
+    @staticmethod
+    def fit_loglog_linear(x, y):
+        """Fit ``log(y) = a + b log(x)`` and return ``(a, b, r2)``."""
+        x_ok, y_ok  = Fitter._prepare_xy(x, y, require_positive_x=True, require_positive_y=True)
+        lx          = np.log(x_ok)
+        ly          = np.log(y_ok)
+        b, a        = np.polyfit(lx, ly, 1)
+        yhat        = a + b * lx
+        ss_res      = float(np.sum((ly - yhat) ** 2))
+        ss_tot      = float(np.sum((ly - np.mean(ly)) ** 2))
+        r2          = 1.0 - ss_res / ss_tot if ss_tot > 0.0 else 1.0
+        return float(a), float(b), float(r2)
+
+    @staticmethod
+    def fit_power_scaling(x, y):
+        """Fit ``y = A x^beta`` and return ``(A, beta, r2_log)``."""
+        a, b, r2 = Fitter.fit_loglog_linear(x, y)
+        return float(np.exp(a)), float(b), float(r2)
+
+    @staticmethod
+    def fit_inverse_power_scaling(x, y):
+        """Fit ``y = A x^{-alpha}`` and return ``(A, alpha, r2_log)``."""
+        A, beta, r2 = Fitter.fit_power_scaling(x, y)
+        return float(A), float(-beta), float(r2)
+
+    @staticmethod
+    def fit_ipr_scaling(dimensions, iprs, q: float = 2.0):
+        r"""
+        Fit ``IPR(N) = A N^{-alpha}`` and infer ``D_q = alpha/(q-1)``.
+
+        Returns
+        -------
+        tuple
+            ``(A, alpha, D_q, r2_log)``.
+        """
+        A, alpha, r2    = Fitter.fit_inverse_power_scaling(dimensions, iprs)
+        Dq              = alpha / (q - 1.0) if q != 1.0 else np.inf
+        return float(A), float(alpha), float(Dq), float(r2)
     
     #################### F I T S ! #################### 
     
