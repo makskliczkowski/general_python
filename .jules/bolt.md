@@ -1,0 +1,3 @@
+## 2025-02-13 - Spectral Function Multi-Omega Bottlenecks
+**Learning:** `operator_spectral_function_multi_omega` and `susceptibility_bubble_multi_omega` compute results per-frequency in Python loops, resulting in slow `O(N_omega * N^2)` loop execution. Vectorizing over `N_omega` utilizing broadcasting (NumPy dimension expansion) can speed this up by 50x-100x since the entire `N_omega x N_mask` inner array can be processed in highly optimized C operations. Memory is kept low by broadcasting only against the inner `N` elements (masked subset) inside the loop over `N`.
+**Action:** Re-write the multi-omega loops to push the `omega` iterations into array broadcasting for both `operator_spectral_function_multi_omega` and `susceptibility_bubble_multi_omega`.
