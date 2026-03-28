@@ -971,6 +971,87 @@ class AxesList(list):
         _disable_index(int(idx))
         return self
 
+    def collapse(self, *, redraw: bool = True):
+        """
+        Collapse rows that are fully disabled and reflow remaining axes.
+
+        Behavior
+        --------
+        - A row is removed only if *all* entries in that row are disabled.
+        - Partially disabled rows are kept intact, so grid holes remain.
+        - Recomputes subplot positions for kept rows to remove vertical whitespace.
+
+        Returns
+        -------
+        AxesList
+            Returns ``self`` for chaining.
+        """
+        if self.shape is None:
+            raise ValueError("Grid shape is unknown for this AxesList.")
+
+        expected = int(self.nrows) * int(self.ncols)
+        if len(self) != expected:
+            raise ValueError(f"AxesList grid shape mismatch: len={len(self)} but nrows*ncols={expected}. Row compaction requires a full rectangular AxesList.")
+
+        def _is_disabled(ax_obj) -> bool:
+            return isinstance(ax_obj, IgnoredAxis) or bool(getattr(ax_obj, "_qes_axis_disabled", False))
+
+        grid            = np.asarray(self, dtype=object).reshape(self.nrows, self.ncols)
+        disabled_rows   = [r for r in range(self.nrows) if all(_is_disabled(grid[r, c]) for c in range(self.ncols))]
+
+        if not disabled_rows:
+            return self
+
+        if len(disabled_rows) == int(self.nrows):
+            warnings.warn("All rows are disabled; collapse() skipped.", RuntimeWarning, stacklevel=2)
+            return self
+
+        kept_rows   = [r for r in range(self.nrows) if r not in disabled_rows]
+        fig         = None
+        for r in kept_rows:
+            for c in range(self.ncols):
+                candidate = grid[r, c]
+                if not _is_disabled(candidate):
+                    fig = getattr(candidate, "figure", None)
+                    if fig is not None:
+                        break
+            if fig is not None:
+                break
+
+        if fig is None:
+            return self
+
+        sp      = fig.subplotpars
+        new_gs  = GridSpec(len(kept_rows), self.ncols, figure=fig, left=sp.left, right=sp.right, bottom=sp.bottom, top=sp.top, wspace=sp.wspace, hspace=sp.hspace)
+
+        for new_r, old_r in enumerate(kept_rows):
+            for c in range(self.ncols):
+                ax = grid[old_r, c]
+                if _is_disabled(ax):
+                    continue
+                slot = new_gs[new_r, c]
+                ax.set_position(slot.get_position(fig))
+                if hasattr(ax, "set_subplotspec"):
+                    try:
+                        ax.set_subplotspec(slot)
+                    except Exception:
+                        pass
+
+        new_items       = [grid[r, c] for r in kept_rows for c in range(self.ncols)]
+        self[:]         = new_items
+        self.nrows      = len(kept_rows)
+
+        kept_ids        = {id(ax) for ax in new_items}
+        self._panel_map = {name: ax for name, ax in self._panel_map.items() if id(ax) in kept_ids}
+
+        if redraw:
+            try:
+                fig.canvas.draw_idle()
+            except Exception:
+                pass
+
+        return self
+
     def adjust(
         self,
         same: str = "xy",
@@ -1148,6 +1229,8 @@ class AxesList(list):
                         ax.tick_params(axis="y", which="both", **y_tick_params)
 
         return self
+
+    # ---------------------------------
 
     def __getitem__(self, key):
         ''' Support panel name access and 2D grid indexing.'''
