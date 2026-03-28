@@ -969,21 +969,53 @@ def operator_spectral_function_multi_omega(
     be = get_backend(backend)
     omegas = be.asarray(omegas)
     
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    eigenvectors = be.asarray(eigenvectors, dtype=be.complex128)
+    operator = be.asarray(operator, dtype=be.complex128)
+
+    # Ensure operator is 2D and properly shaped
+    if operator.ndim == 0:
+        # Scalar
+        operator = be.eye(len(eigenvalues), dtype=be.complex128) * operator
+    elif operator.ndim == 1:
+        # 1D array - make it diagonal
+        operator = be.diag(operator)
+
+    N = len(eigenvalues)
+
+    # Transform operator to eigenbasis: O_nm = <n|O|m>
+    O_eigen = eigenvectors.conj().T @ operator @ eigenvectors
+
+    # Thermal weights
+    rho = thermal_weights(eigenvalues, temperature, backend)
+
+    # Lorentzian broadening kernel
+    def lorentzian(delta_E):
+        return (eta / np.pi) / (delta_E**2 + eta**2)
+
     n_omega = len(omegas)
     A = be.zeros(n_omega, dtype=be.float64)
     
-    for i, omega in enumerate(omegas):
-        # Convert omega to Python float (avoid numpy scalar issues)
-        omega_val = float(omega) if hasattr(omega, '__float__') else omega
-        A_i = operator_spectral_function_lehmann(
-            omega_val, eigenvalues, eigenvectors, operator,
-            eta=eta, temperature=temperature, backend=backend
-        )
+    for m in range(N):
+        rho_diff = rho[m] - rho
+        mask = be.abs(rho_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        E_diff = eigenvalues - eigenvalues[m]
+        matrix_element_sq = be.abs(O_eigen[m, :])**2
+
+        # Broadcasting: omegas is (n_omega, 1), E_diff is (1, n_masked)
+        delta_E = omegas[:, None] - E_diff[mask][None, :]
+
+        A_vec = rho_diff[mask] * matrix_element_sq[mask] * lorentzian(delta_E)
+
         if JAX_AVAILABLE and backend == "jax":
-            A = A.at[i].set(A_i)
+            A = A + be.sum(A_vec, axis=-1)
         else:
-            A[i] = A_i
-    
+            A += be.sum(A_vec, axis=-1)
+
     return A
 
 # =============================================================================
@@ -1124,19 +1156,45 @@ def susceptibility_bubble_multi_omega(
     be = get_backend(backend)
     omegas = be.asarray(omegas)
     
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    omega_complex = be.asarray(omegas, dtype=be.complex128)
+    eta_complex = be.asarray(eta, dtype=be.complex128)
+
+    N = len(eigenvalues)
+
+    if vertex is None:
+        vertex = be.eye(N, dtype=be.complex128)
+    else:
+        vertex = be.asarray(vertex, dtype=be.complex128)
+
+    if occupation is None:
+        # T=0: all states below Fermi filled (filled Fermi sea)
+        occupation = be.where(eigenvalues < 0, 1.0, 0.0)
+    else:
+        occupation = be.asarray(occupation, dtype=be.float64)
+
     n_omega = len(omegas)
     chi = be.zeros(n_omega, dtype=be.complex128)
     
-    for i, omega in enumerate(omegas):
-        chi_i = susceptibility_bubble(
-            float(omega), eigenvalues, vertex, occupation,
-            eta=eta, backend=backend
-        )
+    for m in range(N):
+        occ_diff = occupation[m] - occupation
+        mask = be.abs(occ_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        E_diff = eigenvalues - eigenvalues[m]
+        V_mn_sq = be.abs(vertex[m, :])**2
+
+        denom = omega_complex[:, None] + 1j * eta_complex - E_diff[mask][None, :]
+
+        chi_vec = occ_diff[mask] * V_mn_sq[mask] / denom
+
         if JAX_AVAILABLE and backend == "jax":
-            chi = chi.at[i].set(chi_i)
+            chi = chi + be.sum(chi_vec, axis=-1)
         else:
-            chi[i] = chi_i
-    
+            chi += be.sum(chi_vec, axis=-1)
+
     return chi
 
 # =============================================================================
