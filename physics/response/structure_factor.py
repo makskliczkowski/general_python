@@ -70,6 +70,8 @@ def _structure_factor_kernel(energies: np.ndarray, matrix_elements: np.ndarray,
     return S_q_omega
 
 
+SPARSE_MATRIX_THRESHOLD = 1e-15
+
 def structure_factor_spin(
         initial_state: Array,
         hamiltonian_eigvals: Array,
@@ -155,10 +157,11 @@ def structure_factor_spin(
         # Energy differences
         energy_diffs = eigvals - E_i
         
-        # ⚡ Bolt: Optimization - Filter out zero matrix elements to avoid useless kernel iterations
-        mask = matrix_elements > 1e-15
-        energy_diffs = energy_diffs[mask]
-        matrix_elements = matrix_elements[mask]
+        # Optimization: Filter out zero matrix elements to avoid useless kernel iterations
+        mask = matrix_elements > SPARSE_MATRIX_THRESHOLD
+        if not np.all(mask):
+            energy_diffs = energy_diffs[mask]
+            matrix_elements = matrix_elements[mask]
 
         # Use fast kernel
         S_q_omega = _structure_factor_kernel(
@@ -189,18 +192,17 @@ def structure_factor_spin(
             # Matrix elements |<f|S_q|i>|^2
             matrix_elements = np.abs(S_q_eigenbasis[:, i_idx])**2
             
-            # ⚡ Bolt: Optimization - Filter out zero matrix elements
-            mask = matrix_elements > 1e-15
+            # Optimization: Filter out zero matrix elements to avoid useless kernel iterations
+            mask = matrix_elements > SPARSE_MATRIX_THRESHOLD
             if not np.any(mask):
                 continue
 
             # Energy differences
-            if np.all(mask):
-                # Fast path: mask selects all elements, avoid boolean indexing copies.
-                energy_diffs = eigvals - E_i
-            else:
+            if not np.all(mask):
                 energy_diffs = eigvals[mask] - E_i
                 matrix_elements = matrix_elements[mask]
+            else:
+                energy_diffs = eigvals - E_i
             
             # Add contribution from this initial state
             S_q_omega += rho_i * _structure_factor_kernel(
