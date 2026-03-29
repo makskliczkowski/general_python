@@ -155,6 +155,11 @@ def structure_factor_spin(
         # Energy differences
         energy_diffs = eigvals - E_i
         
+        # ⚡ Bolt: Optimization - Filter out zero matrix elements to avoid useless kernel iterations
+        mask = matrix_elements > 1e-15
+        energy_diffs = energy_diffs[mask]
+        matrix_elements = matrix_elements[mask]
+
         # Use fast kernel
         S_q_omega = _structure_factor_kernel(
             energy_diffs, matrix_elements, omega_grid, eta
@@ -184,8 +189,14 @@ def structure_factor_spin(
             # Matrix elements |<f|S_q|i>|^2
             matrix_elements = np.abs(S_q_eigenbasis[:, i_idx])**2
             
+            # ⚡ Bolt: Optimization - Filter out zero matrix elements
+            mask = matrix_elements > 1e-15
+            if not np.any(mask):
+                continue
+
             # Energy differences
-            energy_diffs = eigvals - E_i
+            energy_diffs = eigvals[mask] - E_i
+            matrix_elements = matrix_elements[mask]
             
             # Add contribution from this initial state
             S_q_omega += rho_i * _structure_factor_kernel(
