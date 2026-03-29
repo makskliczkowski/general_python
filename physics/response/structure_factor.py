@@ -195,8 +195,12 @@ def structure_factor_spin(
                 continue
 
             # Energy differences
-            energy_diffs = eigvals[mask] - E_i
-            matrix_elements = matrix_elements[mask]
+            if np.all(mask):
+                # Fast path: mask selects all elements, avoid boolean indexing copies.
+                energy_diffs = eigvals - E_i
+            else:
+                energy_diffs = eigvals[mask] - E_i
+                matrix_elements = matrix_elements[mask]
             
             # Add contribution from this initial state
             S_q_omega += rho_i * _structure_factor_kernel(
