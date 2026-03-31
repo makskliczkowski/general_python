@@ -911,13 +911,15 @@ def operator_spectral_function_lehmann(
     A = 0.0
     for m in range(N):
         rho_diff = rho[m] - rho
-        mask = be.abs(rho_diff) >= 1e-14
+        matrix_element_sq = be.abs(O_eigen[m, :])**2
+        # Optimization: Filter out zero matrix elements to avoid expensive evaluations
+        # and skip terms that contribute negligibly to the sum.
+        mask = (be.abs(rho_diff) >= 1e-14) & (matrix_element_sq > 1e-15)
 
         if not be.any(mask):
             continue
 
         delta_E = omega - (eigenvalues - eigenvalues[m])
-        matrix_element_sq = be.abs(O_eigen[m, :])**2
 
         A_vec = rho_diff[mask] * matrix_element_sq[mask] * lorentzian(delta_E[mask])
         A += be.sum(A_vec)
@@ -1075,13 +1077,15 @@ def susceptibility_bubble(
     chi = 0.0 + 0.0j
     for m in range(N):
         occ_diff = occupation[m] - occupation
-        mask = be.abs(occ_diff) >= 1e-14
+        V_mn_sq = be.abs(vertex[m, :])**2
+        # Optimization: Filter out zero matrix elements to avoid expensive evaluations
+        # and skip terms that contribute negligibly to the sum.
+        mask = (be.abs(occ_diff) >= 1e-14) & (V_mn_sq > 1e-15)
 
         if not be.any(mask):
             continue
 
         denom = omega_complex + 1j * eta_complex - (eigenvalues - eigenvalues[m])
-        V_mn_sq = be.abs(vertex[m, :])**2
 
         chi_vec = occ_diff[mask] * V_mn_sq[mask] / denom[mask]
         chi += be.sum(chi_vec)
