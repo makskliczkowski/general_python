@@ -78,7 +78,9 @@ def _compute_lehmann_components(
     M           = be.abs(A_q_eigen)**2
     Omega_nm    = eigvals[None, :] - eigvals[:, None]
 
-    mask        = be.abs(R) > 1e-12
+    # Optimize by pruning negligible thermal weights and matrix elements (M < 1e-15)
+    # This reduces array sizes and skips calculations for forbidden/negligible transitions.
+    mask        = (be.abs(R) > 1e-12) & (M > 1e-15)
     weighted    = R[mask] * M[mask]
     Omega_flat  = Omega_nm[mask]
 
