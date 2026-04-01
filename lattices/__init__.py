@@ -21,11 +21,23 @@ Numerical stability and determinism
 Topology construction is deterministic for fixed parameters. Floating-point
 roundoff can affect reciprocal-space formatting or plotting labels but should not
 change connectivity.
+
+
+-----------------------------------
+file            : general_python/lattices/__init__.py
+author          : Maksymilian Kliczkowski
+email           : maxgrom97@gmail.com
+license         : MIT
+version         : 1.0
+-----------------------------------
 """
+
+from __future__ import annotations
+from typing     import TYPE_CHECKING
 
 import importlib
 from collections                import OrderedDict
-from typing                     import TYPE_CHECKING, Optional, Tuple, Type, Union
+from typing                     import Optional, Tuple, Type, Union
 import numpy                    as np
 if TYPE_CHECKING:
     import matplotlib.axes      as pltAxes
@@ -47,6 +59,7 @@ from .lattice       import (
     KPathResult,
     StandardBZPath,
 )
+
 from .square        import SquareLattice
 from .hexagonal     import HexagonalLattice
 from .honeycomb     import HoneycombLattice
@@ -72,6 +85,12 @@ from .visualization import (
 # Import region utilities and tools
 from . import tools
 from .tools.region_handler import RegionType, LatticeRegionHandler
+
+# All type checks
+if TYPE_CHECKING:
+    from .tools.regions import KPRegion, LWRegion, HalfRegions, DiskRegion, PlaquetteRegion, CustomRegion, Region
+
+# --------------------------------------------------------------------------------------------------
 
 __all__ = [
     "BoundaryFlux",

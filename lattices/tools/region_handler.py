@@ -54,7 +54,6 @@ from    typing      import List, Optional, Union, Dict, Any, Tuple, TYPE_CHECKIN
 from    enum        import Enum
 from    itertools   import combinations
 
-
 class RegionType(Enum):
     """Supported region types for :meth:`LatticeRegionHandler.get_region`."""
     HALF            = "half"

@@ -293,16 +293,24 @@ class Directories(object):
 
     def list_dirs(self,
                 *,
-                include_empty: bool = True,
-                relative: bool = False,
-                as_string: bool = False,
-                filters: List[Callable[[Path], bool]] = [],
-                sort_key: Optional[Callable[[Path], Any]] = None) -> List[Path]:
+                include_empty   : bool = True,
+                include_hidden  : bool = True,
+                relative        : bool = False,
+                as_string       : bool = False,
+                filters         : List[Callable[[Path], bool]] = [],
+                sort_key        : Optional[Callable[[Path], Any]] = None) -> List[Path]:
         """
         List directories in this directory.
-        - include_empty : if False, skip empty directories.
-        - filters       : a list of callables Path->bool; all must pass.
-        - sort_key      : key function for sorting.
+        
+        Parameters
+        ----------
+        include_empty: bool
+            if False, skip empty directories. If True, include all directories. 
+            This checks only if the directory has any entries, not if they are files or directories.
+        filters : list of callables Path -> bool
+            A list of callables; all must return True for a directory to be included.
+        sort_key : callable, optional
+            Key function for sorting the results.
         """
         try:
             dirs = [p for p in self.path.iterdir() if p.is_dir()]
@@ -319,13 +327,16 @@ class Directories(object):
             return []
 
         if not include_empty:
-            dirs = [p for p in dirs if not any(p.iterdir())]
-
+            dirs = [p for p in dirs if any(p.iterdir())]
+            
+        if not include_hidden:
+            dirs = [p for p in dirs if not p.name.startswith('.')]
+            
         for f in filters:
             try:
                 dirs = list(filter(f, dirs))
             except Exception as e:
-                print(f"Error applying filter {f.__name__}: {e}")
+                print(f"Error applying filter {repr(f)}: {e}")
                 continue
 
         if sort_key:

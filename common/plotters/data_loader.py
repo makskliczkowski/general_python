@@ -462,17 +462,22 @@ def filter_results(
         - None: return all
         - callable: `filters(result) -> bool`
         - dict: `{param: condition}` where condition supports:
-          - scalar exact match (numeric with tolerance)
-          - list/tuple/set membership
-          - tuple operators: ('eq'|'neq'|'lt'|'le'|'gt'|'ge', value)
-          - range operator: ('between', (min, max))
-          - membership operators: ('in'|'not_in', [v1, ...])
-          - string contains: ('contains', 'sub')
-          - callable: `lambda param_value, params: ...`
+            - scalar exact match (numeric with tolerance)
+            - list/tuple/set membership
+            - tuple operators: ('eq'|'neq'|'lt'|'le'|'gt'|'ge', value)
+            - range operator: ('between', (min, max))
+            - membership operators: ('in'|'not_in', [v1, ...])
+            - string contains: ('contains', 'sub')
+            - callable: `lambda param_value, params: ...`
     get_params_fun:
         Optional extractor `f(result) -> dict`.
     tol:
         Numeric tolerance for equality-like checks.
+        
+    Returns
+    -------
+    ResultSet
+        Filtered results as a ResultSet with the same get_params_fun and tol.
     """
     source      = _as_result_set(results, get_params_fun=get_params_fun, tol=tol)
     extractor   = source.get_params_fun if get_params_fun is None else get_params_fun
@@ -545,14 +550,13 @@ def load_results(
         - None: return all
         - callable: `filters(result) -> bool`
         - dict: `{param: condition}` where condition supports:
-          - scalar exact match (numeric with tolerance)
-          - list/tuple/set membership
-          - tuple operators: ('eq'|'neq'|'lt'|'le'|'gt'|'ge', value)
-          - range operator: ('between', (min, max))
-          - membership operators: ('in'|'not_in', [v1, ...])
-          - string contains: ('contains', 'sub')
-          - callable: `lambda param_value, params: ...`
-          
+            - scalar exact match (numeric with tolerance)
+            - list/tuple/set membership
+            - tuple operators: ('eq'|'neq'|'lt'|'le'|'gt'|'ge', value)
+            - range operator: ('between', (min, max))
+            - membership operators: ('in'|'not_in', [v1, ...])
+            - string contains: ('contains', 'sub')
+            - callable: `lambda param_value, params: ...`
     lx, ly, lz, Ns:
         Optional shortcuts for filtering by common size parameters. If provided, they are applied as additional filters on top of `filters`.
     post_process_func:

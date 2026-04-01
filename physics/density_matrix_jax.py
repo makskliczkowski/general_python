@@ -22,7 +22,7 @@ try:
     import  jax
     import  jax.numpy as jnp
     from    jax import jit
-    JAX_AVAILABLE = True
+    JAX_AVAILABLE   = True
 except ImportError:
     jax             = None
     jnp             = None
