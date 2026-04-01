@@ -1,250 +1,238 @@
 """
-Test fermionic sign-corrected RDM vs correlation matrix method.
+Test fermionic RDM with sign corrections for non-contiguous subsystems.
 
+For fermionic systems, computing the reduced density matrix of a non-contiguous
+subsystem requires sign corrections due to fermionic anticommutation relations.
 This test validates that:
-1. For Gaussian states (Slater determinants), fermionic RDM entropy matches
-   the correlation matrix method for ALL subsystem geometries.
-2. For non-Gaussian states (superpositions), fermionic RDM still works
-   while correlation matrix method is not applicable.
 
-The key insight is that with fermionic sign corrections applied during
-tensor reshape, the Schmidt decomposition correctly handles non-contiguous
-subsystems in fermionic systems.
+1. Fermionic RDM matches correlation matrix entropy for Gaussian states
+2. Works for ALL subsystem geometries (contiguous and non-contiguous)
+3. Produces valid density matrices (Hermitian, positive, trace=1)
+4. Satisfies S(A) = S(complement) for pure states
 """
 
 import numpy as np
-from typing import Union, List
+import sys
+sys.path.insert(0, '/home/klimak/Codes/QuantumEigenSolver/pyqusolver/Python')
+
+from QES.general_python.physics.density_matrix import rho, schmidt
 
 
-def fermionic_correlation_matrix(
-    eigvecs: np.ndarray,
-    occupied_orbitals: Union[List[int], np.ndarray]
-) -> np.ndarray:
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+def random_quadratic_hamiltonian(ns: int, seed: int = 42) -> np.ndarray:
+    """Create random Hermitian single-particle Hamiltonian."""
+    np.random.seed(seed)
+    H = np.random.randn(ns, ns) + 1j * np.random.randn(ns, ns)
+    return (H + H.conj().T) / 2
+
+
+def slater_determinant(eigvecs: np.ndarray, occupied: list) -> np.ndarray:
     """
-    Compute the single-particle correlation matrix C_{ij} = <c_i^dag c_j>.
+    Build many-body state from occupied single-particle orbitals.
     
-    Parameters
-    ----------
-    eigvecs : np.ndarray
-        Single-particle eigenvector matrix, shape (ns, ns).
-        Convention: eigvecs[site, orbital]
-    occupied_orbitals : array-like
-        Indices of occupied single-particle orbitals.
-    
-    Returns
-    -------
-    np.ndarray
-        Correlation matrix C, shape (ns, ns), Hermitian with eigenvalues in [0,1].
-        Satisfies: Tr(C) = number of particles
+    For N fermions in orbitals {k1, k2, ...}, the coefficient of basis state
+    |n_0, n_1, ...> is the determinant of the submatrix eigvecs[sites, occupied].
     """
     ns = eigvecs.shape[0]
-    occ_vec = np.zeros(ns, dtype=eigvecs.real.dtype)
-    occ_vec[occupied_orbitals] = 1.0
+    n_particles = len(occupied)
+    psi = np.zeros(2**ns, dtype=np.complex128)
     
-    # C = W @ diag(n) @ W^dag
-    return eigvecs @ np.diag(occ_vec) @ eigvecs.conj().T
+    for idx in range(2**ns):
+        if bin(idx).count('1') != n_particles:
+            continue
+        sites = [i for i in range(ns) if (idx >> i) & 1]
+        psi[idx] = np.linalg.det(eigvecs[np.ix_(sites, occupied)])
+    
+    return psi / np.linalg.norm(psi)
 
 
-def correlation_matrix_entropy(
-    corr_matrix: np.ndarray,
-    subsystem: Union[int, List[int], np.ndarray]
-) -> float:
+def correlation_matrix_entropy(eigvecs: np.ndarray, occupied: list, 
+                                subsystem: list) -> float:
     """
-    Compute fermionic entanglement entropy from correlation matrix.
+    Compute entropy from single-particle correlation matrix (ground truth).
     
-    This is the correct method for Gaussian fermionic states.
-    Works for ANY subsystem geometry (contiguous or non-contiguous).
-    
-    Parameters
-    ----------
-    corr_matrix : np.ndarray
-        Full correlation matrix C_{ij} = <c_i^dag c_j>, shape (ns, ns).
-    subsystem : int or array-like
-        If int: contiguous subsystem of first `subsystem` sites.
-        If array: indices of sites in subsystem A (any geometry).
-    
-    Returns
-    -------
-    float
-        Fermionic entanglement entropy S_A.
+    For Gaussian states: S = -sum_k [nu*log(nu) + (1-nu)*log(1-nu)]
+    where nu are eigenvalues of the restricted correlation matrix.
     """
-    if isinstance(subsystem, int):
-        indices = np.arange(subsystem)
-    else:
-        indices = np.asarray(subsystem)
+    ns = eigvecs.shape[0]
+    occ = np.zeros(ns)
+    occ[occupied] = 1.0
+    C = eigvecs @ np.diag(occ) @ eigvecs.conj().T
     
-    C_A = corr_matrix[np.ix_(indices, indices)]
-    eigs = np.linalg.eigvalsh(C_A)
-    
-    eps = 1e-14
-    nu = np.clip(eigs, eps, 1.0 - eps)
+    C_A = C[np.ix_(subsystem, subsystem)]
+    nu = np.linalg.eigvalsh(C_A)
+    nu = np.clip(nu, 1e-14, 1 - 1e-14)
     return float(-np.sum(nu * np.log(nu) + (1 - nu) * np.log(1 - nu)))
 
 
-def test_fermionic_rdm_vs_correlation_matrix():
+def rdm_entropy(psi: np.ndarray, subsystem: list, ns: int, 
+                fermionic: bool = True) -> float:
+    """Compute entropy from reduced density matrix."""
+    rho_A = rho(psi, va=subsystem, ns=ns, fermionic=fermionic)
+    eigs = np.linalg.eigvalsh(rho_A)
+    eigs = eigs[eigs > 1e-14]
+    return float(-np.sum(eigs * np.log(eigs)))
+
+
+def is_contiguous(subsystem: list) -> bool:
+    """Check if subsystem sites are contiguous."""
+    s = sorted(subsystem)
+    return s == list(range(min(s), max(s) + 1))
+
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+def test_fermionic_vs_correlation_matrix():
     """
-    Validate fermionic RDM method against correlation matrix for Gaussian states.
+    Test: Fermionic RDM matches correlation matrix for all subsystem types.
     
-    For Slater determinants (Gaussian states), both methods should give
-    identical results for ANY subsystem geometry, including non-contiguous.
+    This is the main validation that sign corrections work correctly.
     """
-    import sys
-    sys.path.insert(0, '/home/klimak/Codes/QuantumEigenSolver/pyqusolver/Python')
+    print("Test 1: Fermionic RDM vs Correlation Matrix")
+    print("-" * 50)
     
-    from QES.Algebra.hamil_quadratic import QuadraticHamiltonian
-    from QES.general_python.physics.density_matrix import (
-        schmidt, rho, fermionic_entanglement_entropy
-    )
-    from QES.general_python.physics.entropy import vn_entropy
+    ns, n_particles = 6, 3
+    H = random_quadratic_hamiltonian(ns, seed=42)
+    eigvals, eigvecs = np.linalg.eigh(H)
+    occupied = list(range(n_particles))
+    psi = slater_determinant(eigvecs, occupied)
     
-    ns = 6
-    np.random.seed(42)
-    
-    # Create random quadratic Hamiltonian
-    model = QuadraticHamiltonian(ns=ns, conserves_particles=True, dtype=np.complex128)
-    for i in range(ns):
-        for j in range(i+1, ns):
-            t = np.random.randn() + 1j * np.random.randn()
-            model.add_hopping(i, j, t)
-        model.add_onsite(i, np.random.randn())
-    model.build()
-    model.diagonalize()
-    
-    n_particles = ns // 2
-    occupied = np.argsort(model.eig_val)[:n_particles]
-    
-    # Compute correlation matrix and many-body state
-    C = fermionic_correlation_matrix(model.eig_vec, occupied)
-    psi = model.many_body_state(occupied_orbitals=list(occupied))
-    
-    print("="*70)
-    print("Test: Fermionic RDM vs Correlation Matrix Method")
-    print("="*70)
-    print(f"System: {ns} sites, {n_particles} fermions")
-    print()
-    
-    test_subsystems = [
-        [0, 1],           # Contiguous
-        [0, 1, 2],        # Contiguous
-        [0, 2],           # Non-contiguous (gap of 1)
-        [0, 2, 4],        # Non-contiguous (alternating)
-        [1, 3, 5],        # Non-contiguous (odd sites)
-        [0, 3],           # Non-contiguous (large gap)
+    subsystems = [
+        [0, 1],        # contiguous
+        [0, 1, 2],     # contiguous
+        [0, 2],        # non-contiguous
+        [0, 2, 4],     # non-contiguous (alternating)
+        [1, 3, 5],     # non-contiguous (odd sites)
     ]
     
-    all_passed = True
-    
-    for subsystem in test_subsystems:
-        if max(subsystem) >= ns:
-            continue
-        
-        # Method 1: Correlation matrix entropy (ground truth for Gaussian)
-        S_corr = correlation_matrix_entropy(C, subsystem)
-        
-        # Method 2: Fermionic RDM entropy (our new implementation)
-        S_fermi_rdm = fermionic_entanglement_entropy(psi, subsystem, ns=ns)
-        
-        # Method 3: Standard RDM (without fermionic correction) for comparison
-        s_sq_std = schmidt(state=psi, va=subsystem, ns=ns, contiguous=False,
-                          fermionic=False, eig=False, square=True, return_vecs=False)
-        S_std_rdm = vn_entropy(s_sq_std / np.sum(s_sq_std))
-        
-        # Check if contiguous
-        is_contig = (subsystem == list(range(min(subsystem), max(subsystem)+1)))
-        
-        # For Gaussian states, fermionic RDM should match correlation matrix
-        match_fermi = np.allclose(S_fermi_rdm, S_corr, atol=1e-10)
-        
-        # Standard RDM only matches for contiguous subsystems
-        match_std = np.allclose(S_std_rdm, S_corr, atol=1e-10)
-        
-        status_fermi = "PASS" if match_fermi else "FAIL"
-        status_std = "PASS" if match_std else ("expected" if not is_contig else "FAIL")
-        
-        if not match_fermi:
-            all_passed = False
-        if is_contig and not match_std:
-            all_passed = False
-        
-        geom = "contig" if is_contig else "non-contig"
-        print(f"  {str(subsystem):15} ({geom:9}): "
-              f"Corr={S_corr:.6f}  FermiRDM={S_fermi_rdm:.6f} [{status_fermi}]  "
-              f"StdRDM={S_std_rdm:.6f} [{status_std}]")
-    
-    print()
-    if all_passed:
-        print("All tests PASSED")
-        print("  - Fermionic RDM matches correlation matrix for ALL geometries")
-        print("  - Standard RDM only matches for contiguous subsystems")
-    else:
-        print("SOME TESTS FAILED!")
-    
-    return all_passed
-
-
-def test_superposition_of_slater_determinants():
-    """
-    Test fermionic RDM for non-Gaussian states (superpositions).
-    
-    For superpositions of Slater determinants:
-    - Correlation matrix method is NOT applicable
-    - Fermionic RDM should still give correct results
-    - We verify internal consistency (contiguous vs same-result expectations)
-    """
-    import sys
-    sys.path.insert(0, '/home/klimak/Codes/QuantumEigenSolver/pyqusolver/Python')
-    
-    from QES.Algebra.hamil_quadratic import QuadraticHamiltonian
-    from QES.general_python.physics.density_matrix import fermionic_entanglement_entropy
-    
-    ns = 4
-    np.random.seed(123)
-    
-    # Create two different Slater determinants
-    model = QuadraticHamiltonian(ns=ns, conserves_particles=True, dtype=np.complex128)
-    for i in range(ns):
-        for j in range(i+1, ns):
-            model.add_hopping(i, j, np.random.randn())
-        model.add_onsite(i, np.random.randn())
-    model.build()
-    model.diagonalize()
-    
-    # Ground state and first excited state (different occupied orbitals)
-    energies = model.eig_val
-    occupied_gs = [0, 1]  # Two lowest energy orbitals
-    occupied_ex = [0, 2]  # Different occupation
-    
-    psi_gs = model.many_body_state(occupied_orbitals=occupied_gs)
-    psi_ex = model.many_body_state(occupied_orbitals=occupied_ex)
-    
-    # Create superposition (non-Gaussian state)
-    psi_super = (psi_gs + psi_ex) / np.sqrt(2)
-    psi_super /= np.linalg.norm(psi_super)
-    
-    print()
-    print("="*70)
-    print("Test: Superposition of Slater Determinants")
-    print("="*70)
-    print(f"System: {ns} sites, superposition of 2 Slater determinants")
-    print()
-    
-    subsystems = [[0, 1], [0, 2], [1, 3]]
-    
+    all_pass = True
     for sub in subsystems:
-        S = fermionic_entanglement_entropy(psi_super, sub, ns=ns)
-        geom = "contig" if sub == list(range(min(sub), max(sub)+1)) else "non-contig"
-        print(f"  {str(sub):10} ({geom:9}): S = {S:.6f}")
+        S_corr = correlation_matrix_entropy(eigvecs, occupied, sub)
+        S_fermi = rdm_entropy(psi, sub, ns, fermionic=True)
+        
+        match = np.isclose(S_fermi, S_corr, atol=1e-10)
+        all_pass &= match
+        
+        status = "PASS" if match else "FAIL"
+        contig = "contig" if is_contiguous(sub) else "non-contig"
+        print(f"  {str(sub):12} ({contig:10}): {status}")
     
-    print()
-    print("Superposition test complete (fermionic RDM computes without error)")
-    return True
+    return all_pass
 
+
+def test_rdm_properties():
+    """
+    Test: RDM is Hermitian, positive semi-definite, trace = 1.
+    """
+    print("\nTest 2: RDM Properties")
+    print("-" * 50)
+    
+    ns, n_particles = 5, 2
+    H = random_quadratic_hamiltonian(ns, seed=123)
+    _, eigvecs = np.linalg.eigh(H)
+    psi = slater_determinant(eigvecs, list(range(n_particles)))
+    
+    subsystem = [0, 2, 4]  # non-contiguous
+    rho_A = rho(psi, va=subsystem, ns=ns, fermionic=True)
+    
+    is_hermitian = np.allclose(rho_A, rho_A.conj().T)
+    eigvals = np.linalg.eigvalsh(rho_A)
+    is_positive = np.all(eigvals >= -1e-12)
+    trace_one = np.isclose(np.trace(rho_A).real, 1.0)
+    
+    print(f"  Hermitian:    {is_hermitian}")
+    print(f"  Positive:     {is_positive}")
+    print(f"  Trace = 1:    {trace_one}")
+    
+    return is_hermitian and is_positive and trace_one
+
+
+def test_entropy_symmetry():
+    """
+    Test: S(A) = S(complement of A) for pure states.
+    """
+    print("\nTest 3: Entropy Symmetry S(A) = S(B)")
+    print("-" * 50)
+    
+    ns, n_particles = 6, 3
+    H = random_quadratic_hamiltonian(ns, seed=456)
+    _, eigvecs = np.linalg.eigh(H)
+    psi = slater_determinant(eigvecs, list(range(n_particles)))
+    
+    test_cases = [[0, 2], [0, 2, 4], [1, 3, 5]]
+    
+    all_pass = True
+    for sub in test_cases:
+        complement = [i for i in range(ns) if i not in sub]
+        
+        S_A = rdm_entropy(psi, sub, ns, fermionic=True)
+        S_B = rdm_entropy(psi, complement, ns, fermionic=True)
+        
+        match = np.isclose(S_A, S_B, atol=1e-10)
+        all_pass &= match
+        
+        status = "PASS" if match else "FAIL"
+        print(f"  A={sub}, B={complement}: {status}")
+    
+    return all_pass
+
+
+def test_contiguous_no_correction_needed():
+    """
+    Test: Subsystems starting from site 0 need no permutation, so no correction.
+    
+    Only [0], [0,1], [0,1,2], etc. have trivial permutation order.
+    Other contiguous subsystems like [1,2,3] still require site reordering.
+    """
+    print("\nTest 4: Contiguous from Site 0 (no permutation needed)")
+    print("-" * 50)
+    
+    ns = 5
+    np.random.seed(789)
+    psi = np.random.randn(2**ns) + 1j * np.random.randn(2**ns)
+    psi /= np.linalg.norm(psi)
+    
+    # Only subsystems starting from 0 have trivial order
+    subsystems = [[0], [0, 1], [0, 1, 2], [0, 1, 2, 3]]
+    
+    all_pass = True
+    for sub in subsystems:
+        rho_std = rho(psi, va=sub, ns=ns, fermionic=False)
+        rho_fermi = rho(psi, va=sub, ns=ns, fermionic=True)
+        
+        match = np.allclose(rho_std, rho_fermi)
+        all_pass &= match
+        
+        status = "PASS" if match else "FAIL"
+        print(f"  {str(sub):12}: std == fermi? {status}")
+    
+    return all_pass
+
+
+# =============================================================================
+# Main
+# =============================================================================
 
 if __name__ == "__main__":
-    print()
-    passed1 = test_fermionic_rdm_vs_correlation_matrix()
-    passed2 = test_superposition_of_slater_determinants()
-    print()
-    print("="*70)
-    print(f"Overall: {'ALL PASSED' if (passed1 and passed2) else 'SOME FAILED'}")
-    print("="*70)
+    print("=" * 50)
+    print("Fermionic RDM Sign Correction Tests")
+    print("=" * 50)
+    
+    results = [
+        test_fermionic_vs_correlation_matrix(),
+        test_rdm_properties(),
+        test_entropy_symmetry(),
+        test_contiguous_no_correction_needed(),
+    ]
+    
+    print("\n" + "=" * 50)
+    if all(results):
+        print("ALL TESTS PASSED")
+    else:
+        print("SOME TESTS FAILED")
+    print("=" * 50)
