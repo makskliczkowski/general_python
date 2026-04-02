@@ -312,6 +312,7 @@ class Region:
     ) -> List[RegionSubset]:
         """
         Enumerate connected subsets with ``min_size <= |R| <= max_size``.
+        Optimized to avoid redundant explorations by anchoring search at minimum node.
         """
         max_size = int(max_size)
         min_size = int(min_size)
@@ -324,36 +325,38 @@ class Region:
         if not allowed:
             return []
 
-        regions: Set[RegionSubset] = set()
+        found_regions: Set[RegionSubset] = set()
+        
+        # To avoid redundant work, we anchor each subset by its minimum element 'start'.
+        # We only add nodes 'v' such that v > start.
         for start in sorted(allowed):
-            stack = [(frozenset({start}), set(adj_map[start]) & allowed)]
-            # While the stack (which is a list of (current_cluster, frontier) pairs) is not empty:
+            # stack stores (current_cluster, candidates_to_add)
+            # candidates_to_add are neighbors of the cluster that are > start.
+            initial_frontier = {v for v in adj_map[start] if v > start and v in allowed}
+            stack = [(frozenset({start}), initial_frontier)]
+            
             while stack:
-                
-                # Pop the last element from the stack, which gives us the current cluster and its frontier.
                 cluster, frontier = stack.pop()
-                if min_size <= len(cluster) <= max_size:
-                    regions.add(cluster)
-                    if max_regions is not None and len(regions) >= int(max_regions):
-                        return sorted(regions, key=lambda s: (len(s), tuple(sorted(s))))
                 
-                # If the current cluster has already reached the maximum size, we skip expanding it further.
-                if len(cluster) >= max_size:
-                    continue
+                if len(cluster) >= min_size:
+                    found_regions.add(cluster)
+                    if max_regions is not None and len(found_regions) >= int(max_regions):
+                        return sorted(found_regions, key=lambda s: (len(s), tuple(sorted(s))))
                 
-                # Iterate over the vertices in the frontier. 
-                # For each vertex, if it is not already in the cluster, 
-                # we create a new cluster by adding this vertex to the current cluster.
-                for v in sorted(frontier):
-                    if v in cluster:
-                        continue
-                    new_cluster = frozenset(set(cluster) | {v})
-                    if len(new_cluster) > max_size:
-                        continue
-                    new_frontier = ((frontier | adj_map[v]) - set(new_cluster)) & allowed
-                    stack.append((new_cluster, new_frontier))
+                if len(cluster) < max_size:
+                    # Try adding each node in the frontier
+                    frontier_list = sorted(list(frontier))
+                    for i, v in enumerate(frontier_list):
+                        new_cluster = cluster | {v}
+                        # New frontier: existing frontier (minus current node and those before it to avoid permutations)
+                        # plus new neighbors of 'v' that are > start and not in cluster.
+                        new_neighs = {nb for nb in adj_map[v] if nb > start and nb in allowed and nb not in new_cluster}
+                        # Important: to avoid finding same set {A, B, C} as {A, B} + {C} and {A, C} + {B},
+                        # we only pass the remaining frontier nodes.
+                        new_frontier = set(frontier_list[i+1:]) | new_neighs
+                        stack.append((new_cluster, new_frontier))
 
-        return sorted(regions, key=lambda s: (len(s), tuple(sorted(s))))
+        return sorted(found_regions, key=lambda s: (len(s), tuple(sorted(s))))
 
     @staticmethod
     def regions_touch(left: Iterable[int], right: Iterable[int], adj: Any) -> bool:
@@ -486,9 +489,14 @@ class Region:
         # Output constraints:
         max_regions                     : Optional[int] = None,
         extra                           : Optional[Callable[['Region'], bool]] = None,
+        shuffle                         : bool = True,
+        seed                            : Optional[int] = 42,
     ) -> List['Region']:
         """
         Generate many disjoint tripartite regions ``(A, B, C)``.
+        
+        Optimized by shuffling candidates to find valid combinations faster when max_regions is set.
+
         Parameters
         ----------
         region_cls : Optional[Type['Region']]
@@ -520,6 +528,11 @@ class Region:
         extra : Optional[Callable[['Region'], bool]]
             An optional function that takes a Region instance and returns True if it should be included in the
             output list, and False otherwise. This allows for additional custom filtering of the generated regions.
+        shuffle : bool
+            If True, shuffle candidate subsets before attempting combinations. This significantly improves 
+            discovery speed for large systems when max_regions is used.
+        seed : Optional[int]
+            Random seed for reproducibility when shuffle=True.
             
         Returns
         -------
@@ -542,9 +555,6 @@ class Region:
         max_part    = max(sa[1], sb[1], sc[1])
         min_part    = min(sa[0], sb[0], sc[0])
         if require_connected_parts:
-            # Do not truncate subset candidates at this stage. Early truncation
-            # can bias toward low-index anchors and eliminate all valid
-            # disjoint A/B/C combinations for larger min_size.
             subsets = cls.connected_subsets(adj_map, max_size=max_part, nodes=allowed, min_size=min_part, max_regions=None)
         else:
             subsets = []
@@ -557,11 +567,16 @@ class Region:
         cand_b = [s for s in subsets if sb[0] <= len(s) <= sb[1]]
         cand_c = [s for s in subsets if sc[0] <= len(s) <= sc[1]]
 
+        if shuffle:
+            rng = np.random.default_rng(seed)
+            rng.shuffle(cand_a)
+            rng.shuffle(cand_b)
+            rng.shuffle(cand_c)
+
         out: List[Region] = []
         for a_set in cand_a:
             a_nodes = set(a_set)
             
-            # For each candidate subset for region A, we will iterate over the candidate subsets for region B.
             for b_set in cand_b:
                 b_nodes = set(b_set)
                 if a_nodes & b_nodes:
