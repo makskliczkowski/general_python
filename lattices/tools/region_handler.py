@@ -1437,6 +1437,317 @@ class LatticeRegionHandler:
         regions['ABC'] = sorted(set(regions['A']) | set(regions['B']) | set(regions['C']))
         return regions
 
+    # ------------------------------------------------------------------------------
+    #! Subsystem Boundary Methods (for entanglement entropy scaling)
+    # ------------------------------------------------------------------------------
+
+    def subsystem_boundary(
+        self,
+        subsystem           : Union[int, List[int], np.ndarray],
+        *,
+        include_nnn         : bool = False,
+        return_bonds        : bool = False,
+    ) -> Union[int, Tuple[int, List[Tuple[int, int]]]]:
+        r"""
+        Compute the boundary size dA of a subsystem.
+        
+        The boundary dA is the number of bonds (edges) that cross between
+        subsystem A and its complement B. This is the quantity that appears
+        in the area law of entanglement entropy: S ~ dA for gapped systems.
+        
+        Parameters
+        ----------
+        subsystem : int, list, or array
+            Specification of subsystem A:
+            - If int: First `subsystem` sites (contiguous from 0)
+            - If list/array: Explicit site indices
+        include_nnn : bool, default=False
+            If True, include next-nearest-neighbor bonds in the boundary count.
+        return_bonds : bool, default=False
+            If True, also return the list of boundary bonds.
+            
+        Returns
+        -------
+        dA : int
+            Number of bonds crossing the boundary (|dA|).
+        boundary_bonds : list of (int, int), optional
+            If return_bonds=True, the list of (i, j) bonds where i in A, j in B.
+            
+        Examples
+        --------
+        >>> # Compute boundary for half-system cut
+        >>> lattice     = SquareLattice(Lx=4, Ly=4, bc='obc')
+        >>> half_sites  = lattice.regions.region_half('x').A
+        >>> dA          = lattice.regions.subsystem_boundary(half_sites)
+        >>> print(f"Boundary size: {dA}") # Should be Ly for x-cut
+        
+        >>> # Get boundary bonds explicitly
+        >>> dA, bonds   = lattice.regions.subsystem_boundary([0, 1, 2], return_bonds=True)
+        >>> print(f"Boundary bonds: {bonds}")
+        
+        Notes
+        -----
+        For area-law scaling in d dimensions, S ~ L^{d-1} where L is linear size.
+        The boundary dA counts bonds, which for regular lattices is proportional
+        to the surface area of the subsystem.
+        
+        For periodic boundary conditions, bonds wrapping around the system are
+        counted correctly using the lattice connectivity.
+        """
+        # Parse subsystem
+        if isinstance(subsystem, (int, np.integer)):
+            subsystem_set = set(range(int(subsystem)))
+        else:
+            subsystem_set = set(int(s) for s in np.asarray(subsystem).ravel())
+        
+        # Validate
+        ns = int(self.lattice.Ns)
+        if not subsystem_set:
+            if return_bonds:
+                return 0, []
+            return 0
+        if not all(0 <= s < ns for s in subsystem_set):
+            raise ValueError(f"Subsystem indices must be in [0, {ns})")
+        
+        # Collect boundary bonds: bonds (i, j) where i in A, j in B
+        boundary_bonds = []
+        
+        # Use lattice edges (undirected bonds)
+        for edge in self.lattice.edges():
+            i, j    = int(edge[0]), int(edge[1])  # Ensure integer indices
+            i_in_A  = i in subsystem_set
+            j_in_A  = j in subsystem_set
+            
+            # Bond crosses boundary if exactly one endpoint is in A
+            if i_in_A != j_in_A:
+                # Normalize to (site_in_A, site_in_B) order
+                if i_in_A:
+                    boundary_bonds.append((i, j))
+                else:
+                    boundary_bonds.append((j, i))
+        
+        # Optionally include NNN bonds
+        if include_nnn and hasattr(self.lattice, 'nnn'):
+            seen = set()
+            for site in range(ns):
+                for neighbor in self.lattice.nnn[site]:
+                    if neighbor < 0 or neighbor >= ns:
+                        continue
+                    # Avoid double-counting (use canonical order)
+                    edge_key = (min(site, neighbor), max(site, neighbor))
+                    if edge_key in seen:
+                        continue
+                    seen.add(edge_key)
+                    
+                    site_in_A       = site in subsystem_set
+                    neighbor_in_A   = neighbor in subsystem_set
+                    
+                    if site_in_A != neighbor_in_A:
+                        if site_in_A:
+                            boundary_bonds.append((site, neighbor))
+                        else:
+                            boundary_bonds.append((neighbor, site))
+        
+        dA = len(boundary_bonds)
+        
+        if return_bonds:
+            return dA, boundary_bonds
+        return dA
+
+    def subsystem_boundary_sites(
+        self,
+        subsystem           : Union[int, List[int], np.ndarray],
+        *,
+        include_complement  : bool = False,
+        include_nnn         : bool = False,
+    ) -> Union[List[int], Tuple[List[int], List[int]]]:
+        r"""
+        Find sites in subsystem A that lie on the boundary.
+        
+        A site in A is a "boundary site" if it has at least one neighbor in B
+        (the complement of A).
+        
+        Parameters
+        ----------
+        subsystem : int, list, or array
+            Specification of subsystem A.
+        include_complement : bool, default=False
+            If True, also return boundary sites in B (complement).
+        include_nnn : bool, default=False
+            If True, include next-nearest-neighbor connectivity.
+            
+        Returns
+        -------
+        boundary_A : list of int
+            Sites in A that have neighbors in B.
+        boundary_B : list of int, optional
+            If include_complement=True, sites in B that have neighbors in A.
+            
+        Examples
+        --------
+        >>> half = lattice.regions.region_half('x').A
+        >>> boundary_sites = lattice.regions.subsystem_boundary_sites(half)
+        >>> print(f"Boundary sites in A: {boundary_sites}")
+        """
+        _, boundary_bonds = self.subsystem_boundary(subsystem, include_nnn=include_nnn, return_bonds=True)
+        
+        # Sites in A on boundary
+        boundary_A = sorted(set(bond[0] for bond in boundary_bonds))
+        
+        if include_complement:
+            # Sites in B on boundary
+            boundary_B = sorted(set(bond[1] for bond in boundary_bonds))
+            return boundary_A, boundary_B
+        
+        return boundary_A
+
+    def sweep_subsystems(
+        self,
+        direction       : Optional[str] = None,
+        *,
+        rectangular     : bool = False,
+        by_unit_cell    : bool = True,
+    ) -> Dict[int, List[List[int]]]:
+        r"""
+        Generate subsystems grouped by boundary size dA.
+        
+        Creates subsystems and organizes them by their boundary size 
+        (number of bonds cut). Useful for area-law scaling studies.
+        
+        Parameters
+        ----------
+        direction : str, optional
+            Direction for sweep: 'x', 'y', 'z'. Creates full-width cuts.
+            If None, uses rectangular or lexicographic mode.
+        rectangular : bool, default=False
+            If True (and direction is None), generate rectangular subsystems
+            of all sizes (1x1, 1x2, 2x1, 2x2, ...). Gives variety in shapes.
+            If False, use lexicographic sweep (sequential site addition).
+        by_unit_cell : bool, default=True
+            If True, grow by unit cells (for multi-sublattice lattices).
+            
+        Returns
+        -------
+        by_dA : Dict[int, List[List[int]]]
+            Subsystems grouped by boundary size: {dA: [[sites], [sites], ...]}
+            
+        Examples
+        --------
+        >>> # Rectangular subsystems (various shapes)
+        >>> by_dA = lattice.regions.sweep_subsystems(rectangular=True)
+        >>> for dA, subs in sorted(by_dA.items()):
+        ...     print(f"dA={dA}: {len(subs)} shapes")
+        
+        >>> # Full-width directional cuts (constant dA)
+        >>> by_dA = lattice.regions.sweep_subsystems(direction='x')
+        
+        >>> # Lexicographic (growing blob)
+        >>> by_dA = lattice.regions.sweep_subsystems()
+        """
+        # Dispatch to appropriate generator
+        if direction is not None:
+            cuts = self._directional_sweep(direction, by_unit_cell)
+            # Group by boundary
+            by_dA: Dict[int, List[List[int]]] = {}
+            for sites in cuts.values():
+                dA = self.subsystem_boundary(sites)
+                by_dA.setdefault(dA, []).append(sites)
+            return by_dA
+        elif rectangular:
+            return self.rectangular_subsystems()
+        else:
+            cuts = self.region_sweep(by_unit_cell=by_unit_cell)
+            # Group by boundary
+            by_dA: Dict[int, List[List[int]]] = {}
+            for sites in cuts.values():
+                dA = self.subsystem_boundary(sites)
+                by_dA.setdefault(dA, []).append(sites)
+            return by_dA
+
+    def rectangular_subsystems(self, *, max_subsystems  : Optional[int] = None) -> Dict[int, List[List[int]]]:
+        r"""
+        Generate rectangular subsystems of various sizes, grouped by boundary dA.
+        
+        Creates subsystems by taking all combinations of x and y extents,
+        giving a variety of shapes with different boundary sizes.
+        
+        Parameters
+        ----------
+        max_subsystems : int, optional
+            Maximum total number of subsystems to generate.
+            
+        Returns
+        -------
+        by_dA : Dict[int, List[List[int]]]
+            Subsystems grouped by boundary size: {dA: [[sites], ...]}
+            
+        Examples
+        --------
+        >>> by_dA = lattice.regions.rectangular_subsystems()
+        >>> for dA, subs in sorted(by_dA.items()):
+        ...     print(f"dA={dA}: {len(subs)} rectangles")
+        """
+        coords  = np.asarray(self.lattice.rvectors)
+        dim     = min(coords.shape[1], 2)  # Only x,y for now
+        
+        # Get unique coordinate values per dimension
+        unique_coords = []
+        for d in range(dim):
+            unique_coords.append(np.sort(np.unique(coords[:, d])))
+        
+        by_dA: Dict[int, List[List[int]]]   = {}
+        count                               = 0
+        
+        if dim == 1:
+            # 1D: just use regular sweep
+            return self.sweep_subsystems()
+        
+        # 2D: generate rectangles of all sizes (lx, ly)
+        x_vals, y_vals  = unique_coords[0], unique_coords[1]
+        nx, ny          = len(x_vals), len(y_vals)
+        
+        for lx in range(1, nx):  # Width 1 to nx-1
+            for ly in range(1, ny):  # Height 1 to ny-1
+                # Rectangle from origin: x in [0..lx-1], y in [0..ly-1]
+                x_max   = x_vals[lx - 1]
+                y_max   = y_vals[ly - 1]
+                
+                mask    = (coords[:, 0] <= x_max + 1e-10) & (coords[:, 1] <= y_max + 1e-10)
+                sites   = sorted(np.where(mask)[0].tolist())
+                
+                if len(sites) > 0:
+                    dA      = self.subsystem_boundary(sites)
+                    by_dA.setdefault(dA, []).append(sites)
+                    count  += 1
+                    
+                    if max_subsystems and count >= max_subsystems:
+                        return by_dA
+        
+        return by_dA
+
+    def _directional_sweep(self, direction: str, by_unit_cell: bool) -> Dict[str, List[int]]:
+        """Generate sweep cuts along a direction."""
+        dir_idx = {'x': 0, 'y': 1, 'z': 2}.get(direction.lower())
+        
+        if dir_idx is None:
+            raise ValueError(f"Invalid direction '{direction}'. Use 'x', 'y', or 'z'.")
+        
+        # Choose coordinates based on unit cell mode
+        if by_unit_cell and hasattr(self.lattice, 'fracs') and self.lattice.fracs is not None:
+            # Use fractional (unit cell) coordinates
+            coords = np.asarray(self.lattice.fracs)
+        else:
+            # Use real-space coordinates
+            coords = np.asarray(self.lattice.rvectors)
+        
+        vals    = coords[:, dir_idx]
+        unique  = np.sort(np.unique(vals))
+        cuts    = {}
+        for i, v in enumerate(unique[:-1], 1):
+            sites = sorted(np.where(vals <= v)[0].tolist())
+            cuts[f"{direction}_{i}"] = sites
+        return cuts
+
 # -------------------------------------------------------------------------------
 #! End of region_handler.py
 # -------------------------------------------------------------------------------
