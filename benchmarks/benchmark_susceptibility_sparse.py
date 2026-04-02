@@ -42,7 +42,7 @@ def benchmark_susceptibility_sparse():
         )
         end_time = time.time()
         duration = end_time - start_time
-        print(f"Original implementation took: {duration:.4f} seconds")
+        print(f"Current implementation took: {duration:.4f} seconds")
     except Exception as e:
         print(f"Error during benchmark: {e}")
         duration = None
