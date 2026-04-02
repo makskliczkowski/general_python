@@ -78,7 +78,11 @@ def _compute_lehmann_components(
     M           = be.abs(A_q_eigen)**2
     Omega_nm    = eigvals[None, :] - eigvals[:, None]
 
-    mask        = be.abs(R) > 1e-12
+    from .structure_factor import SPARSE_MATRIX_THRESHOLD
+
+    # Optimize by pruning negligible thermal weights and matrix elements.
+    # This reduces array sizes and skips calculations for forbidden/negligible transitions.
+    mask        = (be.abs(R) > 1e-12) & (M > SPARSE_MATRIX_THRESHOLD)
     weighted    = R[mask] * M[mask]
     Omega_flat  = Omega_nm[mask]
 
