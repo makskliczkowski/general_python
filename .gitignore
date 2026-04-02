@@ -142,3 +142,4 @@ dmypy.json
 */tmp
 */__pycache__/
 *demo*.png
+*.DS_Store
