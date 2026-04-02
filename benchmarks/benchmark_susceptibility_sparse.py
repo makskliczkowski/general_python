@@ -1,6 +1,6 @@
 import numpy as np
 import time
-from general_python.physics.response.susceptibility import susceptibility_multi_omega
+from general_python.physics.response.susceptibility import susceptibility_multi_omega, susceptibility_lehmann
 
 def benchmark_susceptibility_sparse():
     # Setup a reasonably sized system
@@ -42,7 +42,7 @@ def benchmark_susceptibility_sparse():
         )
         end_time = time.time()
         duration = end_time - start_time
-        print(f"Current implementation took: {duration:.4f} seconds")
+        print(f"Original implementation took: {duration:.4f} seconds")
     except Exception as e:
         print(f"Error during benchmark: {e}")
         duration = None
