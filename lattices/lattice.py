@@ -3006,43 +3006,277 @@ class Lattice(ABC):
 
     def realspace_from_kspace(
         self,
-        H_k                     : np.ndarray,
+        H_k         : np.ndarray,
         *,
-        block_diag              : bool = True,
-        kgrid                   : Optional[np.ndarray] = None):
-        """
-        Inverse Bloch transform: H(k) blocks -> H_real (Ns x Ns).
+        block_diag  : bool = True,
+        kgrid       : Optional[np.ndarray] = None,
+    ):
+        r"""
+        Inverse Bloch transform: reconstruct real-space matrix from k-space blocks.
         
-        See lattice_kspace.realspace_from_kspace for full documentation.
+        This is the exact inverse of ``kspace_from_realspace()``. It reconstructs the 
+        real-space Hamiltonian from momentum-space blocks using the inverse Fourier transform:
+        
+        .. math::
+            H_{\text{real}} = \sum_k W(k)^\dagger H(k) W(k)
+            
+        where :math:`W(k)` is the Bloch unitary matrix.
+        
+        Parameters
+        ----------
+        H_k : np.ndarray
+            K-space Hamiltonian blocks in one of two formats:
+            
+            - **Grid format**: shape ``(Lx, Ly, Lz, Nb, Nb)`` for full BZ grid
+                (as returned by ``kspace_from_realspace`` with ``block_diag=True``)
+            - **List format**: shape ``(Nk, Nb, Nb)`` for custom k-points
+
+            Must be in **fftfreq order** (no fftshift applied) to match the forward transform.
+            
+        block_diag : bool, default=True
+            **Mode selector matching the forward transform:**
+            
+            - If ``True``: Expects ``H_k`` in block-diagonal format (grid or list of blocks)
+                and returns reconstructed real-space matrix.
+            - If ``False``: Expects ``H_k`` as full transformed matrix ``(Ns, Ns)`` and
+                applies inverse DFT directly.
+
+        kgrid : Optional[np.ndarray], default=None
+            K-point grid for reference (only used when ``block_diag=True``).
+            
+            - If ``None``: Assumes ``H_k`` is on the full BZ grid in fftfreq order
+            - If provided: Must match the k-points used for the forward transform
+                Shape ``(Lx, Ly, Lz, 3)`` or ``(Nk, 3)`` in fftfreq order.
+
+        Returns
+        -------
+        H_real : np.ndarray
+            Reconstructed real-space matrix with shape ``(Ns, Ns)`` where 
+            ``Ns = Nc * Nb`` is the total number of sites.
+            
+        Notes
+        -----
+        - **Round-trip accuracy**: 
+            - Eigenvalues are preserved to machine precision (~1e-15)
+        - Both ``H_k`` and ``kgrid`` must be in **fftfreq order** (no fftshift)
+        - The reconstruction is exact for translationally invariant systems:
+            - ``H_real_reconstructed ≈ H_real_original`` to numerical precision
+        - For systems with periodic boundary conditions, the forward and inverse 
+        transforms form a perfect isometry on the Hilbert space.
+        
+        Examples
+        --------
+        **Example 1: Round-trip transform (full grid)**
+        
+        >>> # Forward transform
+        >>> H_k, k_grid, k_frac = lattice.kspace_from_realspace(H_real, block_diag=True)
+        >>> 
+        >>> # Inverse transform
+        >>> H_real_recon = lattice.realspace_from_kspace(H_k, kgrid=k_grid)
+        >>> 
+        >>> # Verify reconstruction
+        >>> np.allclose(H_real, H_real_recon)  # True
+        
+        **Example 2: Inverse transform without explicit kgrid**
+        
+        >>> # If kgrid is omitted, it's reconstructed using fftfreq convention
+        >>> H_real_recon = lattice.realspace_from_kspace(H_k)
+        >>> np.allclose(H_real, H_real_recon)  # True
+        
+        **Example 3: Full matrix mode (inverse DFT)**
+        
+        >>> H_k_full        = lattice.kspace_from_realspace(H_real,     block_diag=False)
+        >>> H_real_recon    = lattice.realspace_from_kspace(H_k_full,   block_diag=False)
+        >>> np.allclose(H_real, H_real_recon)  # True
+        
+        See Also
+        --------
+        kspace_from_realspace : Forward Bloch transform (real-space to k-space)
+        structure_factor : Compute momentum-resolved structure factors
+        
+        References
+        ----------
+        .. [1] Bloch's theorem and Fourier analysis on lattices
+        .. [2] Ashcroft & Mermin, "Solid State Physics" (1976), Chapter 8
         """
         from .tools.lattice_kspace import realspace_from_kspace, full_k_space_transform
-        if block_diag is False:
+        
+        if block_diag:
+            # Block-diagonal inverse (standard mode)
+            return realspace_from_kspace(lattice=self, H_k=H_k, kgrid=kgrid)
+        else:
+            # Full matrix inverse DFT
+            if kgrid is not None:
+                raise ValueError("kgrid parameter is only used with block_diag=True. For full matrix mode (block_diag=False), kgrid is not needed.")
             return full_k_space_transform(lattice=self, mat=H_k, inverse=True)
-        return realspace_from_kspace(lattice = self, H_k = H_k, kgrid = kgrid)
 
-    def kspace_from_realspace(self, mat: np.ndarray, block_diag: bool = False):
-        """
-        Transform real-space Hamiltonian to k-space.
+    def kspace_from_realspace(
+        self, 
+        mat             : np.ndarray, 
+        block_diag      : bool = False,
+        kpoints         : Optional[np.ndarray] = None,
+        unitary_norm    : bool = True,
+        return_transform: bool = False,
+    ):
+        r"""
+        Transform a real-space matrix (Hamiltonian, operator, correlator) to momentum space.
+        
+        This method provides a convenient interface to the Bloch transform for periodic systems.
+        The transform uses the formula:
+        
+        .. math::
+            H_{ab}(k) = \sum_{i,j} W^*_{i,a}(k) H_{i,j} W_{j,b}(k)
+        
+        where :math:`W_{i,a}(k) = \frac{1}{\sqrt{N_c}} e^{-ik \cdot r_i} \delta_{\text{sub}(i),a}`
         
         Parameters
         ----------
         mat : np.ndarray
-            Real-space matrix (Ns x Ns)
-        block_diag : bool
-            If True, return k-space blocks (Lx, Ly, Lz, Nb, Nb)
-            If False, return full transformed matrix (Ns x Ns)
+            Real-space matrix with shape ``(Ns, Ns)`` where ``Ns = Nc * Nb`` is the total 
+            number of sites (unit cells x basis sites per cell).
+        block_diag : bool, default=False
+            **Mode selector for different output formats:**
+            
+            - If ``False``: Returns full transformed matrix ``H_k_full`` with shape ``(Ns, Ns)``
+                This is the complete DFT of the real-space matrix, useful for structure factors.
+
+            - If ``True``: Returns block-diagonal form with k-space blocks ``H_k``, momentum grid,
+                and fractional coordinates. This is the standard mode for band structure calculations.
+                
+            **Output:** ``(H_k, k_grid, k_grid_frac)`` where:
+              * ``H_k``: shape ``(Lx, Ly, Lz, Nb, Nb)`` - Hamiltonian blocks at each k-point
+              * ``k_grid``: shape ``(Lx, Ly, Lz, 3)`` - Cartesian k-point coordinates
+              * ``k_grid_frac``: shape ``(Lx, Ly, Lz, 3)`` - Fractional k-point coordinates
+
+        kpoints : Optional[np.ndarray], default=None
+            **Custom k-point sampling** (only used when ``block_diag=True``):
+            
+            - If ``None``: Uses automatic full Brillouin zone grid based on lattice size
+                (recommended for most use cases)
+            - If provided: Array of shape ``(Nk, 3)`` with custom k-points in Cartesian coordinates
+                Returns ``(H_k, kpoints)`` with ``H_k`` shape ``(Nk, Nb, Nb)``
+
+        unitary_norm : bool, default=True
+            Use unitary normalization :math:`1/\sqrt{N_c}` for the Bloch transform.
+            If ``False``, uses normalization :math:`1/N_c` instead. Keep ``True`` for 
+            standard quantum mechanics convention preserving operator norms.
+            
+        return_transform : bool, default=False
+            If ``True``, also return the Bloch unitary matrix ``W`` used for the transformation.
+            This is useful for transforming additional operators or computing correlation functions.
+            
+            **Note:** Only available when ``block_diag=True``. The unitary is returned as a 4th 
+            output value with shape ``(Lx, Ly, Lz, Ns, Nb)`` or ``(Nk, Ns, Nb)`` if custom 
+            k-points are provided.
             
         Returns
         -------
-        If block_diag=True:
-            H_k, k_grid, k_frac : k-space blocks and grid
-        If block_diag=False:
-            H_k_full : full transformed matrix (Ns x Ns)
+        **Case 1: block_diag=False (default)**
+            H_k_full : np.ndarray
+                Full transformed matrix with shape ``(Ns, Ns)``. This is the complete DFT 
+                of the input matrix, preserving all information.
+                
+        **Case 2: block_diag=True, kpoints=None (full grid)**
+            H_k : np.ndarray
+                K-space Hamiltonian blocks with shape ``(Lx, Ly, Lz, Nb, Nb)`` where:
+                
+                - ``Lx, Ly, Lz`` are the lattice dimensions
+                - ``Nb`` is the number of basis sites per unit cell
+                - ``H_k[ix, iy, iz]`` is the ``Nb x Nb`` block at k-point ``[ix, iy, iz]``
+                
+            k_grid : np.ndarray
+                Cartesian k-point coordinates with shape ``(Lx, Ly, Lz, 3)``.
+                The Γ-point is at index ``[Lx//2, Ly//2, Lz//2]`` after fftshift.
+                
+            k_grid_frac : np.ndarray
+                Fractional k-point coordinates with shape ``(Lx, Ly, Lz, 3)``.
+                Values are in the range ``[0, 1)`` corresponding to the first Brillouin zone.
+                
+            W : np.ndarray, optional
+                Bloch unitary matrix with shape ``(Lx, Ly, Lz, Ns, Nb)``.
+                Only returned if ``return_transform=True``.
+                Use for transforming operators: ``O_k = W† @ O_real @ W``
+                
+        **Case 3: block_diag=True, kpoints provided (custom sampling)**
+            H_k : np.ndarray
+                K-space Hamiltonian blocks with shape ``(Nk, Nb, Nb)`` where ``Nk`` is 
+                the number of custom k-points provided.
+                
+            kpoints_out : np.ndarray
+                Echo of the input k-points with shape ``(Nk, 3)``.
+                
+            W : np.ndarray, optional
+                Bloch unitary matrix with shape ``(Nk, Ns, Nb)``.
+                Only returned if ``return_transform=True``.
+                
+        Examples
+        --------
+        **Example 1: Full matrix transform for structure factor**
+        
+        >>> H_k_full = lattice.kspace_from_realspace(H_real, block_diag=False)
+        >>> # H_k_full has shape (Ns, Ns)
+        
+        **Example 2: Block-diagonal form for band structure (recommended)**
+        
+        >>> H_k, k_grid, k_frac = lattice.kspace_from_realspace(H_real, block_diag=True)
+        >>> # H_k has shape (Lx, Ly, Lz, Nb, Nb)
+        >>> # Diagonalize each block to get bands
+        >>> energies = np.linalg.eigvalsh(H_k)  # shape (Lx, Ly, Lz, Nb)
+        
+        **Example 3: Custom k-points (e.g., high-symmetry path)**
+        
+        >>> k_path = lattice.generate_kpath(['Γ', 'X', 'M', 'Γ'], npoints=100)
+        >>> H_k, k_pts = lattice.kspace_from_realspace(
+        ...     H_real, block_diag=True, kpoints=k_path
+        ... )
+        >>> # H_k has shape (100, Nb, Nb)
+        >>> energies = np.linalg.eigvalsh(H_k)  # shape (100, Nb)
+        
+        **Example 4: Get Bloch unitary for operator transforms**
+        
+        >>> H_k, k_grid, k_frac, W = lattice.kspace_from_realspace(
+        ...     H_real, block_diag=True, return_transform=True
+        ... )
+        >>> # Transform another operator using the same W
+        >>> O_k = np.einsum('kia,ij,kjb->kab', W.conj(), O_real, W)
+        
+        Notes
+        -----
+        - **Periodic boundary conditions (PBC)** are assumed for the Bloch transform.
+        - The method assumes **translational invariance** of the system, which ensures
+        the spectrum of ``H_real`` equals the union of spectra of ``H(k)`` blocks.
+        - For the full grid (``kpoints=None``), the k-points follow the **fftfreq convention**
+        with the Γ-point initially at index ``[0, 0, 0]``, then shifted to the center.
+        - Site ordering is arbitrary; the method uses the lattice geometry (coordinates + basis)
+        to correctly identify sublattices and apply phases.
+        - For sparse input matrices, automatic conversion to dense format is performed.
+        
+        See Also
+        --------
+        realspace_from_kspace : 
+            Inverse transform from k-space to real-space
+        structure_factor : 
+            Compute momentum-resolved structure factors with reduction options
+        generate_kpath : 
+            Generate high-symmetry k-point paths for band structure plotting
+        
+        References
+        ----------
+        .. [1] Ashcroft & Mermin, "Solid State Physics" (1976), Chapter 8
+        .. [2] Bloch's theorem and periodic boundary conditions
         """
         from .tools.lattice_kspace import full_k_space_transform, kspace_from_realspace
+        
         if block_diag:
-            return kspace_from_realspace(lattice=self, H_real=mat, kpoints=self.kvectors)
-        return full_k_space_transform(lattice=self, mat=mat, inverse=False)
+            # Block-diagonal k-space form (standard for band structure)
+            return kspace_from_realspace(lattice=self,  H_real=mat,  kpoints=kpoints, unitary_norm=unitary_norm, return_transform=return_transform,)
+        else:
+            # Full matrix transform (for structure factors, etc.)
+            if return_transform:
+                raise ValueError("return_transform=True is only available with block_diag=True. Use block_diag=True to get the Bloch unitary matrix.")
+            if kpoints is not None:
+                raise ValueError("Custom kpoints are only available with block_diag=True. Use block_diag=True for custom k-point sampling.")
+            return full_k_space_transform(lattice=self, mat=mat, inverse=False)
 
     def structure_factor(self, mat: np.ndarray, *,
         reduction   : Literal["none", "sum", "trace", "mean", "diag"] = "sum",

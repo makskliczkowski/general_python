@@ -2120,6 +2120,144 @@ class LatticePlotter:
         kwargs.setdefault("figsize", (5.5, 5.5))
         return plot_high_symmetry_points(self.lattice, **kwargs)
 
+    def subsystem(
+        self,
+        sites           : List[int],
+        *,
+        show_boundary   : bool = True,
+        **kwargs,
+    ) -> Tuple[Figure, Axes]:
+        """
+        Plot a single subsystem with its boundary highlighted.
+        
+        Parameters
+        ----------
+        sites : list of int
+            Site indices in the subsystem.
+        show_boundary : bool, default=True
+            If True, highlight the boundary bonds crossing A/B.
+        **kwargs
+            Passed to plot_regions.
+            
+        Returns
+        -------
+        fig, ax : Figure, Axes
+            
+        Examples
+        --------
+        >>> lattice.plot.subsystem([0, 1, 4, 5])
+        >>> lattice.plot.subsystem(range(8), show_bonds=True)
+        """
+        kwargs.setdefault("figsize", (5.0, 5.0))
+        kwargs.setdefault("show_bonds", True)
+        
+        # Compute boundary if requested
+        title = kwargs.pop("title", None)
+        if show_boundary and hasattr(self.lattice, 'regions'):
+            dA = self.lattice.regions.subsystem_boundary(sites)
+            if title is None:
+                title = f"Subsystem: |A|={len(sites)}, ∂A={dA}"
+        elif title is None:
+            title = f"Subsystem: |A|={len(sites)}"
+        
+        return plot_regions(self.lattice, {"A": list(sites)}, title=title, **kwargs)
+
+    def sweep(
+        self,
+        direction       : Optional[str] = None,
+        *,
+        rectangular     : bool = False,
+        max_panels      : int = 6,
+        figsize         : Optional[Tuple[float, float]] = None,
+        **kwargs,
+    ) -> Tuple[Figure, np.ndarray]:
+        """
+        Plot subsystem sweep showing cuts with different boundary sizes.
+        
+        Creates a grid of subplots showing subsystems grouped by ∂A.
+        
+        Parameters
+        ----------
+        direction : str, optional
+            Direction for sweep ('x', 'y', 'z'). Creates full-width cuts.
+        rectangular : bool, default=False
+            If True and direction is None, use rectangular subsystems (various shapes).
+            If False, use lexicographic sweep (sequential site addition).
+        max_panels : int, default=6
+            Maximum number of panels to show.
+        figsize : tuple, optional
+            Figure size. Auto-computed if None.
+        **kwargs
+            Passed to plot_regions for each panel.
+            
+        Returns
+        -------
+        fig, axes : Figure, ndarray of Axes
+            
+        Examples
+        --------
+        >>> lattice.plot.sweep(rectangular=True)  # Various rectangular shapes
+        >>> lattice.plot.sweep(direction='x')     # Full-width column cuts
+        >>> lattice.plot.sweep()                  # Lexicographic sweep
+        """
+        import matplotlib.pyplot as plt
+        
+        # Get sweep data (logic is now in sweep_subsystems)
+        by_dA = self.lattice.regions.sweep_subsystems(
+            direction=direction, rectangular=rectangular
+        )
+        
+        # Collect one representative per dA
+        panels = []
+        for dA in sorted(by_dA.keys()):
+            # Pick middle-sized subsystem as representative
+            subs        = by_dA[dA]
+            subs_sorted = sorted(subs, key=len)
+            rep         = subs_sorted[len(subs_sorted) // 2]
+            panels.append((dA, rep))
+            if len(panels) >= max_panels:
+                break
+        
+        n = len(panels)
+        if n == 0:
+            raise ValueError("No subsystems generated")
+        
+        # Grid layout - compact
+        ncols = min(n, 3)
+        nrows = (n + ncols - 1) // ncols
+        
+        if figsize is None:
+            figsize = (2.8 * ncols, 2.5 * nrows)
+        
+        fig, axes   = plt.subplots(nrows, ncols, figsize=figsize)
+        axes        = np.atleast_1d(axes).flatten()
+        
+        # Plot each panel with clean defaults
+        kwargs.setdefault("show_bonds", True)
+        kwargs.setdefault("show_legend", False)
+        kwargs.setdefault("show_labels", False)
+        kwargs.setdefault("show_system", True)
+        kwargs.setdefault("show_axes", False)
+        kwargs.setdefault("marker_size", 40)
+        kwargs.setdefault("tight_layout", False)  # We do our own
+        
+        for i, (dA, sites) in enumerate(panels):
+            ax = axes[i]
+            plot_regions(
+                self.lattice, {"A": sites}, ax=ax,
+                title=f"∂A={dA}, |A|={len(sites)}",
+                title_kwargs={"fontsize": 10},
+                **kwargs,
+            )
+            ax.set_aspect('equal', adjustable='box')
+        
+        # Hide unused axes
+        for i in range(n, len(axes)):
+            axes[i].set_visible(False)
+        
+        fig.tight_layout(pad=0.5)
+        return fig, axes
+
 # ------------------------------------------------------------------------------
 #! EOF
 # ------------------------------------------------------------------------------
