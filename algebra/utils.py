@@ -1213,8 +1213,31 @@ def _qes_initialize_utils():
         os.environ[PY_JAX_AVAILABLE_STR] = '0'
         _log_message("JAX import skipped because PY_JAX_DONT_USE is enabled.", 0)
     else:
+        # Avoid JAX CUDA initialization error if GPU is not present or disabled
+        force_cpu = (
+            os.environ.get("CUDA_VISIBLE_DEVICES") == ""
+            or os.environ.get("PY_FORCE_CPU", "0").lower()      in ("1", "true", "yes")
+            or os.environ.get("PY_JAX_CPU_ONLY", "0").lower()   in ("1", "true", "yes")
+        )
+
+        if force_cpu:
+            _log_message("GPU disabled or CPU-only requested. Setting JAX_PLATFORMS=cpu.", 1)
+            os.environ.setdefault("JAX_PLATFORMS",      "cpu")
+            os.environ.setdefault("JAX_PLATFORM_NAME",  "cpu")
+
         try:
-            import jax
+            try:
+                import jax
+            except RuntimeError as e:
+                # Handle CUDA initialization failure gracefully by falling back to CPU
+                if "CUDA_ERROR_NO_DEVICE" in str(e) or "cuInit" in str(e):
+                    _log_message("JAX CUDA initialization failed. Retrying with JAX_PLATFORMS=cpu...", 1)
+                    os.environ["JAX_PLATFORMS"]     = "cpu"
+                    os.environ["JAX_PLATFORM_NAME"] = "cpu"
+                    import jax
+                else:
+                    raise e
+
             from jax import config as jax_config
             jcfg = jax_config
 

@@ -525,61 +525,6 @@ def rho_two_sites(
     """
     return rho(state, va=[site_i, site_j], ns=ns, local_dim=local_dim, fermionic=fermionic)
 
-
-def fermionic_entanglement_entropy(
-    state       : np.ndarray,
-    subsystem   : Union[int, List[int], np.ndarray],
-    ns          : Optional[int] = None,
-    local_dim   : int = 2
-) -> float:
-    """
-    Compute fermionic entanglement entropy using sign-corrected RDM.
-    
-    This is the correct way to compute entanglement entropy for fermionic
-    systems (Slater determinants and their superpositions) for arbitrary
-    subsystem geometries.
-    
-    Parameters
-    ----------
-    state : np.ndarray
-        Many-body state vector of fermionic system.
-    subsystem : Union[int, List[int], np.ndarray]
-        If int: contiguous subsystem of first `subsystem` sites.
-        If array: indices of sites in subsystem A (any geometry).
-    ns : Optional[int]
-        Total number of sites. If None, inferred from state size.
-    local_dim : int
-        Local Hilbert space dimension (default 2).
-    
-    Returns
-    -------
-    float
-        Von Neumann entanglement entropy S = -Tr(rho_A log rho_A).
-    
-    Notes
-    -----
-    For Gaussian states (single Slater determinant), this should match
-    the correlation matrix method. For superpositions of Slater determinants,
-    the correlation matrix method is not applicable, but this method works.
-    
-    Examples
-    --------
-    >>> # Entropy of non-contiguous subsystem [0, 2, 4]
-    >>> S = fermionic_entanglement_entropy(psi, [0, 2, 4], ns=8)
-    """
-    if isinstance(subsystem, int):
-        # Contiguous: no sign correction needed
-        rho_A = rho(state, va=subsystem, ns=ns, local_dim=local_dim, contiguous=True)
-    else:
-        # Non-contiguous: use fermionic sign correction
-        rho_A = rho(state, va=subsystem, ns=ns, local_dim=local_dim, fermionic=True)
-    
-    # Compute von Neumann entropy
-    eigenvalues = np.linalg.eigvalsh(rho_A)
-    eigenvalues = np.clip(eigenvalues, 1e-15, 1.0)
-    return float(-np.sum(eigenvalues * np.log(eigenvalues)))
-
-
 # -----------------------------------------------------------------------------
 #! End of file
 # -----------------------------------------------------------------------------
