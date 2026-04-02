@@ -430,8 +430,122 @@ class LatticeRegionHandler:
         configuration   : Optional[int]                     = None,
         predefined      : Optional[Union[bool, int, str]]   = None,
         as_region       : bool                              = True,
+        min_size        : Optional[int]                     = None,
         **kwargs
-    ) -> Union[List[int], Dict[str, List[int]], Dict[str, Any], List[Dict[str, Any]], "Region"]:
+    ) -> Union[List[int], Dict[str, List[int]], Dict[str, Any], List[Dict[str, Any]], "Region", None]:
+        r"""
+        Return site indices defining a spatial region.
+
+        Parameters
+        ----------
+        kind : str or RegionType
+            ``'half'``, ``'half_x'``, ``'half_y'``, ``'half_z'``, ``'disk'``,
+            ``'quarter'``, ``'sweep'``, ``'sublattice'``, ``'graph'``, ``'plaquette'``,
+            ``'kitaev_preskill'``, ``'levin_wen'``, ``'custom'``.
+        origin : int or list[float], optional
+            Center of the region (site index **or** coordinate).
+        radius : float, optional
+            Radius for ``'disk'`` and ``'kitaev_preskill'`` regions.
+        direction : str, optional
+            Direction for ``'half'`` cuts (``'x'``, ``'y'``, ``'z'``).
+        sublattice : int, optional
+            Sublattice index for ``'sublattice'`` regions.
+        sites : list[int], optional
+            Explicit list of sites for ``'custom'`` regions.
+        depth : int, optional
+            Hop-distance for ``'graph'`` balls.
+        plaquettes : list[int], optional
+            Plaquette indices for ``'plaquette'`` regions.
+        configuration : int, optional
+            Legacy predefined configuration index (1-based) for the given
+            lattice and kind.
+        predefined : bool | int | str, optional
+            Convenience selector for predefined regions.
+            - ``True``  : list available predefined entries for given lattice/kind.
+            - ``int``   : select predefined entry by 0-based index.
+            - ``str``   : select predefined entry by label.
+        as_region : bool, optional
+            If True (default), return Region-class objects for supported kinds.
+            If False, keep legacy list/dict return shapes.
+        min_size : int, optional
+            If provided, return None if the region (or any of its A, B, C parts)
+            is smaller than this value.
+
+        Keyword-only (forwarded)
+        ------------------------
+        inner_radius, outer_radius : float
+            For ``'levin_wen'``.
+        n_sectors : int
+            Number of angular sectors for ``'kitaev_preskill'`` (default 3).
+        rotation : float
+            Rotation of sector boundaries (radians) for KP (default 0).
+        use_pbc : bool
+            Whether to use PBC-wrapped distances for KP/LW.  **Default
+            False** — regions must not wrap around the torus boundary.
+        region : str
+            Which single region key to return for KP/LW  (e.g. ``'A'``,
+            ``'AB'``).  If given, a *flat list* is returned instead of a dict.
+
+        Returns
+        -------
+        Region  or  list[int]  or  dict[str, list[int]]  or  list[dict]
+            Sorted site list for simple regions, a dict of labelled site
+            lists for topological partitions, metadata entries when ``predefined=True``,
+            or Region objects when ``as_region=True``.
+
+        Examples
+        --------
+        >>> lat.regions.get_region('half_x')
+        HalfRegion(A=[...], B=[...])
+        >>> lat.regions.get_region('disk', origin=10, radius=2.5)
+        DiskRegion(A=[...], B=[...], C=[])
+        >>> lat.regions.get_region('kitaev_preskill', configuration=1)
+        KitaevPreskillRegion(A=[...], B=[...], C=[...])
+        >>> lat.regions.get_region('kitaev_preskill', predefined=0)
+        KitaevPreskillRegion(A=[...], B=[...], C=[...])
+        >>> lat.regions.get_region('half_x', as_region=False)
+        [0, 1, 2, ...]
+        """
+        result = self._get_region_raw(
+            kind=kind, origin=origin, radius=radius, direction=direction,
+            sublattice=sublattice, sites=sites, depth=depth, plaquettes=plaquettes,
+            configuration=configuration, predefined=predefined, as_region=as_region,
+            **kwargs
+        )
+
+        if min_size is not None and result is not None:
+            # Check size constraints
+            if hasattr(result, 'A'): # Region object
+                if len(result.A) < min_size: return None
+                if getattr(result, 'tripartite', lambda: False)():
+                    if len(result.B) < min_size or len(result.C) < min_size:
+                        return None
+            elif isinstance(result, dict):
+                # Check for KP/LW dict keys
+                for k in ['A', 'B', 'C', 'inner', 'annulus', 'exterior']:
+                    if k in result and 0 < len(result[k]) < min_size:
+                        return None
+            elif isinstance(result, list):
+                if len(result) < min_size: return None
+        
+        return result
+
+    def _get_region_raw(
+        self,
+        kind            : Union[str, RegionType] = RegionType.HALF,
+        *,
+        origin          : Optional[Union[int, List[float]]] = None,
+        radius          : Optional[float]                   = None,
+        direction       : Optional[str]                     = None,
+        sublattice      : Optional[int]                     = None,
+        sites           : Optional[List[int]]               = None,
+        depth           : Optional[int]                     = None,
+        plaquettes      : Optional[List[int]]               = None,
+        configuration   : Optional[int]                     = None,
+        predefined      : Optional[Union[bool, int, str]]   = None,
+        as_region       : bool                              = True,
+        **kwargs
+    ) -> Union[List[int], Dict[str, List[int]], Dict[str, Any], List[Dict[str, Any]], "Region", None]:
         r"""
         Return site indices defining a spatial region.
 
@@ -466,6 +580,9 @@ class LatticeRegionHandler:
         as_region : bool, optional
             If True (default), return Region-class objects for supported kinds.
             If False, keep legacy list/dict return shapes.
+        min_size : int, optional
+            If provided, return None if the region (or any of its A, B, C parts)
+            is smaller than this value.
 
         Keyword-only (forwarded)
         ------------------------

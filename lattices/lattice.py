@@ -1473,6 +1473,54 @@ class Lattice(ABC):
 
         return (wx, wy, wz)
 
+    def is_spanning(self, sites: Iterable[int]) -> bool:
+        """
+        Check if a set of sites spans the lattice (non-contractible on a torus).
+        
+        This method uses a BFS-based winding number tracking on the induced subgraph of 
+        the provided site indices. If any loop with a non-zero winding number 
+        along a periodic direction is found, the set is considered spanning.
+        """
+        sites_set = set(sites)
+        if not sites_set:
+            return False
+            
+        pflags = self.periodic_flags()
+        if not any(pflags):
+            return False # No periodic boundaries
+            
+        remaining = set(sites_set)
+        while remaining:
+            start = next(iter(remaining))
+            visited = {start: (0, 0, 0)} # index -> (wx, wy, wz) relative to start
+            stack = [start]
+            remaining.remove(start)
+            
+            while stack:
+                u = stack.pop()
+                curr_w = visited[u]
+                for v in self.nn[u]:
+                    if v in sites_set:
+                        wx, wy, wz = self.bond_winding(u, v)
+                        target_w = (curr_w[0] + wx, curr_w[1] + wy, curr_w[2] + wz)
+                        if v in visited:
+                            # Already visited: check if winding is different
+                            if visited[v] != target_w:
+                                dw = (target_w[0] - visited[v][0], 
+                                      target_w[1] - visited[v][1], 
+                                      target_w[2] - visited[v][2])
+                                # Winding is non-trivial if it aligns with a periodic direction
+                                if (dw[0] != 0 and pflags[0]) or \
+                                   (dw[1] != 0 and pflags[1]) or \
+                                   (dw[2] != 0 and pflags[2]):
+                                    return True
+                        else:
+                            visited[v] = target_w
+                            stack.append(v)
+                            if v in remaining:
+                                remaining.remove(v)
+        return False
+
     def bond_phase(self, i: int, j: int) -> complex:
         r"""
         Return the complex hopping phase factor for the bond :math:`i \to j`.
