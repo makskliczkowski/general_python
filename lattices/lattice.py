@@ -1821,7 +1821,8 @@ class Lattice(ABC):
         This method can be optimized using FFT (Fast Fourier Transform) in the future.
         Reference: https://en.wikipedia.org/wiki/DFT_matrix
         
-        Args:
+        Parameters
+        -----------
         - phase (bool): If True, adds a complex phase to the k-vectors.
         
         Returns:
@@ -1901,7 +1902,8 @@ class Lattice(ABC):
         '''
         Returns the nearest neighbors of a given site. 
         
-        Args:
+        Parameters
+        -----------
             - direction : direction of the lattice (can be X, Y, Z - default is X)        
         '''
         if 'corr_len' in kwargs and 'direction' in kwargs:
@@ -1920,7 +1922,8 @@ class Lattice(ABC):
         '''
         Returns the forward nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
             - site : lattice site
             - num  : number of nearest neighbors
         Returns:
@@ -1933,7 +1936,8 @@ class Lattice(ABC):
     def _adjust_direction(self, direction : Union[LatticeDirection, int]):
         '''
         Adjust the direction to the lattice dimension
-        Args:
+        Parameters
+        -----------
             - direction : direction of the lattice (can be X, Y, Z - default is X)
         '''
         if self.dim == 1:
@@ -2068,7 +2072,8 @@ class Lattice(ABC):
         '''
         Returns the number of nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
         - site : lattice site
         Returns:
         - number of nearest neighbors
@@ -2081,7 +2086,8 @@ class Lattice(ABC):
         '''
         Returns the nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
             - site : lattice site
             - num  : number of nearest neighbors
         Returns:
@@ -2097,7 +2103,8 @@ class Lattice(ABC):
         '''
         Returns the number of next nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
         - site : lattice site
         Returns:
         - number of next nearest neighbors
@@ -2110,7 +2117,8 @@ class Lattice(ABC):
         '''
         Returns the next nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
             - site : lattice site
             - num  : number of next nearest neighbors
         Returns:
@@ -2146,7 +2154,8 @@ class Lattice(ABC):
         '''
         Returns the number of forward nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
         - site : lattice site
         Returns:
         - number of nearest neighbors
@@ -2157,7 +2166,8 @@ class Lattice(ABC):
         '''
         Returns the forward nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
             - site : lattice site
             - num  : number of nearest neighbors
         Returns:
@@ -2177,7 +2187,8 @@ class Lattice(ABC):
         '''
         Returns the number of forward next nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
         - site : lattice site
         Returns:
         - number of next nearest neighbors
@@ -2188,7 +2199,8 @@ class Lattice(ABC):
         '''
         Returns the forward next nearest neighbors of a given site.
         
-        Args:
+        Parameters
+        -----------
             - site : lattice site
             - num  : number of next nearest neighbors
         Returns:
@@ -2581,7 +2593,8 @@ class Lattice(ABC):
         """
         Filters the k-vectors to find those matching the specified fractional components.
 
-        Args:
+        Parameters
+        -----------
             qx (int): Fractional component in the x-direction.
             qy (int, optional): Fractional component in the y-direction. Defaults to None.
             qz (int, optional): Fractional component in the z-direction. Defaults to None.
@@ -2905,9 +2918,11 @@ class Lattice(ABC):
         For each site in the lattice, this method retrieves its nearest neighbors and logs their indices.
         Additionally, for each neighbor, it logs detailed information using a higher verbosity level.
 
-        Args:
-            logger: An object with an `info` method for logging messages. The `info` method should accept
-                    parameters `lvl` (int) for verbosity level and `color` (str) for message color.
+        Parameters
+        -----------
+        logger: 
+            An object with an `info` method for logging messages. The `info` method should accept
+            parameters `lvl` (int) for verbosity level and `color` (str) for message color.
 
         """
         def print_nei(msg, lvl = 1, color = 'green'):
@@ -2932,7 +2947,8 @@ class Lattice(ABC):
         - Level 1 (green): Lists the neighbors of each site.
         - Level 2 (blue): Details each neighbor's index for the site.
 
-        Args:
+        Parameters
+        -----------
             logger: A logging object with an `info` method that accepts a message, 
                     a logging level (`lvl`), and a color (`color`).
         """
@@ -3673,7 +3689,8 @@ class Lattice(ABC):
 def save_bonds(lattice : Lattice, directory : Union[str], filename : str):
     '''
     Saves the bonds of the lattice to a file
-    Args:
+    Parameters
+-----------
     - lattice   : lattice model
     - directory : directory to save the file
     - filename  : filename
