@@ -1,6 +1,6 @@
 import numpy as np
 import time
-from general_python.physics.response.susceptibility import susceptibility_multi_omega, susceptibility_lehmann
+from general_python.physics.response.susceptibility import susceptibility_multi_omega
 
 def benchmark_susceptibility_sparse():
     # Setup a reasonably sized system
