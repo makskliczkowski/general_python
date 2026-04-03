@@ -911,13 +911,15 @@ def operator_spectral_function_lehmann(
     A = 0.0
     for m in range(N):
         rho_diff = rho[m] - rho
-        mask = be.abs(rho_diff) >= 1e-14
+        matrix_element_sq = be.abs(O_eigen[m, :])**2
+
+        # ⚡ Bolt: Optimization - Filter out negligible matrix elements
+        mask = (be.abs(rho_diff) >= 1e-14) & (matrix_element_sq > 1e-15)
 
         if not be.any(mask):
             continue
 
         delta_E = omega - (eigenvalues - eigenvalues[m])
-        matrix_element_sq = be.abs(O_eigen[m, :])**2
 
         A_vec = rho_diff[mask] * matrix_element_sq[mask] * lorentzian(delta_E[mask])
         A += be.sum(A_vec)
@@ -969,20 +971,37 @@ def operator_spectral_function_multi_omega(
     be = get_backend(backend)
     omegas = be.asarray(omegas)
     
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    eigenvectors = be.asarray(eigenvectors, dtype=be.complex128)
+    operator = be.asarray(operator, dtype=be.complex128)
+
+    if operator.ndim == 0:
+        operator = be.eye(len(eigenvalues), dtype=be.complex128) * operator
+    elif operator.ndim == 1:
+        operator = be.diag(operator)
+
+    N = len(eigenvalues)
+    O_eigen = eigenvectors.conj().T @ operator @ eigenvectors
+    rho = thermal_weights(eigenvalues, temperature, backend)
+
     n_omega = len(omegas)
     A = be.zeros(n_omega, dtype=be.float64)
     
-    for i, omega in enumerate(omegas):
-        # Convert omega to Python float (avoid numpy scalar issues)
-        omega_val = float(omega) if hasattr(omega, '__float__') else omega
-        A_i = operator_spectral_function_lehmann(
-            omega_val, eigenvalues, eigenvectors, operator,
-            eta=eta, temperature=temperature, backend=backend
-        )
-        if JAX_AVAILABLE and backend == "jax":
-            A = A.at[i].set(A_i)
-        else:
-            A[i] = A_i
+    # ⚡ Bolt: Optimization - Vectorize over omegas to avoid slow Python loop
+    for m in range(N):
+        rho_diff = rho[m] - rho
+        matrix_element_sq = be.abs(O_eigen[m, :])**2
+
+        mask = (be.abs(rho_diff) >= 1e-14) & (matrix_element_sq > 1e-15)
+        if not be.any(mask):
+            continue
+
+        # Broadcast delta_E over omegas: shape (n_omega, N_masked)
+        delta_E = omegas[:, None] - (eigenvalues[mask] - eigenvalues[m])[None, :]
+        lorentzian = (eta / np.pi) / (delta_E**2 + eta**2)
+
+        A_vec = rho_diff[mask] * matrix_element_sq[mask] * lorentzian
+        A += be.sum(A_vec, axis=1)
     
     return A
 
@@ -1075,13 +1094,15 @@ def susceptibility_bubble(
     chi = 0.0 + 0.0j
     for m in range(N):
         occ_diff = occupation[m] - occupation
-        mask = be.abs(occ_diff) >= 1e-14
+        V_mn_sq = be.abs(vertex[m, :])**2
+
+        # ⚡ Bolt: Optimization - Filter out negligible matrix elements
+        mask = (be.abs(occ_diff) >= 1e-14) & (V_mn_sq > 1e-15)
 
         if not be.any(mask):
             continue
 
         denom = omega_complex + 1j * eta_complex - (eigenvalues - eigenvalues[m])
-        V_mn_sq = be.abs(vertex[m, :])**2
 
         chi_vec = occ_diff[mask] * V_mn_sq[mask] / denom[mask]
         chi += be.sum(chi_vec)
@@ -1124,18 +1145,38 @@ def susceptibility_bubble_multi_omega(
     be = get_backend(backend)
     omegas = be.asarray(omegas)
     
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    eta_complex = be.asarray(eta, dtype=be.complex128)
+
+    N = len(eigenvalues)
+
+    if vertex is None:
+        vertex = be.eye(N, dtype=be.complex128)
+    else:
+        vertex = be.asarray(vertex, dtype=be.complex128)
+
+    if occupation is None:
+        occupation = be.where(eigenvalues < 0, 1.0, 0.0)
+    else:
+        occupation = be.asarray(occupation, dtype=be.float64)
+
     n_omega = len(omegas)
     chi = be.zeros(n_omega, dtype=be.complex128)
     
-    for i, omega in enumerate(omegas):
-        chi_i = susceptibility_bubble(
-            float(omega), eigenvalues, vertex, occupation,
-            eta=eta, backend=backend
-        )
-        if JAX_AVAILABLE and backend == "jax":
-            chi = chi.at[i].set(chi_i)
-        else:
-            chi[i] = chi_i
+    # ⚡ Bolt: Optimization - Vectorize over omegas to avoid slow Python loop
+    for m in range(N):
+        occ_diff = occupation[m] - occupation
+        V_mn_sq = be.abs(vertex[m, :])**2
+
+        mask = (be.abs(occ_diff) >= 1e-14) & (V_mn_sq > 1e-15)
+        if not be.any(mask):
+            continue
+
+        # Broadcast denom over omegas: shape (n_omega, N_masked)
+        denom = omegas[:, None] + 1j * eta_complex - (eigenvalues[mask] - eigenvalues[m])[None, :]
+
+        chi_vec = occ_diff[mask] * V_mn_sq[mask] / denom
+        chi += be.sum(chi_vec, axis=1)
     
     return chi
 
