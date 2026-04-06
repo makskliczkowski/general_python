@@ -38,9 +38,11 @@ try:
     import jax
     import jax.numpy    as jnp
     import flax.linen   as nn
-    from ....ml.net_impl.interface_net_flax     import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
-    from ....ml.net_impl.activation_functions   import get_activation_jnp
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling
+    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1, preferred_state_representation
+    from ....ml.net_impl.activation_functions       import get_activation_jnp
+    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE = True
 except ImportError:
     # Minimal fallback for standalone testing
@@ -99,7 +101,9 @@ class _FlaxGCNN(nn.Module):
     dtype           : Any
     param_dtype     : Any
     split_complex   : bool
-    input_trans     : bool                  # Transform 0/1 -> -1/1
+    transform_input : bool
+    input_is_spin   : bool
+    input_value     : float
     islog           : bool
 
     @nn.compact
@@ -124,8 +128,8 @@ class _FlaxGCNN(nn.Module):
         # Cast Input to computation dtype
         x = x.astype(comp_dtype)
         
-        if self.input_trans:
-            x = 2.0 * x - 1.0
+        if self.transform_input:
+            x = map_state_to_pm1(x, self.input_is_spin, self.input_value)
 
         # Init Strategy
         if jnp.issubdtype(comp_dtype, jnp.complexfloating):
@@ -191,7 +195,12 @@ class _FlaxGCNN(nn.Module):
 
 class GCNN(FlaxInterface):
     """
-    GCNN Interface for NQS on arbitrary graphs.
+    GCNN Interface for arbitrary graphs.
+
+    Parameters:
+        transform_input (bool): If True, map the configured input convention to {-1, +1}.
+        input_spin (bool): If True, inputs are interpreted as signed spin values.
+        input_value (float): Magnitude of the signed or binary local values.
     """
     def __init__(self,
                 input_shape    : tuple,
@@ -252,7 +261,9 @@ class GCNN(FlaxInterface):
                                 'dtype'         : jax_dtype,
                                 'param_dtype'   : jax_dtype,
                                 'split_complex' : split_complex,
-                                'input_trans'   : transform_input,
+                                'transform_input': transform_input,
+                                'input_is_spin' : kwargs.get('input_spin', BACKEND_DEF_SPIN),
+                                'input_value'   : kwargs.get('input_value', BACKEND_REPR),
                                 'islog'         : True
                             }
 
@@ -271,6 +282,15 @@ class GCNN(FlaxInterface):
         
         self._has_analytic_grad     = False
         self._name                  = 'gcnn'
+        self._nqs_family = "gcnn"
+        self._nqs_variant = "general"
+        self._nqs_native_representation = preferred_state_representation(
+            net_kwargs["transform_input"],
+            net_kwargs["input_is_spin"],
+        )
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     @property
     def output_shape(self) -> Tuple[int, ...]:
@@ -444,6 +464,12 @@ if JAX_AVAILABLE:
             self._has_analytic_grad = False
             self._name      = 'eqgcnn'
             self._n_group   = perm_table.shape[0]
+            self._nqs_family = "equivariant_gcnn"
+            self._nqs_variant = "general"
+            self._nqs_native_representation = "binary_01"
+            self._nqs_supports_fast_updates = False
+            self._nqs_supports_exact_sampling = False
+            self._nqs_preferred_sampler = "MCSampler"
 
         @classmethod
         def from_lattice(

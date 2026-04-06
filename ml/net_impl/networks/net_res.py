@@ -39,6 +39,7 @@ try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
     from ....ml.net_impl.activation_functions import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.utils.net_state_repr_jax import map_state_to_pm1, preferred_state_representation
     from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, BACKEND_DEF_SPIN, BACKEND_REPR, Array
 except ImportError as e:
     raise ImportError("Required modules for ResNet not found. Ensure general_python.ml and general_python.algebra are accessible.") from e
@@ -53,19 +54,6 @@ else:
 ##########################################################
 #! UTILITIES
 ##########################################################
-
-def _map_state_to_pm1(x):
-    """Map backend state representation to {-1, +1} when requested."""
-    one = jnp.asarray(1.0, dtype=x.dtype)
-    two = jnp.asarray(2.0, dtype=x.dtype)
-    if BACKEND_DEF_SPIN:
-        scale = jnp.asarray(abs(float(BACKEND_REPR)), dtype=x.dtype)
-        scale = jnp.where(scale == 0, one, scale)
-        return x / scale
-    repr_value = jnp.asarray(float(BACKEND_REPR), dtype=x.dtype)
-    repr_value = jnp.where(repr_value == 0, one, repr_value)
-    return x * (two / repr_value) - one
-
 
 def circular_pad(x, kernel_size):
     """
@@ -166,6 +154,8 @@ class _FlaxResNet(nn.Module):
     input_scale         : float = 1.0
     input_shift         : float = 0.0
     map_input_to_spin   : bool = False
+    input_is_spin       : bool = BACKEND_DEF_SPIN
+    input_value         : float = BACKEND_REPR
     init_scale          : float = 1.0
     init_mode           : str = 'fan_in'
     init_dist           : str = 'normal'
@@ -188,7 +178,7 @@ class _FlaxResNet(nn.Module):
             s = s[jnp.newaxis, ...]
 
         if self.map_input_to_spin:
-            s = _map_state_to_pm1(s)
+            s = map_state_to_pm1(s, self.input_is_spin, self.input_value)
             
         batch_size   = s.shape[0]
         # (Batch, L1, L2, ..., 1)
@@ -266,6 +256,12 @@ class ResNet(FlaxInterface):
             Scaling factor for input. Default 1.0.
         input_shift (float):
             Shift factor for input. Default 0.0.
+        map_input_to_spin (bool):
+            If True, map the configured input convention to {-1, +1} before reshaping.
+        input_spin (bool):
+            If True, the wrapper interprets inputs as signed spin values.
+        input_value (float):
+            Magnitude of the signed or binary local values used by the wrapper.
         init_scale (float):
             Scale for variance scaling initialization. Default 1.0.
         init_mode (str):
@@ -334,6 +330,8 @@ class ResNet(FlaxInterface):
             input_scale     = input_scale,
             input_shift     = input_shift,
             map_input_to_spin = map_input_to_spin,
+            input_is_spin   = kwargs.get('input_spin', BACKEND_DEF_SPIN),
+            input_value     = kwargs.get('input_value', BACKEND_REPR),
             init_scale      = init_scale,
             init_mode       = init_mode,
             init_dist       = init_dist
@@ -352,6 +350,15 @@ class ResNet(FlaxInterface):
 
         self._name              = 'resnet'
         self._has_analytic_grad = False # Use AD
+        self._nqs_family = "resnet"
+        self._nqs_variant = "general"
+        self._nqs_native_representation = preferred_state_representation(
+            net_kwargs["map_input_to_spin"],
+            net_kwargs["input_is_spin"],
+        )
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     # ----------------------------------------------------------
 

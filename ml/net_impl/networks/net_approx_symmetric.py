@@ -809,6 +809,12 @@ class AnsatzApproxSymmetric(FlaxInterface):
             seed=seed,
             **kwargs,
         )
+        self._name = "approx_symmetric"
+        self._nqs_family = "approx_symmetric"
+        self._nqs_variant = "combo"
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     def __repr__(self) -> str:
         meta = self._combo_meta

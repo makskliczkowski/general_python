@@ -225,6 +225,12 @@ class Transformer(FlaxInterface):
             **kwargs
         )
         self._name = 'transformer'
+        self._nqs_family = "transformer"
+        self._nqs_variant = "general"
+        self._nqs_native_representation = "binary_01"
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     def __repr__(self) -> str:
         mod = self._flax_module

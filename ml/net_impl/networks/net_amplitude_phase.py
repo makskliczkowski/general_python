@@ -83,12 +83,17 @@ class AmplitudePhase(FlaxInterface):
     """
     Amplitude-Phase Separated Ansatz Interface.
 
-    Parameters:
-        input_shape (tuple): Shape of input (n_sites,).
-        amplitude_net (str): Network type for amplitude (e.g. 'mlp', 'cnn').
-        phase_net (str): Network type for phase.
-        amplitude_kwargs (dict): Config for amplitude network.
-        phase_kwargs (dict): Config for phase network.
+    Parameters
+    input_shape (tuple): 
+        Shape of input (n_sites,).
+    amplitude_net (str): 
+        Network type for amplitude (e.g. 'mlp', 'cnn').
+    phase_net (str): 
+        Network type for phase.
+    amplitude_kwargs (dict): 
+        Config for amplitude network.
+    phase_kwargs (dict): 
+        Config for phase network.
     """
     def __init__(self,
                 input_shape     : tuple,
@@ -143,7 +148,12 @@ class AmplitudePhase(FlaxInterface):
             seed        =   seed,
             **kwargs
         )
-        self._name = 'amplitude_phase'
+        self._name                          = 'amplitude_phase'
+        self._nqs_family                    = "amplitude_phase"
+        self._nqs_variant                   = "general"
+        self._nqs_supports_fast_updates     = False
+        self._nqs_supports_exact_sampling   = False
+        self._nqs_preferred_sampler         = "MCSampler"
 
     def _resolve_inner(self, net_type, net_kwargs, input_shape):
         """Resolves string keys to inner Flax Module classes and prepares kwargs."""

@@ -531,6 +531,20 @@ class FlaxInterface(GeneralNet):
             x = jnp.asarray(x, dtype=self._input_dtype)
         return self._compiled_apply_fn(self._parameters, x)
 
+    def get_nqs_metadata(self) -> dict:
+        """
+        Return small optional metadata for NQS-side specialization.
+        """
+        return {
+            "family"                    : getattr(self,         "_nqs_family", None),
+            "variant"                   : getattr(self,         "_nqs_variant", None),
+            "native_representation"     : getattr(self,         "_nqs_native_representation", None),
+            "supports_fast_updates"     : bool(getattr(self,    "_nqs_supports_fast_updates", False)),
+            "supports_exact_sampling"   : bool(getattr(self,    "_nqs_supports_exact_sampling", False)),
+            "preferred_sampler"         : getattr(self,         "_nqs_preferred_sampler", None),
+            "input_dtype"               : self._input_dtype,
+        }
+
     #########################################################
     #! CHECK HOLOMORPHICITY
     #########################################################

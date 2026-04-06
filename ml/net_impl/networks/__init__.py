@@ -1,7 +1,10 @@
 """
 Network implementations (lazy exports).
 
-This module exposes all built-in ansatz classes while keeping import overhead low.
+This module exposes the built-in ansatz classes while keeping import overhead
+low. These are the general wrappers used across QES. NQS may add a thinner,
+specialized adapter layer on top, but the classes exported here remain usable
+as standalone network implementations.
 """
 
 import importlib

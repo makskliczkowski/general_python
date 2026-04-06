@@ -309,103 +309,68 @@ class FlaxComplexAutoregressive(nn.Module):
                                     kernel_init     =   nn.initializers.normal(stddev=0.01), 
                                     bias_init       =   nn.initializers.normal(stddev=0.01)
                                 )    
-    
+
     def _flatten_input(self, x):
         ''' Flatten input to shape (batch_size, n_sites) '''
-        if x.shape[-1] == self.n_sites: 
+        if x.shape[-1] == self.n_sites:
             return x
-        if x.size == self.n_sites: 
+        if x.size == self.n_sites:
             return x.reshape((self.n_sites,))
-        
         return x.reshape((-1, self.n_sites))
-    
-    def _to_binary(self, x):
-        """Convert physical spins (-0.5, +0.5) to binary (0, 1) format.
-        
-        The sampler returns physical spins in (-0.5, +0.5) format for Hamiltonian
-        compatibility. This function converts them to (0, 1) binary format for
-        the network's internal probability calculations.
-        
-        Conversion: x + 0.5 maps -0.5 -> 0, +0.5 -> 1
-        
-        Note: 
-            During AR sampling (inside the scan loop), configs are already
-            in (0, 1) format. Adding 0.5 gives (0.5, 1.5), but the network
-            uses these values only for the > 0.5 threshold check, which
-            still works correctly: 0.5 > 0.5 is False, 1.5 > 0.5 is True.
-        """
-        return jnp.real(x) + 0.5 
-        
-    def __call__(self, x):
-        ''' Forward pass to compute log(psi) = log_prob / mu + i * phase '''
-        
-        # Convert physical spins to binary for network processing
-        x_flat          = self._flatten_input(x)
-        x_binary        = self._to_binary(x_flat)
-        x_input         = x_binary.astype(self.dtype) # Network expects binary (0,1) input
 
-        # AMPLITUDE
-        # Force Real Logits - network receives binary input
+    def _to_binary_from_physical(self, x):
+        ''' Convert signed or binary inputs to native binary occupancy. '''
+        x_real = jnp.real(x)
+        return jnp.where(x_real > 0, 1.0, 0.0)
+
+    def _prepare_binary_input(self, x_binary):
+        ''' Cast binary inputs once before MADE evaluation. '''
+        return x_binary.astype(self.dtype)
+
+    def _phase_from_binary(self, x_binary, x_input):
+        ''' Compute accumulated phase from binary input. '''
+        logits_phase    = jnp.real(self.phase_net(x_input))
+        theta_per_site  = jnp.pi * nn.tanh(logits_phase)
+        return jnp.sum(theta_per_site * x_binary, axis=-1)
+
+    def _log_psi_from_binary(self, x_binary):
+        ''' Compute log(psi) from native binary inputs. '''
+        x_input         = self._prepare_binary_input(x_binary)
         logits_amp      = jnp.real(self.amplitude_net(x_input))
         log_p_1         = -nn.softplus(-logits_amp)
         log_p_0         = -nn.softplus(logits_amp)
-        
-        # Select based on x (0 or 1) using BINARY representation
-        # x_binary is in (0, 1) format, so >0.5 correctly identifies spin up
         log_p_per_site  = jnp.where(x_binary > 0.5, log_p_1, log_p_0)
         log_prob        = jnp.sum(log_p_per_site, axis=-1)
-        
-        # PHASE
-        # Force Real Theta
-        logits_phase    = jnp.real(self.phase_net(x_input))
-        
-        # Bound phase with Tanh to prevent exploding gradients
-        # Outputs range [-pi, pi]
-        # We multiply by pi so the net predicts fractions of pi
-        theta_per_site  = jnp.pi * nn.tanh(logits_phase)
-        
-        # Sum conditional phases using BINARY representation
-        theta           = jnp.sum(theta_per_site * x_binary, axis=-1)
-
+        theta           = self._phase_from_binary(x_binary, x_input)
         return log_prob / self.mu + 1j * theta
 
+    def __call__(self, x):
+        ''' Forward pass to compute log(psi). '''
+        x_binary = self._to_binary_from_physical(self._flatten_input(x))
+        return self._log_psi_from_binary(x_binary)
+
+    def get_logits_binary(self, x_binary):
+        ''' Get amplitude logits for native binary input. '''
+        x_binary = self._flatten_input(x_binary)
+        return jnp.real(self.amplitude_net(self._prepare_binary_input(x_binary)))
+
+    def get_phase_binary(self, x_binary):
+        ''' Get phase for native binary input. '''
+        x_binary = self._flatten_input(x_binary)
+        x_input = self._prepare_binary_input(x_binary)
+        return self._phase_from_binary(x_binary, x_input)
+
     def get_logits(self, x, is_binary: bool = False):
-        """Get amplitude logits for given configuration.
-        
-        Parameters
-        ----------
-        x : jnp.ndarray
-            Input configuration. Can be in physical spin format (-0.5, +0.5)
-            or binary format (0, 1).
-        is_binary : bool, default=False
-            If True, x is already in binary (0,1) format and no conversion is done.
-            If False, x is assumed to be in physical spin format and converted.
-        """
-        x_flat          = self._flatten_input(x)
-        x_binary        = x_flat if is_binary else self._to_binary(x_flat)
-        return jnp.real(self.amplitude_net(x_binary.astype(self.dtype)))
+        ''' Get amplitude logits for a configuration. '''
+        x_flat = self._flatten_input(x)
+        x_binary = x_flat if is_binary else self._to_binary_from_physical(x_flat)
+        return self.get_logits_binary(x_binary)
 
     def get_phase(self, x, is_binary: bool = False):
-        """Get phase for given configuration.
-        
-        Parameters
-        ----------
-        x : jnp.ndarray
-            Input configuration. Can be in physical spin format (-0.5, +0.5)
-            or binary format (0, 1).
-        is_binary : bool, default=False
-            If True, x is already in binary (0,1) format and no conversion is done.
-            If False, x is assumed to be in physical spin format and converted.
-        """
-        x_flat          = self._flatten_input(x)
-        x_binary        = x_flat if is_binary else self._to_binary(x_flat)
-        
-        # Apply the same Tanh logic here! Network receives binary input
-        logits_phase    = jnp.real(self.phase_net(x_binary.astype(self.dtype)))
-        theta_per_site  = jnp.pi * nn.tanh(logits_phase)
-        
-        # Use binary representation for phase accumulation
-        return jnp.sum(theta_per_site * x_binary, axis=-1)
+        ''' Get phase for a configuration. '''
+        x_flat = self._flatten_input(x)
+        x_binary = x_flat if is_binary else self._to_binary_from_physical(x_flat)
+        return self.get_phase_binary(x_binary)
     
 # ---------------------------------------------------------
 
@@ -458,6 +423,13 @@ class ComplexAR(FlaxInterface):
             seed            =   seed,
             **kwargs
         )
+        self._name = 'autoregressive'
+        self._nqs_family = "autoregressive"
+        self._nqs_variant = "general"
+        self._nqs_native_representation = "binary_01"
+        self._nqs_supports_exact_sampling = True
+        self._nqs_supports_fast_updates = False
+        self._nqs_preferred_sampler = "ARSampler"
         self._has_analytic_grad = False 
 
     def get_info(self) -> dict:

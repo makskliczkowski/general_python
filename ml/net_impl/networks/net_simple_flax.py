@@ -165,6 +165,12 @@ class FlaxSimpleNet(FlaxInterface):
             dtype       = dtype,         # Interface default dtype
             seed        = seed           # Seed for initialization
         )
+        self._name = 'simple_flax'
+        self._nqs_family = "simple_flax"
+        self._nqs_variant = "general"
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     #########################################################
     #! INFO

@@ -38,6 +38,7 @@ _ALIASES = {
 }
 
 _COMMON_EXPORTS = {
+    'dtype_to_name',
     'load_results',
     'filter_results',
     'ResultSet',

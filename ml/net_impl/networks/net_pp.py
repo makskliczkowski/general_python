@@ -51,6 +51,7 @@ except ImportError as e:
 try:
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
+    from ....ml.net_impl.utils.net_state_repr_jax import state_to_binary_index, preferred_state_representation
     from ....ml.net_impl.activation_functions   import log_cosh_jnp
     from ....algebra.utils                      import JAX_AVAILABLE, BACKEND_DEF_SPIN, BACKEND_REPR
     
@@ -66,20 +67,6 @@ except ImportError as e:
 # ----------------------------------------------------------------------
 # Logic for Log-Pfaffian
 # ----------------------------------------------------------------------
-
-def _state_to_binary_index(s: jax.Array) -> jax.Array:
-    """Convert backend spin/non-spin states to binary indices {0,1}."""
-    s_real = jnp.real(s)
-    if BACKEND_DEF_SPIN:
-        threshold   = jnp.asarray(0.0, dtype=s_real.dtype)
-    else:
-        repr_value  = jnp.asarray(float(BACKEND_REPR), dtype=s_real.dtype)
-        threshold   = jnp.where(
-            repr_value == 0,
-            jnp.asarray(0.0, dtype=s_real.dtype),
-            0.5 * repr_value,
-        )
-    return (s_real > threshold).astype(jnp.int32)
 
 def log_pfaffian_proxy(A):
     """
@@ -108,6 +95,8 @@ class _FlaxPP(nn.Module):
     param_dtype : Any       = jnp.complex128
     dtype       : Any       = jnp.complex128  # Computation dtype
     init_scale  : float     = 0.01
+    input_is_spin: bool     = BACKEND_DEF_SPIN
+    input_value : float     = BACKEND_REPR
 
     def setup(self):
         # Variational parameters F_{ij}^{\sigma_i \sigma_j}
@@ -130,7 +119,7 @@ class _FlaxPP(nn.Module):
             s = s[jnp.newaxis, :]
         
         # 1. Cast input to physical indices (0, 1)
-        s_idx           = _state_to_binary_index(s)
+        s_idx           = state_to_binary_index(s, self.input_is_spin, self.input_value)
         
         # 2. Cast Parameters to High Precision for Pfaffian
         F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
@@ -159,6 +148,8 @@ class _FlaxRBMPP(nn.Module):
     param_dtype : Any       = jnp.complex128
     dtype       : Any       = jnp.complex128
     init_scale  : float     = 0.01
+    input_is_spin: bool     = BACKEND_DEF_SPIN
+    input_value : float     = BACKEND_REPR
     
     def setup(self):
         # --- PP Part ---
@@ -196,7 +187,7 @@ class _FlaxRBMPP(nn.Module):
         log_rbm         = log_rbm + jnp.sum(v_rbm * self.vis_bias.astype(self.dtype), axis=-1)
         
         # PP Part 
-        s_idx           = _state_to_binary_index(s)
+        s_idx           = state_to_binary_index(s, self.input_is_spin, self.input_value)
         F_high          = self.F if self.F.dtype == self.dtype else self.F.astype(self.dtype)
         F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
         i_idx           = self._i_idx[None, :, None]  # (1, N, 1)
@@ -257,7 +248,9 @@ class PairProduct(FlaxInterface):
                                 n_hidden    = n_hidden,
                                 dtype       = dtype,
                                 param_dtype = p_dtype,
-                                init_scale  = init_scale
+                                init_scale  = init_scale,
+                                input_is_spin = kwargs.get('input_spin', BACKEND_DEF_SPIN),
+                                input_value = kwargs.get('input_value', BACKEND_REPR),
                             )
             name            = "rbm_pp"
         else:
@@ -266,7 +259,9 @@ class PairProduct(FlaxInterface):
                                 n_sites     = n_sites,
                                 dtype       = dtype,
                                 param_dtype = p_dtype,
-                                init_scale  = init_scale
+                                init_scale  = init_scale,
+                                input_is_spin = kwargs.get('input_spin', BACKEND_DEF_SPIN),
+                                input_value = kwargs.get('input_value', BACKEND_REPR),
                             )
             name            = "pair_product"
         
@@ -282,6 +277,15 @@ class PairProduct(FlaxInterface):
         
         self._name              = name
         self._has_analytic_grad = False
+        self._nqs_family = "pair_product"
+        self._nqs_variant = "rbm_pp" if use_rbm else "general"
+        self._nqs_native_representation = preferred_state_representation(
+            False,
+            net_kwargs["input_is_spin"],
+        )
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     def __repr__(self) -> str:
         mod = self._flax_module

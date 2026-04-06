@@ -35,6 +35,7 @@ from typing         import Any, Optional, Sequence
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.utils.net_state_repr_jax import state_to_binary_index, preferred_state_representation
     from ....algebra.utils                  import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE = True
 except ImportError:
@@ -44,20 +45,6 @@ except ImportError:
 # Inner Flax Module
 # ----------------------------------------------------------------------
 
-def _state_to_binary_index(s: jnp.ndarray) -> jnp.ndarray:
-    """Convert backend spin/non-spin states to binary indices {0,1}."""
-    s_real = jnp.real(s)
-    if BACKEND_DEF_SPIN:
-        threshold   = jnp.asarray(0.0, dtype=s_real.dtype)
-    else:
-        repr_value  = jnp.asarray(float(BACKEND_REPR), dtype=s_real.dtype)
-        threshold   = jnp.where(
-            repr_value == 0,
-            jnp.asarray(0.0, dtype=s_real.dtype),
-            0.5 * repr_value,
-        )
-    return (s_real > threshold).astype(jnp.int32)
-
 class _FlaxMPS(nn.Module):
     n_sites         : int
     bond_dim        : int
@@ -65,6 +52,8 @@ class _FlaxMPS(nn.Module):
     dtype           : Any   = jnp.complex128
     param_dtype     : Any   = jnp.complex128
     init_scale      : float = 0.01
+    input_is_spin   : bool  = BACKEND_DEF_SPIN
+    input_value     : float = BACKEND_REPR
 
     def setup(self):
         # MPS Tensors: A[i] of shape (phys_dim, bond_dim, bond_dim)
@@ -90,7 +79,7 @@ class _FlaxMPS(nn.Module):
         # 1. Map inputs to physical indices
         s_real = jnp.real(s)
         if self.phys_dim == 2:
-            s_idx = _state_to_binary_index(s_real)
+            s_idx = state_to_binary_index(s_real, self.input_is_spin, self.input_value)
         else:
             s_idx = jnp.round(s_real).astype(jnp.int32)
             s_idx = jnp.clip(s_idx, 0, self.phys_dim - 1)
@@ -163,7 +152,9 @@ class MPS(FlaxInterface):
             'phys_dim'      : phys_dim,
             'dtype'         : dtype,
             'param_dtype'   : param_dtype if param_dtype else dtype,
-            'init_scale'    : init_scale
+            'init_scale'    : init_scale,
+            'input_is_spin' : kwargs.get('input_spin', BACKEND_DEF_SPIN),
+            'input_value'   : kwargs.get('input_value', BACKEND_REPR),
         }
 
         super().__init__(
@@ -176,6 +167,15 @@ class MPS(FlaxInterface):
             **kwargs
         )
         self._name = 'mps'
+        self._nqs_family = "mps"
+        self._nqs_variant = "general"
+        self._nqs_native_representation = preferred_state_representation(
+            False,
+            net_kwargs["input_is_spin"],
+        )
+        self._nqs_supports_fast_updates = False
+        self._nqs_supports_exact_sampling = False
+        self._nqs_preferred_sampler = "MCSampler"
 
     def __repr__(self) -> str:
         mod = self._flax_module

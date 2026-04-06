@@ -1,8 +1,14 @@
 """
 Network implementation subpackage.
 
-Provides lazy access to core helpers and common network classes without
-importing JAX/Flax until needed.
+Provides lazy access to the general network wrappers and helper utilities
+without importing JAX or Flax until needed.
+
+The wrappers in this package stay general-purpose. They can be used directly
+outside NQS, while NQS-specific fast paths are selected separately in the NQS
+layer. Input state conventions are configured explicitly through wrapper
+arguments such as ``input_spin`` and ``input_value`` instead of relying on
+hidden backend remaps in hot paths.
 """
 
 import importlib

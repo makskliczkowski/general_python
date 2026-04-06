@@ -47,6 +47,35 @@ if TYPE_CHECKING:
     from .memory                import log_memory_status, check_memory_for_operation
     from .timer                 import Timer
 
+def dtype_to_name(dtype):
+    """
+    Normalize dtype-like objects to the canonical QES dtype name.
+    """
+    if isinstance(dtype, str):
+        return dtype
+
+    try:
+        import numpy as np
+        dtype_obj = np.dtype(dtype)
+    except Exception:
+        dtype_obj = dtype
+
+    try:
+        from QES.Algebra.backends import get_dtype_map
+        dtype_name = get_dtype_map().get(dtype)
+        if dtype_name is None:
+            dtype_name = get_dtype_map().get(dtype_obj)
+        if dtype_name is not None:
+            return dtype_name
+    except Exception:
+        pass
+
+    try:
+        import numpy as np
+        return np.dtype(dtype).name
+    except Exception:
+        return str(dtype)
+
 # Lazy loading registry
 _LAZY_IMPORTS = {
     # directories
@@ -111,7 +140,7 @@ def __getattr__(name: str):
 
 def __dir__():
     """List available attributes for autocompletion."""
-    return list(_LAZY_IMPORTS.keys()) + ['get_module_description', 'list_available_modules']
+    return list(_LAZY_IMPORTS.keys()) + ['dtype_to_name', 'get_module_description', 'list_available_modules']
 
 ####################################################################################################
 
@@ -149,7 +178,7 @@ def list_available_modules():
     return ["binary", "directories", "plot", "datah", "hdf5man", "lazy_entry", "plotters", "flog", "memory", "timer"]
 
 # Expose all lazy-loadable names for `from common import *`
-__all__ = list(_LAZY_IMPORTS.keys()) + ['get_module_description', 'list_available_modules']
+__all__ = list(_LAZY_IMPORTS.keys()) + ['dtype_to_name', 'get_module_description', 'list_available_modules']
 
 ####################################################################################################
 #! EOF

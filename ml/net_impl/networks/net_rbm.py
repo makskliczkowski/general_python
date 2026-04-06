@@ -35,6 +35,7 @@ try:
     from ....ml.net_impl.interface_net_flax     import FlaxInterface
     from ....ml.net_impl.activation_functions   import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.utils.net_state_repr_jax import map_state_to_pm1, preferred_state_representation
     from ....common.binary                      import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE                               = True
 except ImportError as e:
@@ -155,8 +156,13 @@ class RBM(FlaxInterface):
             Number of hidden units. Default is 2.
         bias (bool): 
             Whether to include hidden bias terms. Default True.
-        map_to_pm1 (bool): 
-            If True, map input {0,1} to {-1,1} before processing. Default True.
+        in_activation (bool or callable):
+            If True, map the configured input convention to {-1, +1} before the
+            visible layer. A callable can also be supplied explicitly.
+        input_spin (bool):
+            If True, the input states are interpreted as signed spin values.
+        input_value (float):
+            Magnitude of the signed or binary local values used by the wrapper.
         dtype (jnp.dtype): 
             Data type for computations. Default float32 for real RBM, complex64 for complex RBM.
         param_dtype (Optional[jnp.dtype]): 
@@ -172,7 +178,7 @@ class RBM(FlaxInterface):
                 alpha          : Optional[float]= None,
                 bias           : bool           = True,
                 visible_bias   : bool           = True,
-                in_activation  : bool           = False,        # Flag to map {0,1} -> {-1,1}
+                in_activation  : bool           = False,        # configured input -> {-1, +1}
                 dtype          : Any            = jnp.float32,  # Default float for real RBM
                 param_dtype    : Optional[Any]  = None,
                 seed           : int            = 0,
@@ -197,14 +203,19 @@ class RBM(FlaxInterface):
             self.log(f"Warning: RBM dtype ({final_dtype}) and param_dtype ({final_param_dtype}) differ in complexity. "
                     "Ensure this is intended.", log='warning', lvl=1, color='yellow')
     
-        # Define input activation based on map_to_pm1 flag
-        # input_activation        = (lambda x: 2 * x - 1) if map_to_pm1 else None
+        # Define the optional visible-state remap from the configured input convention.
+        input_is_spin = bool(kwargs.get("input_spin", BACKEND_DEF_SPIN))
+        input_value = float(kwargs.get("input_value", BACKEND_REPR))
+
         if callable(in_activation):
             input_activation = in_activation
+            native_representation = None
         elif in_activation:
-            input_activation = lambda x: 2 * x - 1
+            input_activation = partial(map_state_to_pm1, input_is_spin=input_is_spin, input_value=input_value)
+            native_representation = preferred_state_representation(True, input_is_spin)
         else:
             input_activation = None
+            native_representation = preferred_state_representation(False, input_is_spin)
         self._in_activation     = input_activation
         # Prepare kwargs for _FlaxRBM
         net_kwargs = {
@@ -235,9 +246,20 @@ class RBM(FlaxInterface):
 
         #! For the analytic gradient, we need to compile the function
         self._compiled_grad_fn                      = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
-        self._compiled_log_psi_delta_fn             = jax.jit(partial(RBM._log_psi_delta_impl, input_activation=self._in_activation))
+        self._compiled_log_psi_delta_fn             = jax.jit(
+                                                        partial(RBM._log_psi_delta_impl, input_activation=self._in_activation),
+                                                        static_argnames=("state_spin",),
+                                                    )
         self._compiled_log_psi_delta_cache_init_fn  = jax.jit(partial(RBM._init_log_psi_delta_cache_impl, input_activation=self._in_activation))
         self._has_analytic_grad                     = False
+        self._delta_state_spin                     = bool(kwargs.get("state_spin", input_is_spin))
+        self._delta_state_value                    = float(kwargs.get("state_value", input_value))
+        self._nqs_family                           = "rbm"
+        self._nqs_variant                          = "general"
+        self._nqs_native_representation            = native_representation
+        self._nqs_supports_fast_updates            = True
+        self._nqs_supports_exact_sampling          = False
+        self._nqs_preferred_sampler                = "MCSampler"
         # Fast-update support is valid for flip-based rules only.
         self._fast_update_supported_rules           = frozenset(
             {"LOCAL", "MULTI_FLIP", "BOND_FLIP", "WORM"}
@@ -385,6 +407,8 @@ class RBM(FlaxInterface):
         update_info         : Any,
         theta_old           : Optional[jax.Array] = None,
         input_activation    : Optional[Callable] = None,
+        state_spin          : bool = BACKEND_DEF_SPIN,
+        state_value         : float = BACKEND_REPR,
     ):
         """
         Compute delta log(psi) from flip indices and optionally update theta cache.
@@ -418,10 +442,10 @@ class RBM(FlaxInterface):
         take            = odd & (~seen_before)
 
         s_old_idx       = state[safe_idx]
-        if BACKEND_DEF_SPIN:
+        if state_spin:
             s_new_idx   = -s_old_idx
         else:
-            flip_value  = jnp.asarray(BACKEND_REPR, dtype=s_old_idx.dtype)
+            flip_value  = jnp.asarray(state_value, dtype=s_old_idx.dtype)
             s_new_idx   = flip_value - s_old_idx
 
         v_old_idx       = RBM._prepare_visible(s_old_idx, compute_dtype, input_activation=input_activation)
@@ -447,7 +471,7 @@ class RBM(FlaxInterface):
         return hidden_delta + visible_delta, theta_new
 
     @staticmethod
-    @partial(jax.jit, static_argnames=("input_activation",))
+    @partial(jax.jit, static_argnames=("input_activation", "state_spin"))
     def _log_psi_delta_impl(
         params: Any,
         current_log_psi: jax.Array,
@@ -455,6 +479,8 @@ class RBM(FlaxInterface):
         update_info: Any,
         cache: Optional[jax.Array] = None,
         input_activation: Optional[Callable] = None,
+        state_spin: bool = BACKEND_DEF_SPIN,
+        state_value: float = BACKEND_REPR,
     ):
         """
         Delta log(psi) for proposed flip updates.
@@ -469,6 +495,8 @@ class RBM(FlaxInterface):
                 update_info=update_info,
                 theta_old=cache,
                 input_activation=input_activation,
+                state_spin=state_spin,
+                state_value=state_value,
             )
             if cache is None:
                 return delta
@@ -482,6 +510,8 @@ class RBM(FlaxInterface):
                     update_info=ui,
                     theta_old=None,
                     input_activation=input_activation,
+                    state_spin=state_spin,
+                    state_value=state_value,
                 ),
                 in_axes=(0, 0),
             )(state, update_info)
@@ -494,6 +524,8 @@ class RBM(FlaxInterface):
                 update_info=ui,
                 theta_old=th,
                 input_activation=input_activation,
+                state_spin=state_spin,
+                state_value=state_value,
             ),
             in_axes=(0, 0, 0),
         )(state, update_info, cache)
@@ -509,8 +541,20 @@ class RBM(FlaxInterface):
         state: jax.Array,
         update_info: Any,
         cache: Optional[jax.Array] = None,
+        state_spin: Optional[bool] = None,
+        state_value: Optional[float] = None,
     ):
-        return self._compiled_log_psi_delta_fn(params, current_log_psi, state, update_info, cache)
+        eff_state_spin = self._delta_state_spin if state_spin is None else bool(state_spin)
+        eff_state_value = self._delta_state_value if state_value is None else float(state_value)
+        return self._compiled_log_psi_delta_fn(
+            params,
+            current_log_psi,
+            state,
+            update_info,
+            cache,
+            state_spin=eff_state_spin,
+            state_value=eff_state_value,
+        )
 
     def get_log_psi_delta(self):
         return self.log_psi_delta

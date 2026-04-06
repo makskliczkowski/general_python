@@ -1,9 +1,11 @@
 '''
-This module provides utility functions for the general Python machine learning framework.
+Utility helpers for the network implementation layer.
 
-It includes functions for initializing weights, creating activation functions, and handling
-activation function parameters. The module supports both JAX and NumPy backends, allowing for
-flexible use in different environments.
+This package includes initializers, activation helpers, backend-specific
+utilities, and small state-representation helpers used by the general network
+wrappers. The JAX wrappers can now describe input conventions explicitly
+through ``input_spin`` and ``input_value`` instead of duplicating local
+representation conversions.
 
 -----------------------------------------------------------------
 File        : general_python/ml/net_impl/utils/__init__.py
@@ -17,13 +19,15 @@ try:
     from . import net_init
     from . import net_init_jax as jaxpy
     from . import net_init_np as numpy
+    from . import net_state_repr_jax
 except ImportError as e:
-    raise ImportError("Failed to import net_init, net_init_jax, or net_init_np modules. Ensure general_python package is correctly installed.") from e
+    raise ImportError("Failed to import ML utility modules. Ensure general_python package is correctly installed.") from e
 
 __all__ = [
     'net_init',
     'jaxpy',
     'numpy',
+    'net_state_repr_jax',
 ]
 
 __version__     = '0.1.0'

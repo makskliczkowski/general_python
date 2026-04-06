@@ -128,7 +128,12 @@ class Jastrow(FlaxInterface):
             seed        =   seed,
             **kwargs
         )
-        self._name = 'jastrow'
+        self._name                          = 'jastrow'
+        self._nqs_family                    = "jastrow"
+        self._nqs_variant                   = "general"
+        self._nqs_supports_fast_updates     = False
+        self._nqs_supports_exact_sampling   = False
+        self._nqs_preferred_sampler         = "MCSampler"
 
     def __repr__(self) -> str:
         return f"Jastrow(n_sites={self._flax_module.n_sites}, dtype={self.dtype})"

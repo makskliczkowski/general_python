@@ -45,16 +45,17 @@ from    functools import partial
 import  math
 
 try:
-    import                                      jax
-    import                                      jax.numpy as jnp
-    import                                      flax.linen as nn
-    from ....ml.net_impl.interface_net_flax     import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
-    from ....ml.net_impl.activation_functions   import get_activation_jnp
-    from ....algebra.utils                      import BACKEND_DEF_SPIN, BACKEND_REPR
+    import                                          jax
+    import                                          jax.numpy as jnp
+    import                                          flax.linen as nn
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling
+    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1, preferred_state_representation
+    from ....ml.net_impl.activation_functions       import get_activation_jnp
+    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
     if TYPE_CHECKING:
-        from ....algebra.utils                  import Array
-    JAX_AVAILABLE                               = True
+        from ....algebra.utils                      import Array
+    JAX_AVAILABLE                                   = True
 except ImportError as e:
     raise ImportError("Could not import general_python modules. Ensure general_python is properly installed.") from e
 
@@ -93,18 +94,6 @@ def _resolve_activation(act: Optional[Any]) -> Optional[Callable]:
         return act[0]
     raise ValueError(f"Invalid activation specification: {act!r}")
 
-def _map_state_to_pm1(x: jax.Array) -> jax.Array:
-    """Map backend state representation to {-1, +1} when requested."""
-    one = jnp.asarray(1.0, dtype=x.dtype)
-    two = jnp.asarray(2.0, dtype=x.dtype)
-    if BACKEND_DEF_SPIN:
-        scale = jnp.asarray(abs(float(BACKEND_REPR)), dtype=x.dtype)
-        scale = jnp.where(scale == 0, one, scale)
-        return x / scale
-    repr_value = jnp.asarray(float(BACKEND_REPR), dtype=x.dtype)
-    repr_value = jnp.where(repr_value == 0, one, repr_value)
-    return x * (two / repr_value) - one
-
 ##########################################################
 
 class _FlaxCNN(nn.Module):
@@ -126,6 +115,8 @@ class _FlaxCNN(nn.Module):
     periodic       : bool                       = True
     use_sum_pool   : bool                       = True
     transform_input: bool                       = False
+    input_is_spin  : bool                       = BACKEND_DEF_SPIN
+    input_value    : float                      = BACKEND_REPR
     split_complex  : bool                       = False
     islog          : bool                       = True
     
@@ -162,9 +153,9 @@ class _FlaxCNN(nn.Module):
         x               = s_proc.reshape(target_shape)
         x               = x.astype(comp_dtype)  # Cast to computation dtype (first)        
             
-        # Transform backend representation -> {-1, +1} if needed
+        # Transform the configured input convention -> {-1, +1} if needed
         if self.transform_input:
-            x           = _map_state_to_pm1(x)
+            x           = map_state_to_pm1(x, self.input_is_spin, self.input_value)
 
         # Input Activation
         in_act = _resolve_activation(self.in_act)
@@ -276,6 +267,12 @@ class CNN(FlaxInterface):
             Periodic boundary conditions. Default: True.
         sum_pooling (bool): 
             Sum over spatial dimensions. Default: True.
+        transform_input (bool):
+            If True, map the configured input convention to {-1, +1}.
+        input_spin (bool):
+            If True, inputs are interpreted as signed spin values.
+        input_value (float):
+            Magnitude of the signed or binary local values used by the wrapper.
     """
     def __init__(self, 
                 input_shape         : tuple,
@@ -387,6 +384,8 @@ class CNN(FlaxInterface):
             periodic        =   kwargs.get('periodic',      True),
             use_sum_pool    =   kwargs.get('sum_pooling',   True),
             transform_input =   transform_input,
+            input_is_spin   =   kwargs.get('input_spin',    BACKEND_DEF_SPIN),
+            input_value     =   kwargs.get('input_value',   BACKEND_REPR),
             split_complex   =   split_complex,
             islog           =   islog
         )
@@ -403,8 +402,17 @@ class CNN(FlaxInterface):
             seed        =   seed,
         )
 
-        self._has_analytic_grad = False
-        self._name              = 'cnn'
+        self._has_analytic_grad             = False
+        self._name                          = 'cnn'
+        self._nqs_family                    = "cnn"
+        self._nqs_variant                   = "general"
+        self._nqs_native_representation     = preferred_state_representation(
+                                                net_kwargs["transform_input"],
+                                                net_kwargs["input_is_spin"],
+                                            )
+        self._nqs_supports_fast_updates     = False
+        self._nqs_supports_exact_sampling   = False
+        self._nqs_preferred_sampler         = "MCSampler"
 
     @property
     def output_shape(self) -> Tuple[int, ...]:
