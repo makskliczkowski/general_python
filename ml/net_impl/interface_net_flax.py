@@ -158,7 +158,10 @@ class FlaxInterface(GeneralNet):
         #! Ensure dtype consistency in kwargs passed to the module
         net_kwargs_processed        = net_kwargs.copy()
         # pop the kwargs that are not meant for the Flax module
-        net_kwargs_processed.pop('input_activation',    None)
+        # Keep ``input_activation`` in module kwargs when the wrapped Flax
+        # module explicitly accepts it (for example RBM backbones). The parent
+        # ``GeneralNet`` still receives its own copy via the explicit
+        # ``input_activation=...`` argument below.
         net_kwargs_processed.pop('backend',             None)
         net_kwargs_processed.pop('input_shape',         None)
         net_kwargs_processed.pop('seed',                None)

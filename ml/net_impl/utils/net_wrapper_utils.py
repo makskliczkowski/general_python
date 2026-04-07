@@ -23,7 +23,7 @@ try:
     import jax.numpy as jnp
     from ....algebra.utils      import BACKEND_DEF_SPIN, BACKEND_REPR
     from ..activation_functions import get_activation_jnp
-    from .net_state_repr_jax    import preferred_state_representation
+    from .net_state_repr_jax    import map_state_to_pm1, preferred_state_representation
 except ImportError:
     raise ImportError("net_wrapper_utils requires general_python modules.")
 
@@ -211,16 +211,44 @@ def extract_input_convention(
         A dictionary containing the resolved input convention settings, which can be passed to the network implementation.
     
     """
-    resolved_input_is_spin  = wrapper_kwargs.get("input_is_spin", BACKEND_DEF_SPIN)
+    resolved_input_is_spin  = wrapper_kwargs.get(
+                                "input_is_spin",
+                                wrapper_kwargs.get("input_spin", BACKEND_DEF_SPIN),
+                            )
     convention              = {
                                 "input_is_spin" : bool(resolved_input_is_spin),
                                 "input_value"   : float(wrapper_kwargs.get("input_value", BACKEND_REPR)),
                             }
     if transform_input is not None:
         convention["transform_input"]   = bool(transform_input)
+    elif "transform_input" in wrapper_kwargs:
+        convention["transform_input"]   = bool(wrapper_kwargs.get("transform_input"))
     if map_input_to_spin is not None:
         convention["map_input_to_spin"] = bool(map_input_to_spin)
+    elif "map_input_to_spin" in wrapper_kwargs:
+        convention["map_input_to_spin"] = bool(wrapper_kwargs.get("map_input_to_spin"))
     return convention
+
+# ----------------------------------------------------------------------
+
+def make_state_input_adapter(input_convention: Mapping[str, Any]) -> Optional[Callable]:
+    """Build the shared signed-spin adapter implied by an explicit state convention."""
+    if not bool(input_convention.get("transform_input", False) or input_convention.get("map_input_to_spin", False)):
+        return None
+    return partial(map_state_to_pm1, input_is_spin=bool(input_convention.get("input_is_spin", BACKEND_DEF_SPIN)), input_value=float(input_convention.get("input_value", BACKEND_REPR)))
+
+def make_state_flip_update(input_convention: Mapping[str, Any]) -> Callable:
+    """Build the canonical local flip update for the given explicit state convention."""
+    input_is_spin   = bool(input_convention.get("input_is_spin", BACKEND_DEF_SPIN))
+    input_value     = float(input_convention.get("input_value", BACKEND_REPR))
+
+    def _flip(values):
+        arr = jnp.asarray(values)
+        if input_is_spin:
+            return -arr
+        return jnp.asarray(input_value, dtype=arr.dtype) - arr
+
+    return _flip
 
 # ----------------------------------------------------------------------
 

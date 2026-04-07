@@ -34,6 +34,9 @@ try:
                                                         prepare_split_complex_input,
                                                         resolve_split_complex_dtypes,
                                                         configure_nqs_metadata,
+                                                        extract_input_convention,
+                                                        infer_native_representation,
+                                                        make_state_input_adapter,
                                                         normalize_activation_sequence,
                                                     )
     JAX_AVAILABLE       = True
@@ -210,6 +213,9 @@ class MLP(FlaxInterface):
             default='relu',
             container=tuple,
         )
+        input_convention = extract_input_convention(kwargs)
+        if input_adapter is None:
+            input_adapter = make_state_input_adapter(input_convention)
 
         net_kwargs = {
             'hidden_dims'       : hidden_dims,
@@ -240,6 +246,7 @@ class MLP(FlaxInterface):
         configure_nqs_metadata(
             self,
             family="mlp",
+            native_representation=infer_native_representation(input_convention),
         )
 
     def __call__(self, x):

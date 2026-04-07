@@ -34,7 +34,10 @@ try:
     from ....ml.net_impl.utils.net_wrapper_utils    import (
                                                         combine_split_complex_output,
                                                         configure_nqs_metadata,
+                                                        extract_input_convention,
+                                                        infer_native_representation,
                                                         map_over_complex_parts,
+                                                        make_state_input_adapter,
                                                         normalize_activation_sequence,
                                                         prepare_split_complex_input,
                                                         resolve_split_complex_dtypes,
@@ -288,6 +291,9 @@ class GCNN(FlaxInterface):
             default='log_cosh',
             container=tuple,
         )
+        input_convention = extract_input_convention(kwargs)
+        if input_adapter is None:
+            input_adapter = make_state_input_adapter(input_convention)
             
         jax_dtype           = getattr(jnp, dtype) if isinstance(dtype, str) else dtype
         net_kwargs          = {
@@ -323,6 +329,7 @@ class GCNN(FlaxInterface):
         configure_nqs_metadata(
             self,
             family="gcnn",
+            native_representation=infer_native_representation(input_convention),
         )
 
     @property

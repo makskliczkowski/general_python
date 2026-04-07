@@ -25,6 +25,9 @@ try:
     from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling
     from ....ml.net_impl.utils.net_wrapper_utils import (
         configure_nqs_metadata,
+        extract_input_convention,
+        infer_native_representation,
+        make_state_input_adapter,
     )
     from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
@@ -334,6 +337,9 @@ class ResNet(FlaxInterface):
             raise ValueError(f"kernel_size {kernel_tuple} must have length {n_dim}")
 
         p_dtype = param_dtype if param_dtype is not None else dtype
+        input_convention = extract_input_convention(kwargs, map_input_to_spin=kwargs.get("map_input_to_spin", None))
+        if input_adapter is None:
+            input_adapter = make_state_input_adapter(input_convention)
 
         # Build kwargs for the inner Flax module
         net_kwargs = dict(
@@ -370,6 +376,7 @@ class ResNet(FlaxInterface):
         configure_nqs_metadata(
             self,
             family="resnet",
+            native_representation=infer_native_representation(input_convention, map_key="map_input_to_spin"),
         )
 
     # ----------------------------------------------------------

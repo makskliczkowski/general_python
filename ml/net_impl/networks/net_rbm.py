@@ -35,7 +35,14 @@ try:
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.activation_functions       import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling, lecun_normal
-    from ....ml.net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
+    from ....ml.net_impl.utils.net_wrapper_utils    import (
+                                                        configure_nqs_metadata,
+                                                        extract_input_convention,
+                                                        infer_native_representation,
+                                                        make_state_flip_update,
+                                                    )
+    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1
+    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE = True
 except ImportError as e:
     raise ImportError("RBM requires JAX/Flax and general_python modules.") from e
@@ -201,6 +208,21 @@ class RBM(FlaxInterface):
             n_visible = np.prod(input_shape)
             n_hidden  = max(1, int(alpha * n_visible))
 
+        input_convention    = extract_input_convention(kwargs)
+        
+        if "input_is_spin" not in kwargs and "input_spin" not in kwargs:
+            input_convention["input_is_spin"] = bool(BACKEND_DEF_SPIN)
+        if "input_value" not in kwargs:
+            input_convention["input_value"] = float(BACKEND_REPR)
+            
+        in_activation_alias = kwargs.pop("in_activation", None)
+        if input_activation is None and in_activation_alias is not None:
+            input_activation = in_activation_alias
+        if input_activation is True:
+            input_activation = partial(map_state_to_pm1, input_is_spin=bool(input_convention.get("input_is_spin", BACKEND_DEF_SPIN)), input_value=float(input_convention.get("input_value", BACKEND_REPR)))
+        elif input_activation is False:
+            input_activation = None
+
         # Determine dtypes
         final_dtype             = jnp.dtype(dtype)
         final_param_dtype       = jnp.dtype(param_dtype) if param_dtype is not None else final_dtype
@@ -213,7 +235,7 @@ class RBM(FlaxInterface):
                     "Ensure this is intended.", log='warning', lvl=1, color='yellow')
     
         self._in_activation     = input_activation
-        self._proposal_update   = proposal_update
+        self._proposal_update   = proposal_update if proposal_update is not None else make_state_flip_update(input_convention)
         rbm_module              = _FlaxRBMComplex if self._is_cpx else _FlaxRBMReal
 
         # Prepare kwargs for the inner Flax module
@@ -249,7 +271,7 @@ class RBM(FlaxInterface):
         self._compiled_log_psi_delta_fns            = {}
         self._compiled_log_psi_delta_fn             = self._get_log_psi_delta_compiled(self._proposal_update)
         self._has_analytic_grad                     = False
-        configure_nqs_metadata(self, family="rbm", supports_fast_updates=True)
+        configure_nqs_metadata(self, family="rbm", native_representation=infer_native_representation(input_convention, transform_key="input_activation"), supports_fast_updates=True)
         
         # Fast-update support is valid for flip-based rules only.
         self._fast_update_supported_rules           = frozenset({"LOCAL", "MULTI_FLIP", "BOND_FLIP", "WORM"})
