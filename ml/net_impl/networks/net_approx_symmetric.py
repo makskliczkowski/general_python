@@ -1,13 +1,15 @@
 r"""
-Approximately Symmetric Ansatz implementation.
+Approximately symmetric structured wrapper.
 
 Combo architecture (paper-aligned):
     chi (non-invariant local block) -> sigma (plaquette Wilson map) -> omega (invariant block)
 
 The combo variant uses lattice geometry (neighbors + plaquettes) and is the default.
 
-This architecture allows learning "unfattening" maps in the nonsymmetric block while
-guaranteeing symmetry in the final wavefunction, as described in Kufel et al. (2025).
+This architecture allows a non-invariant preprocessing block followed by an
+invariant readout, matching the structured approximation used in Kufel et al. (2025).
+
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
 
 ----------------------------------------------------------------
 file        : general_python/ml/net_impl/networks/net_approx_symmetric.py
@@ -27,8 +29,13 @@ import  jax.numpy as jnp
 from    flax import linen as nn
 
 try:
-    from ...net_impl.activation_functions   import get_activation
-    from ...net_impl.interface_net_flax     import FlaxInterface
+    from ...net_impl.activation_functions       import get_activation
+    from ...net_impl.interface_net_flax         import FlaxInterface
+    from ...net_impl.utils.net_init_jax         import normal_by_dtype
+    from ...net_impl.utils.net_wrapper_utils    import (
+                                                    configure_nqs_metadata,
+                                                    map_over_complex_parts,
+                                                )
 except ImportError as exc:
     raise ImportError("Required modules from general_python package are missing.") from exc
 
@@ -41,11 +48,6 @@ except ImportError:
 # Complex-safe activations used in the paper implementation
 # -----------------------------------------------------------------------------
 
-def _complex_map(x: jnp.ndarray, fun: Callable[[jnp.ndarray], jnp.ndarray]) -> jnp.ndarray:
-    if jnp.issubdtype(jnp.asarray(x).dtype, jnp.complexfloating):
-        return fun(jnp.real(x)) + 1j * fun(jnp.imag(x))
-    return fun(x)
-
 def c_sigmoid(x: jnp.ndarray) -> jnp.ndarray:
     """
     Complex-aware scaled sigmoid from the paper's supplementary text.
@@ -54,12 +56,12 @@ def c_sigmoid(x: jnp.ndarray) -> jnp.ndarray:
     """
 
     scale = (2.0 + 2.0 * jnp.e) / (jnp.e - 1.0)
-    return _complex_map(x, lambda z: (jax.nn.sigmoid(z) - 0.5) * scale)
+    return map_over_complex_parts(x, lambda z: (jax.nn.sigmoid(z) - 0.5) * scale)
 
 def c_elu(x: jnp.ndarray, alpha: float = 1.0) -> jnp.ndarray:
     """Complex ELU: ELU applied separately to real and imaginary parts."""
 
-    return _complex_map(x, lambda z: nn.elu(z, alpha=alpha))
+    return map_over_complex_parts(x, lambda z: nn.elu(z, alpha=alpha))
 
 # -----------------------------------------------------------------------------
 # Geometry helpers
@@ -82,31 +84,6 @@ def _resolve_activation(spec: Any, *, default: Any) -> Callable:
         return act
 
     raise TypeError(f"Unsupported activation specification: {type(use)!r}")
-
-def _real_dtype(dtype: Any) -> Any:
-    dt = jnp.dtype(dtype)
-    if dt == jnp.complex64:
-        return jnp.float32
-    if dt == jnp.complex128:
-        return jnp.float64
-    return dt
-
-def _complex_normal_init(stddev: float) -> Callable:
-    """Gaussian initializer that correctly handles complex parameter dtypes."""
-
-    normal = nn.initializers.normal(stddev=stddev)
-
-    def init(key, shape, dtype=jnp.float32):
-        dt = jnp.dtype(dtype)
-        if jnp.issubdtype(dt, jnp.complexfloating):
-            kr, ki  = jax.random.split(key)
-            rd      = _real_dtype(dt)
-            r       = normal(kr, shape, rd)
-            i       = normal(ki, shape, rd)
-            return (r + 1j * i).astype(dt)
-        return normal(key, shape, dt)
-
-    return init
 
 def _identity_center_kernel_init() -> Callable:
     """Initializer with center coefficient = 1 and all other coefficients = 0."""
@@ -646,7 +623,7 @@ class ApproxSymmetricNet(nn.Module):
             chi = [h.shape[-1]] + chi
 
         for li, out_ch in enumerate(chi[1:]):
-            kernel_init = _identity_center_kernel_init() if self.nib_identity_init else _complex_normal_init(0.05)
+            kernel_init = _identity_center_kernel_init() if self.nib_identity_init else normal_by_dtype(0.05, self.dtype)
             h = _MaskedConv(
                 kernel_idx=self.chi_kernel_idx,
                 kernel_mask=self.chi_kernel_mask,
@@ -673,7 +650,7 @@ class ApproxSymmetricNet(nn.Module):
                 kernel_mask=self.omega_kernel_mask,
                 out_channels=int(out_ch),
                 dtype=self.dtype,
-                kernel_init=_complex_normal_init(self.ib_init_std),
+                kernel_init=normal_by_dtype(self.ib_init_std, self.dtype),
                 name=f"omega_conv_{li}",
             )(h)
             h = self.ib_act(h)
@@ -810,11 +787,7 @@ class AnsatzApproxSymmetric(FlaxInterface):
             **kwargs,
         )
         self._name = "approx_symmetric"
-        self._nqs_family = "approx_symmetric"
-        self._nqs_variant = "combo"
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
+        configure_nqs_metadata(self, family="approx_symmetric", variant="combo")
 
     def __repr__(self) -> str:
         meta = self._combo_meta

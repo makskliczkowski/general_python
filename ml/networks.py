@@ -329,7 +329,6 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
         return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
 
     # 2. Handle Existing Instances (Return as-is)
-    # Check isinstance OR duck-typing for objects that look like GeneralNet (prevents wrapping if imports differ)
     if not isinstance(network_type, type) and (
         isinstance(network_type, GeneralNet)
         or (hasattr(network_type, 'get_params') and hasattr(network_type, 'apply'))
@@ -370,13 +369,13 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
 
         net_module          = flax_instance if flax_instance is not None else network_type
         return FlaxInterface(
-            net_module      =   net_module,
-            net_kwargs      =   all_kwargs,
-            input_shape     =   input_shape,
-            backend         =   backend,
-            dtype           =   dtype,
-            seed            =   seed,
-            in_activation   =   kwargs.get('input_activation', None)
+            net_module          =   net_module,
+            net_kwargs          =   all_kwargs,
+            input_shape         =   input_shape,
+            backend             =   backend,
+            dtype               =   dtype,
+            seed                =   seed,
+            input_activation    =   kwargs.get('input_activation', None)
         )
 
     # Handle generic Callables (Factories)

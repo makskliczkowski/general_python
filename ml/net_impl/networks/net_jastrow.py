@@ -2,39 +2,40 @@
 general_python.ml.net_impl.networks.net_jastrow
 =================================================
 
-Jastrow Ansatz for Quantum States.
+Quadratic correlation wrapper with optional linear bias term.
 
-The Jastrow ansatz explicitly models pairwise correlations between particles.
-It is defined as:
-    log_psi(s) = sum_{i, j} s_i * W_{ij} * s_j + sum_i b_i * s_i
+The module evaluates a dense quadratic form over the input together with an
+optional one-body correction. It is a compact structured ansatz that remains
+usable through the same generic ``FlaxInterface`` path as the other wrappers.
 
-This implementation supports:
-- Full Jastrow: Unique W_{ij} for all pairs.
-- Translation-Invariant (Convolutional) Jastrow (via kernel_init masking or shared weights - simplified here to full matrix for generality).
-- Complex/Real parameters.
+The Jastrow ansatz is a simple and interpretable way to capture pairwise correlations, and can be used as a standalone ansatz or as a building block 
+in more complex architectures. The current implementation is a proof-of-concept and may be extended with additional features such as non-symmetric kernels, 
+higher-order interactions, or alternative parameterizations. It has a form:
+``log_psi(s) = s^T W s + b^T s``
 
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # Create a complex Jastrow
-    jastrow = choose_network('jastrow', input_shape=(64,), dtype='complex128')
+where ``W`` is a learnable correlation kernel and ``b`` is an optional bias vector.
+
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
+
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
 Date            : 2026-01-21
 License         : MIT
+Version         : 0.1 (Experimental)
 ----------------------------------------------------------
 """
 
 import jax
 import jax.numpy    as jnp
 import flax.linen   as nn
-from typing         import Any, Optional, Sequence
+import numpy        as np
+from typing         import Any, Optional
 
 try:
-    from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax         import normal_by_dtype
+    from ....ml.net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
     JAX_AVAILABLE = True
 except ImportError:
     raise ImportError("Jastrow requires JAX/Flax and general_python modules.")
@@ -51,11 +52,7 @@ class _FlaxJastrow(nn.Module):
     init_scale          : float = 0.01
 
     def setup(self):
-        # Determine initialization function
-        if jnp.issubdtype(self.param_dtype, jnp.complexfloating):
-            k_init = cplx_variance_scaling(self.init_scale, 'fan_in', 'normal', self.param_dtype)
-        else:
-            k_init = nn.initializers.normal(stddev=self.init_scale)
+        k_init = normal_by_dtype(self.init_scale, self.param_dtype)
 
         # W matrix (Correlation kernel)
         self.W = self.param('kernel', k_init, (self.n_sites, self.n_sites), self.param_dtype)
@@ -69,13 +66,11 @@ class _FlaxJastrow(nn.Module):
         if s.ndim == 1:
             s = s[jnp.newaxis, :]
             
-        s = s.astype(self.dtype)
-        W = self.W.astype(self.dtype)
-        
-        # Enforce symmetry: 
-        # W_sym = 0.5 * (W + W.T)
-        Ws          = jnp.matmul(s, W)
-        correlation = jnp.sum(s * Ws, axis=-1)
+        s           = s.astype(self.dtype)          # Ensure input is in the correct dtype
+        W           = self.W.astype(self.dtype)     # Ensure parameters are in the correct dtype
+        W_sym       = 0.5 * (W + jnp.swapaxes(W, -1, -2)) # Symmetrize W to ensure real-valued output for real inputs
+        Ws          = jnp.matmul(s, W_sym)
+        correlation = jnp.sum(s * Ws, axis=-1) # Quadratic form s^T W s
 
         # Bias term
         if self.use_bias:
@@ -91,7 +86,7 @@ class _FlaxJastrow(nn.Module):
 
 class Jastrow(FlaxInterface):
     """
-    Jastrow Ansatz Interface.
+    Jastrow-style quadratic wrapper.
 
     Parameters:
         input_shape (tuple): Shape of input (n_sites,).
@@ -110,7 +105,7 @@ class Jastrow(FlaxInterface):
         if not JAX_AVAILABLE: 
             raise ImportError("Jastrow requires JAX.")
 
-        n_sites     = input_shape[0] if len(input_shape) == 1 else input_shape[0] * input_shape[1] # Approximate handling
+        n_sites     = int(np.prod(input_shape))
         net_kwargs  = {
             'n_sites'       : n_sites,
             'use_bias'      : use_bias,
@@ -129,11 +124,7 @@ class Jastrow(FlaxInterface):
             **kwargs
         )
         self._name                          = 'jastrow'
-        self._nqs_family                    = "jastrow"
-        self._nqs_variant                   = "general"
-        self._nqs_supports_fast_updates     = False
-        self._nqs_supports_exact_sampling   = False
-        self._nqs_preferred_sampler         = "MCSampler"
+        configure_nqs_metadata(self, family="jastrow")
 
     def __repr__(self) -> str:
         return f"Jastrow(n_sites={self._flax_module.n_sites}, dtype={self.dtype})"

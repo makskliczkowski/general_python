@@ -2,11 +2,11 @@
 general_python.ml.net_impl.networks.net_rbm
 ===============================================
 
-Restricted Boltzmann Machine (RBM) for Quantum States.
+Restricted Boltzmann Machine (RBM) wrapper based on Flax.
 
-This module provides a Flax-based implementation of a Restricted Boltzmann
-Machine (RBM) suitable for representing quantum wavefunctions. It supports
-both real and complex-valued parameters.
+This module provides a generic RBM implementation with explicit support for
+input preprocessing, real or complex parameters, and optional fast-update
+utilities for local proposal rules.
 
 Usage
 -----
@@ -15,8 +15,8 @@ Import and use the RBM network:
     from general_python.ml.networks import RBM
     rbm_net = RBM(input_shape=(10,), n_hidden=20)
 
-The implementation is wrapped in the `FlaxInterface` for seamless integration
-with the general_python framework.
+The implementation is wrapped in `FlaxInterface` so it can be used directly or
+through higher-level factory code.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
@@ -32,12 +32,11 @@ from    functools       import partial
 
 try:
     # Base Interface (essential)
-    from ....ml.net_impl.interface_net_flax     import FlaxInterface
-    from ....ml.net_impl.activation_functions   import log_cosh_jnp
-    from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling, lecun_normal
-    from ....ml.net_impl.utils.net_state_repr_jax import map_state_to_pm1, preferred_state_representation
-    from ....common.binary                      import BACKEND_DEF_SPIN, BACKEND_REPR
-    JAX_AVAILABLE                               = True
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.activation_functions       import log_cosh_jnp
+    from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling, lecun_normal
+    from ....ml.net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
+    JAX_AVAILABLE = True
 except ImportError as e:
     raise ImportError("RBM requires JAX/Flax and general_python modules.") from e
 
@@ -45,54 +44,39 @@ except ImportError as e:
 if JAX_AVAILABLE:
     import jax
     import jax.numpy as jnp
-    from jax import random
     import flax.linen as nn
 else:
     raise ImportError("JAX is not available. Please install JAX to use this module.")
 
 ##########################################################
-#! INNER FLAX RBM MODULE DEFINITION
+#! INNER FLAX RBM MODULES
 ##########################################################
 
-class _FlaxRBM(nn.Module):
+class _FlaxRBMBase(nn.Module):
     r"""
-    Inner Flax module for a Restricted Boltzmann Machine.
+    Base Flax module for a Restricted Boltzmann Machine.
 
     Designed to be wrapped by `FlaxInterface`. Calculates the log-amplitude
     log(psi(s)) based on RBM formula.
-
-    Attributes:
-        n_hidden (int):
-            Number of hidden units.
-        bias (bool):
-            Whether to include bias terms for hidden units.
-        input_activation (Optional[Callable]):
-            Activation applied to the input *before* the Dense layer.
-            Commonly None or (lambda x: 2*x - 1) for spins {0,1} -> {-1,1}.
-        param_dtype (jnp.dtype):
-            Data type for the RBM parameters (weights, bias).
-            Determines if it's a real or complex RBM.
-        dtype (jnp.dtype):
-            Data type for intermediate computations (usually matches param_dtype).
-            Note: `act_fun` attribute from _FlaxNet is NOT used here.
     """
-    n_visible       : int
-    n_hidden        : int
-    bias            : bool                  = True                  # Bias for hidden units is common in RBMs
-    input_activation: Optional[Callable]    = None                  # e.g., lambda x: 2*x-1
-    visible_bias    : Optional[bool]        = True
-    param_dtype     : jnp.dtype             = jnp.complex64         # Default to complex
-    dtype           : jnp.dtype             = jnp.complex64         # Default to complex
-    islog           : bool                  = True                  # Logarithmic form of the wavefunction
-    
-    def setup(self):
-        # Setup Dense layer
-        is_complex = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
+    n_visible           : int
+    n_hidden            : int
+    bias                : bool                  = True                  # Bias for hidden units is common in RBMs
+    input_activation    : Optional[Callable]    = None                  # e.g., lambda x: 2*x-1
+    visible_bias        : Optional[bool]        = True
+    param_dtype         : jnp.dtype             = jnp.complex64         # Default to complex
+    dtype               : jnp.dtype             = jnp.complex64         # Default to complex
+    islog               : bool                  = True                  # Logarithmic form of the wavefunction
 
+    def _kernel_init(self):
+        raise NotImplementedError
+
+    def setup(self):
+        """Construct the visible-to-hidden map and optional visible bias."""
         self.dense = nn.Dense(
             features    =   self.n_hidden,
             use_bias    =   self.bias,
-            kernel_init =   cplx_variance_scaling(0.1, "fan_in", "normal", self.param_dtype) if is_complex else lecun_normal(self.param_dtype),
+            kernel_init =   self._kernel_init(),
             bias_init   =   nn.initializers.zeros,
             dtype       =   self.dtype,
             param_dtype =   self.param_dtype,
@@ -100,9 +84,7 @@ class _FlaxRBM(nn.Module):
         )
 
         if self.visible_bias:
-            self.visible_bias_param = self.param(
-                "visible_bias", nn.initializers.zeros, (self.n_visible,), self.param_dtype
-            )
+            self.visible_bias_param = self.param("visible_bias", nn.initializers.zeros, (self.n_visible,), self.param_dtype)
     
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
@@ -115,9 +97,10 @@ class _FlaxRBM(nn.Module):
         Returns:
             jax.Array: Log-amplitude(s) log(psi(s)) with shape (batch,) or scalar.
         """
+        
         # Fast path: avoid branching for common case
         needs_batch = s.ndim == 1
-        v = s[jnp.newaxis, :] if needs_batch else s
+        v           = s[jnp.newaxis, :] if needs_batch else s
         
         # Fused transformation: cast + activation in one step
         if self.input_activation is not None:
@@ -126,18 +109,32 @@ class _FlaxRBM(nn.Module):
             v = jnp.asarray(v, dtype=self.dtype)
 
         # Dense layer (already JIT-compiled by Flax)
-        theta = self.dense(v)
+        theta   = self.dense(v)
         
-        # Fast log_cosh + reduction (fused)
+        # Fast log_cosh + reduction
         log_psi = jnp.sum(log_cosh_jnp(theta), axis=-1)
 
         # Visible bias term (if enabled)
         if self.visible_bias:
-            log_psi    += jnp.sum(v * self.visible_bias_param, axis=-1)
+            log_psi += jnp.sum(v * self.visible_bias_param, axis=-1)
 
         # Return scalar for single sample, array for batch
         result = log_psi if self.islog else jnp.exp(log_psi)
         return result[0] if needs_batch else result
+
+
+class _FlaxRBMReal(_FlaxRBMBase):
+    """Real-parameter RBM backbone."""
+
+    def _kernel_init(self):
+        return lecun_normal(self.param_dtype)
+
+
+class _FlaxRBMComplex(_FlaxRBMBase):
+    """Complex-parameter RBM backbone."""
+
+    def _kernel_init(self):
+        return cplx_variance_scaling(0.1, "fan_in", "normal", self.param_dtype)
 
 ##########################################################
 #! RBM WRAPPER CLASSES USING FlaxInterface
@@ -151,38 +148,50 @@ class RBM(FlaxInterface):
 
     Parameters:
         input_shape (tuple): 
-            Input shape (excluding batch dimension), e.g., (n_sites,).
-        n_hidden (int): 
-            Number of hidden units. Default is 2.
-        bias (bool): 
-            Whether to include hidden bias terms. Default True.
-        in_activation (bool or callable):
-            If True, map the configured input convention to {-1, +1} before the
-            visible layer. A callable can also be supplied explicitly.
-        input_spin (bool):
-            If True, the input states are interpreted as signed spin values.
-        input_value (float):
-            Magnitude of the signed or binary local values used by the wrapper.
-        dtype (jnp.dtype): 
-            Data type for computations. Default float32 for real RBM, complex64 for complex RBM.
-        param_dtype (Optional[jnp.dtype]): 
-            Data type for parameters. Defaults to dtype.
-        seed (int): 
-            Seed for parameter initialization. Default 0.
-        _is_cpx (bool): 
-            Whether the RBM is complex. Default False.
+            Input shape (excluding batch dimension), e.g. ``(n_sites,)``.
+        n_hidden (int):
+            Number of hidden units.
+        bias (bool):
+            Whether to include hidden bias terms.
+        input_activation (Optional[Callable]):
+            Optional preprocessing applied to visible states before the dense layer.
+        dtype (jnp.dtype):
+            Data type for computations.
+        param_dtype (Optional[jnp.dtype]):
+            Data type for parameters. Defaults to ``dtype``.
+        seed (int):
+            Initialization seed.
     """
     def __init__(self,
-                input_shape    : tuple,
-                n_hidden       : int            = 2,
-                alpha          : Optional[float]= None,
-                bias           : bool           = True,
-                visible_bias   : bool           = True,
-                in_activation  : bool           = False,        # configured input -> {-1, +1}
-                dtype          : Any            = jnp.float32,  # Default float for real RBM
-                param_dtype    : Optional[Any]  = None,
-                seed           : int            = 0,
+                input_shape         : tuple,
+                n_hidden            : int                   = 2,
+                alpha               : Optional[float]       = None,
+                bias                : bool                  = True,
+                visible_bias        : bool                  = True,
+                input_activation    : Optional[Callable]    = None,
+                proposal_update     : Optional[Callable]    = None,
+                dtype               : Any                   = jnp.float32, # Default float for real RBM
+                param_dtype         : Optional[Any]         = None,
+                seed                : int                   = 0,
                 **kwargs):
+        '''
+        Parameters
+        ----------
+        input_shape (tuple): 
+            Shape of the input (excluding batch dimension).
+        n_hidden (int):
+            Number of hidden units in the RBM.
+        bias (bool):
+            Whether to include bias terms for hidden units.
+        visible_bias (bool):
+            Whether to include bias terms for visible units.
+        input_activation (Optional[Callable]):
+            Optional activation function applied to the input before the dense layer.
+        proposal_update (Optional[Callable]):
+            Optional callable used by ``log_psi_delta`` to map selected state values
+            to their proposed updated values.
+        '''
+        
 
         if not JAX_AVAILABLE:
             raise ImportError("RBM requires JAX.")
@@ -203,67 +212,47 @@ class RBM(FlaxInterface):
             self.log(f"Warning: RBM dtype ({final_dtype}) and param_dtype ({final_param_dtype}) differ in complexity. "
                     "Ensure this is intended.", log='warning', lvl=1, color='yellow')
     
-        # Define the optional visible-state remap from the configured input convention.
-        input_is_spin = bool(kwargs.get("input_spin", BACKEND_DEF_SPIN))
-        input_value = float(kwargs.get("input_value", BACKEND_REPR))
-
-        if callable(in_activation):
-            input_activation = in_activation
-            native_representation = None
-        elif in_activation:
-            input_activation = partial(map_state_to_pm1, input_is_spin=input_is_spin, input_value=input_value)
-            native_representation = preferred_state_representation(True, input_is_spin)
-        else:
-            input_activation = None
-            native_representation = preferred_state_representation(False, input_is_spin)
         self._in_activation     = input_activation
-        # Prepare kwargs for _FlaxRBM
+        self._proposal_update   = proposal_update
+        rbm_module              = _FlaxRBMComplex if self._is_cpx else _FlaxRBMReal
+
+        # Prepare kwargs for the inner Flax module
         net_kwargs = {
-            'n_visible'       : np.prod(input_shape), # Flatten input shape
-            'n_hidden'        : n_hidden,
-            'bias'            : bias,
-            'visible_bias'    : visible_bias,
-            'input_activation': input_activation,
-            'param_dtype'     : final_param_dtype,
-            'dtype'           : final_dtype,
-            'islog'           : kwargs.get('islog', True)            
+            'n_visible'         : np.prod(input_shape), # Flatten input shape
+            'n_hidden'          : n_hidden,
+            'bias'              : bias,
+            'visible_bias'      : visible_bias,
+            'input_activation'  : input_activation,
+            'param_dtype'       : final_param_dtype,
+            'dtype'             : final_dtype,
+            'islog'             : kwargs.get('islog', True)            
         }
 
         # Initialize using FlaxInterface parent
         super().__init__(
-            net_module  = _FlaxRBM,     # The inner Flax module CLASS
-            net_args    = (),           # No positional args for _FlaxRBM
-            net_kwargs  = net_kwargs,   # Keyword args for _FlaxRBM
-            input_shape = input_shape,
-            backend     = 'jax',        # Force JAX backend
-            dtype       = final_dtype,  # Pass the COMPUTATION dtype to FlaxInterface
-            seed        = seed,
-            in_activation=input_activation,
+            net_module          = rbm_module,
+            net_args            = (),
+            net_kwargs          = net_kwargs,
+            input_shape         = input_shape,
+            backend             = 'jax',        # Force JAX backend
+            dtype               = final_dtype,  # Pass the COMPUTATION dtype to FlaxInterface
+            seed                = seed,
+            input_activation    = input_activation,
         )
-        # GeneralNet stores `_in_activation`; keep RBM helper paths in sync
-        # with the actual forward activation used by `_FlaxRBM`.
         self._in_activation = input_activation
 
         #! For the analytic gradient, we need to compile the function
         self._compiled_grad_fn                      = jax.jit(partial(RBM.analytic_grad_jax, input_activation=self._in_activation))
-        self._compiled_log_psi_delta_fn             = jax.jit(
-                                                        partial(RBM._log_psi_delta_impl, input_activation=self._in_activation),
-                                                        static_argnames=("state_spin",),
-                                                    )
-        self._compiled_log_psi_delta_cache_init_fn  = jax.jit(partial(RBM._init_log_psi_delta_cache_impl, input_activation=self._in_activation))
-        self._has_analytic_grad                     = False
-        self._delta_state_spin                     = bool(kwargs.get("state_spin", input_is_spin))
-        self._delta_state_value                    = float(kwargs.get("state_value", input_value))
-        self._nqs_family                           = "rbm"
-        self._nqs_variant                          = "general"
-        self._nqs_native_representation            = native_representation
-        self._nqs_supports_fast_updates            = True
-        self._nqs_supports_exact_sampling          = False
-        self._nqs_preferred_sampler                = "MCSampler"
-        # Fast-update support is valid for flip-based rules only.
-        self._fast_update_supported_rules           = frozenset(
-            {"LOCAL", "MULTI_FLIP", "BOND_FLIP", "WORM"}
+        self._compiled_log_psi_delta_cache_init_fn  = jax.jit(
+            partial(RBM._init_log_psi_delta_cache_impl, input_activation=self._in_activation)
         )
+        self._compiled_log_psi_delta_fns            = {}
+        self._compiled_log_psi_delta_fn             = self._get_log_psi_delta_compiled(self._proposal_update)
+        self._has_analytic_grad                     = False
+        configure_nqs_metadata(self, family="rbm", supports_fast_updates=True)
+        
+        # Fast-update support is valid for flip-based rules only.
+        self._fast_update_supported_rules           = frozenset({"LOCAL", "MULTI_FLIP", "BOND_FLIP", "WORM"})
         self._name                                  = 'rbm'
 
     # ------------------------------------------------------------
@@ -362,25 +351,37 @@ class RBM(FlaxInterface):
 
     @staticmethod
     def _split_update_info(update_info: Any):
-        ''' Utility to split update_info into indices and valid mask if provided. '''
+        """Split sampler update metadata into indices and an optional validity mask."""
         if isinstance(update_info, (tuple, list)) and len(update_info) == 2:
             return update_info[0], update_info[1]
         return update_info, None
 
     @staticmethod
     def _prepare_visible(state: jax.Array, dtype: Any, input_activation: Optional[Callable] = None):
-        ''' Prepare visible state with correct dtype and optional activation. Supports both single and batched states. '''
+        """Cast a visible configuration to the compute dtype and apply optional preprocessing."""
         visible = jnp.asarray(state, dtype=dtype)
         if input_activation is not None:
             visible = input_activation(visible)
         return visible
 
+    def _get_log_psi_delta_compiled(self, proposal_update: Optional[Callable]):
+        """Return a cached JIT-compiled fast-update kernel for the given proposal rule."""
+        if proposal_update not in self._compiled_log_psi_delta_fns:
+            self._compiled_log_psi_delta_fns[proposal_update] = jax.jit(
+                partial(
+                    RBM._log_psi_delta_impl,
+                    input_activation=self._in_activation,
+                    proposal_update=proposal_update,
+                )
+            )
+        return self._compiled_log_psi_delta_fns[proposal_update]
+
     @staticmethod
     @partial(jax.jit, static_argnames=("input_activation",))
     def _init_log_psi_delta_cache_impl(
-        params: Any,
-        states: jax.Array,
-        input_activation: Optional[Callable] = None,
+        params              : Any,
+        states              : jax.Array,
+        input_activation    : Optional[Callable] = None,
     ) -> jax.Array:
         """
         Precompute RBM hidden pre-activations theta = v @ W + b for fast updates.
@@ -407,8 +408,7 @@ class RBM(FlaxInterface):
         update_info         : Any,
         theta_old           : Optional[jax.Array] = None,
         input_activation    : Optional[Callable] = None,
-        state_spin          : bool = BACKEND_DEF_SPIN,
-        state_value         : float = BACKEND_REPR,
+        proposal_update     : Optional[Callable] = None,
     ):
         """
         Compute delta log(psi) from flip indices and optionally update theta cache.
@@ -442,11 +442,9 @@ class RBM(FlaxInterface):
         take            = odd & (~seen_before)
 
         s_old_idx       = state[safe_idx]
-        if state_spin:
-            s_new_idx   = -s_old_idx
-        else:
-            flip_value  = jnp.asarray(state_value, dtype=s_old_idx.dtype)
-            s_new_idx   = flip_value - s_old_idx
+        if proposal_update is None:
+            raise ValueError("RBM fast updates require `proposal_update` to map selected values to proposed values.")
+        s_new_idx       = proposal_update(s_old_idx)
 
         v_old_idx       = RBM._prepare_visible(s_old_idx, compute_dtype, input_activation=input_activation)
         v_new_idx       = RBM._prepare_visible(s_new_idx, compute_dtype, input_activation=input_activation)
@@ -471,7 +469,7 @@ class RBM(FlaxInterface):
         return hidden_delta + visible_delta, theta_new
 
     @staticmethod
-    @partial(jax.jit, static_argnames=("input_activation", "state_spin"))
+    @partial(jax.jit, static_argnames=("input_activation", "proposal_update"))
     def _log_psi_delta_impl(
         params: Any,
         current_log_psi: jax.Array,
@@ -479,12 +477,14 @@ class RBM(FlaxInterface):
         update_info: Any,
         cache: Optional[jax.Array] = None,
         input_activation: Optional[Callable] = None,
-        state_spin: bool = BACKEND_DEF_SPIN,
-        state_value: float = BACKEND_REPR,
+        proposal_update: Optional[Callable] = None,
     ):
         """
         Delta log(psi) for proposed flip updates.
         If cache is provided, returns (delta, updated_cache).
+        
+        This function handles both single-state and batched states. For single states, it returns a scalar delta (and optionally the updated cache). 
+        For batches, it returns an array of deltas (and optionally an array of updated caches).
         """
         del current_log_psi  # Kept for sampler API compatibility.
 
@@ -495,8 +495,7 @@ class RBM(FlaxInterface):
                 update_info=update_info,
                 theta_old=cache,
                 input_activation=input_activation,
-                state_spin=state_spin,
-                state_value=state_value,
+                proposal_update=proposal_update,
             )
             if cache is None:
                 return delta
@@ -510,8 +509,7 @@ class RBM(FlaxInterface):
                     update_info=ui,
                     theta_old=None,
                     input_activation=input_activation,
-                    state_spin=state_spin,
-                    state_value=state_value,
+                    proposal_update=proposal_update,
                 ),
                 in_axes=(0, 0),
             )(state, update_info)
@@ -524,14 +522,18 @@ class RBM(FlaxInterface):
                 update_info=ui,
                 theta_old=th,
                 input_activation=input_activation,
-                state_spin=state_spin,
-                state_value=state_value,
+                proposal_update=proposal_update,
             ),
             in_axes=(0, 0, 0),
         )(state, update_info, cache)
         return deltas, cache_new
 
+    # ------------------------------------------------------------
+    #! Public API for Fast Updates
+    # ------------------------------------------------------------
+
     def init_log_psi_delta_cache(self, params: Any, states: jax.Array):
+        """Precompute hidden pre-activations used by ``log_psi_delta``."""
         return self._compiled_log_psi_delta_cache_init_fn(params, states)
 
     def log_psi_delta(
@@ -541,27 +543,35 @@ class RBM(FlaxInterface):
         state: jax.Array,
         update_info: Any,
         cache: Optional[jax.Array] = None,
-        state_spin: Optional[bool] = None,
-        state_value: Optional[float] = None,
-    ):
-        eff_state_spin = self._delta_state_spin if state_spin is None else bool(state_spin)
-        eff_state_value = self._delta_state_value if state_value is None else float(state_value)
-        return self._compiled_log_psi_delta_fn(
+        proposal_update: Optional[Callable] = None,
+    ) -> Any:
+        """Evaluate the log-amplitude delta for a proposed local update."""
+        eff_proposal_update = self._proposal_update if proposal_update is None else proposal_update
+        if eff_proposal_update is None:
+            raise ValueError("RBM.log_psi_delta requires `proposal_update` or an instance configured with one.")
+        compiled_fn = self._compiled_log_psi_delta_fn
+        if eff_proposal_update is not self._proposal_update:
+            compiled_fn = self._get_log_psi_delta_compiled(eff_proposal_update)
+        return compiled_fn(
             params,
             current_log_psi,
             state,
             update_info,
             cache,
-            state_spin=eff_state_spin,
-            state_value=eff_state_value,
+            proposal_update=eff_proposal_update,
         )
 
     def get_log_psi_delta(self):
+        """Return the fast-update callable expected by sampler code."""
         return self.log_psi_delta
 
     @property
     def fast_update_supported_rules(self):
         return self._fast_update_supported_rules
+
+    # ------------------------------------------------------------
+    #! Utility Methods
+    # ------------------------------------------------------------ 
 
     def __repr__(self) -> str:
         init_status = "initialized"                             if self.initialized else "uninitialized"

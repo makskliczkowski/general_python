@@ -2,32 +2,16 @@
 general_python.ml.net_impl.networks.net_resnet
 ==================================================
 
-Deep Complex-Valued Residual Network (ResNet) for Quantum States.
+Deep residual convolutional wrapper based on Flax.
 
-This architecture is State-of-the-Art (SOTA) for topological phases like the
-Kitaev Spin Liquid. It uses residual connections to allow deep signal propagation
-and complex-valued weights to capture non-trivial sign structures.
-
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # Define parameters for a ResNet on a 64-site lattice
-    resnet_params = {
-        'input_shape'   : (64,),
-        'reshape_dims'  : (8, 8),   # Lattice dimensions
-        'features'      : 32,       # Hidden channels width
-        'depth'         : 4,        # Number of Residual Blocks
-        'kernel_size'   : (3, 3),   # Kernel size
-    }
-    
-    # Create a complex-valued ResNet
-    net = choose_network('resnet', dtype='complex128', **resnet_params)
+The module provides a generic residual backbone for flattened inputs that can
+be reshaped onto regular grids. Optional input preprocessing is exposed through
+a generic callable hook.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
 Date            : 04.12.2025
-Description     : Flax implementation of Complex ResNet.
+Description     : Flax implementation of a residual convolutional network.
 ----------------------------------------------------------
 """
 
@@ -38,9 +22,11 @@ from typing import Tuple, Callable, Optional, Any, Sequence, Union
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
     from ....ml.net_impl.activation_functions import log_cosh_jnp
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from ....ml.net_impl.utils.net_state_repr_jax import map_state_to_pm1, preferred_state_representation
-    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_FLOAT_TYPE, DEFAULT_JP_CPX_TYPE, BACKEND_DEF_SPIN, BACKEND_REPR, Array
+    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling
+    from ....ml.net_impl.utils.net_wrapper_utils import (
+        configure_nqs_metadata,
+    )
+    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_CPX_TYPE, Array
 except ImportError as e:
     raise ImportError("Required modules for ResNet not found. Ensure general_python.ml and general_python.algebra are accessible.") from e
 
@@ -83,9 +69,7 @@ def circular_pad(x, kernel_size):
 ##########################################################
 
 class ResNetBlock(nn.Module):
-    """
-    A single Residual Block: x -> x + Conv(Activation(Conv(x)))
-    """
+    """Two-layer residual convolution block."""
     features    : int
     kernel_size : Tuple[int, ...]
     dtype       : Any
@@ -94,6 +78,30 @@ class ResNetBlock(nn.Module):
     periodic    : bool = True
     init_fn     : Callable = nn.initializers.lecun_normal()
     use_norm    : bool = True
+
+    def setup(self):
+        padding = 'VALID' if self.periodic else 'SAME'
+        self.conv1 = nn.Conv(
+            features=self.features,
+            kernel_size=self.kernel_size,
+            padding=padding,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            kernel_init=self.init_fn,
+            name="conv1",
+        )
+        self.conv2 = nn.Conv(
+            features=self.features,
+            kernel_size=self.kernel_size,
+            padding=padding,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            kernel_init=self.init_fn,
+            name="conv2",
+        )
+        if self.use_norm:
+            self.norm1 = nn.LayerNorm(dtype=self.dtype, param_dtype=self.param_dtype, name="norm1")
+            self.norm2 = nn.LayerNorm(dtype=self.dtype, param_dtype=self.param_dtype, name="norm2")
     
     @nn.compact
     def __call__(self, x):
@@ -107,10 +115,9 @@ class ResNetBlock(nn.Module):
         else:
             padding = 'SAME'
             
-        h = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
-                    padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, kernel_init=self.init_fn)(h)
+        h = self.conv1(h)
         if self.use_norm:
-            h = nn.LayerNorm(dtype=self.dtype, param_dtype=self.param_dtype)(h)
+            h = self.norm1(h)
         h = self.act_fn(h)
         
         # Layer 2
@@ -120,10 +127,9 @@ class ResNetBlock(nn.Module):
         else:
             padding = 'SAME'
             
-        h = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
-                    padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, kernel_init=self.init_fn)(h)
+        h = self.conv2(h)
         if self.use_norm:
-            h = nn.LayerNorm(dtype=self.dtype, param_dtype=self.param_dtype)(h)
+            h = self.norm2(h)
         h = self.act_fn(h)
 
         # Scale down initialization to start close to Identity
@@ -133,7 +139,7 @@ class ResNetBlock(nn.Module):
 
 class _FlaxResNet(nn.Module):
     """
-    Deep Residual Network for Quantum States.
+    Residual convolutional network for flattened inputs.
     
     Architecture:
     1. Reshape Input -> Grid
@@ -153,9 +159,7 @@ class _FlaxResNet(nn.Module):
     use_pooling         : bool = True
     input_scale         : float = 1.0
     input_shift         : float = 0.0
-    map_input_to_spin   : bool = False
-    input_is_spin       : bool = BACKEND_DEF_SPIN
-    input_value         : float = BACKEND_REPR
+    input_adapter       : Optional[Callable] = None
     init_scale          : float = 1.0
     init_mode           : str = 'fan_in'
     init_dist           : str = 'normal'
@@ -163,11 +167,40 @@ class _FlaxResNet(nn.Module):
     def setup(self):
         is_cplx = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
         if is_cplx:
-            self.k_init = lambda: cplx_variance_scaling(self.init_scale, self.init_mode, self.init_dist, self.param_dtype)
+            self._kernel_init = cplx_variance_scaling(self.init_scale, self.init_mode, self.init_dist, self.param_dtype)
         else:
-            self.k_init = lambda: nn.initializers.variance_scaling(
+            self._kernel_init = nn.initializers.variance_scaling(
                 self.init_scale, self.init_mode, self.init_dist, dtype=self.param_dtype
             )
+        padding = 'VALID' if self.periodic_boundary else 'SAME'
+        self.conv_init = nn.Conv(
+            features=self.features,
+            kernel_size=self.kernel_size,
+            padding=padding,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            kernel_init=self._kernel_init,
+            name="conv_init",
+        )
+        self.res_blocks = [
+            ResNetBlock(
+                features=self.features,
+                kernel_size=self.kernel_size,
+                dtype=self.dtype,
+                param_dtype=self.param_dtype,
+                periodic=self.periodic_boundary,
+                init_fn=self._kernel_init,
+                name=f"res_block_{i}",
+            )
+            for i in range(self.depth)
+        ]
+        self.dense_out = nn.Dense(
+            features=1,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            kernel_init=self._kernel_init,
+            name="dense_out",
+        )
 
     @nn.compact
     def __call__(self, s: jax.Array) -> jax.Array:
@@ -177,8 +210,8 @@ class _FlaxResNet(nn.Module):
         if needs_batch:
             s = s[jnp.newaxis, ...]
 
-        if self.map_input_to_spin:
-            s = map_state_to_pm1(s, self.input_is_spin, self.input_value)
+        if self.input_adapter is not None:
+            s = self.input_adapter(s)
             
         batch_size   = s.shape[0]
         # (Batch, L1, L2, ..., 1)
@@ -196,20 +229,12 @@ class _FlaxResNet(nn.Module):
         else:
             padding = 'SAME'
             
-        x = nn.Conv(features=self.features, kernel_size=self.kernel_size, 
-                    padding=padding, dtype=self.dtype, param_dtype=self.param_dtype, 
-                    kernel_init=self.k_init(), name="conv_init")(x)
+        x = self.conv_init(x)
         x = log_cosh_jnp(x)
 
         # Residual Blocks
-        for i in range(self.depth):
-            x = ResNetBlock(features=self.features, 
-                            kernel_size=self.kernel_size,
-                            dtype=self.dtype, 
-                            param_dtype=self.param_dtype,
-                            periodic=self.periodic_boundary,
-                            init_fn=self.k_init(),
-                            name=f"res_block_{i}")(x)
+        for block in self.res_blocks:
+            x = block(x)
 
         # Pooling or Flatten
         if self.use_pooling:
@@ -220,8 +245,7 @@ class _FlaxResNet(nn.Module):
             x = x.reshape((x.shape[0], -1))
 
         # Final Dense Layer
-        x = nn.Dense(features=1, dtype=self.dtype, param_dtype=self.param_dtype, 
-                     kernel_init=self.k_init(), name="dense_out")(x)
+        x = self.dense_out(x)
 
         out = x.reshape(-1)
         return out[0] if needs_batch else out
@@ -234,8 +258,7 @@ class ResNet(FlaxInterface):
     """
     Deep Residual Network (ResNet) Interface.
 
-    State-of-the-Art architecture for 2D topological systems. Uses periodic
-    convolutions and residual connections to learn deep representations.
+    Generic residual convolutional wrapper for regularly shaped inputs.
 
     Parameters:
         input_shape (tuple):
@@ -256,12 +279,8 @@ class ResNet(FlaxInterface):
             Scaling factor for input. Default 1.0.
         input_shift (float):
             Shift factor for input. Default 0.0.
-        map_input_to_spin (bool):
-            If True, map the configured input convention to {-1, +1} before reshaping.
-        input_spin (bool):
-            If True, the wrapper interprets inputs as signed spin values.
-        input_value (float):
-            Magnitude of the signed or binary local values used by the wrapper.
+        input_adapter (Optional[Callable]):
+            Optional preprocessing applied before reshaping and scaling.
         init_scale (float):
             Scale for variance scaling initialization. Default 1.0.
         init_mode (str):
@@ -269,7 +288,7 @@ class ResNet(FlaxInterface):
         init_dist (str):
             Distribution for initialization ('normal', 'uniform'). Default 'normal'.
         dtype (Any):
-            Computation data type. Default complex128 for Physics.
+            Computation data type.
         param_dtype (Optional[Any]):
             Parameter data type. Defaults to dtype.
         seed (int):
@@ -286,7 +305,7 @@ class ResNet(FlaxInterface):
                 use_pooling     : bool                                  = True,
                 input_scale     : float                                 = 1.0,
                 input_shift     : float                                 = 0.0,
-                map_input_to_spin: bool                                 = False,
+                input_adapter   : Optional[Callable]                    = None,
                 init_scale      : float                                 = 1.0,
                 init_mode       : str                                   = 'fan_in',
                 init_dist       : str                                   = 'normal',
@@ -329,12 +348,10 @@ class ResNet(FlaxInterface):
             use_pooling     = use_pooling,
             input_scale     = input_scale,
             input_shift     = input_shift,
-            map_input_to_spin = map_input_to_spin,
-            input_is_spin   = kwargs.get('input_spin', BACKEND_DEF_SPIN),
-            input_value     = kwargs.get('input_value', BACKEND_REPR),
+            input_adapter   = input_adapter,
             init_scale      = init_scale,
             init_mode       = init_mode,
-            init_dist       = init_dist
+            init_dist       = init_dist,
         )
 
         super().__init__(
@@ -350,15 +367,10 @@ class ResNet(FlaxInterface):
 
         self._name              = 'resnet'
         self._has_analytic_grad = False # Use AD
-        self._nqs_family = "resnet"
-        self._nqs_variant = "general"
-        self._nqs_native_representation = preferred_state_representation(
-            net_kwargs["map_input_to_spin"],
-            net_kwargs["input_is_spin"],
+        configure_nqs_metadata(
+            self,
+            family="resnet",
         )
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
 
     # ----------------------------------------------------------
 
@@ -377,24 +389,6 @@ class ResNet(FlaxInterface):
         mod     = self._flax_module
         return (f"{kind}ResNet(reshape={mod.reshape_dims},features={mod.features},depth={mod.depth},dtype={self.dtype})")
 
-# Example usage check
-if __name__ == "__main__":
-    print("--- Testing Complex ResNet ---")
-    # 2D Lattice 4x4
-    net = ResNet(
-        input_shape=(16,),
-        reshape_dims=(4, 4),
-        features=8,
-        depth=2,
-        dtype='complex64'
-    )
-    print(net)
-    
-    x = np.random.randint(0, 2, (2, 16))
-    out = net(x)
-    print("Output shape:", out.shape)
-    print("Output type:", out.dtype)
-    
 # ----------------------------------------------------------
 #! END OF FILE
 # ----------------------------------------------------------

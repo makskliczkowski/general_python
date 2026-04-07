@@ -2,32 +2,23 @@ r"""
 general_python.ml.net_impl.networks.net_gcnn
 ==============================================
 
-Graph & Group-Equivariant Convolutional Neural Networks for NQS.
+Graph and group-equivariant convolutional backbones.
 
 This module provides two architectures:
 
-1. **GCNN** (Graph CNN):
-   Adjacency-based message passing on arbitrary graphs.
-   Optimized for non-Bravais lattices (Kagome, Honeycomb, random graphs).
-   Uses Deep Sets pooling + Dense Head.
+``GCNN`` is a generic message-passing backbone over an explicit graph.
 
-2. **EquivariantGCNN** (Group-Equivariant CNN):
-    Convolutions over the symmetry group G (translations ⋊ point group).
-    Enforces exact G-invariance of psi(sigma).  Based on:
-    - Sharma, Manna, Rao, Sreejith, 
-        - arXiv:2505.23728v1 (2025)
-    - Roth & MacDonald, 
-        - arXiv:2104.05085 (2021)
-    - Cohen & Welling, 
-        - arXiv:1602.07576 (2016)
+``EquivariantGCNN`` is a symmetry-aware specialization used by ansatz layers,
+but the generic backbone itself only exposes generic preprocessing hooks.
 
-Usage
------
-    # Graph-based GCNN
-    gcnn = GCNN(input_shape=(N,), graph_edges=edges, split_complex=True)
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
 
-    # Group-Equivariant GCNN (from lattice)
-    net = EquivariantGCNN.from_lattice(lattice, channels=(8, 8))
+----------------------------------------------------------
+Author          : Maksymilian Kliczkowski
+Date            : 2026-01-21
+License         : MIT
+Version         : 0.1 (Experimental)
+----------------------------------------------------------
 """
 
 import  numpy   as np
@@ -40,9 +31,14 @@ try:
     import flax.linen   as nn
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling
-    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1, preferred_state_representation
-    from ....ml.net_impl.activation_functions       import get_activation_jnp
-    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
+    from ....ml.net_impl.utils.net_wrapper_utils    import (
+                                                        combine_split_complex_output,
+                                                        configure_nqs_metadata,
+                                                        map_over_complex_parts,
+                                                        normalize_activation_sequence,
+                                                        prepare_split_complex_input,
+                                                        resolve_split_complex_dtypes,
+                                                    )
     JAX_AVAILABLE = True
 except ImportError:
     # Minimal fallback for standalone testing
@@ -55,7 +51,7 @@ except ImportError:
 class GraphConv(nn.Module):
     r"""
     Decoupled Graph Convolution.
-    Separates self-interaction from neighbor-interaction for better physical expressivity.
+    Separates self-interaction from neighbor-interaction.
     
     Update rule:
         h_i' = Act( W_self * h_i  +  W_neigh * \sum_{j \in N(i)} h_j + b )
@@ -66,47 +62,95 @@ class GraphConv(nn.Module):
     kernel_init : Callable  
     use_bias    : bool      = False
 
+    def setup(self):
+        self.w_self = nn.Dense(
+            self.features,
+            use_bias=self.use_bias,
+            kernel_init=self.kernel_init,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            name='W_self',
+        )
+        self.w_neigh = nn.Dense(
+            self.features,
+            use_bias=self.use_bias,
+            kernel_init=self.kernel_init,
+            dtype=self.dtype,
+            param_dtype=self.param_dtype,
+            name='W_neigh',
+        )
+
     @nn.compact
     def __call__(self, x, adj_mat):
         # 1. Self Projection
-        w_self      = nn.Dense(self.features, use_bias=self.use_bias, kernel_init=self.kernel_init, name='W_self')
-        self_feat   = w_self(x)
+        self_feat   = self.w_self(x)
         
-        # 2. Neighbor Aggregation (Normalized is safer)
-        # We normalize by degree inside the call to be sure
-        deg         = jnp.sum(jnp.abs(adj_mat), axis=1, keepdims=True)
-        adj_norm    = adj_mat / jnp.maximum(deg, 1.0)
-        
-        neigh_msg   = jnp.einsum('nm,bmc->bnc', adj_norm, x)
-        w_neigh     = nn.Dense(self.features, use_bias=self.use_bias, kernel_init=self.kernel_init, name='W_neigh')
-        neigh_feat  = w_neigh(neigh_msg)
+        # 2. Neighbor Aggregation.
+        # ``adj_mat`` is expected to already include any desired normalization.
+        neigh_msg   = jnp.einsum('nm,bmc->bnc', adj_mat, x)
+        neigh_feat  = self.w_neigh(neigh_msg)
         
         # 3. Combine + Bias
         out         = self_feat + neigh_feat
-        bias        = self.param('bias', nn.initializers.zeros, (self.features,), self.param_dtype)
-        return out + bias
+        if self.use_bias:
+            bias = self.param('bias', nn.initializers.zeros, (self.features,), self.param_dtype)
+            out = out + bias
+        return out
 
 # ----------------------------------------------------------------------
 # 2. Backbone Module
 # ----------------------------------------------------------------------
 
-class _FlaxGCNN(nn.Module):
-    """
-    GCNN Backbone with Deep Sets Aggregation.
-    """
+class _FlaxGCNNBase(nn.Module):
+    """Shared message-passing backbone logic for direct and split-complex GCNNs."""
     adj_matrix      : jnp.ndarray           # Frozen Adjacency
     features        : Sequence[int]
     activations     : Sequence[Callable]
     use_bias        : bool
     dtype           : Any
     param_dtype     : Any
-    split_complex   : bool
-    transform_input : bool
-    input_is_spin   : bool
-    input_value     : float
+    input_adapter   : Optional[Callable]
     islog           : bool
 
-    @nn.compact
+    def _resolve_comp_dtype(self):
+        raise NotImplementedError
+
+    def _head_features(self):
+        raise NotImplementedError
+
+    def _prepare_input(self, x):
+        return x
+
+    def _project_output(self, x_pool):
+        raise NotImplementedError
+
+    def setup(self):
+        self._comp_dtype = self._resolve_comp_dtype()
+        if jnp.issubdtype(self._comp_dtype, jnp.complexfloating):
+            self._kernel_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', self._comp_dtype)
+        else:
+            self._kernel_init = nn.initializers.lecun_normal(dtype=self._comp_dtype)
+        self._head_init = nn.initializers.normal(stddev=0.1, dtype=self._comp_dtype)
+        self.gconv_layers = [
+            GraphConv(
+                features=feat,
+                dtype=self._comp_dtype,
+                param_dtype=self._comp_dtype,
+                kernel_init=self._kernel_init,
+                use_bias=self.use_bias,
+                name=f'gconv_{i}',
+            )
+            for i, feat in enumerate(self.features)
+        ]
+        self.head_proj = nn.Dense(
+            features=self._head_features(),
+            dtype=self._comp_dtype,
+            param_dtype=self._comp_dtype,
+            kernel_init=self._head_init,
+            bias_init=nn.initializers.zeros,
+            name='head_proj',
+        )
+
     def __call__(self, x):
         # x shape: (Batch, N_sites) or (Batch, N_sites, 1)
         
@@ -119,36 +163,20 @@ class _FlaxGCNN(nn.Module):
         batch_size = x.shape[0]
 
         # Resolve Dtypes for Split-Complex Mode
-        if self.split_complex:
-            comp_dtype = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
-            if jnp.iscomplexobj(x): x = x.real
-        else:
-            comp_dtype = self.dtype
+        x = self._prepare_input(x)
         
         # Cast Input to computation dtype
-        x = x.astype(comp_dtype)
+        x = x.astype(self._comp_dtype)
         
-        if self.transform_input:
-            x = map_state_to_pm1(x, self.input_is_spin, self.input_value)
-
-        # Init Strategy
-        if jnp.issubdtype(comp_dtype, jnp.complexfloating):
-            k_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', comp_dtype)
-        else:
-            k_init = nn.initializers.lecun_normal(dtype=comp_dtype)
+        if self.input_adapter is not None:
+            x = self.input_adapter(x)
 
         # 2. GCN Layers (Feature Extraction)
-        for i, (feat, act) in enumerate(zip(self.features, self.activations)):
+        for gconv_layer, act in zip(self.gconv_layers, self.activations):
             residual    = x
-            x           = GraphConv(
-                            features        =feat, 
-                            dtype           =comp_dtype, 
-                            param_dtype     =comp_dtype, 
-                            kernel_init     =k_init,
-                            name            =f'gconv_{i}'
-                        )(x, self.adj_matrix)
+            x           = gconv_layer(x, self.adj_matrix)
             
-            x           = act[0](x)
+            x = act(x)
             
             # If dimensions match, add the skip connection
             if residual.shape[-1] == x.shape[-1]:
@@ -159,35 +187,48 @@ class _FlaxGCNN(nn.Module):
         # x: (Batch, N_nodes, Features) -> (Batch, Features)
         # This creates a global feature vector describing the whole system state.
         x_pool      = jnp.mean(x, axis=1)
-        head_init   = nn.initializers.normal(stddev=0.1, dtype=comp_dtype)
         
         # Output Head (Mixing)
         # Projects the global features to the final wavefunction amplitude
-        if self.split_complex:
-            # Output 2 Real numbers [Re, Im]
-            out = nn.Dense(
-                features    = 2,
-                dtype       = comp_dtype,
-                param_dtype = comp_dtype,
-                kernel_init = head_init,
-                bias_init   = nn.initializers.zeros,
-                name        = 'head_proj'
-            )(x_pool)
-            val = out[..., 0] + 1j * out[..., 1]
-        else:
-            # Output 1 Complex number
-            out = nn.Dense(
-                features    = 1,
-                dtype       = comp_dtype,
-                param_dtype = comp_dtype,
-                kernel_init = head_init,
-                bias_init   = nn.initializers.zeros,
-                name        = 'head_proj'
-            )(x_pool)
-            val = out[..., 0]
+        val = self._project_output(x_pool)
 
         # Final Activation
         return val if self.islog else jnp.exp(val)
+
+
+class _FlaxGCNNDirect(_FlaxGCNNBase):
+    """Direct-output GCNN backbone for real or complex dtypes."""
+
+    split_complex: bool = False
+
+    def _resolve_comp_dtype(self):
+        return self.dtype
+
+    def _head_features(self):
+        return 1
+
+    def _project_output(self, x_pool):
+        return self.head_proj(x_pool)[..., 0]
+
+
+class _FlaxGCNNSplitComplex(_FlaxGCNNBase):
+    """Split-complex GCNN backbone with real intermediate arithmetic."""
+
+    split_complex: bool = True
+
+    def _resolve_comp_dtype(self):
+        _, param_real_dtype, _ = resolve_split_complex_dtypes(self.dtype, self.param_dtype)
+        return param_real_dtype
+
+    def _head_features(self):
+        return 2
+
+    def _prepare_input(self, x):
+        return prepare_split_complex_input(x)
+
+    def _project_output(self, x_pool):
+        out = self.head_proj(x_pool)
+        return combine_split_complex_output(out[..., 0], out[..., 1], self._comp_dtype)
 
 # ----------------------------------------------------------------------
 # Wrapper Interface
@@ -198,9 +239,7 @@ class GCNN(FlaxInterface):
     GCNN Interface for arbitrary graphs.
 
     Parameters:
-        transform_input (bool): If True, map the configured input convention to {-1, +1}.
-        input_spin (bool): If True, inputs are interpreted as signed spin values.
-        input_value (float): Magnitude of the signed or binary local values.
+        input_adapter (Optional[Callable]): Optional preprocessing applied before graph layers.
     """
     def __init__(self,
                 input_shape    : tuple,
@@ -211,7 +250,7 @@ class GCNN(FlaxInterface):
                 activations    : Union[str, Sequence]               = 'log_cosh',
                 use_bias       : bool                               = True,
                 split_complex  : bool                               = False,
-                transform_input: bool                               = False,
+                input_adapter  : Optional[Callable]                 = None,
                 normalize_adj  : bool                               = True,
                 dtype          : Any                                = 'complex128',
                 seed           : int                                = 0,
@@ -235,24 +274,22 @@ class GCNN(FlaxInterface):
         else:
             raise ValueError("Must provide graph_edges or adj_matrix")
 
-        # Optional: Symmetric Normalization (D^-0.5 A D^-0.5)
-        # Helps training stability for deep GCNs
+        # Optional: Symmetric normalization (D^-0.5 A D^-0.5).
         if normalize_adj:
             deg                     = np.sum(adj, axis=1)
             deg_inv_sqrt            = np.power(np.maximum(deg, 1e-12), -0.5)
             deg_inv_sqrt[deg == 0]  = 0
-            # D^-0.5 * A * D^-0.5
             adj                     = adj * deg_inv_sqrt[:, None]
             adj                     = adj * deg_inv_sqrt[None, :]
 
-        # Configuration
-        if isinstance(activations, str):
-            acts            = [get_activation_jnp(activations)] * len(features)
-        else:
-            acts            = [get_activation_jnp(a) for a in activations]
+        acts = normalize_activation_sequence(
+            activations,
+            len(features),
+            default='log_cosh',
+            container=tuple,
+        )
             
         jax_dtype           = getattr(jnp, dtype) if isinstance(dtype, str) else dtype
-
         net_kwargs          = {
                                 'adj_matrix'    : jnp.array(adj), # Freeze graph structure
                                 'features'      : features,
@@ -261,16 +298,17 @@ class GCNN(FlaxInterface):
                                 'dtype'         : jax_dtype,
                                 'param_dtype'   : jax_dtype,
                                 'split_complex' : split_complex,
-                                'transform_input': transform_input,
-                                'input_is_spin' : kwargs.get('input_spin', BACKEND_DEF_SPIN),
-                                'input_value'   : kwargs.get('input_value', BACKEND_REPR),
-                                'islog'         : True
+                                'islog'         : True,
+                                'input_adapter' : input_adapter,
                             }
 
         self._split_complex = split_complex
+        self._out_shape = (1,)
+
+        gcnn_module = _FlaxGCNNSplitComplex if split_complex else _FlaxGCNNDirect
 
         super().__init__(
-                net_module  = _FlaxGCNN,
+                net_module  = gcnn_module,
                 net_args    = (),
                 net_kwargs  = net_kwargs,
                 input_shape = input_shape,
@@ -282,37 +320,28 @@ class GCNN(FlaxInterface):
         
         self._has_analytic_grad     = False
         self._name                  = 'gcnn'
-        self._nqs_family = "gcnn"
-        self._nqs_variant = "general"
-        self._nqs_native_representation = preferred_state_representation(
-            net_kwargs["transform_input"],
-            net_kwargs["input_is_spin"],
+        configure_nqs_metadata(
+            self,
+            family="gcnn",
         )
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
 
     @property
     def output_shape(self) -> Tuple[int, ...]:
         return self._out_shape
 
     def __repr__(self):
-        return f"GCNN(sites={self.input_dim}, features={self._flax_module.features}, split_complex={self._flax_module.split_complex})"
+        return f"GCNN(sites={self.input_dim}, features={self._flax_module.features}, split_complex={self._split_complex})"
     
     def __str__(self) -> str:
         return self.__repr__()
     
     def __call__(self, x):
-        
         flat_output = super().__call__(x)
-        
-        if flat_output.ndim == 0:       # Single scalar
+        if flat_output.ndim == 0:
             return flat_output
-        elif flat_output.ndim == 1:     # Batch of scalars
+        if flat_output.ndim == 1:
             return flat_output
-        else:
-            # Flatten to (batch_size,) or scalar
-            return flat_output.reshape(-1)[:x.shape[0] if x.ndim > 1 else 1]
+        return flat_output.reshape(-1)[:x.shape[0] if x.ndim > 1 else 1]
         
 # ----------------------------------------------------------------------
 # 4. Group-Equivariant GCNN (arXiv:2505.23728)
@@ -320,9 +349,9 @@ class GCNN(FlaxInterface):
 
 if JAX_AVAILABLE:
 
-    class _FlaxEquivariantGCNN(nn.Module):
+    class _FlaxEquivariantGCNNBase(nn.Module):
         r"""
-        Group-Equivariant CNN backbone for NQS
+        Group-equivariant CNN backbone on an explicit symmetry group.
         (Sharma et al. 2025, arXiv:2505.23728).
 
         1. **Embedding**:  $\sigma \to f^1(g)$
@@ -339,8 +368,19 @@ if JAX_AVAILABLE:
         channels        : Sequence[int]
         dtype           : Any
         param_dtype     : Any
-        split_complex   : bool
         islog           : bool
+
+        def _resolve_comp_dtype(self):
+            raise NotImplementedError
+
+        def _prepare_input(self, x):
+            return x
+
+        def _act(self, h):
+            raise NotImplementedError
+
+        def _project_output(self, f):
+            raise NotImplementedError
 
         @nn.compact
         def __call__(self, x):
@@ -350,29 +390,19 @@ if JAX_AVAILABLE:
             n_group = self.perm_table.shape[0]
             Ns      = x.shape[-1]
 
-            # Resolve computation dtype
-            if self.split_complex:
-                cd = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
-                if jnp.iscomplexobj(x):
-                    x = x.real
-            else:
-                cd = self.dtype
-                
+            cd      = self._resolve_comp_dtype()
+            x       = self._prepare_input(x)
             x       = x.astype(cd)
             k_init  = (cplx_variance_scaling(1.0, 'fan_in', 'normal', cd)
                         if jnp.issubdtype(cd, jnp.complexfloating)
                         else nn.initializers.lecun_normal(dtype=cd))
-            is_cplx = jnp.issubdtype(cd, jnp.complexfloating)
-
-            def _act(h):
-                return (jax.nn.selu(h.real) + 1j * jax.nn.selu(h.imag)) if is_cplx else jax.nn.selu(h)
 
             # Embedding layer
             x_perm  = x[:, self.perm_table]                         # (B, |G|, Ns)
             c0      = self.channels[0]
             K_emb   = self.param('K_embed', k_init, (Ns, c0), cd)
             b_emb   = self.param('b_embed', nn.initializers.zeros, (c0,), cd)
-            f       = _act(jnp.einsum('bgn,nc->bgc', x_perm, K_emb) + b_emb)
+            f       = self._act(jnp.einsum('bgn,nc->bgc', x_perm, K_emb) + b_emb)
 
             # Group convolution layers
             for l in range(len(self.channels) - 1):
@@ -383,23 +413,60 @@ if JAX_AVAILABLE:
                 # W_idx[h, g] = W[cayley[h, g]]  →  (|G|, |G|, c_in, c_out)
                 W_idx       = W[self.cayley_table.reshape(-1)].reshape(n_group, n_group, c_in, c_out,)
                 # f_new[b,g,o] = Σ_h Σ_i f[b,h,i] · W_idx[h,g,i,o]
-                f           = _act(jnp.einsum('bhi,hgio->bgo', f, W_idx) + b)
+                f           = self._act(jnp.einsum('bhi,hgio->bgo', f, W_idx) + b)
 
             # Output: trivial-irrep projection
-            if self.split_complex:
-                f_pool      = jnp.sum(f, axis=1) # (B, c_L)
-                head_init   = nn.initializers.normal(stddev=0.1, dtype=cd)
-                out         = nn.Dense(2, dtype=cd, param_dtype=cd,
-                               kernel_init=head_init, name='head_proj')(f_pool)
-                val         = out[..., 0] + 1j * out[..., 1]
-            else:
-                val         = jnp.sum(f, axis=(1, 2)) # (B,)
+            val = self._project_output(f)
 
             return val if self.islog else jnp.exp(val)
 
+
+    class _FlaxEquivariantGCNNDirect(_FlaxEquivariantGCNNBase):
+        """Direct-output equivariant GCNN."""
+
+        split_complex: bool = False
+
+        def _resolve_comp_dtype(self):
+            return self.dtype
+
+        def _act(self, h):
+            return map_over_complex_parts(h, jax.nn.selu)
+
+        def _project_output(self, f):
+            return jnp.sum(f, axis=(1, 2))
+
+
+    class _FlaxEquivariantGCNNSplitComplex(_FlaxEquivariantGCNNBase):
+        """Split-complex equivariant GCNN with real hidden arithmetic."""
+
+        split_complex: bool = True
+
+        def _resolve_comp_dtype(self):
+            _, param_real_dtype, _ = resolve_split_complex_dtypes(self.dtype, self.param_dtype)
+            return param_real_dtype
+
+        def _prepare_input(self, x):
+            return prepare_split_complex_input(x)
+
+        def _act(self, h):
+            return jax.nn.selu(h)
+
+        def _project_output(self, f):
+            cd = self._resolve_comp_dtype()
+            f_pool = jnp.sum(f, axis=1)
+            head_init = nn.initializers.normal(stddev=0.1, dtype=cd)
+            out = nn.Dense(
+                2,
+                dtype=cd,
+                param_dtype=cd,
+                kernel_init=head_init,
+                name='head_proj',
+            )(f_pool)
+            return combine_split_complex_output(out[..., 0], out[..., 1], cd)
+
     class EquivariantGCNN(FlaxInterface):
         r"""
-        Group-Equivariant CNN for NQS on lattice systems.
+        Group-equivariant CNN for lattice or symmetry-permutation inputs.
 
         Implements the architecture from Sharma et al. (2025, arXiv:2505.23728)
         and Roth & MacDonald (2021).  Convolutions run over the symmetry group
@@ -451,8 +518,10 @@ if JAX_AVAILABLE:
                 islog           = True,
             )
 
+            eqgcnn_module = _FlaxEquivariantGCNNSplitComplex if split_complex else _FlaxEquivariantGCNNDirect
+
             super().__init__(
-                net_module  = _FlaxEquivariantGCNN,
+                net_module  = eqgcnn_module,
                 net_args    = (),
                 net_kwargs  = net_kwargs,
                 input_shape = input_shape,
@@ -464,12 +533,7 @@ if JAX_AVAILABLE:
             self._has_analytic_grad = False
             self._name      = 'eqgcnn'
             self._n_group   = perm_table.shape[0]
-            self._nqs_family = "equivariant_gcnn"
-            self._nqs_variant = "general"
-            self._nqs_native_representation = "binary_01"
-            self._nqs_supports_fast_updates = False
-            self._nqs_supports_exact_sampling = False
-            self._nqs_preferred_sampler = "MCSampler"
+            configure_nqs_metadata(self, family="equivariant_gcnn", native_representation="binary_01")
 
         @classmethod
         def from_lattice(

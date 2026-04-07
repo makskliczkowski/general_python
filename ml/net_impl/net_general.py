@@ -9,6 +9,10 @@ file    : general_python/ml/net_simple.py
 author  : Maksymilian Kliczkowski
 email   : maksymilian.kliczkowski@pwr.edu.pl
 date    : 2025-03-10
+Version : 2.0
+Change Log:
+- 2025-03-10: Initial implementation of the GeneralNet class and CallableNet subclass.
+- 2026-04-07: Added detailed docstrings and type annotations. 
 ---------------------------------------------------------------
 """
 
@@ -23,7 +27,6 @@ if TYPE_CHECKING:
 
 try:
     import jax
-    import jax.numpy as jnp
     JAX_AVAILABLE   = True
 except ImportError:
     jax             = None
@@ -44,11 +47,11 @@ class GeneralNet(ABC):
     _dcol   = 'blue'            # Default color for the logger 
 
     def __init__(self,
-                input_shape     : tuple,
-                backend		    : str		            = 'default',
-                dtype           : Optional[np.dtype]    = np.float64,
-                in_activation   : Optional[Callable]    = None,
-                seed            : Optional[int]         = None,
+                input_shape         : tuple,
+                backend		        : str		            = 'default',
+                dtype               : Optional[np.dtype]    = np.float64,
+                input_activation    : Optional[Callable]    = None,
+                seed                : Optional[int]         = None,
                 **kwargs):
         
         # lazy import
@@ -99,7 +102,7 @@ class GeneralNet(ABC):
         self._shapes_for_update : Optional[List[Tuple[int, tuple]]] = None  # List of (num_real_comp, shape)
         
         # activation - modifies the input before the network
-        self._in_activation     = in_activation
+        self._in_activation     = input_activation
         self._net_module_class  = None
         self._net_args          = None
         self._net_kwargs        = None
@@ -752,6 +755,7 @@ class CallableNet(GeneralNet):
         # This method is not applicable for CallableNet.
         pass
     
-    # ---------------------------------------------------
     
+#########################################################
+#! EOF
 #########################################################

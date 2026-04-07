@@ -1,6 +1,4 @@
-"""
-Compatibility export for pair-product ansatze.
-"""
+"""Export for pair-product ansatze."""
 
 from ..networks.net_pp import PairProduct
 

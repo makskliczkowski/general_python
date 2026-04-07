@@ -1,6 +1,4 @@
-"""
-Compatibility export for the Jastrow ansatz.
-"""
+"""Export for the Jastrow ansatz."""
 
 from ..networks.net_jastrow import Jastrow
 

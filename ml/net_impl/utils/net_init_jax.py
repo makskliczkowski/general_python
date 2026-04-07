@@ -100,12 +100,33 @@ def complex_normal_init(key, shape, dtype=jnp.complex64):
     imag_part   = imag_init(key2, shape, jnp.float32)
     return (real_part + 1j * imag_part).astype(dtype)
 
+def complex_normal(stddev=1e-2):
+    """Return a complex normal initializer with configurable standard deviation."""
+    normal = nn.initializers.normal(stddev=stddev)
+
+    def init(key, shape, dtype=jnp.complex64):
+        dt          = jnp.dtype(dtype)
+        real_dtype  = jnp.real(jnp.zeros(1, dtype=dt)).dtype
+        key1, key2  = random.split(key)
+        real_part   = normal(key1, shape, real_dtype)
+        imag_part   = normal(key2, shape, real_dtype)
+        return (real_part + 1j * imag_part).astype(dt)
+
+    return init
+
 def real_normal_init(key, shape, dtype=jnp.float32):
     """
     Custom initializer for real weights using normal distribution.
     """
     normal_init = nn.initializers.normal()
     return normal_init(key, shape, dtype)
+
+def normal_by_dtype(stddev, dtype):
+    """Return a real or complex normal initializer that matches ``dtype``."""
+    dt = jnp.dtype(dtype)
+    if jnp.issubdtype(dt, jnp.complexfloating):
+        return complex_normal(stddev=stddev)
+    return nn.initializers.normal(stddev=stddev)
 
 ########################################################################
 #! CONSTANT INITIALIZATION
@@ -162,4 +183,39 @@ def lecun_normal(dtype):
     # Directly return the initializer function from Flax
     return nn.initializers.lecun_normal(dtype=dtype)
 
+########################################################################
+# Public API
+########################################################################
+
+def get_initializer(name, dtype):
+    """
+    Factory function to get the appropriate initializer based on name and dtype.
+    
+    Possible initializer names (case-insensitive):
+    - 'he': He initialization
+    - 'xavier': Xavier initialization
+    - 'normal': Normal distribution initialization
+    - 'uniform': Uniform distribution initialization
+    - 'constant': Constant initialization (zeros)
+    
+    Possible kwargs:
+    - dtype: The desired dtype for the initializer (e.g., jnp.float32, jnp.complex64)
+    
+    """
+    name = name.lower()
+    if 'he' in name:
+        return complex_he_init if jnp.issubdtype(dtype, jnp.complexfloating) else real_he_init
+    elif 'xavier' in name:
+        return complex_xavier_init if jnp.issubdtype(dtype, jnp.complexfloating) else real_xavier_init
+    elif 'normal' in name:
+        return complex_normal_init if jnp.issubdtype(dtype, jnp.complexfloating) else real_normal_init
+    elif 'uniform' in name:
+        return complex_uniform_init if jnp.issubdtype(dtype, jnp.complexfloating) else real_uniform_init
+    elif 'constant' in name:
+        return complex_constant_init if jnp.issubdtype(dtype, jnp.complexfloating) else real_constant_init
+    else:
+        raise ValueError(f"Unknown initializer name: {name}")
+
+########################################################################
+#! EOF
 ########################################################################

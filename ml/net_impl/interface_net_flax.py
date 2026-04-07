@@ -23,9 +23,9 @@ Example:
             
     # Wrap it with the interface
     net = FlaxNetInterface(
-        net_module=SimpleMLP,
-        net_kwargs={'features': (64, 32, 1)},
-        input_shape=(10,)
+        net_module  =   SimpleMLP,
+        net_kwargs  = {'features': (64, 32, 1)},
+        input_shape = (10,)
     )
     
     # Use the network
@@ -112,14 +112,14 @@ class FlaxInterface(GeneralNet):
     _ERR_NET_NOT_INITIALIZED = "Network not initialized. Call init() first."
     
     def __init__(self,
-                net_module    : Union[nn.Module, Callable],
-                net_args      : tuple                           = (),
-                net_kwargs    : Optional[dict]                  = None,
-                input_shape   : tuple                           = (10,),
-                backend       : str                             = 'jax',
-                dtype         : Optional[jnp.dtype]             = jnp.float32,
-                seed          : int                             = 42,
-                in_activation : Optional[Union[str, Callable]]  = None,
+                net_module          : Union[nn.Module, Callable],
+                net_args            : tuple                             = (),
+                net_kwargs          : Optional[dict]                    = None,
+                input_shape         : tuple                             = (10,),
+                backend             : str                               = 'jax',
+                dtype               : Optional[jnp.dtype]               = jnp.float32,
+                seed                : int                               = 42,
+                input_activation    : Optional[Union[str, Callable]]    = None,
                 **kwargs):  
         
         self._name  = 'FlaxNetInterface'
@@ -140,7 +140,7 @@ class FlaxInterface(GeneralNet):
         self._validate_param_tree   = bool(kwargs.pop("validate_param_tree", False))
         
         #! Initialize the GeneralNet class.
-        super().__init__(input_shape, backend, self._dtype, in_activation=in_activation, seed=seed, **kwargs)
+        super().__init__(input_shape, backend, self._dtype, input_activation=input_activation, seed=seed, **kwargs)
 
         #! Set the backend to JAX.
         if self._backend != jnp and self._backend != 'jax':
@@ -158,10 +158,10 @@ class FlaxInterface(GeneralNet):
         #! Ensure dtype consistency in kwargs passed to the module
         net_kwargs_processed        = net_kwargs.copy()
         # pop the kwargs that are not meant for the Flax module
-        net_kwargs_processed.pop('in_activation', None)
-        net_kwargs_processed.pop('backend', None)
-        net_kwargs_processed.pop('input_shape', None)
-        net_kwargs_processed.pop('seed', None)
+        net_kwargs_processed.pop('input_activation',    None)
+        net_kwargs_processed.pop('backend',             None)
+        net_kwargs_processed.pop('input_shape',         None)
+        net_kwargs_processed.pop('seed',                None)
         # NOTE: do NOT pop 'param_dtype' here — it IS a Flax module kwarg and
         
         #! Handle activation functions if specified

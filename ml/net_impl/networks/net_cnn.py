@@ -1,48 +1,27 @@
 """
 general_python.ml.net_impl.networks.net_cnn
-===============================================
+===========================================
 
-Convolutional Neural Network (CNN) for Quantum States.
+Generic convolutional wrapper based on Flax.
 
-This module provides a Flax-based implementation of a Convolutional Neural
-Network (CNN), designed for representing quantum wavefunctions on a lattice.
-It processes 1D input vectors by reshaping them into spatial structures (e.g., a 2D grid)
-and applying convolutional layers.
+The wrapper accepts flattened inputs, reshapes them into a configured spatial
+layout, and applies periodic or standard convolutions. Optional preprocessing
+is handled through generic callable hooks rather than domain-specific input
+convention flags.
 
-Optimization Features:
-----------------------
-- **Split-Complex Mode (`split_complex=True`)**:
-  Uses real-valued weights and arithmetic for the backbone, outputting two real
-  components (Real, Imag) at the final layer.
-
-- **Periodic Boundary Conditions**:
-  Efficiently handles torus geometries via circular padding.
-
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # 1. Complex-Valued CNN (Standard)
-    # Weights are complex, arithmetic is complex.
-    cnn = choose_network('cnn', input_shape=(64,), reshape_dims=(8,8), dtype='complex64')
-
-    # 2. Split-Complex CNN (Optimized)
-    # Weights are real, output is complex. Faster.
-    cnn_opt = choose_network('cnn', input_shape=(64,), reshape_dims=(8,8), split_complex=True)
-
-----------------------------------------------------------
+------------------------------------------
 Author          : Maksymilian Kliczkowski
-Email           : maxgrom97@gmail.com
-Date            : 07.05.2025
-Description     : Flax implementation of a Convolutional Neural Network (CNN).
-----------------------------------------------------------
+Date            : 2026-01-21
+License         : MIT
+Version         : 1.0
+------------------------------------------
 """
 
 
-import  numpy as np
-from    typing import List, Tuple, Callable, Optional, Any, Sequence, Union, TYPE_CHECKING
-from    functools import partial
-import  math
+import numpy as np
+from typing import List, Tuple, Callable, Optional, Any, Sequence, Union, TYPE_CHECKING
+import math
+import warnings
 
 try:
     import                                          jax
@@ -50,9 +29,16 @@ try:
     import                                          flax.linen as nn
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling
-    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1, preferred_state_representation
-    from ....ml.net_impl.activation_functions       import get_activation_jnp
-    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
+    from ....ml.net_impl.utils.net_wrapper_utils    import (
+                                                        as_spatial_tuple,               # Utility to convert int or tuple to spatial tuple
+                                                        combine_split_complex_output,   # Utility to combine separate real outputs into complex output
+                                                        prepare_split_complex_input,    # Utility to prepare complex input for split-complex processing (e.g., by concatenating real and imaginary parts)
+                                                        configure_nqs_metadata,         # Utility to set metadata attributes for NQS compatibility
+                                                        normalize_activation_sequence,  # Utility to normalize activation specifications into a sequence of callables    
+                                                        normalize_layerwise_spec,       # Utility to normalize layerwise specifications (like kernel sizes, use_bias) into sequences of correct length
+                                                        resolve_activation_spec,        # Utility to resolve activation specifications (string or callable) into a callable activation function
+                                                        resolve_split_complex_dtypes,   # Utility to resolve the appropriate real and complex dtypes for split-complex processing based on the provided dtype and parameter dtype
+                                                    )
     if TYPE_CHECKING:
         from ....algebra.utils                      import Array
     JAX_AVAILABLE                                   = True
@@ -64,11 +50,7 @@ except ImportError as e:
 ##########################################################
 
 def circular_pad(x, kernel_sizes):
-    """
-    Circular padding for periodic boundary conditions.
-    Assumes x shape is (Batch, Dim1, Dim2, ..., Channels).
-    kernel_sizes corresponds to spatial dimensions only.
-    """
+    """Apply wraparound padding for one convolution kernel."""
     # Create padding configuration
     # (0,0) for batch, (0,0) for channel
     # For spatial dims: pad k//2 left, (k-1)//2 right
@@ -82,24 +64,8 @@ def circular_pad(x, kernel_sizes):
     return jnp.pad(x, pads, mode='wrap')
 
 
-def _resolve_activation(act: Optional[Any]) -> Optional[Callable]:
-    """
-    Resolve activation specs produced by ``get_activation_jnp``.
-    """
-    if act is None:
-        return None
-    if callable(act):
-        return act
-    if isinstance(act, (list, tuple)) and len(act) > 0 and callable(act[0]):
-        return act[0]
-    raise ValueError(f"Invalid activation specification: {act!r}")
-
-##########################################################
-
-class _FlaxCNN(nn.Module):
-    """
-    Inner Flax module for a Convolutional Neural Network (CNN).
-    """
+class _FlaxCNNBase(nn.Module):
+    """Shared convolutional backbone logic for direct and split-complex CNNs."""
     reshape_dims   : Tuple[int, ...]            # e.g. (8, 8)
     features       : Sequence[int]              # conv channels, e.g. (16, 32)
     kernel_sizes   : Sequence[Tuple[int, ...]]  # e.g. ((3, 3), (3, 3))
@@ -114,89 +80,92 @@ class _FlaxCNN(nn.Module):
     input_channels : int                        = 1
     periodic       : bool                       = True
     use_sum_pool   : bool                       = True
-    transform_input: bool                       = False
-    input_is_spin  : bool                       = BACKEND_DEF_SPIN
-    input_value    : float                      = BACKEND_REPR
-    split_complex  : bool                       = False
+    input_adapter  : Optional[Callable]         = None
     islog          : bool                       = True
     
     in_act         : Optional[Callable]         = None
     out_act        : Optional[Callable]         = None
 
-    @nn.compact
+    def _resolve_comp_dtype(self):
+        raise NotImplementedError
+
+    def _head_features(self):
+        raise NotImplementedError
+
+    def _prepare_input(self, s: jax.Array) -> jax.Array:
+        return s
+
+    def _project_output(self, x: jax.Array, batch_size: int) -> jax.Array:
+        raise NotImplementedError
+
+    def setup(self):
+        self._comp_dtype = self._resolve_comp_dtype()
+        if jnp.issubdtype(self._comp_dtype, jnp.complexfloating):
+            self._kernel_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', self._comp_dtype)
+        else:
+            self._kernel_init = nn.initializers.lecun_normal(dtype=self._comp_dtype)
+
+        # Build convolutional layers by iterating over features, kernel sizes, strides, and bias flags
+        self.conv_layers = [
+            nn.Conv(
+                features        = feat,
+                kernel_size     = k_size,
+                strides         = stride,
+                padding         = 'VALID' if self.periodic else 'SAME',
+                use_bias        = bias,
+                dtype           = self._comp_dtype,
+                param_dtype     = self._comp_dtype,
+                kernel_init     = self._kernel_init,
+                name            = f'conv_{i}',
+            )
+            
+            # Iterate over layers, zipping together the corresponding features, kernel sizes, strides, and bias flags
+            for i, (feat, k_size, stride, bias) in enumerate(
+                zip(self.features, self.kernel_sizes, self.strides, self.use_bias)
+            )
+        ]
+        
+        # Output projection layer (fully connected) after convolutional backbone
+        self.head_projection = nn.Dense(
+            features    = self._head_features(),
+            dtype       = self._comp_dtype,
+            param_dtype = self._comp_dtype,
+            kernel_init = self._kernel_init,
+            name        = 'head_projection',
+        )
+
     def __call__(self, s: jax.Array) -> jax.Array:
-        """ 
-        Forward pass.
-        """
+        """Evaluate the convolutional backbone on one sample or a batch."""
         # Ensure batch dimension: (B, N)
-        needs_batch     = s.ndim == 1
+        needs_batch = s.ndim == 1
         if s.ndim == 1:
             s = s[jnp.newaxis, ...]
 
         batch_size      = s.shape[0]
         target_shape    = (batch_size,) + tuple(int(d) for d in self.reshape_dims) + (self.input_channels,)
-
-        # Resolve Computation Dtypes
-        if self.split_complex:
-            # Force Real Arithmetic
-            if jnp.issubdtype(self.param_dtype, jnp.complexfloating):
-                comp_dtype = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
-            else:
-                comp_dtype = self.param_dtype
-            # Ensure input is real
-            s_proc      = s.real if jnp.iscomplexobj(s) else s
-        else:
-            comp_dtype  = self.dtype
-            s_proc      = s
+        s_proc          = self._prepare_input(s)
 
         # 1. Reshape & Transform
         x               = s_proc.reshape(target_shape)
-        x               = x.astype(comp_dtype)  # Cast to computation dtype (first)        
+        x               = x.astype(self._comp_dtype)
             
-        # Transform the configured input convention -> {-1, +1} if needed
-        if self.transform_input:
-            x           = map_state_to_pm1(x, self.input_is_spin, self.input_value)
+        if self.input_adapter is not None:
+            x = self.input_adapter(x)
 
         # Input Activation
-        in_act = _resolve_activation(self.in_act)
-        if in_act is not None:
-            x = in_act(x)
+        if self.in_act is not None:
+            x = self.in_act(x)
 
-        # ------------
-        # Convolutions
-        
-        if jnp.issubdtype(comp_dtype, jnp.complexfloating):
-            k_init = cplx_variance_scaling(1.0, 'fan_in', 'normal', comp_dtype)
-        else:
-            k_init = nn.initializers.lecun_normal(dtype=comp_dtype)
-        
-        for i, (feat, k_size, stride, bias, act_fn) in enumerate(zip(
-                    self.features, self.kernel_sizes, self.strides, self.use_bias, self.activations
-                )):
+        # 2. Convolutions
+        for conv_layer, k_size, act_fn in zip(self.conv_layers, self.kernel_sizes, self.activations):
             # Periodic Padding
             if self.periodic:
-                x           = circular_pad(x, k_size)
-                pad_type    = 'VALID'
-            else:
-                pad_type    = 'SAME'
-
-            # Convolution
-            x = nn.Conv(
-                features        =   feat,
-                kernel_size     =   k_size,
-                strides         =   stride,
-                padding         =   pad_type,
-                use_bias        =   bias,
-                dtype           =   comp_dtype,
-                param_dtype     =   comp_dtype,
-                kernel_init     =   k_init,
-                name            =   f'conv_{i}'
-            )(x)
+                x = circular_pad(x, k_size) # Apply circular padding to the input before convolution
+            x = conv_layer(x)
             
             # Activation
-            act = _resolve_activation(act_fn)
-            if act is not None:
-                x = act(x)
+            if act_fn is not None:
+                x = act_fn(x)
 
         # Pooling
         if self.use_sum_pool:
@@ -205,40 +174,16 @@ class _FlaxCNN(nn.Module):
         else:
             x               = x.reshape((batch_size, -1))
 
-        if self.split_complex:
-            # Output 2 real values: [Real, Imag]
-            out             = nn.Dense(
-                                features    = 2 * self.output_feats,
-                                dtype       = comp_dtype,
-                                param_dtype = comp_dtype,
-                                kernel_init = k_init,
-                                name        = 'head_projection'
-                            )(x)
-            
-            # Reconstruct Complex Number: Re + i*Im
-            # Reshape to (batch, output_feats, 2)
-            out             = out.reshape((batch_size, self.output_feats, 2))
-            out_val         = out[..., 0] + 1j * out[..., 1]
-            
-        else:
-            # Output 1 complex value
-            out             = nn.Dense(
-                                features    = self.output_feats,
-                                dtype       = comp_dtype,
-                                param_dtype = comp_dtype,
-                                kernel_init = k_init,
-                                name        = 'head_projection'
-                            )(x)
-            out_val         = out # Shape: (batch, output_feats)
+        # 3. Output Projection
+        out_val = self._project_output(x, batch_size)
 
         # Squeeze last dim if output_feats is 1
         if self.output_feats == 1:
             out_val         = out_val.reshape((batch_size,))
 
-        # Output
-        out_act = _resolve_activation(self.out_act)
-        if out_act is not None:
-            out_val = out_act(out_val)
+        # 4. Output Activation
+        if self.out_act is not None:
+            out_val = self.out_act(out_val)
 
         # Final Scale
         if not self.islog:
@@ -246,6 +191,41 @@ class _FlaxCNN(nn.Module):
         
         # Return scalar for single sample, array for batch
         return out_val[0] if needs_batch else out_val
+
+
+class _FlaxCNNDirect(_FlaxCNNBase):
+    """Direct-output CNN backbone for real or complex dtypes."""
+
+    split_complex: bool = False
+
+    def _resolve_comp_dtype(self):
+        return self.dtype
+
+    def _head_features(self):
+        return self.output_feats
+
+    def _project_output(self, x: jax.Array, batch_size: int) -> jax.Array:
+        del batch_size # not needed for direct output, but required for split-complex path
+        return self.head_projection(x)
+
+class _FlaxCNNSplitComplex(_FlaxCNNBase):
+    """Split-complex CNN backbone with real intermediate arithmetic."""
+
+    split_complex: bool = True
+
+    def _resolve_comp_dtype(self):
+        _, param_real_dtype, _ = resolve_split_complex_dtypes(self.dtype, self.param_dtype)
+        return param_real_dtype
+
+    def _head_features(self):
+        return 2 * self.output_feats
+
+    def _prepare_input(self, s: jax.Array) -> jax.Array:
+        return prepare_split_complex_input(s)
+
+    def _project_output(self, x: jax.Array, batch_size: int) -> jax.Array:
+        out = self.head_projection(x).reshape((batch_size, self.output_feats, 2))
+        return combine_split_complex_output(out[..., 0], out[..., 1], self._comp_dtype)
 
 ##########################################################
 #! CNN WRAPPER CLASS USING FlaxInterface
@@ -255,24 +235,24 @@ class CNN(FlaxInterface):
     r"""
     Convolutional Neural Network (CNN) Interface.
 
-    Parameters:
-        input_shape (tuple): Shape of the 1D input vector.
-        reshape_dims (Tuple[int, ...]): Spatial dimensions (Lx, Ly).
-        features (Sequence[int]): Channels per layer.
-        kernel_sizes (Sequence[int/Tuple]): Kernel sizes.
-        split_complex (bool): 
-            If True, uses a real-valued backbone with two real outputs (Re, Im) combined at the end.
-            Drastically faster for real inputs (spins). Default: False.
-        periodic (bool): 
-            Periodic boundary conditions. Default: True.
-        sum_pooling (bool): 
-            Sum over spatial dimensions. Default: True.
-        transform_input (bool):
-            If True, map the configured input convention to {-1, +1}.
-        input_spin (bool):
-            If True, inputs are interpreted as signed spin values.
-        input_value (float):
-            Magnitude of the signed or binary local values used by the wrapper.
+    Parameters
+    ----------
+    input_shape (tuple): 
+        Shape of the 1D input vector.
+    reshape_dims (Tuple[int, ...]): 
+        Spatial dimensions (Lx, Ly).
+    features (Sequence[int]): 
+        Channels per layer.
+    kernel_sizes (Sequence[int/Tuple]):
+        Kernel sizes.
+    split_complex (bool):
+        If True, uses a real-valued backbone with two real outputs (Re, Im) combined at the end.
+    periodic (bool): 
+        Periodic boundary conditions. Default: True.
+    sum_pooling (bool): 
+        Sum over spatial dimensions. Default: True.
+    input_adapter (Optional[Callable]):
+        Optional preprocessing applied after reshaping and before the first convolution.
     """
     def __init__(self, 
                 input_shape         : tuple,
@@ -283,9 +263,9 @@ class CNN(FlaxInterface):
                 activations         : Union[str, Callable, Sequence[Union[str, Callable]]]  = 'log_cosh',
                 use_bias            : Union[bool, Sequence[bool]]                           = True,
                 output_shape        : Tuple[int, ...]                                       = (1,),
-                in_activation       : Optional[Callable]                                    = None,
+                input_activation    : Optional[Any]                                         = None,
                 final_activation    : Union[str, Callable, None]                            = None,
-                transform_input     : bool                                                  = False,
+                input_adapter       : Optional[Callable]                                    = None,
                 *,
                 split_complex       : bool                                                  = False,
                 islog               : bool                                                  = True,
@@ -313,60 +293,23 @@ class CNN(FlaxInterface):
             raise ValueError(f"reshape_dims {reshape_dims} product != input length {n_visible}")
 
         # Args normalization
-        def _normalize_per_layer(spec, name):
-            if isinstance(spec, int):
-                return [spec] * n_layers
-            if isinstance(spec, tuple) and len(spec) == n_dim and all(isinstance(k, int) for k in spec):
-                return [spec] * n_layers
-            if isinstance(spec, (list, tuple)):
-                items = list(spec)
-                if len(items) == 0:
-                    raise ValueError(f"{name} cannot be empty")
-                if len(items) == 1 and n_layers > 1:
-                    items = items * n_layers
-                elif len(items) != n_layers:
-                    raise ValueError(f"{name} must have length 1 or match len(features)={n_layers}")
-                return items
-            raise ValueError(f"{name} must be int, tuple[int,...], or sequence")
-
-        def _as_spatial_tuple(item, name):
-            if isinstance(item, int):
-                return (item,) * n_dim
-            if isinstance(item, (list, tuple)) and len(item) == n_dim and all(isinstance(k, int) for k in item):
-                return tuple(int(k) for k in item)
-            raise ValueError(f"{name} entry {item} must be int or tuple/list of length {n_dim}")
-
-        kernels = tuple(_as_spatial_tuple(item, "kernel_sizes") for item in _normalize_per_layer(kernel_sizes, "kernel_sizes"))
+        kernels     = tuple(as_spatial_tuple(item, n_dim, name="kernel_sizes") for item in normalize_layerwise_spec(kernel_sizes, n_layers, name="kernel_sizes"))
         stride_spec = 1 if strides is None else strides
-        strides_t = tuple(_as_spatial_tuple(item, "strides") for item in _normalize_per_layer(stride_spec, "strides"))
+        strides_t   = tuple(as_spatial_tuple(item, n_dim, name="strides") for item in normalize_layerwise_spec(stride_spec, n_layers, name="strides"))
 
         # Activations
-        if isinstance(activations, (str, Callable)):
-            acts = (get_activation_jnp(activations),) * n_layers
-        elif isinstance(activations, (Sequence, List)):
-            if len(activations) == 1:
-                acts = (get_activation_jnp(activations[0]),) * n_layers
-            elif len(activations) == n_layers:
-                acts = tuple(get_activation_jnp(a) for a in activations)
-            else:
-                raise ValueError("activations list length must be 1 or match len(features)")
-        else:
-            raise ValueError("Invalid activation spec")
+        acts        = normalize_activation_sequence(
+                        activations,
+                        n_layers,
+                        default='log_cosh',
+                        container=tuple,
+                    )
 
         # Bias
-        if isinstance(use_bias, bool):
-            bias_flags  = (use_bias,) * n_layers
-        else:
-            bias_vals = list(use_bias)
-            if len(bias_vals) == 1 and n_layers > 1:
-                bias_vals = bias_vals * n_layers
-            elif len(bias_vals) != n_layers:
-                raise ValueError("use_bias list length must be 1 or match len(features)")
-            bias_flags = tuple(bool(b) for b in bias_vals)
+        bias_flags  = tuple(bool(b) for b in normalize_layerwise_spec(use_bias, n_layers, name="use_bias"))
 
         p_dtype         = param_dtype if param_dtype is not None else dtype
         output_feats    = int(np.prod(output_shape))
-
         # Build Module Config
         net_kwargs = dict(
             reshape_dims    =   reshape_dims,
@@ -376,24 +319,28 @@ class CNN(FlaxInterface):
             activations     =   acts,
             use_bias        =   bias_flags,
             output_feats    =   output_feats,
-            in_act          =   get_activation_jnp(in_activation) if in_activation else None,
-            out_act         =   get_activation_jnp(final_activation) if final_activation else None,
+            in_act          =   resolve_activation_spec(input_activation),
+            out_act         =   resolve_activation_spec(final_activation),
             dtype           =   dtype,
             param_dtype     =   p_dtype,
             input_channels  =   1,
             periodic        =   kwargs.get('periodic',      True),
             use_sum_pool    =   kwargs.get('sum_pooling',   True),
-            transform_input =   transform_input,
-            input_is_spin   =   kwargs.get('input_spin',    BACKEND_DEF_SPIN),
-            input_value     =   kwargs.get('input_value',   BACKEND_REPR),
             split_complex   =   split_complex,
-            islog           =   islog
+            islog           =   islog,
+            input_adapter   =   input_adapter,
         )
+        if (jnp.issubdtype(dtype, jnp.complexfloating) != jnp.issubdtype(p_dtype, jnp.complexfloating)):
+            warnings.warn(f"Input dtype {dtype} and parameter dtype {p_dtype} have different complex types.")
+
+        # Select Module Class and finalize kwargs based on split_complex
         self._out_shape     = output_shape
+        self._output_size   = output_feats
         self._split_complex = split_complex
+        cnn_module          = _FlaxCNNSplitComplex if split_complex else _FlaxCNNDirect
 
         super().__init__(
-            net_module  =   _FlaxCNN,
+            net_module  =   cnn_module,
             net_args    =   (),
             net_kwargs  =   net_kwargs,
             input_shape =   input_shape,
@@ -404,25 +351,17 @@ class CNN(FlaxInterface):
 
         self._has_analytic_grad             = False
         self._name                          = 'cnn'
-        self._nqs_family                    = "cnn"
-        self._nqs_variant                   = "general"
-        self._nqs_native_representation     = preferred_state_representation(
-                                                net_kwargs["transform_input"],
-                                                net_kwargs["input_is_spin"],
-                                            )
-        self._nqs_supports_fast_updates     = False
-        self._nqs_supports_exact_sampling   = False
-        self._nqs_preferred_sampler         = "MCSampler"
+        configure_nqs_metadata(self, family="cnn")
 
     @property
     def output_shape(self) -> Tuple[int, ...]:
         return self._out_shape
 
+    # -------------------------------------------------------------
+
     def __call__(self, s: 'Array'):
         flat_output = super().__call__(s)
-        out_size = int(np.prod(self._out_shape))
 
-        # Scalar output (common NQS path)
         if self._out_shape == (1,):
             if flat_output.ndim == 0:
                 return flat_output
@@ -431,14 +370,20 @@ class CNN(FlaxInterface):
         # Vector/tensor output path
         if flat_output.ndim == 0:
             return flat_output
+        
+        # If output is already the correct shape, return as is
         if flat_output.ndim == 1:
             if hasattr(s, "ndim") and s.ndim > 1:
                 batch = s.shape[0]
                 return flat_output.reshape((batch,) + self._out_shape)
             return flat_output.reshape(self._out_shape)
-        if flat_output.shape[-1] == out_size:
+        
+        if flat_output.shape[-1] == self._output_size:
             return flat_output.reshape(flat_output.shape[:-1] + self._out_shape)
+        
         return flat_output
+
+    # -------------------------------------------------------------
 
     def __repr__(self) -> str:
         kind    = "SplitComplex" if self._split_complex else ("Complex" if self._iscpx else "Real")
@@ -452,23 +397,6 @@ class CNN(FlaxInterface):
 
     def __str__(self) -> str:
         return self.__repr__()
-
-##########################################################
-#! End of CNN File
-##########################################################
-
-if __name__ == "__main__":
-    cnn = CNN(
-        input_shape     =   (64,),
-        reshape_dims    =   (8, 8),
-        features        =   [16],
-        split_complex   =   True,
-        dtype           =   'complex64'
-    )
-    print(cnn)
-    x   = np.random.randint(0, 2, (2, 64))
-    out = cnn(x)
-    print("Output:", out.shape, out.dtype)
 
 ###########################################################
 #! EOF

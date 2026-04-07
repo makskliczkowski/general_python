@@ -1,42 +1,30 @@
 r"""
-Pair Product (PP) and RBM+PP Ansatz for Quantum States.
+Pair-product wrappers with optional RBM augmentation.
+This module provides two closely related structured ansatz wrappers:
 
-This module provides Flax-based implementations of:
-1.  **Pair Product (PP) Ansatz**:
-    Captures pairwise correlations using a Pfaffian structure:
-    $$ \psi_{PP}(s) = \text{Pf}(X(s)) $$ 
-    where $X(s)$ is a skew-symmetric matrix dependent on configuration $s$.
+1. ``PairProduct``:
+   evaluates a Pfaffian-style pair-correlation model.
+2. ``RBM + PairProduct``:
+   multiplies the pair-product branch by an RBM-style factor.
 
-2.  **RBM + PP Ansatz**:
-    Combines a Restricted Boltzmann Machine (RBM) with the Pair Product state:
-    $$ \psi(s) = \psi_{RBM}(s) \times \psi_{PP}(s) $$ 
-    This ansatz is state-of-the-art for many fermionic and frustrated spin systems.
+The implementation keeps the structured linear algebra in one place while
+the ansatz wrapper handles the input-state convention expected by NQS.
 
-Performance & Precision:
-------------------------
-- **Mixed Precision**: 
-    Supports storing parameters in lower precision (e.g., float32/complex64)
-    while performing critical Pfaffian computations in high precision (complex128) for stability.
-- **Efficient Gathering**: 
-    Uses vectorized indexing to construct the $X$ matrix without explicit loops.
-- **Algebraic Utilities**:
-    Uses shared `Pfaffian` implementation from `general_python.algebra.utilities`.
+Mathematically, the pair-product ansatz has the form:
+``log_psi(s) = log(Pf(X(s)))``
+where ``X(s)`` is a skew-symmetric matrix constructed from the input state ``s`` and learnable parameters. The RBM augmentation adds a factor of the form
+``exp(sum_j log(cosh(W s + b)))`` to the wavefunction, resulting in a combined ansatz:
+``log_psi(s) = log(Pf(X(s))) + sum_j log(cosh(W s + b))``
 
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # Pure Pair Product
-    net = choose_network('pp', input_shape=(64,), use_rbm=False)
-    
-    # RBM + Pair Product (Recommended)
-    net = choose_network('pp', input_shape=(64,), use_rbm=True, alpha=2.0)
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
 
 ----------------------------------------------------------
 File            : general_python.ml.net_impl.networks.net_pp
 Author          : Maksymilian Kliczkowski
 Email           : maxgrom97@gmail.com
 Date            : 2025-11-01
+License         : MIT
+Version         : 0.1 (Experimental)
 ----------------------------------------------------------
 """
 
@@ -49,11 +37,16 @@ except ImportError as e:
     raise ImportError("PairProduct network requires JAX and Flax.") from e
 
 try:
-    from ....ml.net_impl.interface_net_flax     import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax     import cplx_variance_scaling
-    from ....ml.net_impl.utils.net_state_repr_jax import state_to_binary_index, preferred_state_representation
-    from ....ml.net_impl.activation_functions   import log_cosh_jnp
-    from ....algebra.utils                      import JAX_AVAILABLE, BACKEND_DEF_SPIN, BACKEND_REPR
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax         import normal_by_dtype
+    from ....ml.net_impl.utils.net_state_repr_jax   import state_to_binary_index
+    from ....ml.net_impl.utils.net_wrapper_utils    import (
+                                                        configure_nqs_metadata,
+                                                        extract_input_convention,
+                                                        infer_native_representation,
+                                                    )
+    from ....ml.net_impl.activation_functions       import log_cosh_jnp
+    from ....algebra.utils                          import JAX_AVAILABLE, BACKEND_DEF_SPIN, BACKEND_REPR
     
     # Import shared Pfaffian utility
     try:
@@ -79,8 +72,8 @@ def log_pfaffian_proxy(A):
     
     # Fallback: 0.5 * log(det(A))
     # Approximation: log Pf(A) = 0.5 * (log |det(A)| + i * arg(det(A)))
-    sign, logdet = jnp.linalg.slogdet(A)
-    complex_dtype = jnp.result_type(A, jnp.complex64)
+    sign, logdet    = jnp.linalg.slogdet(A)
+    complex_dtype   = jnp.result_type(A, jnp.complex64)
     return 0.5 * (logdet + jnp.log(sign.astype(complex_dtype)))
 
 # ----------------------------------------------------------------------
@@ -99,15 +92,7 @@ class _FlaxPP(nn.Module):
     input_value : float     = BACKEND_REPR
 
     def setup(self):
-        # Variational parameters F_{ij}^{\sigma_i \sigma_j}
-        # Shape: (N, N, 2, 2)
-        
-        is_complex  = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-        if is_complex:
-            init_fn = cplx_variance_scaling(self.init_scale, "fan_in", "normal", self.param_dtype)
-        else:
-            init_fn = nn.initializers.normal(stddev=self.init_scale)
-            
+        init_fn     = normal_by_dtype(self.init_scale, self.param_dtype)
         self.F      = self.param('F', init_fn, (self.n_sites, self.n_sites, 2, 2), self.param_dtype)
         self._i_idx = jnp.arange(self.n_sites, dtype=jnp.int32)
 
@@ -126,12 +111,12 @@ class _FlaxPP(nn.Module):
         F_sym           = F_high - F_high.transpose(1, 0, 3, 2)
         
         # 3. Construct X Matrices (Vectorized)
-        i_idx = self._i_idx[None, :, None]  # (1, N, 1)
-        j_idx = self._i_idx[None, None, :]  # (1, 1, N)
-        X_batch = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
+        i_idx           = self._i_idx[None, :, None]  # (1, N, 1)
+        j_idx           = self._i_idx[None, None, :]  # (1, 1, N)
+        X_batch         = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
         
         # 4. Compute Log Pfaffian
-        out = log_pfaffian_proxy(X_batch)
+        out             = log_pfaffian_proxy(X_batch)
         return out[0] if needs_batch else out
 
 # ----------------------------------------------------------------------
@@ -143,22 +128,17 @@ class _FlaxRBMPP(nn.Module):
     Combined RBM + Pair Product Ansatz.
     log_psi(s) = log_psi_RBM(s) + log_psi_PP(s)
     """
-    n_sites     : int
-    n_hidden    : int       # For RBM
-    param_dtype : Any       = jnp.complex128
-    dtype       : Any       = jnp.complex128
-    init_scale  : float     = 0.01
-    input_is_spin: bool     = BACKEND_DEF_SPIN
-    input_value : float     = BACKEND_REPR
+    n_sites         : int
+    n_hidden        : int       # For RBM
+    param_dtype     : Any       = jnp.complex128
+    dtype           : Any       = jnp.complex128
+    init_scale      : float     = 0.01
+    input_is_spin   : bool      = BACKEND_DEF_SPIN
+    input_value     : float     = BACKEND_REPR
     
     def setup(self):
         # --- PP Part ---
-        is_complex  = jnp.issubdtype(self.param_dtype, jnp.complexfloating)
-        if is_complex:
-            init_fn = cplx_variance_scaling(self.init_scale, "fan_in", "normal", self.param_dtype)
-        else:
-            init_fn = nn.initializers.normal(stddev=self.init_scale)
-            
+        init_fn     = normal_by_dtype(self.init_scale, self.param_dtype)
         self.F      = self.param('F', init_fn, (self.n_sites, self.n_sites, 2, 2), self.param_dtype)
         self._i_idx = jnp.arange(self.n_sites, dtype=jnp.int32)
         
@@ -195,7 +175,7 @@ class _FlaxRBMPP(nn.Module):
         X_batch         = F_sym[i_idx, j_idx, s_idx[:, :, None], s_idx[:, None, :]]
         log_pp          = log_pfaffian_proxy(X_batch)
 
-        out = log_rbm + log_pp
+        out             = log_rbm + log_pp
         return out[0] if needs_batch else out
 
 # ----------------------------------------------------------------------
@@ -237,6 +217,8 @@ class PairProduct(FlaxInterface):
         n_sites = input_shape[0]
         p_dtype = param_dtype if param_dtype is not None else dtype
         
+        input_convention = extract_input_convention(kwargs)
+
         # Decide which Module to use
         if use_rbm:
             if alpha <= 0:
@@ -249,8 +231,7 @@ class PairProduct(FlaxInterface):
                                 dtype       = dtype,
                                 param_dtype = p_dtype,
                                 init_scale  = init_scale,
-                                input_is_spin = kwargs.get('input_spin', BACKEND_DEF_SPIN),
-                                input_value = kwargs.get('input_value', BACKEND_REPR),
+                                **input_convention,
                             )
             name            = "rbm_pp"
         else:
@@ -260,8 +241,7 @@ class PairProduct(FlaxInterface):
                                 dtype       = dtype,
                                 param_dtype = p_dtype,
                                 init_scale  = init_scale,
-                                input_is_spin = kwargs.get('input_spin', BACKEND_DEF_SPIN),
-                                input_value = kwargs.get('input_value', BACKEND_REPR),
+                                **input_convention,
                             )
             name            = "pair_product"
         
@@ -277,15 +257,12 @@ class PairProduct(FlaxInterface):
         
         self._name              = name
         self._has_analytic_grad = False
-        self._nqs_family = "pair_product"
-        self._nqs_variant = "rbm_pp" if use_rbm else "general"
-        self._nqs_native_representation = preferred_state_representation(
-            False,
-            net_kwargs["input_is_spin"],
+        configure_nqs_metadata(
+            self,
+            family="pair_product",
+            variant="rbm_pp" if use_rbm else "general",
+            native_representation=infer_native_representation(input_convention),
         )
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
 
     def __repr__(self) -> str:
         mod = self._flax_module

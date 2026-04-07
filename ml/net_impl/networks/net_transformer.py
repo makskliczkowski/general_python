@@ -2,34 +2,10 @@
 general_python.ml.net_impl.networks.net_transformer
 ===================================================
 
-Vision Transformer (ViT) Ansatz for Quantum States.
+Generic transformer-style wrapper for flattened inputs.
 
-Implements a Vision Transformer architecture adapted for 1D and 2D quantum systems.
-The system is divided into patches, and a Transformer encoder processes the patches.
-This allows capturing long-range correlations effectively via self-attention.
-
-Features:
-- Patch embedding (1D or 2D).
-- Learnable position embeddings.
-- Multi-head self-attention.
-- Transformer encoder blocks.
-- Output projection to log-amplitude.
-
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # Create a Transformer for a 1D chain of 64 sites
-    # Patches of size 4 -> 16 tokens
-    vit_net = choose_network(
-        'transformer',
-        input_shape=(64,),
-        patch_size=4,
-        embed_dim=32,
-        depth=4,
-        num_heads=4,
-        mlp_ratio=2.0
-    )
+The wrapper tokenizes a regular 1D layout into patches and applies standard
+self-attention blocks over patch embeddings.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
@@ -41,11 +17,12 @@ License         : MIT
 import jax
 import jax.numpy    as jnp
 import flax.linen   as nn
+import numpy as np
 from typing         import Sequence, Any, Optional, Tuple, Callable
 
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling
+    from ....ml.net_impl.utils.net_wrapper_utils import configure_nqs_metadata
     JAX_AVAILABLE = True
 except ImportError:
     raise ImportError("Transformer requires JAX/Flax and general_python modules.")
@@ -55,6 +32,7 @@ except ImportError:
 # ----------------------------------------------------------------------
 
 class MLPBlock(nn.Module):
+    """Transformer feed-forward block."""
     hidden_dim  : int
     out_dim     : int
     dtype       : Any
@@ -68,6 +46,7 @@ class MLPBlock(nn.Module):
         return x
 
 class EncoderBlock(nn.Module):
+    """Pre-norm Transformer encoder block."""
     num_heads   : int
     hidden_dim  : int
     mlp_dim     : int
@@ -97,6 +76,7 @@ class EncoderBlock(nn.Module):
 # ----------------------------------------------------------------------
 
 class _FlaxTransformer(nn.Module):
+    """Patch-based Transformer backbone for flat inputs."""
     n_sites         : int
     patch_size      : int   # Or tuple for 2D, handled simplified here as int divisor
     embed_dim       : int
@@ -132,13 +112,14 @@ class _FlaxTransformer(nn.Module):
                             ]
         
         self.norm           = nn.LayerNorm(dtype=self.dtype)
-        
-        # Output head
+        self.patch_proj     = nn.Dense(self.embed_dim, dtype=self.dtype)
         self.head           = nn.Dense(1, dtype=self.dtype)
 
     @nn.compact
     def __call__(self, x):
-        # x shape: (batch, n_sites)
+        """Evaluate the Transformer on a single sample or a batch."""
+        if x.ndim == 1:
+            x = x[jnp.newaxis, :]
         batch_size          = x.shape[0]
         
         # 1. Patch Embedding
@@ -146,7 +127,7 @@ class _FlaxTransformer(nn.Module):
         x_patches           = x.reshape((batch_size, self.num_patches, self.patch_size))
         
         # Linear projection of flattened patches
-        x                   = nn.Dense(self.embed_dim, dtype=self.dtype)(x_patches) # (batch, num_patches, embed_dim)
+        x                   = self.patch_proj(x_patches)
         
         # 2. Add CLS token
         cls_token           = jnp.tile(self.cls_token, (batch_size, 1, 1))
@@ -173,11 +154,11 @@ class _FlaxTransformer(nn.Module):
 
 class Transformer(FlaxInterface):
     """
-    Vision Transformer (ViT) Ansatz Interface.
+    Transformer wrapper for flattened regular inputs.
 
     Parameters:
         input_shape (tuple):
-            Shape of input (n_sites,).
+            Shape of the flattened input.
         patch_size (int):
             Size of patches to divide the system into.
         embed_dim (int):
@@ -203,7 +184,7 @@ class Transformer(FlaxInterface):
 
         if not JAX_AVAILABLE: raise ImportError("Transformer requires JAX.")
 
-        n_sites = input_shape[0] if len(input_shape) == 1 else input_shape[0] * input_shape[1] # Approximate
+        n_sites = int(np.prod(input_shape))
 
         net_kwargs = {
             'n_sites'       : n_sites,
@@ -225,12 +206,10 @@ class Transformer(FlaxInterface):
             **kwargs
         )
         self._name = 'transformer'
-        self._nqs_family = "transformer"
-        self._nqs_variant = "general"
-        self._nqs_native_representation = "binary_01"
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
+        configure_nqs_metadata(
+            self,
+            family="transformer",
+        )
 
     def __repr__(self) -> str:
         mod = self._flax_module

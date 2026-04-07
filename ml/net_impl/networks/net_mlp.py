@@ -2,33 +2,26 @@
 general_python.ml.net_impl.networks.net_mlp
 =============================================
 
-Multi-Layer Perceptron (MLP) for Quantum States.
+Generic multi-layer perceptron wrapper based on Flax.
 
-A flexible, high-performance MLP implementation with support for:
-- Complex-valued parameters.
-- Split-complex optimization (Real backbone -> Complex output).
-- Arbitrary depth and width.
+The implementation supports complex parameters, split-complex execution, and
+optional input preprocessing through a generic callable hook.
+The MLP is a versatile and widely used architecture that can serve as a building block for more complex models or as a standalone ansatz. 
+The current implementation focuses on flexibility and ease of use, allowing for various configurations of hidden layers, 
+activations, and output shapes.
 
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # 1. Standard MLP
-    mlp     = choose_network('mlp', input_shape=(64,), hidden_dims=(128, 64), activations='relu')
-    
-    # 2. Split-Complex MLP
-    mlp_opt = choose_network('mlp', input_shape=(64,), hidden_dims=(128, 64), split_complex=True)
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
 Date            : 2026-01-15
 License         : MIT
+Version         : 0.1 (Experimental)
 ----------------------------------------------------------
 """
 
-import  math
-import  numpy   as np
-from    typing  import Sequence, Callable, Optional, Any, Union, List, Tuple
+import numpy as np
+from typing import Sequence, Callable, Optional, Any, Union
 
 try:
     import jax
@@ -36,9 +29,13 @@ try:
     import flax.linen   as nn
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling, lecun_normal
-    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1, preferred_state_representation
-    from ....ml.net_impl.activation_functions       import get_activation_jnp
-    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
+    from ....ml.net_impl.utils.net_wrapper_utils    import (
+                                                        combine_split_complex_output,
+                                                        prepare_split_complex_input,
+                                                        resolve_split_complex_dtypes,
+                                                        configure_nqs_metadata,
+                                                        normalize_activation_sequence,
+                                                    )
     JAX_AVAILABLE       = True
 except ImportError:
     raise ImportError("MLP requires JAX/Flax and general_python modules.")
@@ -47,35 +44,33 @@ except ImportError:
 # Inner Flax Module
 # ----------------------------------------------------------------------
 
-class _FlaxMLP(nn.Module):
+class _FlaxMLPBase(nn.Module):
+    """Shared dense MLP backbone logic for direct and split-complex variants."""
     hidden_dims     : Sequence[int]
     activations     : Sequence[Callable]
     output_dim      : int
     use_bias        : bool                  = True
     dtype           : Any                   = jnp.complex128
     param_dtype     : Any                   = jnp.complex128
-    split_complex   : bool                  = False     # Optimize for Real inputs -> Complex output
-    transform_input : bool                  = False
-    input_is_spin   : bool                  = BACKEND_DEF_SPIN
-    input_value     : float                 = BACKEND_REPR
+    input_adapter   : Optional[Callable]    = None
+
+    def _resolve_dtypes(self):
+        raise NotImplementedError
+
+    def _head_features(self):
+        raise NotImplementedError
+
+    def _prepare_input(self, x):
+        return x
+
+    def _project_output(self, x):
+        raise NotImplementedError
 
     def setup(self):
         # Determine internal dtypes
-        if self.split_complex:
-            # Force float types for backbone
-            if jnp.issubdtype(self.dtype, jnp.complexfloating):
-                c_dtype = jnp.float32 if self.dtype == jnp.complex64 else jnp.float64
-            else:
-                c_dtype = self.dtype
-                
-            if jnp.issubdtype(self.param_dtype, jnp.complexfloating):
-                p_dtype = jnp.float32 if self.param_dtype == jnp.complex64 else jnp.float64
-            else:
-                p_dtype = self.param_dtype
-        else:
-            c_dtype = self.dtype
-            p_dtype = self.param_dtype
+        c_dtype, p_dtype = self._resolve_dtypes()
         self._comp_dtype = c_dtype
+        self._complex_out_dtype = jnp.complex64 if c_dtype == jnp.float32 else jnp.complex128
 
         # Initializer
         if jnp.issubdtype(p_dtype, jnp.complexfloating):
@@ -96,9 +91,8 @@ class _FlaxMLP(nn.Module):
         ]
 
         # Output Layer
-        out_features = self.output_dim * 2 if self.split_complex else self.output_dim
         self.dense_out = nn.Dense(
-            features    = out_features,
+            features    = self._head_features(),
             use_bias    = self.use_bias,
             dtype       = c_dtype,
             param_dtype = p_dtype,
@@ -108,20 +102,19 @@ class _FlaxMLP(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        # x shape: (batch, input_dim)
+        """Evaluate the backbone on a single sample or a batch of samples."""
         needs_batch = x.ndim == 1
         if needs_batch:
             x = x[jnp.newaxis, ...]
         
         # 1. Preprocessing
-        if self.split_complex:
-            x = x.real if jnp.iscomplexobj(x) else x
+        x = self._prepare_input(x)
             
         # Type cast to layer dtype
         x = x.astype(self._comp_dtype)
 
-        if self.transform_input:
-            x = map_state_to_pm1(x, self.input_is_spin, self.input_value)
+        if self.input_adapter is not None:
+            x = self.input_adapter(x)
 
         # 2. Hidden Layers
         for layer, act in zip(self.layers, self.activations):
@@ -132,16 +125,47 @@ class _FlaxMLP(nn.Module):
         x           = self.dense_out(x)
 
         # 4. Recombination
-        if self.split_complex:
-            # Split into Real/Imag parts
-            re, im  = jnp.split(x, 2, axis=-1)
-            c_dtype = jnp.complex64 if re.dtype == jnp.float32 else jnp.complex128
-            x       = (re + 1j * im).astype(c_dtype)
+        x = self._project_output(x)
 
         if self.output_dim == 1:
             x = x.reshape((x.shape[0],))
 
         return x[0] if needs_batch else x
+
+
+class _FlaxMLPDirect(_FlaxMLPBase):
+    """Direct-output MLP for real or complex dtypes."""
+
+    split_complex: bool = False
+
+    def _resolve_dtypes(self):
+        return self.dtype, self.param_dtype
+
+    def _head_features(self):
+        return self.output_dim
+
+    def _project_output(self, x):
+        return x
+
+
+class _FlaxMLPSplitComplex(_FlaxMLPBase):
+    """Split-complex MLP with real hidden layers and complex output reconstruction."""
+
+    split_complex: bool = True
+
+    def _resolve_dtypes(self):
+        c_dtype, p_dtype, _ = resolve_split_complex_dtypes(self.dtype, self.param_dtype)
+        return c_dtype, p_dtype
+
+    def _head_features(self):
+        return 2 * self.output_dim
+
+    def _prepare_input(self, x):
+        return prepare_split_complex_input(x)
+
+    def _project_output(self, x):
+        re, im = jnp.split(x, 2, axis=-1)
+        return combine_split_complex_output(re, im, self._comp_dtype)
 
 # ----------------------------------------------------------------------
 # Wrapper Interface
@@ -149,17 +173,21 @@ class _FlaxMLP(nn.Module):
 
 class MLP(FlaxInterface):
     """
-    Multi-Layer Perceptron (MLP) Interface.
+    Generic multi-layer perceptron wrapper.
 
     Parameters:
-        input_shape (tuple): Shape of input (flattened internally).
-        hidden_dims (Sequence[int]): Dimensions of hidden layers.
-        activations (Union[str, Sequence]): Activation functions.
-        output_shape (tuple): Shape of output.
-        split_complex (bool): Optimization for real inputs -> complex output.
-        transform_input (bool): If True, map the configured input convention to {-1, +1}.
-        input_spin (bool): If True, inputs are interpreted as signed spin values.
-        input_value (float): Magnitude of the signed or binary local values.
+        input_shape (tuple):
+            Input shape excluding the batch dimension.
+        hidden_dims (Sequence[int]):
+            Width of each hidden layer.
+        activations (Union[str, Sequence]):
+            Activation specification shared across layers or provided per layer.
+        output_shape (tuple):
+            Output shape returned by the wrapper.
+        split_complex (bool):
+            Use a real-valued backbone with paired real/imaginary outputs.
+        input_adapter (Optional[Callable]):
+            Optional preprocessing applied after casting and before the first dense layer.
     """
     def __init__(self,
                 input_shape    : tuple,
@@ -168,7 +196,7 @@ class MLP(FlaxInterface):
                 output_shape   : tuple                 = (1,),
                 use_bias       : bool                  = True,
                 split_complex  : bool                  = False,
-                transform_input: bool                  = False, # configured input -> {-1, +1}
+                input_adapter  : Optional[Callable]    = None,
                 dtype          : Any                   = jnp.complex128,
                 param_dtype    : Optional[Any]         = None,
                 seed           : int                   = 0,
@@ -176,21 +204,12 @@ class MLP(FlaxInterface):
 
         if not JAX_AVAILABLE: raise ImportError("MLP requires JAX.")
 
-        # Resolve Activations
-        if isinstance(activations, str):
-            act_fn, _ = get_activation_jnp(activations)
-            acts = (act_fn,) * len(hidden_dims)
-        elif isinstance(activations, (list, tuple)):
-            if len(activations) == 1:
-                act_fn, _ = get_activation_jnp(activations[0])
-                acts = (act_fn,) * len(hidden_dims)
-            elif len(activations) == len(hidden_dims):
-                acts = tuple(get_activation_jnp(a)[0] for a in activations)
-            else:
-                raise ValueError("activations list length must match hidden_dims")
-        else:
-            # Assume single callable
-            acts = (activations,) * len(hidden_dims)
+        acts = normalize_activation_sequence(
+            activations,
+            len(hidden_dims),
+            default='relu',
+            container=tuple,
+        )
 
         net_kwargs = {
             'hidden_dims'       : hidden_dims,
@@ -200,13 +219,13 @@ class MLP(FlaxInterface):
             'dtype'             : dtype,
             'param_dtype'       : param_dtype if param_dtype else dtype,
             'split_complex'     : split_complex,
-            'transform_input'   : transform_input,
-            'input_is_spin'     : kwargs.get('input_spin', BACKEND_DEF_SPIN),
-            'input_value'       : kwargs.get('input_value', BACKEND_REPR),
+            'input_adapter'     : input_adapter,
         }
 
+        mlp_module = _FlaxMLPSplitComplex if split_complex else _FlaxMLPDirect
+
         super().__init__(
-            net_module  = _FlaxMLP,
+            net_module  = mlp_module,
             net_kwargs  = net_kwargs,
             input_shape = input_shape,
             dtype       = dtype,
@@ -215,21 +234,16 @@ class MLP(FlaxInterface):
         )
         
         self._output_shape  = output_shape
+        self._output_size   = int(np.prod(output_shape))
         self._split_complex = split_complex
         self._name          = 'mlp'
-        self._nqs_family    = "mlp"
-        self._nqs_variant   = "general"
-        self._nqs_native_representation = preferred_state_representation(
-            net_kwargs["transform_input"],
-            net_kwargs["input_is_spin"],
+        configure_nqs_metadata(
+            self,
+            family="mlp",
         )
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
 
     def __call__(self, x):
         flat_out = super().__call__(x)
-        out_size = int(np.prod(self._output_shape))
         if self._output_shape == (1,):
             if flat_out.ndim == 0:
                 return flat_out
@@ -241,7 +255,7 @@ class MLP(FlaxInterface):
             if hasattr(x, "ndim") and x.ndim > 1:
                 return flat_out.reshape((x.shape[0],) + self._output_shape)
             return flat_out.reshape(self._output_shape)
-        if flat_out.shape[-1] == out_size:
+        if flat_out.shape[-1] == self._output_size:
             return flat_out.reshape(flat_out.shape[:-1] + self._output_shape)
         return flat_out
 

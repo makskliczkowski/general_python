@@ -1,35 +1,21 @@
 """
 general_python.ml.net_impl.networks.net_autoregressive
-==========================================================
+======================================================
 
-Autoregressive Neural Network for Quantum States.
+Autoregressive wrapper built on masked feedforward layers.
 
-This module provides an implementation of Autoregressive (AR) neural networks
-for representing quantum wavefunctions. The wavefunction is factorized as:
+The model factorizes the output over an ordered sequence of input sites and
+uses static binary masks to enforce the autoregressive dependency structure.
 
-    ψ(s1, s2, ..., sn) = p(s1) * p(s2|s1) * ... * p(sn|s1,...,sn-1)
 
-Each conditional probability is modeled by a separate neural network.
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
 
-Usage
------
-Import and use the Autoregressive network:
 
-    from general_python.ml.networks import Autoregressive
-    ar_net = Autoregressive(input_shape=(10,), hidden_layers=(32,))
-
-See the documentation and examples for more details.
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
-Email           : maxgrom97@gmail.com
-Date            : 01.11.2025
-Description     : Autoregressive Neural Network for quantum states. We implement
-                MADE-like architecture using Flax. MADE (Masked Autoencoder for
-                Distribution Estimation) is a well-known autoregressive model.
-                What it does is to apply binary masks to the weights of a feedforward
-                neural network to enforce the autoregressive property:
-                - Each output unit k can only depend on input units with indices less than k.
-                - Each hidden unit has a degree that enforces the autoregressive property.
+Date            : 2026-01-21
+License         : MIT
+Version         : 0.1 (Experimental)
 ----------------------------------------------------------
 """
 
@@ -37,7 +23,8 @@ from typing import Sequence, Callable, Any, Tuple
 import numpy as np
 
 try:
-    from general_python.ml.net_impl.interface_net_flax import FlaxInterface, JAX_AVAILABLE
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface, JAX_AVAILABLE
+    from ....ml.net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
     
     if not JAX_AVAILABLE:
         raise ImportError("JAX is required to use Autoregressive networks.")
@@ -53,148 +40,64 @@ except ImportError:
 # ---------------------------------------------------------
 
 class MaskedDense(nn.Module):
-    """
-    Masked Dense Layer for MADE.
-    Applies a dense layer with a fixed binary mask on the weights to enforce
-    the autoregressive property.
-    
-    Attributes:
-        features (int): 
-            Number of output features.
-        mask (jnp.ndarray): 
-            Binary mask to apply to the weights.
-        dtype (Any):
-            Data type of the layer (default: jnp.float32).
-    Methods:
-        __call__(inputs):
-            Forward pass through the masked dense layer.
-            
-    Example:
-        >>> mask = jnp.array([[1, 0], [1, 1]])
-        >>> layer = MaskedDense(features=2, mask=mask)
-        >>> x = jnp.array([[0.5, 1.0]])
-        >>> y = layer(x)
-        >>> print(y)
-        ... # Output will be the result of the masked dense layer.
-    """
+    """Dense layer with a fixed binary mask on the weights."""
     features        : int
     mask            : jnp.ndarray
     dtype           : Any = jnp.float32
+    param_dtype     : Any = None
     use_bias        : bool = True
     kernel_init     : Any = nn.initializers.lecun_normal()
     bias_init       : Any = nn.initializers.zeros
 
     @nn.compact
     def __call__(self, inputs):
-        # inputs shape: (batch, in_features)
-        
         in_features     = inputs.shape[-1]
-        dtype           = self.param_dtype if hasattr(self, 'param_dtype') else self.dtype
-        
-        # Create Weights with Mask
+        dtype           = self.dtype if self.param_dtype is None else self.param_dtype
         kernel          = self.param('kernel', self.kernel_init, (in_features, self.features), dtype)
-        
-        # Apply Mask (Soft masking ensures gradients flow correctly)
-        # We cast mask to the kernel's dtype to avoid type promotion errors
         masked_kernel   = kernel * self.mask.astype(kernel.dtype)
-        
-        # Contraction - this means a standard dense layer with masked weights
-        # Output shape: (batch, features)
         y               = jax.lax.dot_general(inputs, masked_kernel, (((inputs.ndim - 1,), (0,)), ((), ())))
-        
-        # Bias term. The bias is not masked.
         if self.use_bias:
             bias    = self.param('bias', self.bias_init, (self.features,), dtype)
             y       = y + bias
         return y
     
 # ---------------------------------------------------------
-# Topology Helper (Mask Generation) - OPTIMIZED
+# Topology Helper (Mask Generation)
 # ---------------------------------------------------------
 
-# Global cache for masks to avoid recomputation (STATE-OF-THE-ART optimization)
 _MASK_CACHE = {}
 
 def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32, seed=None):
-    """
-    STATE-OF-THE-ART optimized mask generation for MADE.
-    
-    Optimizations:
-    - Caches masks globally to avoid recomputation (10-100x speedup on repeated calls)
-    - Uses vectorized operations for mask construction
-    - Pre-allocates arrays for better memory efficiency
-    
-    Creates masks that enforce the autoregressive property:
-    - Each output unit k can only depend on input units with indices less than k.
-    - Each hidden unit has a degree that enforces the autoregressive property.
-    
-    Parameters:
-    -----------
-    n_in : int
-        Number of input units (e.g., number of sites).
-    hidden_sizes : Sequence[int]
-        Sizes of hidden layers.
-    n_out_per_site : int
-        Number of output units per input site (e.g., 2 for spin up/down logits).
-    seed : int, optional
-        Random seed for reproducible mask generation.
-        
-    Returns:
-    --------
-    List of masks (jnp.ndarray) for each layer. Cached for repeated calls.
-    """
-    # Create cache key
-    cache_key = (n_in, tuple(hidden_sizes), n_out_per_site, seed)
-    
-    # Return cached masks if available (MASSIVE speedup!)
+    """Create static MADE masks for the requested topology."""
+    cache_key = (n_in, tuple(hidden_sizes), n_out_per_site, jnp.dtype(dtype).name, seed)
     if cache_key in _MASK_CACHE:
         return _MASK_CACHE[cache_key]
     
-    L = len(hidden_sizes)  # Number of hidden layers
-    masks = []              # List to hold masks
-    
-    # degrees[0] -> input degrees (0 to N-1)
-    # degrees[1..L] -> hidden layer degrees
+    L = len(hidden_sizes)
+    masks = []
     degrees = [np.arange(n_in)]
     
-    # Generate degrees for hidden layers
-    # Use deterministic assignment to ensure reproducibility across calls
     for i, h in enumerate(hidden_sizes):
         prev_m  = degrees[-1]
         min_deg = int(np.min(prev_m))
         max_deg = n_in - 1
         
         if seed is not None:
-            # Use seeded random for reproducibility
             rng = np.random.RandomState(seed + i)
             m   = rng.randint(low=min_deg, high=max_deg + 1, size=h)
         else:
-            # Deterministic: uniformly spread degrees across valid range
-            # This ensures consistent masks without randomness
             m   = np.linspace(min_deg, max_deg, h).astype(np.int32)
         degrees.append(m)
     
-    # Construct masks
-    # Input -> Hidden 1, all degrees in hidden layer 1 must be >= input degrees
-    masks.append(degrees[1][:, None] >= degrees[0][None, :])        # Input to first hidden
-    
-    # Hidden -> Hidden
+    masks.append(degrees[1][:, None] >= degrees[0][None, :])
     for i in range(1, L):
-        # all degress in hidden layer i+1 must be >= degrees in hidden layer i (depend only on previous)
-        masks.append(degrees[i+1][:, None] >= degrees[i][None, :])  # Hidden to next hidden
-        
-    # Hidden -> Output
-    # For site k, we want outputs that predict state k.
-    # To predict state k, we need info from < k. 
-    # So output k connects to hidden units with degree < k.
-    
-    # We repeat degrees for the output layer (e.g. 2 outputs per site for spin up/down log-prob)
+        masks.append(degrees[i+1][:, None] >= degrees[i][None, :])
+
     out_degrees = np.arange(n_in) 
     out_degrees = np.repeat(out_degrees, n_out_per_site)
     
     masks.append(out_degrees[:, None] > degrees[-1][None, :])
     
-    # Convert to JAX arrays and cache
     result = [jnp.array(m.T, dtype=dtype) for m in masks]
     _MASK_CACHE[cache_key] = result
     
@@ -205,38 +108,13 @@ def create_masks(n_in, hidden_sizes, n_out_per_site=2, dtype=jnp.float32, seed=N
 # ---------------------------------------------------------
 
 class FlaxMADE(nn.Module):
-    """
-    Flax implementation of the Masked Autoencoder for Distribution Estimation (MADE).
-    This module constructs an autoregressive neural network using masked dense layers,
-    ensuring that each output only depends on the appropriate subset of inputs as defined
-    by the autoregressive property. The masks are statically generated at initialization.
-    
-    This is just a dense feedforward network with masks applied to the weights.
-    The bias terms are not masked, allowing each neuron to have an independent bias.
-    
-    Attributes:
-        n_sites (int): 
-            Number of input/output sites (features).
-        hidden_dims (Sequence[int]): 
-            List of hidden layer sizes.
-        dtype (Any): 
-            Data type for the layers (default: jnp.complex128).
-    Methods:
-        setup():
-            Initializes the masked dense layers and generates the masks for each layer.
-        __call__(x):
-            Forward pass through the masked network.
-            Args:
-                x (jnp.ndarray): Input tensor of shape (batch_size, n_sites).
-            Returns:
-                jnp.ndarray: Output tensor of shape (batch_size, n_sites), representing logits.
-    """
+    """MADE backbone used for amplitude and phase autoregressive heads."""
     
     n_sites         : int
     hidden_dims     : Sequence[int]
-    dtype           : Any = jnp.complex128                  # Data type for complex outputs
-    activation      : Any = nn.gelu                         # GELU is often preferred in SOTA Transformers/NQS
-    kernel_init     : Any = nn.initializers.lecun_normal()  # Default
+    dtype           : Any = jnp.complex128
+    activation      : Any = nn.gelu
+    kernel_init     : Any = nn.initializers.lecun_normal()
     bias_init       : Any = nn.initializers.zeros
     
     def setup(self):
@@ -249,23 +127,26 @@ class FlaxMADE(nn.Module):
 
     @nn.compact
     def __call__(self, x):
-        # x shape: (Batch, N_sites)
-        
-        # Forward Pass
-        # We iterate through config, creating layers lazily.
-        # This completely Bypasses the 'tuple has no append' error in Flax.
-        
-        # Input -> Hidden layers
         for i, (h_dim, mask) in enumerate(zip(self.hidden_dims, self._masks[:-1])):
-            # Create layer with a unique name based on index
-            layer   = MaskedDense(features=h_dim, mask=mask, dtype=self.dtype, name=f'masked_dense_{i}', 
-                                  kernel_init=self.kernel_init, bias_init=self.bias_init)
+            layer = MaskedDense(
+                features=h_dim,
+                mask=mask,
+                dtype=self.dtype,
+                name=f'masked_dense_{i}',
+                kernel_init=self.kernel_init,
+                bias_init=self.bias_init,
+            )
             x       = layer(x)
             x       = self.activation(x)
             
-        # Hidden -> Output (No activation, these are logits)
-        output_layer    = MaskedDense(features=self.n_sites, mask=self._masks[-1], dtype=self.dtype, name='masked_out', 
-                                      kernel_init=self.kernel_init, bias_init=self.bias_init)
+        output_layer = MaskedDense(
+            features=self.n_sites,
+            mask=self._masks[-1],
+            dtype=self.dtype,
+            name='masked_out',
+            kernel_init=self.kernel_init,
+            bias_init=self.bias_init,
+        )
         x               = output_layer(x)
         
         return x
@@ -275,11 +156,7 @@ class FlaxMADE(nn.Module):
 # ---------------------------------------------------------
 
 class FlaxComplexAutoregressive(nn.Module):
-    """
-    SOTA Combined Model: 
-    1. Autoregressive Amplitude (MADE)  - Models the amplitude |ψ(s)|.
-    2. Autoregressive Phase     (MADE)  - Crucial for non-trivial sign structures.
-    """
+    """Complex autoregressive ansatz with separate amplitude and phase heads."""
     n_sites         : int
     ar_hidden       : Sequence[int]
     phase_hidden    : Sequence[int]
@@ -287,9 +164,6 @@ class FlaxComplexAutoregressive(nn.Module):
     mu              : float     = 2.0 
     
     def setup(self):
-        ''' Initialize Amplitude and Phase Networks '''
-        
-        # Amplitude: Standard Init (LeCun Normal) allows breaking symmetry early
         self.amplitude_net      = FlaxMADE(
                                     n_sites         =   self.n_sites, 
                                     hidden_dims     =   self.ar_hidden, 
@@ -297,9 +171,6 @@ class FlaxComplexAutoregressive(nn.Module):
                                     name            =   'amplitude_made'
                                 )
             
-        # Phase: Small Random Init
-        # We define a specialized MADE that starts with small random weights to break symmetry
-        # but remains close to zero to start with a near-real wavefunction.
         self.phase_net          = FlaxMADE(
                                     n_sites         =   self.n_sites, 
                                     hidden_dims     =   self.phase_hidden, 
@@ -424,12 +295,13 @@ class ComplexAR(FlaxInterface):
             **kwargs
         )
         self._name = 'autoregressive'
-        self._nqs_family = "autoregressive"
-        self._nqs_variant = "general"
-        self._nqs_native_representation = "binary_01"
-        self._nqs_supports_exact_sampling = True
-        self._nqs_supports_fast_updates = False
-        self._nqs_preferred_sampler = "ARSampler"
+        configure_nqs_metadata(
+            self,
+            family="autoregressive",
+            native_representation="binary_01",
+            supports_exact_sampling=True,
+            preferred_sampler="ARSampler",
+        )
         self._has_analytic_grad = False 
 
     def get_info(self) -> dict:
@@ -437,7 +309,6 @@ class ComplexAR(FlaxInterface):
         return {
             'name'          : 'ComplexAR',
             'type'          : 'autoregressive',
-            'sota'          : True,
             'n_sites'       : self._n_sites,
             'ar_layers'     : self._ar_hidden,
             'phase_layers'  : self._phase_hidden,

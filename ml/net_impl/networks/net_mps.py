@@ -2,41 +2,47 @@
 general_python.ml.net_impl.networks.net_mps
 =============================================
 
-Matrix Product State (MPS) Ansatz.
+Matrix-product-state style wrapper with explicit local-state indexing.
 
-Implements an MPS using a Recurrent Neural Network (RNN) structure in JAX.
-The wavefunction is given by the trace of a product of matrices:
-    psi(s) = Trace( A[s_1] * A[s_2] * ... * A[s_N] )
+The module contracts a shared set of local tensors across the input chain and
+returns the logarithm of the resulting trace amplitude. The implementation uses
+``jax.lax.scan`` for efficient sequential contraction.
 
-This implementation supports:
-- Periodic Boundary Conditions (Trace).
-- Complex parameters.
-- Efficient evaluation using `jax.lax.scan`.
+The MPS ansatz is a powerful and structured way to capture correlations in 1D systems, 
+and can be used as a standalone ansatz or as a building block in more complex architectures. 
+The current implementation is a proof-of-concept and may be extended with additional features such as open boundary conditions, 
+non-periodic indexing, or alternative contraction schemes. It has a form:
+``log_psi(s) = log(Tr[A[s_1] A[s_2] ... A[s_n]])``
 
-Usage
------
-    from general_python.ml.networks import choose_network
-    
-    # Create an MPS with bond dimension 10
-    mps = choose_network('mps', input_shape=(64,), bond_dim=10)
+where ``A`` is a learnable tensor of shape (phys_dim, bond_dim, bond_dim) and ``s_i`` are the input physical indices.
+
+
+WIP - THIS MODULE IS EXPERIMENTAL AND SUBJECT TO SIGNIFICANT CHANGES. DO NOT USE OUTSIDE TESTS OR INTERNAL PROTOTYPING.
 
 ----------------------------------------------------------
 Author          : Maksymilian Kliczkowski
 Date            : 2026-01-21
 License         : MIT
+Version         : 0.1 (Experimental)
 ----------------------------------------------------------
 """
 
-import jax
-import jax.numpy    as jnp
-import flax.linen   as nn
-from typing         import Any, Optional, Sequence
+from typing import Any, Optional
 
 try:
-    from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling, lecun_normal
-    from ....ml.net_impl.utils.net_state_repr_jax import state_to_binary_index, preferred_state_representation
-    from ....algebra.utils                  import BACKEND_DEF_SPIN, BACKEND_REPR
+    import jax
+    import jax.numpy    as jnp
+    import flax.linen   as nn
+
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.utils.net_init_jax         import normal_by_dtype
+    from ....ml.net_impl.utils.net_state_repr_jax   import state_to_binary_index
+    from ....ml.net_impl.utils.net_wrapper_utils    import (
+                                                        configure_nqs_metadata,
+                                                        extract_input_convention,
+                                                        infer_native_representation,
+                                                    )
+    from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE = True
 except ImportError:
     raise ImportError("MPS requires JAX/Flax and general_python modules.")
@@ -48,7 +54,7 @@ except ImportError:
 class _FlaxMPS(nn.Module):
     n_sites         : int
     bond_dim        : int
-    phys_dim        : int   = 2 # Spin-1/2 default
+    phys_dim        : int   = 2
     dtype           : Any   = jnp.complex128
     param_dtype     : Any   = jnp.complex128
     init_scale      : float = 0.01
@@ -56,16 +62,7 @@ class _FlaxMPS(nn.Module):
     input_value     : float = BACKEND_REPR
 
     def setup(self):
-        # MPS Tensors: A[i] of shape (phys_dim, bond_dim, bond_dim)
-        # We share weights across sites (Translation Invariant MPS)
-        # Shape: (phys_dim, bond_dim, bond_dim)
-        
-        if jnp.issubdtype(self.param_dtype, jnp.complexfloating):
-            k_init = cplx_variance_scaling(self.init_scale, 'fan_in', 'normal', self.param_dtype)
-        else:
-            k_init = nn.initializers.normal(stddev=self.init_scale)
-
-        # Tensor A: (d, D, D)
+        k_init = normal_by_dtype(self.init_scale, self.param_dtype)
         self.A = self.param('tensors', k_init, (self.phys_dim, self.bond_dim, self.bond_dim), self.param_dtype)
 
     @nn.compact
@@ -115,8 +112,6 @@ class _FlaxMPS(nn.Module):
         # Trace of product (Periodic BC)
         val             = jnp.trace(final_prod, axis1=1, axis2=2)
         
-        # Return log(psi)
-        # Note: Standard MPS can vanish/explode. Log-MPS is numerically safer but harder to implement directly as trace.
         out = jnp.log(val)
         return out[0] if needs_batch else out
 
@@ -126,12 +121,12 @@ class _FlaxMPS(nn.Module):
 
 class MPS(FlaxInterface):
     """
-    Matrix Product State (MPS) Interface.
+    Matrix-product-state wrapper.
 
     Parameters:
-        input_shape (tuple): Shape of input (n_sites,).
-        bond_dim (int): Virtual bond dimension (D).
-        phys_dim (int): Physical dimension (d). Default 2.
+        input_shape (tuple): Shape of the 1D input chain.
+        bond_dim (int): Virtual bond dimension.
+        phys_dim (int): Local physical dimension. Default 2.
     """
     def __init__(self,
                 input_shape     : tuple,
@@ -146,6 +141,7 @@ class MPS(FlaxInterface):
 
         if not JAX_AVAILABLE: raise ImportError("MPS requires JAX.")
 
+        input_convention = extract_input_convention(kwargs)
         net_kwargs = {
             'n_sites'       : input_shape[0],
             'bond_dim'      : bond_dim,
@@ -153,8 +149,7 @@ class MPS(FlaxInterface):
             'dtype'         : dtype,
             'param_dtype'   : param_dtype if param_dtype else dtype,
             'init_scale'    : init_scale,
-            'input_is_spin' : kwargs.get('input_spin', BACKEND_DEF_SPIN),
-            'input_value'   : kwargs.get('input_value', BACKEND_REPR),
+            **input_convention,
         }
 
         super().__init__(
@@ -167,15 +162,11 @@ class MPS(FlaxInterface):
             **kwargs
         )
         self._name = 'mps'
-        self._nqs_family = "mps"
-        self._nqs_variant = "general"
-        self._nqs_native_representation = preferred_state_representation(
-            False,
-            net_kwargs["input_is_spin"],
+        configure_nqs_metadata(
+            self,
+            family="mps",
+            native_representation=infer_native_representation(input_convention),
         )
-        self._nqs_supports_fast_updates = False
-        self._nqs_supports_exact_sampling = False
-        self._nqs_preferred_sampler = "MCSampler"
 
     def __repr__(self) -> str:
         mod = self._flax_module

@@ -20,6 +20,7 @@ from functools import partial
 from typing import Any, Callable, Mapping, Optional, Sequence
 
 try:
+    import jax.numpy as jnp
     from ....algebra.utils      import BACKEND_DEF_SPIN, BACKEND_REPR
     from ..activation_functions import get_activation_jnp
     from .net_state_repr_jax    import preferred_state_representation
@@ -91,6 +92,92 @@ def normalize_activation_sequence(spec: Optional[Any], length: int, *, default: 
         raise ValueError(f"Invalid activation specification: {use!r}")
 
     return container(values)
+
+def normalize_layerwise_spec(spec: Any, length: int, *, name: str) -> Sequence[Any]:
+    """
+    Normalize a per-layer specification to a fixed-length sequence.
+
+    Scalar-like values are broadcast across layers. Sequences must either have
+    length ``1`` or match ``length`` exactly.
+    """
+    if isinstance(spec, (list, tuple)):
+        items = list(spec)
+        if len(items) == 0:
+            raise ValueError(f"{name} cannot be empty")
+        if len(items) == 1 and length > 1:
+            items = items * length
+        elif len(items) != length:
+            raise ValueError(f"{name} must have length 1 or {length}, got {len(items)}.")
+        return tuple(items)
+    return tuple(spec for _ in range(length))
+
+def as_spatial_tuple(item: Any, ndim: int, *, name: str) -> tuple[int, ...]:
+    """Convert an integer or spatial sequence to a normalized tuple."""
+    if isinstance(item, int):
+        return (item,) * ndim
+    if isinstance(item, (list, tuple)) and len(item) == ndim and all(isinstance(k, int) for k in item):
+        return tuple(int(k) for k in item)
+    raise ValueError(f"{name} entry {item!r} must be an int or a sequence of length {ndim}.")
+
+# ----------------------------------------------------------------------
+#! Split-Complex Helpers
+# ----------------------------------------------------------------------
+
+def complex_dtype_from_real(real_dtype: Any) -> Any:
+    """Return the matching complex dtype for a real computation dtype."""
+    return jnp.complex64 if jnp.dtype(real_dtype) == jnp.float32 else jnp.complex128
+
+def real_dtype_from_complex(dtype: Any) -> Any:
+    """Return the matching real dtype for a possibly complex dtype."""
+    dt = jnp.dtype(dtype)
+    if dt == jnp.complex64:
+        return jnp.float32
+    if dt == jnp.complex128:
+        return jnp.float64
+    return dt
+
+# ----------------------------------------------------------------------
+
+def resolve_split_complex_dtypes(dtype: Any, param_dtype: Any) -> tuple[Any, Any, Any]:
+    """
+    Resolve computation, parameter, and reconstructed output dtypes for split-complex backbones.
+    """
+    dtype       = jnp.dtype(dtype)
+    param_dtype = jnp.dtype(param_dtype)
+
+    if jnp.issubdtype(dtype, jnp.complexfloating):
+        comp_dtype = jnp.float32 if dtype == jnp.complex64 else jnp.float64
+    else:
+        comp_dtype = dtype
+
+    if jnp.issubdtype(param_dtype, jnp.complexfloating):
+        param_real_dtype = jnp.float32 if param_dtype == jnp.complex64 else jnp.float64
+    else:
+        param_real_dtype = param_dtype
+
+    return comp_dtype, param_real_dtype, complex_dtype_from_real(comp_dtype)
+
+# ----------------------------------------------------------------------
+#! Input Convention Extraction
+# ----------------------------------------------------------------------
+
+def prepare_split_complex_input(x: Any) -> Any:
+    """Drop the imaginary part of complex inputs for split-complex backbones."""
+    return x.real if jnp.iscomplexobj(x) else x
+
+# ----------------------------------------------------------------------
+# Split complex output recombination
+# ----------------------------------------------------------------------
+
+def combine_split_complex_output(re: Any, im: Any, real_dtype: Any) -> Any:
+    """Recombine paired real/imaginary outputs into one complex tensor."""
+    return (re + 1j * im).astype(complex_dtype_from_real(real_dtype))
+
+def map_over_complex_parts(x: Any, fn: Callable[[Any], Any]) -> Any:
+    """Apply a real-valued function to real and imaginary parts independently."""
+    if jnp.issubdtype(jnp.asarray(x).dtype, jnp.complexfloating):
+        return fn(jnp.real(x)) + 1j * fn(jnp.imag(x))
+    return fn(x)
 
 # ----------------------------------------------------------------------
 #! NQS Integration Helpers
