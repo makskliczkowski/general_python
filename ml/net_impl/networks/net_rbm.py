@@ -545,21 +545,43 @@ class RBM(FlaxInterface):
         cache: Optional[jax.Array] = None,
         proposal_update: Optional[Callable] = None,
     ) -> Any:
-        """Evaluate the log-amplitude delta for a proposed local update."""
+        """Evaluate the log-amplitude delta for a proposed local update.
+
+        Parameters
+        ----------
+        params : Any
+            Network parameter PyTree.
+        current_log_psi : jax.Array
+            Current log-amplitudes for the active states.
+        state : jax.Array
+            Current state or batch of states.
+        update_info : Any
+            Sampler-side metadata describing the proposed local change.
+        cache : Optional[jax.Array]
+            Optional cached hidden pre-activations used for fast updates.
+        proposal_update : Optional[Callable]
+            Optional state-value update rule. When omitted, the instance default
+            configured at construction time is used.
+
+        Returns
+        -------
+        Any
+            Delta log-amplitudes, or ``(delta, cache_new)`` when cache updates
+            are enabled.
+
+        Examples
+        --------
+        Use the instance-configured proposal rule:
+
+        >>> delta = rbm.log_psi_delta(params, current_log_psi, state, update_info)
+        """
         eff_proposal_update = self._proposal_update if proposal_update is None else proposal_update
         if eff_proposal_update is None:
             raise ValueError("RBM.log_psi_delta requires `proposal_update` or an instance configured with one.")
         compiled_fn = self._compiled_log_psi_delta_fn
         if eff_proposal_update is not self._proposal_update:
             compiled_fn = self._get_log_psi_delta_compiled(eff_proposal_update)
-        return compiled_fn(
-            params,
-            current_log_psi,
-            state,
-            update_info,
-            cache,
-            proposal_update=eff_proposal_update,
-        )
+        return compiled_fn(params, current_log_psi, state, update_info, cache)
 
     def get_log_psi_delta(self):
         """Return the fast-update callable expected by sampler code."""
