@@ -1,30 +1,34 @@
 """
 Network implementations (lazy exports).
 
-This module exposes the built-in ansatz classes while keeping import overhead
-low. These are the general wrappers used across QES. NQS may add a thinner,
-specialized adapter layer on top, but the classes exported here remain usable
-as standalone network implementations.
+This module exposes the concrete implementation modules while keeping import
+overhead low. 
+
+Reusable backbones stay here, while ansatz-oriented (Variational Monte Carlo) wrappers are
+also available under ``general_python.ml.net_impl.ansatze``.
 """
 
 import importlib
 from typing import Any
 
 _LAZY_IMPORTS = {
+    # General-purpose networks
     "FlaxSimpleNet"         : (".net_simple_flax", "FlaxSimpleNet"),
-    "AnsatzApproxSymmetric" : (".net_approx_symmetric", "AnsatzApproxSymmetric"),
-    "AnsatzStacked"         : (".net_stacked", "AnsatzStacked"),
     "RBM"                   : (".net_rbm", "RBM"),
     "CNN"                   : (".net_cnn", "CNN"),
-    "ComplexAR"             : (".net_autoregressive", "ComplexAR"),
     "ResNet"                : (".net_res", "ResNet"),
-    "PairProduct"           : (".net_pp", "PairProduct"),
     "MLP"                   : (".net_mlp", "MLP"),
     "GCNN"                  : (".net_gcnn", "GCNN"),
-    "Jastrow"               : (".net_jastrow", "Jastrow"),
-    "MPS"                   : (".net_mps", "MPS"),
     "Transformer"           : (".net_transformer", "Transformer"),
-    "AmplitudePhase"        : (".net_amplitude_phase", "AmplitudePhase"),
+    # Ansatze that are designed for Variational Monte Carlo rather than being general-purpose networks.
+    "AnsatzStacked"         : (".net_stacked", "AnsatzStacked"),
+    "ComplexAR"             : ("..ansatze.autoregressive", "ComplexAR"),
+    "PairProduct"           : ("..ansatze.pair_product", "PairProduct"),
+    "Jastrow"               : ("..ansatze.jastrow", "Jastrow"),
+    "MPS"                   : ("..ansatze.mps", "MPS"),
+    "AmplitudePhase"        : ("..ansatze.amplitude_phase", "AmplitudePhase"),
+    "AnsatzApproxSymmetric" : ("..ansatze.approx_symmetric", "AnsatzApproxSymmetric"),
+    "EquivariantGCNN"       : ("..ansatze.equivariant_gcnn", "EquivariantGCNN"),
 }
 
 _LAZY_CACHE = {}

@@ -3,9 +3,13 @@ Utility helpers for the network implementation layer.
 
 This package includes initializers, activation helpers, backend-specific
 utilities, and small state-representation helpers used by the general network
-wrappers. The JAX wrappers can now describe input conventions explicitly
-through ``input_spin`` and ``input_value`` instead of duplicating local
-representation conversions.
+wrappers. 
+
+The JAX wrappers can now describe input conventions explicitly
+through ``input_is_spin`` and ``input_value`` instead of duplicating local
+representation conversions. This is used 
+in the Variational Monte Carlo ansatze and the MLP wrapper, while the RBM and CNN
+backbones stay agnostic to the meaning of the samples they process.
 
 -----------------------------------------------------------------
 File        : general_python/ml/net_impl/utils/__init__.py
@@ -20,6 +24,7 @@ try:
     from . import net_init_jax as jaxpy
     from . import net_init_np as numpy
     from . import net_state_repr_jax
+    from . import net_wrapper_utils
 except ImportError as e:
     raise ImportError("Failed to import ML utility modules. Ensure general_python package is correctly installed.") from e
 
@@ -28,6 +33,7 @@ __all__ = [
     'jaxpy',
     'numpy',
     'net_state_repr_jax',
+    'net_wrapper_utils',
 ]
 
 __version__     = '0.1.0'

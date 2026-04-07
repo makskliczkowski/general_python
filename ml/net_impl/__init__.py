@@ -1,20 +1,28 @@
 """
 Network implementation subpackage.
 
-Provides lazy access to the general network wrappers and helper utilities
-without importing JAX or Flax until needed.
+Provides lazy access to reusable backbone wrappers, helper utilities, and a
+separate ansatz namespace without importing JAX or Flax until needed.
 
 The wrappers in this package stay general-purpose. They can be used directly
 outside NQS, while NQS-specific fast paths are selected separately in the NQS
 layer. Input state conventions are configured explicitly through wrapper
-arguments such as ``input_spin`` and ``input_value`` instead of relying on
+arguments such as ``input_is_spin`` and ``input_value`` instead of relying on
 hidden backend remaps in hot paths.
+
+--------------------------------
+Author      : Maksymilian Kliczkowski
+Email       : maxgrom97@gmail.com
+License     : MIT
+Version     : 1.0
+--------------------------------
 """
 
 import importlib
 
 _LAZY_MODULES = {
     "activation_functions"  : ".activation_functions",
+    "ansatze"               : ".ansatze",
     "interface_net_flax"    : ".interface_net_flax",
     "net_general"           : ".net_general",
     "net_simple"            : ".net_simple",
@@ -23,12 +31,19 @@ _LAZY_MODULES = {
 }
 
 _LAZY_ATTRS = {
+    # General-purpose networks
     "RBM"                   : ".networks.net_rbm",
-    "PairProduct"           : ".networks.net_pp",
     "CNN"                   : ".networks.net_cnn",
     "ResNet"                : ".networks.net_res",
-    "ComplexAR"             : ".networks.net_autoregressive",
     "GCNN"                  : ".networks.net_gcnn",
+    # Networks that are designed as ansatze for Variational Monte Carlo rather than being general...
+    "ComplexAR"             : ".ansatze.autoregressive",
+    "PairProduct"           : ".ansatze.pair_product",
+    "Jastrow"               : ".ansatze.jastrow",
+    "MPS"                   : ".ansatze.mps",
+    "AmplitudePhase"        : ".ansatze.amplitude_phase",
+    "AnsatzApproxSymmetric" : ".ansatze.approx_symmetric",
+    "EquivariantGCNN"       : ".ansatze.equivariant_gcnn",
 }
 
 def __getattr__(name):

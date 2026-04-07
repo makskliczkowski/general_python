@@ -74,37 +74,42 @@ class Networks(str, Enum):
         return self.value
 
 ######################################################################
-# LAZY REGISTRY
+# LAZY REGISTRIES
 # Maps 'string_key' -> ('module.path', 'ClassName')
 ######################################################################
 
-_NETWORK_REGISTRY: Dict[str, Tuple[str, str]] = {
+_BACKBONE_REGISTRY: Dict[str, Tuple[str, str]] = {
     'simple'            : ('.net_impl.net_simple',                      'SimpleNet'),
     'rbm'               : ('.net_impl.networks.net_rbm',                'RBM'),
     'cnn'               : ('.net_impl.networks.net_cnn',                'CNN'),
-    'ar'                : ('.net_impl.networks.net_autoregressive',     'ComplexAR'),
     'res'               : ('.net_impl.networks.net_res',                'ResNet'),
     'resnet'            : ('.net_impl.networks.net_res',                'ResNet'),
-    'pp'                : ('.net_impl.networks.net_pp',                 'PairProduct'),
-    'rbmpp'             : ('.net_impl.networks.net_pp',                 'PairProduct'),
-    'approx_symmetric'  : ('.net_impl.networks.net_approx_symmetric',   'AnsatzApproxSymmetric'),
-    'approxsym'         : ('.net_impl.networks.net_approx_symmetric',   'AnsatzApproxSymmetric'),
-    'asym'              : ('.net_impl.networks.net_approx_symmetric',   'AnsatzApproxSymmetric'),
     'mlp'               : ('.net_impl.networks.net_mlp',                'MLP'),
     'gcnn'              : ('.net_impl.networks.net_gcnn',               'GCNN'),
-    'jastrow'           : ('.net_impl.networks.net_jastrow',            'Jastrow'),
-    'mps'               : ('.net_impl.networks.net_mps',                'MPS'),
     'transformer'       : ('.net_impl.networks.net_transformer',        'Transformer'),
-    'amplitude_phase'   : ('.net_impl.networks.net_amplitude_phase',    'AmplitudePhase'),
     # Add future networks here without importing them!
 }
 
+_ANSATZ_REGISTRY: Dict[str, Tuple[str, str]] = {
+    'ar'                : ('.net_impl.ansatze.autoregressive',          'ComplexAR'),
+    'pp'                : ('.net_impl.ansatze.pair_product',            'PairProduct'),
+    'rbmpp'             : ('.net_impl.ansatze.pair_product',            'PairProduct'),
+    'approx_symmetric'  : ('.net_impl.ansatze.approx_symmetric',        'AnsatzApproxSymmetric'),
+    'approxsym'         : ('.net_impl.ansatze.approx_symmetric',        'AnsatzApproxSymmetric'),
+    'asym'              : ('.net_impl.ansatze.approx_symmetric',        'AnsatzApproxSymmetric'),
+    'jastrow'           : ('.net_impl.ansatze.jastrow',                 'Jastrow'),
+    'mps'               : ('.net_impl.ansatze.mps',                     'MPS'),
+    'amplitude_phase'   : ('.net_impl.ansatze.amplitude_phase',         'AmplitudePhase'),
+}
+
+
 def _lazy_load_class(key: str) -> Type[GeneralNet]:
     """Helper to import network classes only when requested."""
-    if key not in _NETWORK_REGISTRY:
+    registry = _BACKBONE_REGISTRY if key in _BACKBONE_REGISTRY else _ANSATZ_REGISTRY
+    if key not in registry:
         raise ValueError(f"Network '{key}' is not registered in general_python.")
-    
-    mod_path, cls_name  = _NETWORK_REGISTRY[key]
+
+    mod_path, cls_name  = registry[key]
     try:
         # Relative import requires the package context
         # We use __package__ to support importing as QES.general_python.ml or general_python.ml
@@ -231,13 +236,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
             from general_python.ml.networks import choose_network
             import jax.numpy as jnp
             
-            # 1. Define Lattice Geometry
-            # --------------------------
-            # For a 10x10 Lattice (100 spins)
-            L = 10
-            n_sites = L * L
-            
-            # 2. Define CNN Parameters
+            # 1. Define CNN Parameters
             # ------------------------
             cnn_params = {
                 'input_shape':  (n_sites,),
@@ -250,11 +249,11 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                 'dtype':        'complex128'
             }
             
-            # 3. Create the Network
+            # 2. Create the Network
             # ---------------------
             net = choose_network('cnn', **cnn_params)
             
-            # 4. Debug/Check
+            # 3. Debug/Check
             # --------------
             print(f"Total Parameters: {net.nparams}")
             # > Total Parameters: ~25k (Complex)
@@ -264,7 +263,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
     Keyword Arguments
     -----------------
     
-    - in_activation (Optional[Union[str, Callable]]) :
+    - input_activation (Optional[Union[str, Callable]]) :
         Activation function applied to the input layer.
         Useful for preprocessing inputs (e.g., scaling or encoding).
     
@@ -331,7 +330,10 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
 
     # 2. Handle Existing Instances (Return as-is)
     # Check isinstance OR duck-typing for objects that look like GeneralNet (prevents wrapping if imports differ)
-    if isinstance(network_type, GeneralNet) or (hasattr(network_type, 'get_params') and hasattr(network_type, 'apply')):
+    if not isinstance(network_type, type) and (
+        isinstance(network_type, GeneralNet)
+        or (hasattr(network_type, 'get_params') and hasattr(network_type, 'apply'))
+    ):
         return network_type
 
     # 3. Handle Types/Classes
@@ -374,7 +376,7 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
             backend         =   backend,
             dtype           =   dtype,
             seed            =   seed,
-            in_activation   =   kwargs.get('in_activation', None)
+            in_activation   =   kwargs.get('input_activation', None)
         )
 
     # Handle generic Callables (Factories)
