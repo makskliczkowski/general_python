@@ -211,9 +211,9 @@ class RBM(FlaxInterface):
         # Determine sampler representation and related conventions
         input_convention = extract_input_convention(kwargs)
         
-        if "input_is_spin" not in kwargs and "input_spin" not in kwargs and "input_convention" not in input_convention:
+        if "input_is_spin" not in kwargs and "input_spin" not in kwargs:
             input_convention["input_is_spin"] = bool(BACKEND_DEF_SPIN)
-        if "input_value" not in kwargs and "input_value" not in input_convention:
+        if "input_value" not in kwargs:
             input_convention["input_value"] = float(BACKEND_REPR)
         
         # Determine input activation based on conventions and kwargs
