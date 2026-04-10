@@ -30,13 +30,11 @@ and avoid mixing precision policies within one experiment.
 """
 
 import importlib
+from typing import TYPE_CHECKING
 
-# Import main ML modules
-try:
-    from . import networks
-    from . import schedulers
-except ImportError as e:
-    raise Exception(f"Could not import {e}")
+if TYPE_CHECKING:
+    from .          import net_impl, networks, schedulers, training_phases
+    from .net_impl  import activation_functions, interface_net_flax, net_general, net_simple
 
 # Lazy import aliases for common submodules
 
@@ -48,19 +46,19 @@ _LAZY_MODULES = {
     'networks'                  : '.networks',
     'schedulers'                : '.schedulers',
     'training_phases'           : '.training_phases',
+    'net_impl'                  : '.net_impl',
     # Add more aliases as needed
 }
 
 def __getattr__(name):
     if name in _LAZY_MODULES:
-        return importlib.import_module(_LAZY_MODULES[name], package=__name__)
+        module = importlib.import_module(_LAZY_MODULES[name], package=__name__)
+        globals()[name] = module
+        return module
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
-# ------------------------------------------------------------------------------
-# Direct import of net_impl for easier access
-# ------------------------------------------------------------------------------
-
-from . import net_impl
+def __dir__():
+    return sorted(list(globals().keys()) + list(_LAZY_MODULES.keys()))
 
 # Define what's available when importing with "from general_python.ml import *"
 __all__ = [
@@ -74,9 +72,8 @@ __all__ = [
     'net_impl'
 ]
 
-__version__     = '0.1.0'
+__version__     = '1.0.0'
 __author__      = 'Maksymilian Kliczkowski'
-__email__       = 'maksymilian.kliczkowski@pwr.edu.pl'
 
 # ------------------------------------------------------------------------------
 # End of File

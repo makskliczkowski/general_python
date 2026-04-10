@@ -15,10 +15,36 @@ Submodules:
 
 Author      : Maksymilian Kliczkowski
 Date        : 2025-02-02
+Version     : 1.1.0
+Changelog   :
+- 1.1.0: Added lazy loading for submodules and common exports, improved documentation, and added capability listing functions.
 """
 
-import sys
 import importlib
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from . import algebra, common, lattices, maths, ml, physics
+    from .algebra import ran_wrapper as random
+    from .common import (
+        LazyDataEntry,
+        LazyHDF5Entry,
+        LazyJsonEntry,
+        LazyNpzEntry,
+        LazyPickleEntry,
+        PlotData,
+        ResultSet,
+        dtype_to_name,
+        filter_results,
+        load_results,
+    )
+
+    gp_algebra  = algebra
+    gp_common   = common
+    gp_lattices = lattices
+    gp_maths    = maths
+    gp_physics  = physics
+    gp_ml       = ml
 
 __version__ = "1.1.0"
 
@@ -34,7 +60,13 @@ _SUBMODULES = {
 
 # Aliases
 _ALIASES = {
-    'random': 'algebra.ran_wrapper',
+    'random'        : 'algebra.ran_wrapper',
+    'gp_algebra'    : 'algebra',
+    'gp_common'     : 'common',
+    'gp_lattices'   : 'lattices',
+    'gp_maths'      : 'maths',
+    'gp_physics'    : 'physics',
+    'gp_ml'         : 'ml',
 }
 
 _COMMON_EXPORTS = {
@@ -50,28 +82,21 @@ _COMMON_EXPORTS = {
     'LazyJsonEntry',
 }
 
-# Try to import submodules eagerly for CI compatibility
-# In CI environments, __getattr__ may not work reliably
-try:
-    from . import algebra
-    from . import common
-    from . import lattices
-    from . import maths
-    from . import physics
-    from . import ml
-except ImportError:
-    # Fallback to lazy loading if eager import fails (e.g., missing optional dependencies)
-    pass
-
 def __getattr__(name: str):
     """Lazy-load submodules on demand."""
     if name in _SUBMODULES:
-        return importlib.import_module(f'.{name}', package=__name__)
+        module = importlib.import_module(f'.{name}', package=__name__)
+        globals()[name] = module
+        return module
     if name in _ALIASES:
-        return importlib.import_module(f'.{_ALIASES[name]}', package=__name__)
+        module = importlib.import_module(f'.{_ALIASES[name]}', package=__name__)
+        globals()[name] = module
+        return module
     if name in _COMMON_EXPORTS:
         common = importlib.import_module('.common', package=__name__)
-        return getattr(common, name)
+        value = getattr(common, name)
+        globals()[name] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 def list_capabilities():
@@ -95,14 +120,21 @@ def list_available_modules():
 def get_module_description(module_name: str) -> str:
     """Return a brief description of the module."""
     descriptions = {
-        'algebra': "Algebraic structures, eigensolvers, and backend operations.",
-        'common': "Common utilities (logging, file I/O, plotting).",
-        'lattices': "Lattice definitions and k-space utilities.",
-        'maths': "Mathematical functions and numerical utilities.",
-        'physics': "Physical constants and quantum mechanics tools.",
-        'ml': "Machine learning utilities.",
+        'algebra'   : "Algebraic structures, eigensolvers, and backend operations.",
+        'common'    : "Common utilities (logging, file I/O, plotting).",
+        'lattices'  : "Lattice definitions and k-space utilities.",
+        'maths'     : "Mathematical functions and numerical utilities.",
+        'physics'   : "Physical constants and quantum mechanics tools.",
+        'ml'        : "Machine learning utilities.",
     }
     return descriptions.get(module_name, "No description available.")
+
+__all__ = sorted(
+    list(_SUBMODULES)
+    + list(_ALIASES.keys())
+    + list(_COMMON_EXPORTS)
+    + ['dtype_to_name', 'get_module_description', 'list_available_modules', 'list_capabilities']
+)
 
 # ----------------------------------------------------------------
 #! EOF

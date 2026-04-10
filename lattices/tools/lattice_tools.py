@@ -53,6 +53,7 @@ class LatticeType(Enum):
     HONEYCOMB   = auto()    # Honeycomb lattice
     GRAPH       = auto()    # Generic graph lattice (adjacency-defined)
     TRIANGULAR  = auto()    # Triangular lattice
+    CHAIN       = auto()    # 1D chain lattice - is square lattice with ly=1, but having its own type for clarity and special handling in some cases
     
     def __str__(self):      return str(self.name).lower()
     def __repr__(self):     return self.__str__()

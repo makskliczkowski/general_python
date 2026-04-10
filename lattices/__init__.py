@@ -37,57 +37,47 @@ from typing     import TYPE_CHECKING
 
 import importlib
 from collections                import OrderedDict
-from typing                     import Optional, Tuple, Type, Union
+from typing                     import Any, Optional, Tuple, Type, Union
 import numpy                    as np
 if TYPE_CHECKING:
     import matplotlib.axes      as pltAxes
     import matplotlib.pyplot    as plt
-    
-from .lattice       import (
-    # Core lattice classes and utilities
-    BoundaryFlux,
-    Lattice,
-    Backend as LatticeBackend,
-    LatticeBC,
-    LatticeDirection,
-    LatticeType,
-    # Visualization utilities
-    handle_boundary_conditions,
-    handle_dim,
-    HighSymmetryPoints,
-    HighSymmetryPoint,
-    KPathResult,
-    StandardBZPath,
-)
-
-from .square        import SquareLattice
-from .hexagonal     import HexagonalLattice
-from .honeycomb     import HoneycombLattice
-from .triangular    import TriangularLattice
-from .graph         import GraphLattice
-
-# Import visualization utilities
-from ..common.plot  import colorsCycle
-
-# Import visualization utilities
-from .visualization import (
-    format_lattice_summary,
-    format_vector_table,
-    format_real_space_vectors,
-    format_reciprocal_space_vectors,
-    format_brillouin_zone_overview,
-    LatticePlotter,
-    plot_real_space,
-    plot_reciprocal_space,
-    plot_brillouin_zone,
-)
-
-# Import region utilities and tools
-from . import tools
-from .tools.region_handler import RegionType, LatticeRegionHandler
 
 # All type checks
 if TYPE_CHECKING:
+    from .                      import tools
+    from .graph                 import GraphLattice
+    from .hexagonal             import HexagonalLattice
+    from .honeycomb             import HoneycombLattice
+    from .lattice               import (
+                                    BoundaryFlux,
+                                    Lattice,
+                                    Backend as LatticeBackend,
+                                    LatticeBC,
+                                    LatticeDirection,
+                                    LatticeType,
+                                    # Visualization helpers
+                                    handle_boundary_conditions,
+                                    handle_dim,
+                                    HighSymmetryPoints,
+                                    HighSymmetryPoint,
+                                    KPathResult,
+                                    StandardBZPath,
+                                )
+    from .square                import SquareLattice
+    from .triangular            import TriangularLattice
+    from .visualization import (
+        format_lattice_summary,
+        format_vector_table,
+        format_real_space_vectors,
+        format_reciprocal_space_vectors,
+        format_brillouin_zone_overview,
+        LatticePlotter,
+        plot_real_space,
+        plot_reciprocal_space,
+        plot_brillouin_zone,
+    )
+    from .tools.region_handler import RegionType, LatticeRegionHandler
     from .tools.regions import KPRegion, LWRegion, HalfRegions, DiskRegion, PlaquetteRegion, CustomRegion, Region
 
 # --------------------------------------------------------------------------------------------------
@@ -146,8 +136,45 @@ __all__ = [
     "run_lattice_tests",
 ]
 
-LatticeFactory      = Type[Lattice]
-_LATTICE_REGISTRY   : "OrderedDict[str, LatticeFactory]" = OrderedDict()
+LatticeFactory      = Type[Any]
+_LATTICE_REGISTRY   : "OrderedDict[str, Any]" = OrderedDict()
+_CORE_EXPORTS = {
+    "BoundaryFlux"                      : (".lattice", "BoundaryFlux"),
+    "Lattice"                           : (".lattice", "Lattice"),
+    "LatticeBackend"                    : (".lattice", "Backend"),
+    "LatticeBC"                         : (".lattice", "LatticeBC"),
+    "LatticeDirection"                  : (".lattice", "LatticeDirection"),
+    "LatticeType"                       : (".lattice", "LatticeType"),
+    "handle_boundary_conditions"        : (".lattice", "handle_boundary_conditions"),
+    "handle_dim"                        : (".lattice", "handle_dim"),
+    "HighSymmetryPoints"                : (".lattice", "HighSymmetryPoints"),
+    "HighSymmetryPoint"                 : (".lattice", "HighSymmetryPoint"),
+    "KPathResult"                       : (".lattice", "KPathResult"),
+    "StandardBZPath"                    : (".lattice", "StandardBZPath"),
+}
+_LATTICE_EXPORTS = {
+    "SquareLattice"                     : (".square", "SquareLattice"),
+    "HexagonalLattice"                  : (".hexagonal", "HexagonalLattice"),
+    "HoneycombLattice"                  : (".honeycomb", "HoneycombLattice"),
+    "TriangularLattice"                 : (".triangular", "TriangularLattice"),
+    "GraphLattice"                      : (".graph", "GraphLattice"),
+}
+_VIS_EXPORTS = {
+    "format_lattice_summary"            : (".visualization", "format_lattice_summary"),
+    "format_vector_table"               : (".visualization", "format_vector_table"),
+    "format_real_space_vectors"         : (".visualization", "format_real_space_vectors"),
+    "format_reciprocal_space_vectors"   : (".visualization", "format_reciprocal_space_vectors"),
+    "format_brillouin_zone_overview"    : (".visualization", "format_brillouin_zone_overview"),
+    "LatticePlotter"                    : (".visualization", "LatticePlotter"),
+    "plot_real_space"                   : (".visualization", "plot_real_space"),
+    "plot_reciprocal_space"             : (".visualization", "plot_reciprocal_space"),
+    "plot_brillouin_zone"               : (".visualization", "plot_brillouin_zone"),
+}
+_TOOLS_EXPORTS = {
+    "tools"                             : (".tools", None),
+    "RegionType"                        : (".tools.region_handler", "RegionType"),
+    "LatticeRegionHandler"              : (".tools.region_handler", "LatticeRegionHandler"),
+}
 _LAZY_REGION_EXPORTS = {
     "Region"                : (".tools.regions", "Region"),
     "KitaevPreskillRegion"  : (".tools.regions", "KitaevPreskillRegion"),
@@ -162,11 +189,25 @@ _LAZY_REGION_EXPORTS = {
     "list_predefined_regions": (".tools.regions", "list_predefined_regions"),
 }
 
+# ---------------------------------------------------------------------------------------------------
+
+def _load_export(module_name: str, attr_name: str | None):
+    module = importlib.import_module(module_name, package=__name__)
+    value = module if attr_name is None else getattr(module, attr_name)
+    return value
+
+def _resolve_lattice_entry(entry: Any):
+    if isinstance(entry, tuple):
+        module_name, class_name = entry
+        return _load_export(module_name, class_name)
+    return entry
+
 def register_lattice(name: str, lattice_cls: LatticeFactory, *aliases: str, overwrite: bool = False):
     """
     Register a lattice class under ``name`` and optional ``aliases``.
     """
-    if not issubclass(lattice_cls, Lattice):
+    lattice_base = _load_export(".lattice", "Lattice")
+    if not isinstance(lattice_cls, tuple) and not issubclass(lattice_cls, lattice_base):
         raise TypeError(f"Registered lattice must inherit from Lattice; got {lattice_cls!r}")
 
     keys = (name, *aliases)
@@ -184,11 +225,11 @@ def available_lattices() -> Tuple[str, ...]:
     return tuple(_LATTICE_REGISTRY.keys())
 
 # Default registrations
-register_lattice("square",      SquareLattice,      "SquareLattice")
-register_lattice("hexagonal",   HexagonalLattice,   "HexagonalLattice")
-register_lattice("honeycomb",   HoneycombLattice,   "HoneycombLattice")
-register_lattice("triangular",  TriangularLattice,  "TriangularLattice")
-register_lattice("graph",       GraphLattice,       "GraphLattice")
+register_lattice("square",      _LATTICE_EXPORTS["SquareLattice"],      "SquareLattice")
+register_lattice("hexagonal",   _LATTICE_EXPORTS["HexagonalLattice"],   "HexagonalLattice")
+register_lattice("honeycomb",   _LATTICE_EXPORTS["HoneycombLattice"],   "HoneycombLattice")
+register_lattice("triangular",  _LATTICE_EXPORTS["TriangularLattice"],  "TriangularLattice")
+register_lattice("graph",       _LATTICE_EXPORTS["GraphLattice"],       "GraphLattice")
 
 # --------------------------------------------------------------------------------------------------
 
@@ -207,10 +248,12 @@ def plot_bonds(lattice      : Lattice,
     '''
     if lattice is None:
         raise ValueError("Lattice cannot be None")
+    colorsCycle = _load_export("..common.plot", "colorsCycle")
     dim         = lattice.dim
     Ns          = lattice.ns
     colors      = [next(colorsCycle) for _ in range(10)]
     if ax is None:
+        import matplotlib.pyplot as plt
         if dim == 3:
             fig     = plt.figure()
             ax      = fig.add_subplot(111, projection='3d')
@@ -302,7 +345,7 @@ def run_lattice_tests(dim=2, lx=5, ly=5, lz=1, bc=None, typek="square"):
     """
     # If no boundary condition is provided, default to periodic
     if bc is None:
-        bc = LatticeBC.PBC
+        bc = _load_export(".lattice", "LatticeBC").PBC
 
     lattice = choose_lattice(typek, dim=dim, lx=lx, ly=ly, lz=lz, bc=bc)
     print(f"Running tests for {lattice}")
@@ -351,25 +394,26 @@ def _handle_type(typek):
     Resolve an identifier (string or ``LatticeType``) to a registered lattice class.
     """
     if typek is None:
-        return SquareLattice
+        return _resolve_lattice_entry(_LATTICE_REGISTRY["square"])
 
     if isinstance(typek, str):
         cls = _LATTICE_REGISTRY.get(typek)
         if cls is None:
             raise ValueError(f"Unknown lattice type '{typek}'. Available: {available_lattices()}.")
-        return cls
+        return _resolve_lattice_entry(cls)
 
-    if isinstance(typek, LatticeType):
+    lattice_type_enum = _load_export(".lattice", "LatticeType")
+    if isinstance(typek, lattice_type_enum):
         mapping = {
-            LatticeType.SQUARE: "square",
-            LatticeType.HEXAGONAL: "hexagonal",
-            LatticeType.HONEYCOMB: "honeycomb",
-            LatticeType.GRAPH: "graph",
+            lattice_type_enum.SQUARE        : "square",
+            lattice_type_enum.HEXAGONAL     : "hexagonal",
+            lattice_type_enum.HONEYCOMB     : "honeycomb",
+            lattice_type_enum.GRAPH         : "graph",
         }
         key = mapping.get(typek)
         if key is None:
             raise ValueError(f"Unsupported lattice type enum {typek!r}.")
-        return _LATTICE_REGISTRY[key]
+        return _resolve_lattice_entry(_LATTICE_REGISTRY[key])
 
     raise ValueError(f"Unknown lattice type: {typek!r}")
 
@@ -405,26 +449,30 @@ def choose_lattice(typek    : Optional[str]         = 'square',
         Lattice: An instance of the desired lattice.
     """
     #! handle boundary conditions
+    handle_boundary_conditions = _load_export(".lattice", "handle_boundary_conditions")
+    handle_dim = _load_export(".lattice", "handle_dim")
     _bc             = handle_boundary_conditions(bc)
     #! handle dimensions
     dim, lx, ly, lz = handle_dim(lx, ly, lz)
     #! handle type
     _class          = _handle_type(typek)
-    if issubclass(_class, GraphLattice):
+    graph_cls        = _load_export(".graph", "GraphLattice")
+    if issubclass(_class, graph_cls):
         return _class(bc=_bc, flux=flux, **kwargs)
     return _class(dim=dim, lx=lx, ly=ly, lz=lz, bc=_bc, flux=flux, **kwargs)
 
 def __getattr__(name: str):
-    if name in _LAZY_REGION_EXPORTS:
-        module_name, attr_name  = _LAZY_REGION_EXPORTS[name]
-        module                  = importlib.import_module(module_name, package=__name__)
-        value                   = getattr(module, attr_name)
-        globals()[name]         = value
-        return value
+    for mapping in (_CORE_EXPORTS, _LATTICE_EXPORTS, _VIS_EXPORTS, _TOOLS_EXPORTS, _LAZY_REGION_EXPORTS):
+        if name in mapping:
+            module_name, attr_name = mapping[name]
+            value = _load_export(module_name, attr_name)
+            globals()[name] = value
+            return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 def __dir__():
-    return sorted(list(globals().keys()) + list(_LAZY_REGION_EXPORTS.keys()))
+    extra = list(_CORE_EXPORTS.keys()) + list(_LATTICE_EXPORTS.keys()) + list(_VIS_EXPORTS.keys()) + list(_TOOLS_EXPORTS.keys()) + list(_LAZY_REGION_EXPORTS.keys())
+    return sorted(list(globals().keys()) + extra)
 
 ####################################################################################################
 #! EOF

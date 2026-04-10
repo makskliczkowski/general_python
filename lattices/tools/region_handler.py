@@ -1101,13 +1101,7 @@ class LatticeRegionHandler:
     # Entropy-oriented cut helpers
     # ------------------------------------------------------------------------------
 
-    def get_entropy_cuts(
-        self,
-        cut_type: str = "all",
-        *,
-        include_sublattice: bool = True,
-        sweep_by_unit_cell: Optional[bool] = None,
-    ) -> Dict[str, List[int]]:
+    def get_entropy_cuts(self, cut_type: str = "all", *, include_sublattice: bool = True, sweep_by_unit_cell: Optional[bool] = None) -> Dict[str, List[int]]:
         """
         Return canonical bipartition cuts for entanglement-entropy studies.
 
@@ -1122,6 +1116,8 @@ class LatticeRegionHandler:
             - returns nested prefixes for scaling analyses.
         -   For non-Bravais lattices (e.g. honeycomb), ``sweep`` defaults to unit-cell
             increments; for Bravais lattices, it defaults to site increments.
+        - Cleans up duplicates when multiple cut types are requested together (e.g. ``all``).
+        - Cleans up empty regions when sublattice cuts are not available for a given lattice.
         """
         cut_type_norm   = cut_type.strip().lower()
         valid           = {"half_x", "half_y", "quarter", "sublattice_a", "sweep", "all"}
@@ -1151,6 +1147,9 @@ class LatticeRegionHandler:
 
         if cut_type_norm in ("sweep", "all"):
             cuts.update(self.region_sweep(by_unit_cell=sweep_by_unit_cell))
+            
+        # clean up any empty cuts (e.g. if sublattice_A is not available for this lattice)
+        cuts = {k: v for k, v in cuts.items() if len(v) > 0}
 
         return cuts
 
