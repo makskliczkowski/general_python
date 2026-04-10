@@ -22,6 +22,7 @@ instability near zero eigenvalues or narrow broadenings. Reproducibility depends
 on deterministic eigensolver settings and fixed random seeds in upstream code.
 """
 
+import os
 import sys
 import importlib
 from typing import TYPE_CHECKING

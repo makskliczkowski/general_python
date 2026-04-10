@@ -1,5 +1,5 @@
 '''
-Test the UDT decomposition from QES.general_python.algebra.utilities.udt, including pivoted UDT and the Loh inversion method.
+Test the UDT decomposition from general_python.algebra.utilities.udt, including pivoted UDT and the Loh inversion method.
 
 --------------
 file        : general_python/algebra/utilities/tests/test_udt.py
@@ -18,7 +18,7 @@ import numpy as np
 try:
     from general_python.algebra.utilities import udt
 except ImportError:
-    raise ImportError("Could not import udt module. Ensure that the QES.general_python package is correctly installed and accessible.")
+    raise ImportError("Could not import udt module. Ensure that the general_python package is correctly installed and accessible.")
 
 def _build_stack(num_slices: int, dim: int, span: float, seed: int = 42):
     ''' Build a stack of num_slices random matrices of size dim x dim, with singular values spanning from exp(span) to exp(-span).

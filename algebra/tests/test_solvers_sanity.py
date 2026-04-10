@@ -1,22 +1,20 @@
+"""Sanity checks for core Krylov solvers on small model problems."""
 
-import pytest
 import numpy as np
-from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
+import pytest
+
 from general_python.algebra.eigen import LanczosEigensolver
 from general_python.algebra.solvers.minres import MinresSolver, MinresSolverScipy
+from general_python.algebra.solvers.minres_qlp import MinresQLPSolver
+
 
 def create_2d_laplacian(L):
-    """
-    Creates a 2D Laplacian matrix for an LxL grid with Dirichlet boundary conditions.
-    N = L*L.
-    """
+    """Create the dense 2D Dirichlet Laplacian on an ``L x L`` grid."""
     N = L * L
-    # Diagonals
     diag = 4.0 * np.ones(N)
     off_diag_1 = -1.0 * np.ones(N - 1)
     off_diag_L = -1.0 * np.ones(N - L)
 
-    # Fix boundary effects for off_diag_1 (remove connections between rows)
     for i in range(1, L):
         off_diag_1[i*L - 1] = 0.0
 
@@ -24,6 +22,7 @@ def create_2d_laplacian(L):
         np.diag(off_diag_L, k=L) + np.diag(off_diag_L, k=-L)
 
     return A
+
 
 class TestSolversSanity:
 

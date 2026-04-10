@@ -208,13 +208,15 @@ class RBM(FlaxInterface):
             n_visible = np.prod(input_shape)
             n_hidden  = max(1, int(alpha * n_visible))
 
-        input_convention    = extract_input_convention(kwargs)
+        # Determine sampler representation and related conventions
+        input_convention = extract_input_convention(kwargs)
         
-        if "input_is_spin" not in kwargs and "input_spin" not in kwargs:
+        if "input_is_spin" not in kwargs and "input_spin" not in kwargs and "input_convention" not in input_convention:
             input_convention["input_is_spin"] = bool(BACKEND_DEF_SPIN)
-        if "input_value" not in kwargs:
+        if "input_value" not in kwargs and "input_value" not in input_convention:
             input_convention["input_value"] = float(BACKEND_REPR)
-            
+        
+        # Determine input activation based on conventions and kwargs
         in_activation_alias = kwargs.pop("in_activation", None)
         if input_activation is None and in_activation_alias is not None:
             input_activation = in_activation_alias

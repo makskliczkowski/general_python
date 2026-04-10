@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""
-Solver Factory - Example
+"""Examples for the flexible solver-factory interface.
 
-This example demonstrates the flexible solver factory interface for
+This module demonstrates the flexible solver factory interface for
 creating and switching between solvers programmatically.
 
 The factory supports multiple input formats:
@@ -13,12 +12,17 @@ The factory supports multiple input formats:
     - Class: CgSolver
 """
 
-import numpy as np
 from enum import Enum
+
+import numpy as np
+
 try:
     from general_python.algebra.solvers import (
-        choose_solver, SolverType,
-        CgSolver, MinresSolverScipy, DirectSolver
+        CgSolver,
+        DirectSolver,
+        MinresSolverScipy,
+        SolverType,
+        choose_solver,
     )
 except ImportError:
     raise ImportError("general_python package is required to run this example.")
@@ -31,7 +35,8 @@ class SolverForm(Enum):
     MATRIX      = "matrix"
     VECTOR      = "vector"
     LINEAR      = "linear"
-    
+
+
 class ProblemType(Enum):
     SPD         = "symmetric_positive_definite"
     INDEFINITE  = "symmetric_indefinite"
@@ -40,7 +45,7 @@ class ProblemType(Enum):
 # ----------------------------------------------------------------------------------------
 
 def create_test_problem(n=50, problem_type: str = ProblemType.SPD.value):
-    """Create test problems of different types."""
+    """Create a dense linear system for the requested problem class."""
 
     if problem_type == ProblemType.SPD.value:
         # Symmetric positive-definite
@@ -75,10 +80,9 @@ def example_enum_factory():
     print("=" * 70)
     print("Example 1: Solver Factory with Enum")
     print("=" * 70)
-    
+
     A, b = create_test_problem(n=50, problem_type=ProblemType.SPD.value)
-    
-    # Create solver using SolverType enum
+
     solver_types = [
         SolverType.CG,
         SolverType.SCIPY_MINRES,
@@ -89,8 +93,7 @@ def example_enum_factory():
     for solver_type in solver_types:
         solver = choose_solver(solver_type)
         print(f"  {solver_type.name:<20} -> {type(solver).__name__}")
-    
-    # Use one of them
+
     solver      = choose_solver(SolverType.CG)
     solve_func  = solver.get_solver_func(
                             backend_module  = np,
@@ -100,11 +103,11 @@ def example_enum_factory():
                             sigma           = 0.0,
                         )
     result      = solve_func(a=A, b=b, x0=None, tol=1e-8, maxiter=None, precond_apply=None)
-    
+
     print(f"\nSolved with {type(solver).__name__}:")
     print(f"  Converged: {result.converged}")
     print(f"  Iterations: {result.iterations}")
-    
+
     return result
 
 # ----------------------------------------------------------------------------------------
@@ -117,7 +120,6 @@ def example_string_factory():
     
     A, b = create_test_problem(n=50, problem_type=ProblemType.SPD.value)
     
-    # Factory supports flexible string naming
     solver_names = [
         "cg",
         "CG",
@@ -128,7 +130,7 @@ def example_string_factory():
         "direct",
         "DIRECT",
     ]
-    
+
     print(f"Creating solvers via string names (case-insensitive):")
     for name in solver_names:
         try:
@@ -136,8 +138,7 @@ def example_string_factory():
             print(f"  '{name}':<25 -> {type(solver).__name__}")
         except (ValueError, KeyError) as e:
             print(f"  '{name}' -> Error: {e}")
-    
-    # Solve with string-created solver
+
     solver      = choose_solver("cg")
     solve_func  = solver.get_solver_func(
         backend_module  = np,

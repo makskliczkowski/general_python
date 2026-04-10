@@ -1,12 +1,20 @@
+"""Regression coverage for small ``math_utils`` helper functions."""
 
-import pytest
 import numpy as np
+import pytest
+
 from general_python.maths.math_utils import (
-    find_nearest_val, find_nearest_idx,
-    next_power, prev_power,
-    mod_euc, mod_floor, mod_ceil, mod_round,
-    Fitter
+    Fitter,
+    find_nearest_idx,
+    find_nearest_val,
+    mod_ceil,
+    mod_euc,
+    mod_floor,
+    mod_round,
+    next_power,
+    prev_power,
 )
+
 
 class TestMathUtilities:
 
@@ -14,24 +22,20 @@ class TestMathUtilities:
         """Test finding nearest value/index in array."""
         arr = np.array([1.0, 2.0, 5.0, 10.0])
 
-        # Nearest to 4.9 is index 2 (value 5.0)
         val = find_nearest_val(arr, 4.9, None)
         assert val == 5.0
         assert find_nearest_idx(arr, 4.9) == 2
 
-        # Nearest to 1.6 is index 1 (value 2.0)
         val = find_nearest_val(arr, 1.6, None)
         assert val == 2.0
         assert find_nearest_idx(arr, 1.6) == 1
 
-        # Exact match
         val = find_nearest_val(arr, 10.0, None)
         assert val == 10.0
         assert find_nearest_idx(arr, 10.0) == 3
 
     def test_powers(self):
         """Test next/prev power functions."""
-        # Powers of 2
         assert next_power(3) == 4
         assert next_power(4) == 4
         assert next_power(5) == 8
@@ -40,52 +44,41 @@ class TestMathUtilities:
         assert prev_power(4) == 4
         assert prev_power(5) == 4
 
-        # Base 10
         assert next_power(90, base=10) == 100
         assert prev_power(90, base=10) == 10
 
     def test_mod_functions(self):
         """Test custom modulo functions."""
-        # mod_euc: ensures result has same sign as divisor
-        assert mod_euc(-1, 3) == 2  # -1 = -1*3 + 2
+        assert mod_euc(-1, 3) == 2
         assert mod_euc(1, 3) == 1
-        assert mod_euc(-4, 3) == 2 # -4 = -2*3 + 2
+        assert mod_euc(-4, 3) == 2
 
-        # mod_floor
-        # Implementation subtracts 1 if signs differ and not divisible
-        assert mod_floor(5, 2) == 2 # 5 // 2 = 2
-        assert mod_floor(-5, 2) == -4 # -5 // 2 = -3, then -1 -> -4
+        assert mod_floor(5, 2) == 2
+        assert mod_floor(-5, 2) == -4
 
-        # mod_ceil
-        assert mod_ceil(5, 2) == 3 # ceil(2.5) = 3
+        assert mod_ceil(5, 2) == 3
 
-        # mod_round
-        # Implementation behaves like truncation for positive: int(2.5) -> 2
         assert mod_round(5, 2) == 2
 
     def test_fitter_basic(self):
         """Test basic Fitter usage."""
         x = np.array([0, 1, 2, 3])
-        y = 2 * x + 1 # linear
+        y = 2 * x + 1
 
-        # Use static method
         fit_params = Fitter.fitLinear(x, y)
         popt = fit_params.popt
 
         assert np.isclose(popt[0], 2.0)
         assert np.isclose(popt[1], 1.0)
 
-        # Check callable
         assert np.isclose(fit_params(4), 9.0)
 
     def test_fitter_exp(self):
         """Test exponential fit."""
         x = np.linspace(0, 2, 10)
-        # y = 2 * exp(-3 * x)
         y = 2.0 * np.exp(-3.0 * x)
 
         fit_params = Fitter.fitExp(x, y)
         popt = fit_params.popt
-        # popt[0] is amplitude, popt[1] is decay rate
         assert np.isclose(popt[0], 2.0, rtol=1e-3)
         assert np.isclose(popt[1], 3.0, rtol=1e-3)

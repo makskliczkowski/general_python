@@ -8,19 +8,26 @@ Installation
 
 The project is configured through ``pyproject.toml`` with optional extras.
 
-Core install
+Minimal install
 ^^^^^^^^^^^^
 
 .. code-block:: bash
 
     pip install -e .
 
+Standard install
+^^^^^^^^^^^^^^^^
+
+.. code-block:: bash
+
+    pip install -e ".[standard]"
+
 Development + tests
 ^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
-    pip install -e ".[dev]"
+    pip install -e ".[standard,dev]"
 
 Documentation build dependencies
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -36,8 +43,8 @@ Machine-learning dependencies
 
     pip install -e ".[ml]"
 
-Optional JAX-only stack
-^^^^^^^^^^^^^^^^^^^^^^^
+JAX-compatible alias
+^^^^^^^^^^^^^^^^^^^^
 
 .. code-block:: bash
 
@@ -47,7 +54,7 @@ Backend expectations
 --------------------
 
 - **NumPy** is the default and baseline backend across the library.
-- **JAX** is optional and used in selected modules for accelerator-enabled workflows.
+- **JAX** is part of the recommended standard install and is used in selected modules for accelerator-enabled workflows.
 - Some APIs dispatch by backend availability; for reproducible studies, keep backend choice fixed per run.
 
 Quick verification

@@ -2,17 +2,26 @@
 
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Code Style: Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
-[![Python Version](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 
-A comprehensive library of reusable scientific computing utilities for quantum physics simulations, numerical linear algebra, and machine learning.
+A reusable scientific-computing toolkit for quantum physics simulations, numerical linear algebra, lattices, and machine learning workflows.
 
 ## Purpose
 
-`general_python` consolidates commonly needed functionality in quantum many-body physics and computational science into a unified, **backend-agnostic** package. Whether you're working with NumPy on CPU or JAX on GPU, the same code works transparently.
+`general_python` consolidates commonly needed functionality in quantum many-body physics and computational science into a unified, **backend-aware** toolkit.
+
+Preferred import style:
+
+```python
+import general_python as gp
+from general_python.lattices import SquareLattice
+from general_python.physics import entropy
+```
 
 ## Core Modules
 
 ### 1. Algebra & Linear Algebra (`algebra/`)
+
 Advanced numerical methods and sparse matrix operations:
 
 - **Solvers**: Iterative methods for large sparse systems
@@ -26,6 +35,7 @@ Advanced numerical methods and sparse matrix operations:
 - **Matrix Utilities**: Sparse format conversions (COO, CSR, CSC)
 
 **Example:**
+
 ```python
 from general_python.algebra import solvers
 import numpy as np
@@ -41,9 +51,11 @@ x, info = solver.solve(A, b, tol=1e-8)
 ```
 
 ### 2. Physics & Quantum Tools (`physics/`)
+
 Specialized quantum mechanical and statistical mechanics utilities:
 
 #### Quantum States & Operations
+
 - **Density Matrices**: Construction, purification, partial trace
 - **Entropy Measures**:
   - Von Neumann entropy: $S(\rho) = -\text{Tr}(\rho \log \rho)$
@@ -54,19 +66,22 @@ Specialized quantum mechanical and statistical mechanics utilities:
 - **Correlations**: Two-point correlators, structure factors
 
 #### Thermodynamic Properties
+
 - **Boltzmann Statistics**: Partition function, thermal averages, free energy
 - **Specific Heat**: Temperature-dependent heat capacity
 - **Magnetic Susceptibility**: Response to external fields
 - **Correlation Functions**: Static and dynamic response
 
 #### Spectral Analysis
+
 - **Spectral Functions**: Spectral weight, density of states
 - **Response Theory**: Linear response, correlation-response relations
 - **Green's Functions**: Matsubara and retarded formulations
 
 **Example:**
+
 ```python
-from general_python.physics import entropy, correlations
+from general_python.physics import entropy
 import numpy as np
 
 # Pure state (rank-1 density matrix)
@@ -78,15 +93,14 @@ rho = np.outer(psi.conj(), psi)
 S_vn = entropy.von_neumann_entropy(rho)
 print(f"Purity: {np.trace(rho @ rho):.6f}")  # Should be ~1.0 for pure state
 
-# Two-point spin correlation (Z-Z)
-Sz = np.array([[1, 0], [0, -1]])  # Pauli-Z
-corr_zz = correlations.spin_correlation_zz(psi, sites=(0, 3))
 ```
 
 ### 3. Lattice Geometry (`lattices/`)
+
 Efficient lattice construction and topology handling:
 
 #### Supported Geometries
+
 | Lattice | Dimension | Neighbors | Use Cases |
 |---------|-----------|-----------|-----------|
 | Chain | 1D | 2 (nearest) | Spin chains, TFIM benchmarks |
@@ -96,6 +110,7 @@ Efficient lattice construction and topology handling:
 | Honeycomb | 2D | 3 | Graphene-like structures |
 
 #### Features
+
 - **Neighbor Finding**: Efficient nearest/k-th neighbor queries
 - **Boundary Conditions**: Periodic (PBC) and open (OBC) support
 - **Lattice Vectors**: Reciprocal lattice, Brillouin zone
@@ -103,6 +118,7 @@ Efficient lattice construction and topology handling:
 - **Basis Modes**: Multi-orbital/sublattice structures
 
 **Example:**
+
 ```python
 from general_python.lattices import SquareLattice
 
@@ -121,6 +137,7 @@ lat.visualize(show_indices=True)
 ```
 
 ### 4. Machine Learning (`ml/`)
+
 Tools for neural network implementations and training:
 
 - **Network Layers**: Custom JAX/Flax modules for quantum networks
@@ -129,7 +146,10 @@ Tools for neural network implementations and training:
 - **Sampling**: Mini-batch generation, data loaders
 - **Visualization**: Loss curves, metric tracking
 
+The `ml` subpackage is optional in practice: importing `general_python.ml` is lightweight, while JAX/Flax-backed implementations are loaded only when accessed.
+
 ### 5. Mathematics (`maths/`)
+
 General mathematical utilities beyond linear algebra:
 
 - **Special Functions**: Bessel, Hermite, Legendre polynomials
@@ -139,6 +159,7 @@ General mathematical utilities beyond linear algebra:
 - **Optimization**: Scipy wrappers, golden section search
 
 ### 6. Random Number Generation (`algebra/ran_*`)
+
 Reproducible high-quality pseudorandom sequences:
 
 - **RNG Streams**: Seeded generators with independent streams
@@ -147,6 +168,7 @@ Reproducible high-quality pseudorandom sequences:
 - **Distributions**: Multivariate normal, exponential, etc.
 
 **Example:**
+
 ```python
 from general_python.algebra import ran_wrapper
 import numpy as np
@@ -163,6 +185,7 @@ assert np.allclose(samples1, samples2)  # ✓
 ```
 
 ### 7. Common Utilities (`common/`)
+
 General-purpose tools:
 
 - **I/O**: HDF5 file handling, data serialization
@@ -175,7 +198,7 @@ General-purpose tools:
 
 ## Backend Agnosticism
 
-All modules support both NumPy and JAX transparently:
+NumPy-first workflows are broadly available from the core install. JAX-backed paths are optional and activate only when those dependencies are installed.
 
 ```python
 from general_python.algebra import utils
@@ -192,17 +215,31 @@ xp = utils.get_backend("jax")  # Returns jax module
 
 ## Installation, Testing, and Documentation
 
-To install the package in editable mode (recommended for development):
+Recommended standard editable install:
 
 ```bash
-pip install -e ".[dev,ml,jax,docs]"
+pip install -e ".[standard,dev,ml,docs]"
 ```
 
-For a standard installation:
+Minimal editable install:
+
+```bash
+pip install -e ".[dev]"
+```
+
+Minimal runtime install:
 
 ```bash
 pip install .
 ```
+
+Recommended standard runtime install:
+
+```bash
+pip install ".[standard]"
+```
+
+The `.[jax]` extra remains available as a compatible alias for the same JAX/Flax-enabled stack.
 
 For detailed build and CI instructions, see [docs/BUILD_AND_CI.md](docs/BUILD_AND_CI.md).
 
@@ -268,6 +305,7 @@ print(f"Lowest eigenvalue: {evals[0]:.6f}")
 ## Contributing
 
 Contributions welcome! Please:
+
 1. Follow PEP 8 (enforced with Black)
 2. Add docstrings to all functions
 3. Include unit tests for new code

@@ -21,8 +21,8 @@ if not pyqes_path.exists():
     raise FileNotFoundError(f"QES_PYPATH directory not found: {pyqes_path}")
 sys.path.insert(0, str(pyqes_path))
 
-from    QES.general_python.physics.density_matrix       import rho
-from    QES.general_python.physics.entropy              import sp_correlation_entropy, vn_entropy
+from    general_python.physics.density_matrix       import rho
+from    general_python.physics.entropy              import sp_correlation_entropy, vn_entropy
 
 # =============================================================================
 #! Helper Functions

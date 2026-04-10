@@ -2,8 +2,8 @@ Usage
 =====
 
 This section provides **working, end-to-end examples** for the core components of the
-*General Python Utilities* library. Each snippet is runnable and uses real APIs from
-the package.
+*General Python Utilities* library. Each snippet is intended to be runnable against
+the current public API of the standalone ``general_python`` package.
 
 1. Linear Algebra & Solvers
 ---------------------------
@@ -86,7 +86,8 @@ and a flexible solver interface (direct, iterative, matrix-free, and preconditio
 ---------------------
 
 The lattice module provides geometry-aware models with real/reciprocal vectors,
-neighbor maps, and plotting helpers. Use the factory to stay backend-agnostic.
+neighbor maps, and plotting helpers. Use the factory helpers when you want to keep
+examples independent of a concrete lattice class.
 
 **Factory + Metadata**
 
@@ -167,7 +168,7 @@ metrics with NumPy implementations.
 4. Random Number Generation
 ---------------------------
 
-High-quality random matrix samplers for quantum information tasks.
+High-quality random-matrix samplers are available for quantum-information tasks.
 
 **Haar-Random Unitary (CUE)**
 
@@ -191,7 +192,7 @@ High-quality random matrix samplers for quantum information tasks.
 -------------------------------------
 
 Networks are created through a single factory that supports NumPy and JAX
-backends. The examples below use the lightweight `simple` network.
+backends. The example below uses the lightweight ``simple`` network.
 
 **NumPy Backend (quick experiments)**
 

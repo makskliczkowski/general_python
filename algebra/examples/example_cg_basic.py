@@ -20,30 +20,27 @@ API Usage Pattern:
 import numpy as np
 from general_python.algebra import solvers
 
+
 def create_spd_matrix(n, condition_number=10.0):
     r"""
-    Create a symmetric positive-definite matrix with specified condition number.
-    
+    Create an SPD matrix with an approximately prescribed condition number.
+
     The condition number k(A) = \lambda_max / \lambda_min affects convergence rate:
     - Small k (well-conditioned): Fast convergence
     - Large k (ill-conditioned): Slow convergence
-    
+
     Args:
         n: Matrix dimension
         condition_number: Desired condition number
-        
+
     Returns:
         n\timesn SPD matrix
     """
-    # Create eigenvalues from 1 to condition_number
     eigenvalues = np.linspace(1.0, condition_number, n)
-    
-    # Create random orthogonal matrix
+
     Q, _ = np.linalg.qr(np.random.randn(n, n))
-    
-    # A = Q @ diag(eigenvalues) @ Q^T
     A = Q @ np.diag(eigenvalues) @ Q.T
-    
+
     return A
 
 
@@ -52,21 +49,16 @@ def example_basic_solve():
     print("=" * 70)
     print("Example 1: Basic CG Solve")
     print("=" * 70)
-    
-    # Problem setup
+
     n = 100
     A = create_spd_matrix(n, condition_number=10.0)
     x_true = np.random.randn(n)
-    b = A @ x_true  # Create b from true solution
-    
+    b = A @ x_true
+
     print(f"Problem size: {n}")
     print(f"Matrix condition number: {np.linalg.cond(A):.2e}")
-    
-    # Solve using CG with correct API:
-    # Step 1: Create solver instance
+
     solver = solvers.choose_solver(solver_id='cg', sigma=0.0)
-    
-    # Step 2: Get solve function for MATRIX form
     solve_func = solver.get_solver_func(
         backend_module=np,
         use_matvec=False,
@@ -74,8 +66,7 @@ def example_basic_solve():
         use_matrix=True,
         sigma=0.0
     )
-    
-    # Step 3: Call solve function
+
     result = solve_func(
         a=A,
         b=b,
@@ -84,18 +75,17 @@ def example_basic_solve():
         maxiter=None,
         precond_apply=None
     )
-    
-    # Check solution
+
     error = np.linalg.norm(result.x - x_true)
     residual = np.linalg.norm(A @ result.x - b)
-    
+
     print(f"\nResults:")
     print(f"  Converged: {result.converged}")
     print(f"  Iterations: {result.iterations}")
     print(f"  Residual norm: {result.residual_norm:.2e}")
     print(f"  Solution error: {error:.2e}")
     print(f"  True residual: {residual:.2e}")
-    
+
     return result
 
 
