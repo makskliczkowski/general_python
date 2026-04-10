@@ -969,21 +969,57 @@ def operator_spectral_function_multi_omega(
     be = get_backend(backend)
     omegas = be.asarray(omegas)
     
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    eigenvectors = be.asarray(eigenvectors, dtype=be.complex128)
+    operator = be.asarray(operator, dtype=be.complex128)
+
+    # Ensure operator is 2D and properly shaped
+    if operator.ndim == 0:
+        # Scalar
+        operator = be.eye(len(eigenvalues), dtype=be.complex128) * operator
+    elif operator.ndim == 1:
+        # 1D array - make it diagonal
+        operator = be.diag(operator)
+
+    N = len(eigenvalues)
+
+    # Transform operator to eigenbasis: O_nm = <n|O|m>
+    O_eigen = eigenvectors.conj().T @ operator @ eigenvectors
+
+    # Thermal weights
+    rho = thermal_weights(eigenvalues, temperature, backend)
+
     n_omega = len(omegas)
     A = be.zeros(n_omega, dtype=be.float64)
     
-    for i, omega in enumerate(omegas):
-        # Convert omega to Python float (avoid numpy scalar issues)
-        omega_val = float(omega) if hasattr(omega, '__float__') else omega
-        A_i = operator_spectral_function_lehmann(
-            omega_val, eigenvalues, eigenvectors, operator,
-            eta=eta, temperature=temperature, backend=backend
-        )
-        if JAX_AVAILABLE and backend == "jax":
-            A = A.at[i].set(A_i)
-        else:
-            A[i] = A_i
-    
+    # Block vectorization over 'm'
+    for m in range(N):
+        rho_diff = rho[m] - rho
+        mask = be.abs(rho_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        matrix_element_sq = be.abs(O_eigen[m, :])**2
+        mask = mask & (matrix_element_sq > 1e-15)
+
+        if not be.any(mask):
+            continue
+
+        delta_E = eigenvalues - eigenvalues[m]
+
+        # Mask arrays for allowed transitions
+        rho_diff_m = rho_diff[mask]
+        mat_sq_m = matrix_element_sq[mask]
+        delta_E_m = delta_E[mask]
+
+        # Vectorize over omegas: (n_omega, n_transitions)
+        omega_broad = omegas[:, None]
+        lorentzian = (eta / be.pi) / ((omega_broad - delta_E_m[None, :])**2 + eta**2)
+
+        A_vec = rho_diff_m[None, :] * mat_sq_m[None, :] * lorentzian
+        A += be.sum(A_vec, axis=1)
+
     return A
 
 # =============================================================================
@@ -1124,18 +1160,52 @@ def susceptibility_bubble_multi_omega(
     be = get_backend(backend)
     omegas = be.asarray(omegas)
     
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    N = len(eigenvalues)
+    
+    if vertex is None:
+        vertex = be.eye(N, dtype=be.complex128)
+    else:
+        vertex = be.asarray(vertex, dtype=be.complex128)
+
+    if occupation is None:
+        # Default: T=0 filled Fermi sea (half-filling)
+        occupation = be.zeros(N, dtype=be.float64)
+        if JAX_AVAILABLE and backend == "jax":
+            occupation = occupation.at[: N // 2].set(1.0)
+        else:
+            occupation[: N // 2] = 1.0
+    else:
+        occupation = be.asarray(occupation, dtype=be.float64)
+
     n_omega = len(omegas)
     chi = be.zeros(n_omega, dtype=be.complex128)
-    
-    for i, omega in enumerate(omegas):
-        chi_i = susceptibility_bubble(
-            float(omega), eigenvalues, vertex, occupation,
-            eta=eta, backend=backend
-        )
-        if JAX_AVAILABLE and backend == "jax":
-            chi = chi.at[i].set(chi_i)
-        else:
-            chi[i] = chi_i
+
+    for m in range(N):
+        occ_diff = occupation[m] - occupation
+        mask = be.abs(occ_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        V_mn_sq = be.abs(vertex[m, :])**2
+        mask = mask & (V_mn_sq > 1e-15)
+
+        if not be.any(mask):
+            continue
+
+        E_diff = eigenvalues - eigenvalues[m]
+
+        occ_diff_m = occ_diff[mask]
+        V_mn_sq_m = V_mn_sq[mask]
+        E_diff_m = E_diff[mask]
+
+        # Vectorize over omegas: (n_omega, n_transitions)
+        omega_broad = omegas[:, None]
+        denom = omega_broad + 1j * eta - E_diff_m[None, :]
+
+        chi_vec = occ_diff_m[None, :] * V_mn_sq_m[None, :] / denom
+        chi += be.sum(chi_vec, axis=1)
     
     return chi
 
