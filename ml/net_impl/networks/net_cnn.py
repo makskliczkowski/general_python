@@ -33,12 +33,9 @@ try:
                                                         as_spatial_tuple,               # Utility to convert int or tuple to spatial tuple
                                                         combine_split_complex_output,   # Utility to combine separate real outputs into complex output
                                                         prepare_split_complex_input,    # Utility to prepare complex input for split-complex processing (e.g., by concatenating real and imaginary parts)
-                                                        configure_nqs_metadata,         # Utility to set metadata attributes for NQS compatibility
-                                                        extract_input_convention,       # Utility to parse explicit input-state convention flags
-                                                        infer_native_representation,    # Utility to infer preferred external state encoding
-                                                        make_state_input_adapter,       # Utility to build a shared signed-spin adapter
                                                         normalize_activation_sequence,  # Utility to normalize activation specifications into a sequence of callables    
                                                         normalize_layerwise_spec,       # Utility to normalize layerwise specifications (like kernel sizes, use_bias) into sequences of correct length
+                                                        resolve_input_adapter,          # Utility to resolve explicit state-convention flags and the effective input adapter
                                                         resolve_activation_spec,        # Utility to resolve activation specifications (string or callable) into a callable activation function
                                                         resolve_split_complex_dtypes,   # Utility to resolve the appropriate real and complex dtypes for split-complex processing based on the provided dtype and parameter dtype
                                                     )
@@ -307,12 +304,10 @@ class CNN(FlaxInterface):
                         default='log_cosh',
                         container=tuple,
                     )
-        input_convention = extract_input_convention(kwargs)
-        if input_adapter is None:
-            input_adapter = make_state_input_adapter(input_convention)
+        input_convention, input_adapter = resolve_input_adapter(kwargs, input_adapter)
 
         # Bias
-        bias_flags  = tuple(bool(b) for b in normalize_layerwise_spec(use_bias, n_layers, name="use_bias"))
+        bias_flags      = tuple(bool(b) for b in normalize_layerwise_spec(use_bias, n_layers, name="use_bias"))
 
         p_dtype         = param_dtype if param_dtype is not None else dtype
         output_feats    = int(np.prod(output_shape))
@@ -356,12 +351,8 @@ class CNN(FlaxInterface):
         )
 
         self._has_analytic_grad             = False
+        self._input_convention              = dict(input_convention)
         self._name                          = 'cnn'
-        configure_nqs_metadata(
-            self,
-            family="cnn",
-            native_representation=infer_native_representation(input_convention),
-        )
 
     @property
     def output_shape(self) -> Tuple[int, ...]:

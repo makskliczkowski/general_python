@@ -33,13 +33,10 @@ try:
     from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling
     from ....ml.net_impl.utils.net_wrapper_utils    import (
                                                         combine_split_complex_output,
-                                                        configure_nqs_metadata,
-                                                        extract_input_convention,
-                                                        infer_native_representation,
                                                         map_over_complex_parts,
-                                                        make_state_input_adapter,
                                                         normalize_activation_sequence,
                                                         prepare_split_complex_input,
+                                                        resolve_input_adapter,
                                                         resolve_split_complex_dtypes,
                                                     )
     JAX_AVAILABLE = True
@@ -291,9 +288,7 @@ class GCNN(FlaxInterface):
             default='log_cosh',
             container=tuple,
         )
-        input_convention = extract_input_convention(kwargs)
-        if input_adapter is None:
-            input_adapter = make_state_input_adapter(input_convention)
+        input_convention, input_adapter = resolve_input_adapter(kwargs, input_adapter)
             
         jax_dtype           = getattr(jnp, dtype) if isinstance(dtype, str) else dtype
         net_kwargs          = {
@@ -325,12 +320,8 @@ class GCNN(FlaxInterface):
             )
         
         self._has_analytic_grad     = False
+        self._input_convention      = dict(input_convention)
         self._name                  = 'gcnn'
-        configure_nqs_metadata(
-            self,
-            family="gcnn",
-            native_representation=infer_native_representation(input_convention),
-        )
 
     @property
     def output_shape(self) -> Tuple[int, ...]:

@@ -17,19 +17,14 @@ Description     : Flax implementation of a residual convolutional network.
 
 import numpy as np
 import math
-from typing import Tuple, Callable, Optional, Any, Sequence, Union
+from typing import Tuple, Callable, Optional, Any, Union
 
 try:
-    from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.activation_functions import log_cosh_jnp
-    from ....ml.net_impl.utils.net_init_jax import cplx_variance_scaling
-    from ....ml.net_impl.utils.net_wrapper_utils import (
-        configure_nqs_metadata,
-        extract_input_convention,
-        infer_native_representation,
-        make_state_input_adapter,
-    )
-    from ....algebra.utils import JAX_AVAILABLE, DEFAULT_JP_CPX_TYPE, Array
+    from ....ml.net_impl.interface_net_flax         import FlaxInterface
+    from ....ml.net_impl.activation_functions       import log_cosh_jnp
+    from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling
+    from ....ml.net_impl.utils.net_wrapper_utils    import resolve_input_adapter
+    from ....algebra.utils                          import JAX_AVAILABLE, DEFAULT_JP_CPX_TYPE
 except ImportError as e:
     raise ImportError("Required modules for ResNet not found. Ensure general_python.ml and general_python.algebra are accessible.") from e
 
@@ -337,9 +332,11 @@ class ResNet(FlaxInterface):
             raise ValueError(f"kernel_size {kernel_tuple} must have length {n_dim}")
 
         p_dtype = param_dtype if param_dtype is not None else dtype
-        input_convention = extract_input_convention(kwargs, map_input_to_spin=kwargs.get("map_input_to_spin", None))
-        if input_adapter is None:
-            input_adapter = make_state_input_adapter(input_convention)
+        input_convention, input_adapter = resolve_input_adapter(
+            kwargs,
+            input_adapter,
+            map_input_to_spin=kwargs.get("map_input_to_spin", None),
+        )
 
         # Build kwargs for the inner Flax module
         net_kwargs = dict(
@@ -373,11 +370,7 @@ class ResNet(FlaxInterface):
 
         self._name              = 'resnet'
         self._has_analytic_grad = False # Use AD
-        configure_nqs_metadata(
-            self,
-            family="resnet",
-            native_representation=infer_native_representation(input_convention, map_key="map_input_to_spin"),
-        )
+        self._input_convention  = dict(input_convention)
 
     # ----------------------------------------------------------
 

@@ -33,11 +33,8 @@ try:
                                                         combine_split_complex_output,
                                                         prepare_split_complex_input,
                                                         resolve_split_complex_dtypes,
-                                                        configure_nqs_metadata,
-                                                        extract_input_convention,
-                                                        infer_native_representation,
-                                                        make_state_input_adapter,
                                                         normalize_activation_sequence,
+                                                        resolve_input_adapter,
                                                     )
     JAX_AVAILABLE       = True
 except ImportError:
@@ -213,9 +210,7 @@ class MLP(FlaxInterface):
             default='relu',
             container=tuple,
         )
-        input_convention = extract_input_convention(kwargs)
-        if input_adapter is None:
-            input_adapter = make_state_input_adapter(input_convention)
+        input_convention, input_adapter = resolve_input_adapter(kwargs, input_adapter)
 
         net_kwargs = {
             'hidden_dims'       : hidden_dims,
@@ -242,12 +237,8 @@ class MLP(FlaxInterface):
         self._output_shape  = output_shape
         self._output_size   = int(np.prod(output_shape))
         self._split_complex = split_complex
+        self._input_convention = dict(input_convention)
         self._name          = 'mlp'
-        configure_nqs_metadata(
-            self,
-            family="mlp",
-            native_representation=infer_native_representation(input_convention),
-        )
 
     def __call__(self, x):
         flat_out = super().__call__(x)

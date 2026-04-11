@@ -534,17 +534,72 @@ class FlaxInterface(GeneralNet):
             x = jnp.asarray(x, dtype=self._input_dtype)
         return self._compiled_apply_fn(self._parameters, x)
 
+    def _infer_net_family(self) -> Optional[str]:
+        ''' Although networks are supposed to be general, we try to infer the NQS family from the class name or an explicit attribute. '''
+        family = getattr(self, "_nes_family", None)
+        if family:
+            return str(family)
+
+        name = str(getattr(self, "_name", type(self).__name__)).strip().lower().replace("-", "_").replace(" ", "_")
+        if not name:
+            return None
+        aliases = {
+            "mlp"           : "mlp",
+            "cnn"           : "cnn",
+            "gcnn"          : "gcnn",
+            "eqgcnn"        : "equivariant_gcnn",
+            "resnet"        : "resnet",
+            "rbm"           : "rbm",
+            "transformer"   : "transformer",
+        }
+        return aliases.get(name, name)
+
+    def _infer_native_representation(self) -> Optional[str]:
+        native = getattr(self, "_nqs_native_representation", None)
+        if native is not None:
+            return native
+
+        input_convention = getattr(self, "_input_convention", None)
+        if not isinstance(input_convention, dict):
+            return None
+        return "spin_pm" if bool(input_convention.get("input_is_spin", False)) else "binary_01"
+
     def get_nqs_metadata(self) -> dict:
         """
-        Return small optional metadata for NQS-side specialization.
+        Return small optional metadata for NQS-side specialization. This can include:
+        - family: str (e.g., "mlp", "cnn", "rbm", etc.)
+        - variant: str (e.g., "resnet", "equivariant", etc.)
+        - native_representation: str (e.g., "spin_pm", "binary_01", etc.)
+        - supports_fast_updates: bool (whether the network supports fast updates like log_psi_delta)
+        - supports_exact_sampling: bool (whether the network supports exact sampling methods)
+        - preferred_sampler: str (e.g., "ARSampler", "MCSampler", etc.)
         """
+        supports_fast_updates = bool(
+            getattr(
+                self,
+                "_nqs_supports_fast_updates",
+                hasattr(self, "log_psi_delta") or hasattr(self, "get_log_psi_delta"),
+            )
+        )
+        supports_exact_sampling = bool(
+            getattr(
+                self,
+                "_nqs_supports_exact_sampling",
+                (hasattr(self, "get_logits") and hasattr(self, "get_phase"))
+                or (hasattr(self, "get_logits_binary") and hasattr(self, "get_phase_binary")),
+            )
+        )
+        preferred_sampler = getattr(self, "_nqs_preferred_sampler", None)
+        if preferred_sampler is None:
+            preferred_sampler = "ARSampler" if supports_exact_sampling else "MCSampler"
+
         return {
-            "family"                    : getattr(self,         "_nqs_family", None),
-            "variant"                   : getattr(self,         "_nqs_variant", None),
-            "native_representation"     : getattr(self,         "_nqs_native_representation", None),
-            "supports_fast_updates"     : bool(getattr(self,    "_nqs_supports_fast_updates", False)),
-            "supports_exact_sampling"   : bool(getattr(self,    "_nqs_supports_exact_sampling", False)),
-            "preferred_sampler"         : getattr(self,         "_nqs_preferred_sampler", None),
+            "family"                    : self._infer_net_family(),
+            "variant"                   : getattr(self, "_nqs_variant", None),
+            "native_representation"     : self._infer_native_representation(),
+            "supports_fast_updates"     : supports_fast_updates,
+            "supports_exact_sampling"   : supports_exact_sampling,
+            "preferred_sampler"         : preferred_sampler,
             "input_dtype"               : self._input_dtype,
         }
 

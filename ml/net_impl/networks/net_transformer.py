@@ -22,7 +22,6 @@ from typing         import Sequence, Any, Optional, Tuple, Callable
 
 try:
     from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_wrapper_utils import configure_nqs_metadata
     JAX_AVAILABLE = True
 except ImportError:
     raise ImportError("Transformer requires JAX/Flax and general_python modules.")
@@ -206,10 +205,6 @@ class Transformer(FlaxInterface):
             **kwargs
         )
         self._name = 'transformer'
-        configure_nqs_metadata(
-            self,
-            family="transformer",
-        )
 
     def __repr__(self) -> str:
         mod = self._flax_module

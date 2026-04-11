@@ -269,6 +269,25 @@ def infer_native_representation(
         bool(input_convention.get("input_is_spin", BACKEND_DEF_SPIN)),
     )
 
+def resolve_input_adapter(
+    wrapper_kwargs      : Mapping[str, Any],
+    input_adapter       : Optional[Callable] = None,
+    *,
+    transform_input     : Optional[bool] = None,
+    map_input_to_spin   : Optional[bool] = None,
+) -> tuple[dict, Optional[Callable]]:
+    """
+    Resolve one explicit input convention together with the effective adapter.
+    """
+    input_convention = extract_input_convention(
+        wrapper_kwargs,
+        transform_input=transform_input,
+        map_input_to_spin=map_input_to_spin,
+    )
+    if input_adapter is None:
+        input_adapter = make_state_input_adapter(input_convention)
+    return input_convention, input_adapter
+
 def configure_nqs_metadata(
     net                     : Any,
     *,

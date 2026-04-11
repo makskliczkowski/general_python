@@ -36,9 +36,7 @@ try:
     from ....ml.net_impl.activation_functions       import log_cosh_jnp
     from ....ml.net_impl.utils.net_init_jax         import cplx_variance_scaling, lecun_normal
     from ....ml.net_impl.utils.net_wrapper_utils    import (
-                                                        configure_nqs_metadata,
                                                         extract_input_convention,
-                                                        infer_native_representation,
                                                         make_state_flip_update,
                                                     )
     from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1
@@ -273,8 +271,7 @@ class RBM(FlaxInterface):
         self._compiled_log_psi_delta_fns            = {}
         self._compiled_log_psi_delta_fn             = self._get_log_psi_delta_compiled(self._proposal_update)
         self._has_analytic_grad                     = False
-        configure_nqs_metadata(self, family="rbm", native_representation=infer_native_representation(input_convention, transform_key="input_activation"), supports_fast_updates=True)
-        
+        self._input_convention                      = dict(input_convention)
         # Fast-update support is valid for flip-based rules only.
         self._fast_update_supported_rules           = frozenset({"LOCAL", "MULTI_FLIP", "BOND_FLIP", "WORM"})
         self._name                                  = 'rbm'
