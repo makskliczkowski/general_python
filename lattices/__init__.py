@@ -417,13 +417,13 @@ def _handle_type(typek):
 
     raise ValueError(f"Unknown lattice type: {typek!r}")
 
-def choose_lattice(typek    : Optional[str]         = 'square',
-                dim         : Optional[int]         = None,
-                lx          : Optional[int]         = 1,
-                ly          : Optional[int]         = 1,
-                lz          : Optional[int]         = 1,
-                bc          : Optional[Union[str, LatticeBC]]   = None,
-                flux        : Optional[Union[float, BoundaryFlux, dict]] = None,
+def choose_lattice(typek        : Optional[str]         = 'square',
+                dim             : Optional[int]         = None,
+                lx              : Optional[int]         = 1,
+                ly              : Optional[int]         = 1,
+                lz              : Optional[int]         = 1,
+                bc              : Optional[Union[str, LatticeBC]]   = None,
+                flux            : Optional[Union[float, BoundaryFlux, dict]] = None,
                 **kwargs):
     """
     Returns an instance of a lattice of the desired type.
@@ -449,14 +449,14 @@ def choose_lattice(typek    : Optional[str]         = 'square',
         Lattice: An instance of the desired lattice.
     """
     #! handle boundary conditions
-    handle_boundary_conditions = _load_export(".lattice", "handle_boundary_conditions")
-    handle_dim = _load_export(".lattice", "handle_dim")
-    _bc             = handle_boundary_conditions(bc)
+    handle_boundary_conditions  = _load_export(".lattice", "handle_boundary_conditions")
+    handle_dim                  = _load_export(".lattice", "handle_dim")
+    _bc                         = handle_boundary_conditions(bc)
     #! handle dimensions
-    dim, lx, ly, lz = handle_dim(lx, ly, lz)
+    dim, lx, ly, lz             = handle_dim(lx, ly, lz)
     #! handle type
-    _class          = _handle_type(typek)
-    graph_cls        = _load_export(".graph", "GraphLattice")
+    _class                      = _handle_type(typek)
+    graph_cls                   = _load_export(".graph", "GraphLattice")
     if issubclass(_class, graph_cls):
         return _class(bc=_bc, flux=flux, **kwargs)
     return _class(dim=dim, lx=lx, ly=ly, lz=lz, bc=_bc, flux=flux, **kwargs)

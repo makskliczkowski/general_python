@@ -44,6 +44,7 @@ import importlib
 import numpy as np
 from typing import Union, Optional, Any, Type, Dict, Tuple, TYPE_CHECKING
 from enum import Enum, auto
+import math
 
 try:
     from .net_impl.net_general          import GeneralNet, CallableNet
@@ -117,6 +118,103 @@ def _lazy_load_class(key: str) -> Type[GeneralNet]:
         return getattr(module, cls_name)
     except (ImportError, AttributeError) as e:
         raise ImportError(f"Failed to lazy load '{cls_name}' from '{mod_path}'.\nError: {e}")
+
+def _compact_spatial_dims(dims: Tuple[int, ...]) -> Tuple[int, ...]:
+    compact = tuple(int(d) for d in dims if int(d) > 1)
+    return compact if compact else (1,)
+
+def _extract_axis_hints(kwargs: Dict[str, Any]) -> Optional[Tuple[int, int, int]]:
+    """Extract axis hints from kwargs without mutating them."""
+    x_dim = kwargs.get("x_dim", kwargs.get("lx", None))
+    y_dim = kwargs.get("y_dim", kwargs.get("ly", None))
+    z_dim = kwargs.get("z_dim", kwargs.get("lz", None))
+    if x_dim is None and y_dim is None and z_dim is None:
+        return None
+    x = 1 if x_dim is None else int(x_dim)
+    y = 1 if y_dim is None else int(y_dim)
+    z = 1 if z_dim is None else int(z_dim)
+    return x, y, z
+
+def _extract_lattice_hints(kwargs: Dict[str, Any]) -> Optional[Tuple[int, int, int]]:
+    """Extract lattice extents from an optional lattice object."""
+    lattice = kwargs.get("lattice", None)
+    if lattice is None:
+        return None
+    x = getattr(lattice, "lx", None)
+    y = getattr(lattice, "ly", None)
+    z = getattr(lattice, "lz", None)
+    if x is None and y is None and z is None:
+        return None
+    return (
+        int(1 if x is None else x),
+        int(1 if y is None else y),
+        int(1 if z is None else z),
+    )
+
+def _factorized_default_reshape(n_visible: int) -> Tuple[int, ...]:
+    """Infer a stable reshape when no spatial hints are provided."""
+    n_visible = int(n_visible)
+    if n_visible <= 1:
+        return (1,)
+
+    root = int(math.sqrt(n_visible))
+    if root * root == n_visible:
+        return (root, root)
+
+    for factor in range(root, 1, -1):
+        if n_visible % factor == 0:
+            return (factor, n_visible // factor)
+
+    return (n_visible,)
+
+def _resolve_conv_reshape_dims(input_shape: Optional[tuple], kwargs: Dict[str, Any]) -> Optional[Tuple[int, ...]]:
+    """Resolve spatial dims for convolution-like models in a model-agnostic way."""
+    if input_shape is None:
+        return None
+
+    n_visible = int(np.prod(input_shape))
+    if n_visible <= 0:
+        return None
+
+    explicit = kwargs.get("reshape_dims", None)
+    if explicit is not None:
+        raw = tuple(int(d) for d in explicit)
+        if len(raw) == 0:
+            return (n_visible,)
+        compact = tuple(raw)
+        while len(compact) > 1 and compact[-1] == 1:
+            compact = compact[:-1]
+        if np.prod(compact) != n_visible:
+            raise ValueError(f"reshape_dims {compact} product != input length {n_visible}")
+        return compact
+
+    dims = _extract_axis_hints(kwargs)
+    if dims is None:
+        dims = _extract_lattice_hints(kwargs)
+
+    if dims is not None:
+        x_dim, y_dim, z_dim = dims
+        base                = (max(1, x_dim), max(1, y_dim), max(1, z_dim))
+        base_prod           = int(np.prod(base))
+        if base_prod <= 0:
+            return _factorized_default_reshape(n_visible)
+
+        # Apply multipartity mismatch on x-axis first.
+        if n_visible % base_prod == 0:
+            mult        = n_visible // base_prod
+            reshaped    = (base[0] * mult, base[1], base[2])
+            return _compact_spatial_dims(reshaped)
+
+        yz = max(1, base[1] * base[2])
+        if n_visible % yz == 0:
+            return _compact_spatial_dims((n_visible // yz, base[1], base[2]))
+
+    return _factorized_default_reshape(n_visible)
+
+def _consume_conv_shape_hints(kwargs: Dict[str, Any]) -> None:
+    """Remove generic shape-hint aliases before passing kwargs to model constructors."""
+    for key in ("x_dim", "y_dim", "z_dim", "lx", "ly", "lz", "lattice"):
+        kwargs.pop(key, None)
 
 ######################################################################
 
@@ -324,6 +422,11 @@ def choose_network(network_type : Union[str, Networks, Type[Any], Any],
                 kwargs['n_hidden']  = int(alpha * n_visible)
         elif key == 'rbmpp':
             kwargs['use_rbm']       = True
+        elif key in ('cnn', 'res', 'resnet'):
+            reshape_dims = _resolve_conv_reshape_dims(input_shape, kwargs)
+            if reshape_dims is not None:
+                kwargs['reshape_dims'] = reshape_dims
+            _consume_conv_shape_hints(kwargs)
 
         net_cls = _lazy_load_class(key)
         return net_cls(input_shape=input_shape, backend=backend, dtype=dtype, param_dtype=param_dtype, seed=seed, **kwargs)
