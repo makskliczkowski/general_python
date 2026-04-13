@@ -524,7 +524,7 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
     build_kwargs = {
         'initial_lr'    : initial_lr, 
         'max_epochs'    : max_epochs,
-        'logger'        : 'Logger',
+        'logger'        : logger,
         'es'            : es,
         'lr_clamp'      : kwargs.get('lr_clamp')
     }
@@ -538,7 +538,7 @@ def choose_scheduler(scheduler_type : Union[str, SchedulerType, Parameters],
             
     try:
         if logger:
-            logger.info(f"Creating scheduler '{scheduler_type}' with args: {build_kwargs}", lvl=2, color='cyan')
+            logger.info(f"Creating scheduler '{scheduler_type}' with args: {build_kwargs}", lvl=3, color='cyan')
         return cls(**build_kwargs)
     except TypeError as e:
         if logger:
