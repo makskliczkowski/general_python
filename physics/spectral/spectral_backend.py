@@ -967,24 +967,56 @@ def operator_spectral_function_multi_omega(
     >>> plt.plot(omegas, A_sz)
     """
     be = get_backend(backend)
-    omegas = be.asarray(omegas)
+    omegas = be.asarray(omegas, dtype=be.float64)
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    eigenvectors = be.asarray(eigenvectors, dtype=be.complex128)
+    operator = be.asarray(operator, dtype=be.complex128)
+
+    # Ensure operator is 2D and properly shaped
+    if operator.ndim == 0:
+        operator = be.eye(len(eigenvalues), dtype=be.complex128) * operator
+    elif operator.ndim == 1:
+        operator = be.diag(operator)
+
+    N = len(eigenvalues)
+
+    # Transform operator to eigenbasis: O_nm = <n|O|m>
+    O_eigen = eigenvectors.conj().T @ operator @ eigenvectors
+
+    # Thermal weights
+    rho = thermal_weights(eigenvalues, temperature, backend)
+
+    # Lorentzian broadening kernel
+    def lorentzian(delta_E):
+        return (eta / be.pi) / (delta_E**2 + eta**2)
     
     n_omega = len(omegas)
     A = be.zeros(n_omega, dtype=be.float64)
     
-    for i, omega in enumerate(omegas):
-        # Convert omega to Python float (avoid numpy scalar issues)
-        omega_val = float(omega) if hasattr(omega, '__float__') else omega
-        A_i = operator_spectral_function_lehmann(
-            omega_val, eigenvalues, eigenvectors, operator,
-            eta=eta, temperature=temperature, backend=backend
-        )
+    # Lehmann sum over all transitions, vectorized over omegas
+    for m in range(N):
+        rho_diff = rho[m] - rho
+        mask = be.abs(rho_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        # delta_E has shape (n_omega, num_masked_n)
+        delta_E = omegas[:, None] - (eigenvalues[mask] - eigenvalues[m])[None, :]
+        matrix_element_sq = be.abs(O_eigen[m, mask])**2
+
+        # A_vec shape: (n_omega, num_masked_n)
+        A_vec = rho_diff[mask][None, :] * matrix_element_sq[None, :] * lorentzian(delta_E)
+
+        # Sum over n
+        A_m = be.sum(A_vec, axis=1)
+
         if JAX_AVAILABLE and backend == "jax":
-            A = A.at[i].set(A_i)
+            A = A + A_m
         else:
-            A[i] = A_i
-    
-    return A
+            A += A_m
+
+    return be.real(A)
 
 # =============================================================================
 # Bubble Susceptibility (Quadratic / Mean-Field)
@@ -1122,21 +1154,56 @@ def susceptibility_bubble_multi_omega(
         χ⁰(omega ) for each omega .
     """
     be = get_backend(backend)
-    omegas = be.asarray(omegas)
+    omegas = be.asarray(omegas, dtype=be.complex128)
+    eigenvalues = be.asarray(eigenvalues, dtype=be.float64)
+    N = len(eigenvalues)
     
+    if vertex is None:
+        vertex = be.eye(N, dtype=be.complex128)
+    else:
+        vertex = be.asarray(vertex, dtype=be.complex128)
+
+    if occupation is None:
+        # T=0 Fermi sea: filled states for E < 0
+        if JAX_AVAILABLE and backend == "jax":
+            occupation = be.where(eigenvalues < 0, 1.0, 0.0)
+        else:
+            occupation = be.asarray(eigenvalues < 0, dtype=be.float64)
+    else:
+        occupation = be.asarray(occupation, dtype=be.float64)
+
     n_omega = len(omegas)
     chi = be.zeros(n_omega, dtype=be.complex128)
     
-    for i, omega in enumerate(omegas):
-        chi_i = susceptibility_bubble(
-            float(omega), eigenvalues, vertex, occupation,
-            eta=eta, backend=backend
-        )
+    # Vectorized computation over m
+    for m in range(N):
+        occ_diff = occupation[m] - occupation
+        mask = be.abs(occ_diff) >= 1e-14
+
+        if not be.any(mask):
+            continue
+
+        V_mn_sq = be.abs(vertex[m, :])**2
+
+        # Energy differences: E_n - E_m
+        E_diff = eigenvalues[mask] - eigenvalues[m]
+
+        # Denominator: omega + i*eta - (E_n - E_m)
+        # Shape: (n_omega, num_masked_n)
+        denom = omegas[:, None] + 1j * eta - E_diff[None, :]
+
+        # Numerator: (f_m - f_n) * |V_mn|^2
+        # Shape: (num_masked_n,)
+        num = occ_diff[mask] * V_mn_sq[mask]
+
+        chi_vec = num[None, :] / denom
+        chi_m = be.sum(chi_vec, axis=1)
+
         if JAX_AVAILABLE and backend == "jax":
-            chi = chi.at[i].set(chi_i)
+            chi = chi + chi_m
         else:
-            chi[i] = chi_i
-    
+            chi += chi_m
+
     return chi
 
 # =============================================================================
