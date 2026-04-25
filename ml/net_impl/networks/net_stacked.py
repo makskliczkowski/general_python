@@ -23,7 +23,6 @@ try:
     from ...net_impl.interface_net_flax         import FlaxInterface
     from ...net_impl.activation_functions       import get_activation
     from ...net_impl.utils.net_init_jax         import complex_he_init, real_he_init
-    from ...net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
 except ImportError:
     raise ImportError("Required modules from general_python package are missing.")
 
@@ -213,7 +212,6 @@ class AnsatzStacked(FlaxInterface):
             **kwargs
         )
         self._name = 'stacked'
-        configure_nqs_metadata(self, family="stacked")
 
     def __repr__(self) -> str:
         return f"AnsatzStacked(blocks={len(self._net_kwargs_in['blocks_config'])}, dtype={self.dtype})"

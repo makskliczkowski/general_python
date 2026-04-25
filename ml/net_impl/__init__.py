@@ -5,8 +5,8 @@ Provides lazy access to reusable backbone wrappers, helper utilities, and a
 separate ansatz namespace without importing JAX or Flax until needed.
 
 The wrappers in this package stay general-purpose. They can be used directly
-outside NQS, while NQS-specific fast paths are selected separately in the NQS
-layer. Input state conventions are configured explicitly through wrapper
+by higher-level solvers, while solver-specific fast paths are selected outside
+this package. Input state conventions are configured explicitly through wrapper
 arguments such as ``input_is_spin`` and ``input_value`` instead of relying on
 hidden backend remaps in hot paths.
 

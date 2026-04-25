@@ -266,7 +266,7 @@ if JAX_AVAILABLE:
         """Continuously Differentiable Exponential Linear Unit."""
         return jnn.celu(x, alpha=alpha)
     def sin_jnp(x): 
-        """Sine. Holomorphic and periodic. Good for NQS."""
+        """Sine. Holomorphic and periodic."""
         return jnp.sin(x)
 
     def cos_jnp(x): 

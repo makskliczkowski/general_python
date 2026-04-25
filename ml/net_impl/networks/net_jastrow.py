@@ -35,7 +35,6 @@ from typing         import Any, Optional
 try:
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax         import normal_by_dtype
-    from ....ml.net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
     JAX_AVAILABLE = True
 except ImportError:
     raise ImportError("Jastrow requires JAX/Flax and general_python modules.")
@@ -124,7 +123,6 @@ class Jastrow(FlaxInterface):
             **kwargs
         )
         self._name                          = 'jastrow'
-        configure_nqs_metadata(self, family="jastrow")
 
     def __repr__(self) -> str:
         return f"Jastrow(n_sites={self._flax_module.n_sites}, dtype={self.dtype})"

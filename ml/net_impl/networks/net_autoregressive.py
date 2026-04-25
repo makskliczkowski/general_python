@@ -24,7 +24,6 @@ import numpy as np
 
 try:
     from ....ml.net_impl.interface_net_flax         import FlaxInterface, JAX_AVAILABLE
-    from ....ml.net_impl.utils.net_wrapper_utils    import configure_nqs_metadata
     
     if not JAX_AVAILABLE:
         raise ImportError("JAX is required to use Autoregressive networks.")
@@ -295,13 +294,6 @@ class ComplexAR(FlaxInterface):
             **kwargs
         )
         self._name = 'autoregressive'
-        configure_nqs_metadata(
-            self,
-            family="autoregressive",
-            native_representation="binary_01",
-            supports_exact_sampling=True,
-            preferred_sampler="ARSampler",
-        )
         self._has_analytic_grad = False 
 
     def get_info(self) -> dict:

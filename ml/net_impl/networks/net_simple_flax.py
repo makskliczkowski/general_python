@@ -30,7 +30,6 @@ import flax.linen as nn
 try:
     from ....ml.net_impl.utils.net_init_jax import complex_he_init, real_he_init
     from ....ml.net_impl.interface_net_flax import FlaxInterface
-    from ....ml.net_impl.utils.net_wrapper_utils import configure_nqs_metadata
 except ImportError as e:
     raise ImportError("Failed to import net_init_jax or interface_net_flax module. Ensure general_python package is correctly installed.") from e
 
@@ -161,7 +160,6 @@ class FlaxSimpleNet(FlaxInterface):
             seed        = seed           # Seed for initialization
         )
         self._name = 'simple_flax'
-        configure_nqs_metadata(self, family="simple_flax")
 
     #########################################################
     #! INFO

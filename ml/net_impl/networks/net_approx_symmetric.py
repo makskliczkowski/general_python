@@ -32,10 +32,7 @@ try:
     from ...net_impl.activation_functions       import get_activation
     from ...net_impl.interface_net_flax         import FlaxInterface
     from ...net_impl.utils.net_init_jax         import normal_by_dtype
-    from ...net_impl.utils.net_wrapper_utils    import (
-                                                    configure_nqs_metadata,
-                                                    map_over_complex_parts,
-                                                )
+    from ...net_impl.utils.net_wrapper_utils    import map_over_complex_parts
 except ImportError as exc:
     raise ImportError("Required modules from general_python package are missing.") from exc
 
@@ -787,7 +784,6 @@ class AnsatzApproxSymmetric(FlaxInterface):
             **kwargs,
         )
         self._name = "approx_symmetric"
-        configure_nqs_metadata(self, family="approx_symmetric", variant="combo")
 
     def __repr__(self) -> str:
         meta = self._combo_meta

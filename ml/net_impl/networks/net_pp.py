@@ -8,7 +8,7 @@ This module provides two closely related structured ansatz wrappers:
    multiplies the pair-product branch by an RBM-style factor.
 
 The implementation keeps the structured linear algebra in one place while
-the ansatz wrapper handles the input-state convention expected by NQS.
+the wrapper handles the input-state convention declared by the caller.
 
 Mathematically, the pair-product ansatz has the form:
 ``log_psi(s) = log(Pf(X(s)))``
@@ -39,12 +39,8 @@ except ImportError as e:
 try:
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax         import normal_by_dtype
-    from ....ml.net_impl.utils.net_state_repr_jax   import state_to_binary_index
-    from ....ml.net_impl.utils.net_wrapper_utils    import (
-                                                        configure_nqs_metadata,
-                                                        extract_input_convention,
-                                                        infer_native_representation,
-                                                    )
+    from ....ml.net_impl.utils.net_state_repr_jax   import map_state_to_pm1, state_to_binary_index
+    from ....ml.net_impl.utils.net_wrapper_utils    import extract_input_convention
     from ....ml.net_impl.activation_functions       import log_cosh_jnp
     from ....algebra.utils                          import JAX_AVAILABLE, BACKEND_DEF_SPIN, BACKEND_REPR
     
@@ -160,8 +156,8 @@ class _FlaxRBMPP(nn.Module):
         if needs_batch:
             s = s[jnp.newaxis, :]
         
-        # RBM Part
-        v_rbm           = s.astype(self.dtype)
+        # RBM branch uses unit spin features; PP branch uses physical binary indices.
+        v_rbm           = map_state_to_pm1(s, self.input_is_spin, self.input_value).astype(self.dtype)
         theta           = self.rbm_dense(v_rbm)
         log_rbm         = jnp.sum(log_cosh_jnp(theta), axis=-1)
         log_rbm         = log_rbm + jnp.sum(v_rbm * self.vis_bias.astype(self.dtype), axis=-1)
@@ -257,12 +253,7 @@ class PairProduct(FlaxInterface):
         
         self._name              = name
         self._has_analytic_grad = False
-        configure_nqs_metadata(
-            self,
-            family="pair_product",
-            variant="rbm_pp" if use_rbm else "general",
-            native_representation=infer_native_representation(input_convention),
-        )
+        self._input_convention  = dict(input_convention)
 
     def __repr__(self) -> str:
         mod = self._flax_module

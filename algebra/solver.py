@@ -360,6 +360,7 @@ class Solver(ABC):
     def create_matvec_from_fisher_jax(
             s               : Array,
             s_p             : Array,
+            n               : Optional[int]     = None,
             sigma           : Optional[float]   = None,
             create_full     : Optional[bool]    = False) -> MatVecFunc:
         """
@@ -386,7 +387,7 @@ class Solver(ABC):
                                         This operator is compiled using Solver._compile_helper_jax.
         """
 
-        n = s.shape[0]
+        n = s.shape[0] if n is None else n
         if create_full:
             return Solver.create_matvec_from_matrix_jax(s_p @ s / n, sigma)
         
@@ -406,6 +407,7 @@ class Solver(ABC):
     def create_matvec_from_fisher_np(
             s               : np.ndarray,
             s_p             : np.ndarray,
+            n               : Optional[int]     = None,
             sigma           : Optional[float]   = None,
             create_full     : Optional[bool]    = False) -> MatVecFunc:
         """
@@ -428,7 +430,7 @@ class Solver(ABC):
             MatVecFunc: A function that performs matrix-vector multiplication with the derived matrix.
         """
 
-        n = s.shape[0]
+        n = s.shape[0] if n is None else n
         if create_full:
             # Create full Gram matrix: S\dag S where s=S [n_samples, n_params], s_p=S\dag [n_params, n_samples]
             return Solver.create_matvec_from_matrix_np(s_p @ s / n, sigma)
@@ -474,19 +476,19 @@ class Solver(ABC):
         if s.shape[1] != s_p.shape[0] or s.shape[0] != s_p.shape[1]:
             raise SolverError(SolverErrorMsg.DIM_MISMATCH, f"Shape mismatch: S {s.shape}, Sp {s_p.shape}")
 
-        if create_full:
-            return Solver.create_matvec_from_matrix(s_p @ s / n, sigma, backend_module)
-        
         norm_factor                     = float(n) if n is not None and n > 0 else float(s.shape[0])
         if norm_factor <= 0:
             norm_factor                 = 1.0 # Avoid division by zero/negative
+        
+        if create_full:
+            return Solver.create_matvec_from_matrix(s_p @ s / norm_factor, sigma, backend_module)
 
         if backend_module == np:
-            matvec = Solver.create_matvec_from_fisher_np(s, s_p, sigma, create_full=False)
+            matvec = Solver.create_matvec_from_fisher_np(s, s_p, norm_factor, sigma, create_full=False)
             if compile_func:
                 matvec = Solver._compile_helper_np(matvec)
         else:
-            matvec = Solver.create_matvec_from_fisher_jax(s, s_p, sigma, create_full=False)
+            matvec = Solver.create_matvec_from_fisher_jax(s, s_p, norm_factor, sigma, create_full=False)
             if compile_func:
                 matvec = Solver._compile_helper_jax(matvec)
         return matvec
@@ -558,16 +560,16 @@ class Solver(ABC):
                 # We always wrap to curry s, s_p since we're in Gram mode.
                 # The wrapping happens inside the traced function to capture dynamic s, s_p.
                 
-                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, snr_tol=None):
+                def wrapper_logic(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, snr_tol=None, normalization=None):
                     # Use runtime sigma if provided, otherwise fall back to default
                     effective_sigma = default_sigma if sigma is None else sigma
                     x0_val          = jnp.zeros_like(b) if x0 is None else x0
-                    n_samples       = s.shape[0] if s.shape[0] > s.shape[1] else s.shape[1]
+                    norm_factor     = s.shape[0] if normalization is None else normalization
                     
                     def matvec(v):
                         inter       = jnp.matmul(s, v)
                         final       = jnp.matmul(s_p, inter)
-                        return (final / n_samples) + (effective_sigma * v)
+                        return (final / norm_factor) + (effective_sigma * v)
                     
                     # Wrap preconditioner to curry s, s_p for Gram-mode preconditioners
                     # In Fisher mode, precond_apply from get_apply_gram() expects (r, s, sp)
@@ -612,10 +614,10 @@ class Solver(ABC):
                 return wrapper_np
             
             elif use_fisher:
-                def wrapper_np(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                def wrapper_np(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, normalization=None, **kwargs):
                     effective_sigma = default_sigma if sigma is None else sigma
                     # In standard NumPy, efficient matvec creation is simple lambda
-                    n = s.shape[0]
+                    n = s.shape[0] if normalization is None else normalization
                     def mv(v): 
                         return (s_p @ (s @ v)) / n + effective_sigma * v
                     

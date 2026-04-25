@@ -1,8 +1,9 @@
 """
 Compatibility export for the group-equivariant GCNN ansatz.
 
-This is reusable as a general-purpose GCNN, but it is currently only used as an ansatz in NQS. It is implemented as a thin wrapper around the more general
-``GCNN`` in ``QES.general_python.ml.net_impl.networks.net_gcnn``, which can be used directly outside NQS.
+This is reusable as a general-purpose symmetry-aware GCNN. It is implemented as
+a thin wrapper around ``GCNN`` in
+``QES.general_python.ml.net_impl.networks.net_gcnn``.
 
 --------------------------------
 Author      : Maksymilian Kliczkowski

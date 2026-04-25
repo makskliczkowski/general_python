@@ -4,10 +4,6 @@ Shared helpers for Flax network wrappers.
 These helpers keep the network implementations in ``net_impl`` focused on
 generic model construction. 
 
-NQS-specific integration can still inspect wrapper
-metadata, but the wrappers now attach that metadata and explicit input-state
-conventions through one consistent path.
-
 --------------------------------
 Author      : Maksymilian Kliczkowski
 Email       : maxgrom97@gmail.com
@@ -23,7 +19,7 @@ try:
     import jax.numpy as jnp
     from ....algebra.utils      import BACKEND_DEF_SPIN, BACKEND_REPR
     from ..activation_functions import get_activation_jnp
-    from .net_state_repr_jax    import map_state_to_pm1, preferred_state_representation
+    from .net_state_repr_jax    import map_state_to_pm1
 except ImportError:
     raise ImportError("net_wrapper_utils requires general_python modules.")
 
@@ -180,7 +176,7 @@ def map_over_complex_parts(x: Any, fn: Callable[[Any], Any]) -> Any:
     return fn(x)
 
 # ----------------------------------------------------------------------
-#! NQS Integration Helpers
+#! Input Convention Helpers
 # ----------------------------------------------------------------------
 
 def extract_input_convention(
@@ -252,23 +248,6 @@ def make_state_flip_update(input_convention: Mapping[str, Any]) -> Callable:
 
 # ----------------------------------------------------------------------
 
-def infer_native_representation(
-    input_convention: Mapping[str, Any],
-    *,
-    transform_key: str = "transform_input",
-    map_key: str = "map_input_to_spin",
-) -> str:
-    """
-    Infer the preferred external representation for the wrapper.
-    
-    This is used for NQS metadata to indicate the expected input state convention.
-    The logic is based on the input convention settings, and it prioritizes explicit transformation or mapping flags.
-    """
-    return preferred_state_representation(
-        bool(input_convention.get(transform_key, False) or input_convention.get(map_key, False)),
-        bool(input_convention.get("input_is_spin", BACKEND_DEF_SPIN)),
-    )
-
 def resolve_input_adapter(
     wrapper_kwargs      : Mapping[str, Any],
     input_adapter       : Optional[Callable] = None,
@@ -287,44 +266,6 @@ def resolve_input_adapter(
     if input_adapter is None:
         input_adapter = make_state_input_adapter(input_convention)
     return input_convention, input_adapter
-
-def configure_nqs_metadata(
-    net                     : Any,
-    *,
-    family                  : str,
-    variant                 : str = "general",
-    native_representation   : Optional[str] = None,
-    supports_fast_updates   : bool = False,
-    supports_exact_sampling : bool = False,
-    preferred_sampler       : str = "MCSampler",
-) -> Any:
-    """
-    Attach NQS-facing metadata to a generic wrapper.
-    
-    Parameters
-    ----------
-    net : Any
-        The wrapper instance to which the metadata will be attached.
-    family : str
-        The NQS family (e.g. 'rbm', 'cnn', 'mlp', 'resnet', 'gcnn', etc.) that this wrapper belongs to.
-    variant : str, default="general"
-        A more specific variant label within the family, if needed.
-    native_representation : Optional[str], default=None
-        The preferred external input representation (e.g. "spin_pm", "binary_01"). If None, it will be inferred from the wrapper's input convention.
-    supports_fast_updates : bool, default=False
-        Whether the wrapper supports fast updates for local sampling.
-    supports_exact_sampling : bool, default=False
-        Whether the wrapper supports exact sampling of the wavefunction.
-    preferred_sampler : str, default="MCSampler"
-        The preferred sampler type for this wrapper, if any.
-    """
-    net._nqs_family                     = family
-    net._nqs_variant                    = variant
-    net._nqs_native_representation      = native_representation
-    net._nqs_supports_fast_updates      = bool(supports_fast_updates)
-    net._nqs_supports_exact_sampling    = bool(supports_exact_sampling)
-    net._nqs_preferred_sampler          = preferred_sampler
-    return net
 
 # ----------------------------------------------------------------------
 #! EOF

@@ -531,7 +531,6 @@ if JAX_AVAILABLE:
             self._has_analytic_grad = False
             self._name      = 'eqgcnn'
             self._n_group   = perm_table.shape[0]
-            configure_nqs_metadata(self, family="equivariant_gcnn", native_representation="binary_01")
 
         @classmethod
         def from_lattice(

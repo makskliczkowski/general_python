@@ -1,5 +1,5 @@
 """
-NQS-oriented ansatz exports for ``general_python.ml.net_impl``.
+Wavefunction-oriented ansatz exports for ``general_python.ml.net_impl``.
 
 The concrete implementations live in *general_python* modules under
 ``net_impl.networks``. This package provides the

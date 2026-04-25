@@ -37,11 +37,7 @@ try:
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_init_jax         import normal_by_dtype
     from ....ml.net_impl.utils.net_state_repr_jax   import state_to_binary_index
-    from ....ml.net_impl.utils.net_wrapper_utils    import (
-                                                        configure_nqs_metadata,
-                                                        extract_input_convention,
-                                                        infer_native_representation,
-                                                    )
+    from ....ml.net_impl.utils.net_wrapper_utils    import extract_input_convention
     from ....algebra.utils                          import BACKEND_DEF_SPIN, BACKEND_REPR
     JAX_AVAILABLE = True
 except ImportError:
@@ -161,12 +157,8 @@ class MPS(FlaxInterface):
             seed        =   seed,
             **kwargs
         )
-        self._name = 'mps'
-        configure_nqs_metadata(
-            self,
-            family="mps",
-            native_representation=infer_native_representation(input_convention),
-        )
+        self._name              = 'mps'
+        self._input_convention  = dict(input_convention)
 
     def __repr__(self) -> str:
         mod = self._flax_module

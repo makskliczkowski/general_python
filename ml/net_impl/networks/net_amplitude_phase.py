@@ -25,7 +25,6 @@ try:
     from ....ml.net_impl.interface_net_flax         import FlaxInterface
     from ....ml.net_impl.utils.net_wrapper_utils    import (
                                                         as_spatial_tuple,
-                                                        configure_nqs_metadata,
                                                         normalize_activation_sequence,
                                                         normalize_layerwise_spec,
                                                         prepare_split_complex_input,
@@ -132,7 +131,6 @@ class AmplitudePhase(FlaxInterface):
             **kwargs
         )
         self._name                          = 'amplitude_phase'
-        configure_nqs_metadata(self, family="amplitude_phase")
 
     def _resolve_inner(self, net_type, net_kwargs, input_shape):
         """Resolves string keys to inner Flax Module classes and prepares kwargs."""
