@@ -340,21 +340,21 @@ class ResNet(FlaxInterface):
 
         # Build kwargs for the inner Flax module
         net_kwargs = dict(
-            reshape_dims    = reshape_dims,
-            features        = features,
-            depth           = depth,
-            kernel_size     = kernel_tuple,
-            dtype           = dtype,
-            param_dtype     = p_dtype,
-            input_channels  = 1,
-            periodic_boundary=periodic_boundary,
-            use_pooling     = use_pooling,
-            input_scale     = input_scale,
-            input_shift     = input_shift,
-            input_adapter   = input_adapter,
-            init_scale      = init_scale,
-            init_mode       = init_mode,
-            init_dist       = init_dist,
+            reshape_dims        = reshape_dims,
+            features            = features,
+            depth               = depth,
+            kernel_size         = kernel_tuple,
+            dtype               = dtype,
+            param_dtype         = p_dtype,
+            input_channels      = kwargs.get("input_channels", 1),
+            periodic_boundary   = periodic_boundary,
+            use_pooling         = use_pooling,
+            input_scale         = input_scale,
+            input_shift         = input_shift,
+            input_adapter       = input_adapter,
+            init_scale          = init_scale,
+            init_mode           = init_mode,
+            init_dist           = init_dist,
         )
 
         super().__init__(

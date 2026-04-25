@@ -324,7 +324,7 @@ class CNN(FlaxInterface):
             out_act         =   resolve_activation_spec(final_activation),
             dtype           =   dtype,
             param_dtype     =   p_dtype,
-            input_channels  =   1,
+            input_channels  =   kwargs.get('input_channels', 1),
             periodic        =   kwargs.get('periodic',      True),
             use_sum_pool    =   kwargs.get('sum_pooling',   True),
             split_complex   =   split_complex,
