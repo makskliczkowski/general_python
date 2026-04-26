@@ -945,6 +945,40 @@ if JAX_AVAILABLE:
 
 if JAX_AVAILABLE:
     
+    @partial(jax.jit, static_argnums=(0, 3))
+    def _evaluate_connected_logprobs_jax(logproba_fun: Callable, parameters: Any, new_states: jnp.ndarray, batch_size: int):
+        """
+        Evaluate log-amplitudes for connected states in chunks. This 
+        takes care of memory constraints by processing states in batches. If the number
+        of states is small enough, it evaluates them all at once.
+        
+        Parameters
+        ----------
+        logproba_fun : Callable
+            Function that computes log-probabilities for given states S.
+        parameters : Any
+            Network parameters to pass to logproba_fun.
+        new_states : jnp.ndarray
+            Array of new states for which to compute log-probabilities, shape (n_states, state_size).
+        batch_size : int
+            Size of batches to process states in. If None or <= 0, processes all at once.
+        """
+        n_states = new_states.shape[0]
+        if n_states == 0:
+            return logproba_fun(parameters, new_states)
+
+        if (batch_size is None) or (batch_size <= 0) or (n_states <= batch_size):
+            return logproba_fun(parameters, new_states)
+
+        batches = create_batches_jax(new_states, batch_size)
+
+        def _eval_batch(batch_states):
+            return logproba_fun(parameters, batch_states)
+
+        batch_out = lax.map(_eval_batch, batches)
+        flat = batch_out.reshape((batch_out.shape[0] * batch_out.shape[1],) + batch_out.shape[2:])
+        return flat[:n_states]
+    
     @partial(jax.jit, static_argnums=(0,4))
     def apply_callable_jax(func,
                         states,
@@ -990,7 +1024,7 @@ if JAX_AVAILABLE:
             
             # Obtain modified states and corresponding values.
             new_states, new_vals    = func(state, *args) if args else func(state)
-            new_logprobas           = logproba_fun(parameters, new_states)
+            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, new_states.shape[0])
             # weights                 = jnp.exp(mu * (new_logprobas - logp))
             weights                 = jnp.exp(new_logprobas - logp)
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
@@ -1040,7 +1074,7 @@ if JAX_AVAILABLE:
             
             # Obtain modified states and corresponding values.
             new_states, new_vals    = func(state)
-            new_logprobas           = logproba_fun(parameters, new_states)
+            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, new_states.shape[0])
             weights                 = jnp.exp(mu * (new_logprobas - logp))
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             return weighted_sum
@@ -1110,7 +1144,7 @@ if JAX_AVAILABLE:
             new_states = jnp.asarray(new_states)
             new_vals   = jnp.asarray(new_vals)
 
-            logp_new   = logproba_fun(parameters, new_states)
+            logp_new   = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, batch_size)
             w          = jnp.exp(logp_new - logp0)
 
             return p_sample * jnp.sum(jnp.conj(new_vals) * w)
@@ -1181,7 +1215,7 @@ if JAX_AVAILABLE:
             # Robust scalar extraction for both scalar and vector-shaped logp.
             logp                    = jnp.reshape(logp, (-1,))[0]
             new_states, new_vals    = func(state)
-            new_logprobas           = logproba_fun(parameters, new_states)
+            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, batch_size)
             weights                 = jnp.exp((new_logprobas - logp))
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             # ``weighted_sum`` is already reduced over connected configurations.
