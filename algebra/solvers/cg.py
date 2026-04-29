@@ -646,15 +646,32 @@ class CgSolver(Solver):
             A named tuple containing the solution, convergence status, iteration count, and residual norm.
         """
         try:
-            # Instance-less call logic
+            use_fisher = kwargs.get("s") is not None and kwargs.get("s_p") is not None
+            use_matrix = kwargs.get("a") is not None and not use_fisher
+            use_matvec = matvec is not None and not use_fisher and not use_matrix
             solver_func     = CgSolver.get_solver_func(
-                backend_module, 
-                use_matvec  = True, 
-                sigma       = sigma
+                backend_module,
+                use_matvec  = use_matvec,
+                use_fisher  = use_fisher,
+                use_matrix  = use_matrix,
+                sigma       = sigma,
             )
-            
-            return Solver.run_solver_func(backend_module, solver_func, matvec=matvec, 
-                b=b, x0=x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+
+            return Solver.run_solver_func(
+                backend_module,
+                solver_func,
+                matvec=matvec,
+                a=kwargs.get("a"),
+                s=kwargs.get("s"),
+                s_p=kwargs.get("s_p"),
+                b=b,
+                x0=x0,
+                tol=tol,
+                maxiter=maxiter,
+                precond_apply=precond_apply,
+                sigma=sigma,
+                normalization=kwargs.get("normalization"),
+            )
         except Exception as e:
             raise SolverError(SolverErrorMsg.CONV_FAILED, f"CG execution failed: {e}") from e
 
@@ -692,9 +709,10 @@ class CgSolverScipy(Solver):
         if backend_module is jnp:
 
             def _wrapper(matvec, b, x0, tol, maxiter, precond_apply, **ignored_kwargs):
-                x, info = _static_jax_cg(matvec, b, x0, tol, maxiter, precond_apply)
-                # Helper to package result into your custom dataclass
-                return SolverResult(x, True, maxiter, None) 
+                x, info     = _static_jax_cg(matvec, b, x0, tol, maxiter, precond_apply)
+                residual    = jnp.linalg.norm(b - matvec(x))
+                norm_b      = jnp.maximum(jnp.linalg.norm(b), jnp.asarray(1.0, dtype=residual.dtype))
+                return SolverResult(x, residual <= tol * norm_b, maxiter, residual)
             func = _wrapper
             
         elif backend_module is np:
@@ -704,7 +722,7 @@ class CgSolverScipy(Solver):
                 n       = b.shape[0]
                 A_op    = spsla.LinearOperator((n, n), matvec=matvec, dtype=b.dtype)
                 M_op    = spsla.LinearOperator((n, n), matvec=precond_apply, dtype=b.dtype) if precond_apply else None
-                x, info = spsla.cg(A_op, b, x0=x0, tol=tol, maxiter=maxiter, M=M_op)
+                x, info = spsla.cg(A_op, b, x0=x0, rtol=tol, maxiter=maxiter, M=M_op)
                 return SolverResult(x, info==0, maxiter, None)
             
             func = _scipy_wrapper
@@ -763,9 +781,32 @@ class CgSolverScipy(Solver):
             A named tuple containing the solution, convergence status, iteration count, and residual norm.
         """
         try:
-            
-            func = CgSolverScipy.get_solver_func(backend_module, use_matvec=True)
-            return Solver.run_solver_func(backend_module, func, matvec=matvec, b=b, x0=x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+            use_fisher  = s is not None and s_p is not None
+            use_matrix  = a is not None and not use_fisher
+            use_matvec  = matvec is not None and not use_fisher and not use_matrix
+            sigma       = kwargs.get("sigma", None)
+            func        = CgSolverScipy.get_solver_func(
+                            backend_module,
+                            use_matvec=use_matvec,
+                            use_fisher=use_fisher,
+                            use_matrix=use_matrix,
+                            sigma=sigma,
+                        )
+            return Solver.run_solver_func(
+                backend_module,
+                func,
+                matvec=matvec,
+                a=a,
+                s=s,
+                s_p=s_p,
+                b=b,
+                x0=x0,
+                tol=tol,
+                maxiter=maxiter,
+                precond_apply=precond_apply,
+                sigma=sigma,
+                normalization=kwargs.get("normalization"),
+            )
         
         except Exception as e:
             raise SolverError(SolverErrorMsg.CONV_FAILED, f"CG execution failed: {e}") from e

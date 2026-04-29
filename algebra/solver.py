@@ -647,6 +647,63 @@ class Solver(ABC):
 
                     return callable_comp(mv_to_use, b, x0_val, tol, maxiter, precond_apply)
                 return wrapper_np
+
+    @staticmethod
+    def run_solver_func(
+            backend_module  : Any,
+            solver_func     : StaticSolverFunc,
+            *,
+            matvec          : Optional[MatVecFunc] = None,
+            a               : Optional[Array] = None,
+            s               : Optional[Array] = None,
+            s_p             : Optional[Array] = None,
+            b               : Array,
+            x0              : Optional[Array],
+            tol             : float,
+            maxiter         : int,
+            precond_apply   : Optional[Callable[[Array], Array]] = None,
+            sigma           : Optional[float] = None,
+            normalization   : Optional[int] = None,
+            **kwargs        : Any) -> SolverResult:
+        """Dispatch a wrapped solver function through matrix, Fisher, or matvec mode."""
+        common_kwargs = dict(kwargs)
+        if sigma is not None:
+            common_kwargs["sigma"] = sigma
+        if normalization is not None:
+            common_kwargs["normalization"] = normalization
+
+        if s is not None and s_p is not None:
+            return solver_func(
+                s=s,
+                s_p=s_p,
+                b=b,
+                x0=x0,
+                tol=tol,
+                maxiter=maxiter,
+                precond_apply=precond_apply,
+                **common_kwargs,
+            )
+        if a is not None:
+            return solver_func(
+                a=a,
+                b=b,
+                x0=x0,
+                tol=tol,
+                maxiter=maxiter,
+                precond_apply=precond_apply,
+                **common_kwargs,
+            )
+        if matvec is not None:
+            return solver_func(
+                matvec=matvec,
+                b=b,
+                x0=x0,
+                tol=tol,
+                maxiter=maxiter,
+                precond_apply=precond_apply,
+                **common_kwargs,
+            )
+        raise SolverError(SolverErrorMsg.MATVEC_FUNC_NOT_SET, "Must provide matvec, matrix A, or Fisher factors S and S_p.")
     
     # -------------------------------------------------------------------------
     #! Static Solve Interface (Core Requirement)

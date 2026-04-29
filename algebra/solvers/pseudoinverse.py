@@ -85,7 +85,7 @@ if JAX_AVAILABLE:
         # rcond     =   tol ensures we filter small singular values
         # hermitian =   False is safer generally, but could be True for Fisher matrices.
         # We leave it False to be general-purpose.
-        a_pinv      = jnp.linalg.pinv(matrix_a, rcond=tol, hermitian=hermitian)
+        a_pinv      = jnp.linalg.pinv(matrix_a, rtol=tol, hermitian=hermitian)
         x           = jnp.dot(a_pinv, b)
         
         # Compute Residual (for reporting)
@@ -150,11 +150,11 @@ class PseudoInverseSolver(Solver):
 
             # Fisher Mode: (S, Sp) -> Form Matrix -> Pinv
             if use_fisher:
-                def wrapper_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **ignored_kwargs):
+                def wrapper_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, normalization=None, **ignored_kwargs):
                     
                     # Form Gram Matrix: A = S^H @ S / N
                     # Optimize contraction: (params, samples) @ (samples, params)
-                    n_samples   = s.shape[0]
+                    n_samples   = s.shape[0] if normalization is None else normalization
                     matrix_a    = jnp.dot(s_p, s) / n_samples
                     sigma_val   = sigma_default if sigma is None else sigma
                     # Fisher/Gram matrix is Hermitian by construction.
@@ -180,9 +180,9 @@ class PseudoInverseSolver(Solver):
             sigma_default = 0.0 if sigma is None else float(sigma)
             
             if use_fisher:
-                def wrapper_np_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, **kwargs):
+                def wrapper_np_fisher(s, s_p, b, x0, tol, maxiter, precond_apply=None, sigma=None, normalization=None, **kwargs):
                     reg         = sigma_default if sigma is None else sigma
-                    n           = s.shape[0]
+                    n           = s.shape[0] if normalization is None else normalization
                     matrix_a    = (s_p @ s) / n
                     x, res      = _pinv_numpy_core(matrix_a, b, tol, reg)
                     return SolverResult(x, True, 1, res)
@@ -249,7 +249,8 @@ class PseudoInverseSolver(Solver):
         
         # Run it using the Solver base helper
         return Solver.run_solver_func(backend_module, solver_func, matvec=None, 
-            a=a, s=s, s_p=s_p, b=b, x0=x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply)
+            a=a, s=s, s_p=s_p, b=b, x0=x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply,
+            sigma=sigma, normalization=kwargs.get("normalization"))
     
 # -----------------------------------------------------------------------------
 #! EOF

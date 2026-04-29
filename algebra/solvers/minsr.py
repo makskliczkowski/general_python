@@ -87,7 +87,7 @@ class SpectralExactSolver(Solver):
         default_sigma = 0.0 if sigma is None else float(sigma)
         
         def _solve_wrapper(a=None, s=None, s_p=None, b=None, x0=None, tol=1e-10, maxiter=100, 
-                          precond_apply=None, sigma=None, snr_tol=0.0, **extra_kwargs):
+            precond_apply=None, sigma=None, snr_tol=0.0, normalization=None, **extra_kwargs) -> SolverResult:
             """
             Solve the linear system using spectral decomposition.
             
@@ -119,7 +119,7 @@ class SpectralExactSolver(Solver):
             elif s is not None and s_p is not None:
                 # We normalize by n_samples to be consistent with the 1/N scaling of the loss vector b
                 # and to keep sigma (diagonal shift) as an intensive parameter.
-                n_samples   = s_p.shape[0] # Assumes O is (Ns, Np)
+                n_samples   = s_p.shape[0] if normalization is None else normalization
                 matrix      = jnp.matmul(s_p, s) / n_samples
                 
             else:
@@ -138,8 +138,32 @@ class SpectralExactSolver(Solver):
         """
         Static method to solve the linear system using SpectralExactSolver.
         """
-        solver_func = SpectralExactSolver.get_solver_func(backend_module, **kwargs)
-        return solver_func(b=b, x0=x0, tol=tol, maxiter=maxiter, precond_apply=precond_apply, **kwargs)
+        a           = kwargs.get("a", None)
+        s           = kwargs.get("s", None)
+        s_p         = kwargs.get("s_p", None)
+        sigma       = kwargs.get("sigma", None)
+        solver_func = SpectralExactSolver.get_solver_func(
+                        backend_module,
+                        use_matvec=matvec is not None and a is None and not (s is not None and s_p is not None),
+                        use_fisher=s is not None and s_p is not None,
+                        use_matrix=a is not None,
+                        sigma=sigma,
+                    )
+        return Solver.run_solver_func(
+            backend_module,
+            solver_func,
+            matvec=matvec,
+            a=a,
+            s=s,
+            s_p=s_p,
+            b=b,
+            x0=x0,
+            tol=tol,
+            maxiter=maxiter,
+            precond_apply=precond_apply,
+            sigma=sigma,
+            normalization=kwargs.get("normalization"),
+        )
     
 # -----------------------------------------------------------
 # End of spectral_minsr.py

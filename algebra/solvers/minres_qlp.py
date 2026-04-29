@@ -1059,22 +1059,35 @@ class MinresQLPSolver(Solver):
             SolverResult with solution, convergence status, iterations, residual
         """
         try:
-            # Note: sigma should be incorporated into matvec by caller
-            # We pass it as kwarg just in case, but JAX version ignores it
             sigma_val = 0.0 if sigma is None else float(sigma)
-            
-            if backend_module is jnp:
-                if _minres_qlp_logic_jax_compiled is None:
-                    raise ImportError("JAX not available")
-                # Don't pass sigma as positional - it's in kwargs and ignored
-                # (shift should be in matvec)
-                return _minres_qlp_logic_jax_compiled(
-                    matvec, b, x0, tol, maxiter, precond_apply
-                )
-            else:
-                return _minres_qlp_logic_numpy(
-                    matvec, b, x0, tol, maxiter, precond_apply, sigma_val
-                )
+            a         = kwargs.get("a", None)
+            s         = kwargs.get("s", None)
+            s_p       = kwargs.get("s_p", None)
+            use_fish  = s is not None and s_p is not None
+            use_mat   = a is not None and not use_fish
+            use_mv    = matvec is not None and not use_fish and not use_mat
+            solver_fn = MinresQLPSolver.get_solver_func(
+                backend_module,
+                use_matvec=use_mv,
+                use_fisher=use_fish,
+                use_matrix=use_mat,
+                sigma=sigma_val,
+            )
+            return Solver.run_solver_func(
+                backend_module,
+                solver_fn,
+                matvec=matvec,
+                a=a,
+                s=s,
+                s_p=s_p,
+                b=b,
+                x0=x0,
+                tol=tol,
+                maxiter=maxiter,
+                precond_apply=precond_apply,
+                sigma=sigma_val,
+                normalization=kwargs.get("normalization"),
+            )
         except Exception as e:
             raise RuntimeError(f"MINRES-QLP execution failed: {e}") from e
 

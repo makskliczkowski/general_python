@@ -1031,7 +1031,7 @@ if JAX_AVAILABLE:
         return applied, jnp.mean(applied, axis = 0), jnp.std(jnp.real(applied), axis = 0)
     
     # @partial(jax.jit, static_argnums=(0,3))
-    def apply_callable_jax_uniform(func, states, logprobas_in, logproba_fun, parameters, mu = 2.0, connected_batch_size: Optional[int] = None):
+    def apply_callable_jax_uniform(func, states, logprobas_in, logproba_fun, parameters, connected_batch_size: Optional[int] = None):
         """
         Applies a transformation function to each state and computes a locally
         weighted estimate as described in [2108.08631].

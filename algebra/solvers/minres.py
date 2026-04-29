@@ -111,16 +111,23 @@ class MinresSolverScipy(Solver):
         
         if is_jax_backend and jspsla is not None and hasattr(jspsla, 'minres'):
             # JAX path - jax.scipy.sparse.linalg.minres
-            def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
-                x, info = jspsla.minres(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply, **ignored_kwargs):
+                x, info     = jspsla.minres(matvec, b, x0=x0, tol=tol, maxiter=maxiter, M=precond_apply)
                 # info==0 success; >0 no convergence; <0 illegal input
-                conv = (info == 0)
-                return SolverResult(x=x, converged=bool(conv), iterations=maxiter, residual_norm=None)
+                residual    = jnp.linalg.norm(b - matvec(x))
+                norm_b      = jnp.maximum(jnp.linalg.norm(b), jnp.asarray(1.0, dtype=residual.dtype))
+                return SolverResult(x=x, converged=residual <= tol * norm_b, iterations=maxiter, residual_norm=residual)
+            
+            return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
+
+        elif is_jax_backend and _minres_logic_jax is not None:
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply, **ignored_kwargs):
+                return _minres_logic_jax(matvec, b, x0, tol, maxiter, precond_apply)
             return Solver._solver_wrap_compiled(backend_module, solver_func, use_matvec, use_fisher, use_matrix, sigma)
 
         elif spsla is not None:
             # NumPy/SciPy path - scipy.sparse.linalg.minres
-            def solver_func(matvec, b, x0, tol, maxiter, precond_apply):
+            def solver_func(matvec, b, x0, tol, maxiter, precond_apply, **ignored_kwargs):
                 # Wrap callable into LinearOperator expected by SciPy
                 n   = b.shape[0]
                 Aop = spsla.LinearOperator((n, n), matvec=matvec, dtype=b.dtype)
@@ -196,7 +203,7 @@ class MinresSolverScipy(Solver):
             # Dispatch based on mode
             if use_fisher:
                 # Fisher mode: pass (s, s_p, b, x0, tol, maxiter, precond_apply)
-                return solver_func(s, s_p, b, x0, tol, maxiter, precond_apply, sigma=sigma)
+                return solver_func(s, s_p, b, x0, tol, maxiter, precond_apply, sigma=sigma, normalization=kwargs.get("normalization"))
             elif use_matrix:
                 # Matrix mode: pass (a, b, x0, tol, maxiter, precond_apply)
                 return solver_func(a, b, x0, tol, maxiter, precond_apply, sigma=sigma)
@@ -409,7 +416,8 @@ if JAX_AVAILABLE:
         Follows same logic as NumPy implementation.
         """
         n       = b.shape[0]
-        dtype   = b.dtype
+        vec_dtype = b.dtype
+        scalar_dtype = jnp.real(b).dtype
         
         # Helper for preconditioner
         def apply_precond(vec):
@@ -439,13 +447,13 @@ if JAX_AVAILABLE:
             'v_old'         : v_old,
             'w'             : w,
             'w_old'         : w_old,
-            'beta_old'      : jnp.array(0.0, dtype=dtype),
-            'c_old'         : jnp.array(-1.0, dtype=dtype),
-            's_old'         : jnp.array(0.0, dtype=dtype),
-            'c_old2'        : jnp.array(0.0, dtype=dtype),
-            's_old2'        : jnp.array(0.0, dtype=dtype),
-            'eta'           : jnp.array(beta1, dtype=dtype),
-            'residual_norm' : jnp.array(beta1, dtype=dtype),
+            'beta_old'      : jnp.array(0.0, dtype=scalar_dtype),
+            'c_old'         : jnp.array(-1.0, dtype=scalar_dtype),
+            's_old'         : jnp.array(0.0, dtype=scalar_dtype),
+            'c_old2'        : jnp.array(0.0, dtype=scalar_dtype),
+            's_old2'        : jnp.array(0.0, dtype=scalar_dtype),
+            'eta'           : jnp.asarray(beta1, dtype=scalar_dtype),
+            'residual_norm' : jnp.asarray(beta1, dtype=scalar_dtype),
             'k'             : jnp.array(0, dtype=jnp.int32),
             'converged'     : jnp.array(beta1 <= tol * bnorm, dtype=jnp.bool_)
         }
@@ -511,9 +519,9 @@ if JAX_AVAILABLE:
                 'v_old'         : v,
                 'w'             : w_new,
                 'w_old'         : w,
-                'beta_old'      : jnp.array(beta_new, dtype=dtype),
-                'c_old'         : jnp.array(c, dtype=dtype),
-                's_old'         : jnp.array(s, dtype=dtype),
+                'beta_old'      : jnp.asarray(beta_new, dtype=scalar_dtype),
+                'c_old'         : jnp.asarray(c, dtype=scalar_dtype),
+                's_old'         : jnp.asarray(s, dtype=scalar_dtype),
                 'c_old2'        : c_old,
                 's_old2'        : s_old,
                 'eta'           : eta_new,
@@ -635,7 +643,7 @@ class MinresSolver(Solver):
             # Dispatch based on mode
             if use_fisher:
                 # Fisher mode: pass (s, s_p, b, x0, tol, maxiter, precond_apply)
-                return solver_func(s, s_p, b, x0, tol, maxiter, precond_apply, sigma=sigma)
+                return solver_func(s, s_p, b, x0, tol, maxiter, precond_apply, sigma=sigma, normalization=kwargs.get("normalization"))
             elif use_matrix:
                 # Matrix mode: pass (a, b, x0, tol, maxiter, precond_apply)
                 return solver_func(a, b, x0, tol, maxiter, precond_apply, sigma=sigma)
