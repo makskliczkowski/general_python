@@ -962,20 +962,25 @@ if JAX_AVAILABLE:
         batch_size : int
             Size of batches to process states in. If None or <= 0, processes all at once.
         """
-        n_states = new_states.shape[0]
+
+        n_states = int(new_states.shape[0])
         if n_states == 0:
             return logproba_fun(parameters, new_states)
+
+        # Ensure batch_size is a Python int for conditionals
+        if batch_size is not None:
+            batch_size = int(batch_size)
 
         if (batch_size is None) or (batch_size <= 0) or (n_states <= batch_size):
             return logproba_fun(parameters, new_states)
 
-        batches = create_batches_jax(new_states, batch_size)
+        batches     = create_batches_jax(new_states, batch_size)
 
         def _eval_batch(batch_states):
             return logproba_fun(parameters, batch_states)
 
-        batch_out = lax.map(_eval_batch, batches)
-        flat = batch_out.reshape((batch_out.shape[0] * batch_out.shape[1],) + batch_out.shape[2:])
+        batch_out   = lax.map(_eval_batch, batches)
+        flat        = batch_out.reshape((batch_out.shape[0] * batch_out.shape[1],) + batch_out.shape[2:])
         return flat[:n_states]
     
     @partial(jax.jit, static_argnums=(0,4,6,7))
