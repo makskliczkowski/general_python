@@ -1059,8 +1059,12 @@ if JAX_AVAILABLE:
             # Squeeze the scalar values.
             logp                    = logp[0]
             
-            # Obtain modified states and corresponding values.
-            new_states, new_vals    = func(state)
+            # Local observables may return either a scalar value or the
+            # transition-kernel pair (connected_states, matrix_elements).
+            out                     = func(state)
+            if not (isinstance(out, tuple) and len(out) == 2):
+                return out
+            new_states, new_vals    = out
             chunk_size              = new_states.shape[0] if connected_batch_size is None else connected_batch_size
             new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, chunk_size)
             # Physical estimator uses ratio of amplitudes Psi(s')/Psi(s) regardless of mu
@@ -1127,9 +1131,12 @@ if JAX_AVAILABLE:
         # ----------------------------------------------------------------------
         def _estimate_one(state, logp0, p_sample, *args):
             if not args:
-                    new_states, new_vals = func(state)
+                out = func(state)
             else:
-                new_states, new_vals = func(state, *args)
+                out = func(state, *args)
+            if not (isinstance(out, tuple) and len(out) == 2):
+                return p_sample * out
+            new_states, new_vals = out
             
             new_states = jnp.asarray(new_states)
             new_vals   = jnp.asarray(new_vals)
@@ -1206,7 +1213,10 @@ if JAX_AVAILABLE:
         def compute_estimate(state, logp):
             # Robust scalar extraction for both scalar and vector-shaped logp.
             logp                    = jnp.reshape(logp, (-1,))[0]
-            new_states, new_vals    = func(state)
+            out                     = func(state)
+            if not (isinstance(out, tuple) and len(out) == 2):
+                return out
+            new_states, new_vals    = out
             chunk_size              = batch_size if connected_batch_size is None else connected_batch_size
             new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, chunk_size)
             weights                 = jnp.exp((new_logprobas - logp))
