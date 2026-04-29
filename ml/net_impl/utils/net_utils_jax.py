@@ -6,7 +6,7 @@ date    : 2025-03-01
 '''
 
 # from general python utils
-from typing                     import Any, Callable, List, Tuple, NamedTuple, Union
+from typing                     import Any, Callable, List, Tuple, NamedTuple, Union, Optional
 from functools                  import partial
 try:
     import jax
@@ -945,7 +945,6 @@ if JAX_AVAILABLE:
 
 if JAX_AVAILABLE:
     
-    @partial(jax.jit, static_argnums=(0, 3))
     def _evaluate_connected_logprobs_jax(logproba_fun: Callable, parameters: Any, new_states: jnp.ndarray, batch_size: int):
         """
         Evaluate log-amplitudes for connected states in chunks. This 
@@ -979,15 +978,8 @@ if JAX_AVAILABLE:
         flat = batch_out.reshape((batch_out.shape[0] * batch_out.shape[1],) + batch_out.shape[2:])
         return flat[:n_states]
     
-    @partial(jax.jit, static_argnums=(0,4))
-    def apply_callable_jax(func,
-                        states,
-                        sample_probas,
-                        logprobas_in,
-                        logproba_fun,
-                        parameters,
-                        batch_size: int = 1,
-                        *op_args):
+    @partial(jax.jit, static_argnums=(0,4,6,7))
+    def apply_callable_jax(func, states, sample_probas, logprobas_in, logproba_fun, parameters, batch_size: int = 1, connected_batch_size: Optional[int] = None, *op_args):
         """
         Applies a transformation function to each state and computes a locally
         weighted estimate as described in [2108.08631].
@@ -1024,8 +1016,9 @@ if JAX_AVAILABLE:
             
             # Obtain modified states and corresponding values.
             new_states, new_vals    = func(state, *args) if args else func(state)
-            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, new_states.shape[0])
-            # weights                 = jnp.exp(mu * (new_logprobas - logp))
+            chunk_size              = new_states.shape[0] if connected_batch_size is None else connected_batch_size
+            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, chunk_size)
+            # weights               = jnp.exp(mu * (new_logprobas - logp))
             weights                 = jnp.exp(new_logprobas - logp)
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             
@@ -1038,7 +1031,7 @@ if JAX_AVAILABLE:
         return applied, jnp.mean(applied, axis = 0), jnp.std(jnp.real(applied), axis = 0)
     
     # @partial(jax.jit, static_argnums=(0,3))
-    def apply_callable_jax_uniform(func, states, logprobas_in, logproba_fun, parameters, mu = 2.0):
+    def apply_callable_jax_uniform(func, states, logprobas_in, logproba_fun, parameters, mu = 2.0, connected_batch_size: Optional[int] = None):
         """
         Applies a transformation function to each state and computes a locally
         weighted estimate as described in [2108.08631].
@@ -1061,12 +1054,6 @@ if JAX_AVAILABLE:
             - std: Standard deviation of the estimates.
             
         """
-        # the input of states might be (num_samples, num_chains, num_visible)
-        # logprobas_in might be (num_samples, num_chains, 1)
-        # transform to (num_samples * num_chains, num_visible) and (num_samples * num_chains, 1)
-        
-        # states          = jnp.reshape(states, (-1, states.shape[-1]))
-        # logprobas_in    = jnp.reshape(logprobas_in, (-1, 1))
         # function to compute the estimate for a single state
         def compute_estimate(state, logp):
             # Squeeze the scalar values.
@@ -1074,13 +1061,15 @@ if JAX_AVAILABLE:
             
             # Obtain modified states and corresponding values.
             new_states, new_vals    = func(state)
-            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, new_states.shape[0])
-            weights                 = jnp.exp(mu * (new_logprobas - logp))
+            chunk_size              = new_states.shape[0] if connected_batch_size is None else connected_batch_size
+            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, chunk_size)
+            # Physical estimator uses ratio of amplitudes Psi(s')/Psi(s) regardless of mu
+            weights                 = jnp.exp(new_logprobas - logp)
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             return weighted_sum
         
         applied = jax.vmap(compute_estimate, in_axes=(0, 0))(states, logprobas_in)
-        return applied, jnp.mean(applied, axis = 0), jnp.std(applied, axis = 0)
+        return applied, jnp.mean(applied, axis = 0), jnp.std(jnp.real(applied), axis = 0)
 
     def apply_callable_batched_jax(func,
                                 states,
@@ -1089,6 +1078,7 @@ if JAX_AVAILABLE:
                                 logproba_fun,
                                 parameters,
                                 batch_size : int,
+                                connected_batch_size: Optional[int] = None,
                                 *op_args):
         r"""
         Batched application of a local estimator.
@@ -1144,7 +1134,8 @@ if JAX_AVAILABLE:
             new_states = jnp.asarray(new_states)
             new_vals   = jnp.asarray(new_vals)
 
-            logp_new   = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, batch_size)
+            chunk_size = batch_size if connected_batch_size is None else connected_batch_size
+            logp_new   = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, chunk_size)
             w          = jnp.exp(logp_new - logp0)
 
             return p_sample * jnp.sum(jnp.conj(new_vals) * w)
@@ -1178,7 +1169,8 @@ if JAX_AVAILABLE:
                                         logprobas_in,
                                         logproba_fun,
                                         parameters,
-                                        batch_size: int):
+                                        batch_size: int,
+                                        connected_batch_size: Optional[int] = None):
         """
         Applies a transformation function to each state (in batches) and computes a locally weighted estimate
         as described in [2108.08631]. This version does not incorporate sample probabilities.
@@ -1215,7 +1207,8 @@ if JAX_AVAILABLE:
             # Robust scalar extraction for both scalar and vector-shaped logp.
             logp                    = jnp.reshape(logp, (-1,))[0]
             new_states, new_vals    = func(state)
-            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, batch_size)
+            chunk_size              = batch_size if connected_batch_size is None else connected_batch_size
+            new_logprobas           = _evaluate_connected_logprobs_jax(logproba_fun, parameters, new_states, chunk_size)
             weights                 = jnp.exp((new_logprobas - logp))
             weighted_sum            = jnp.sum(jnp.conj(new_vals) * weights, axis=0)
             # ``weighted_sum`` is already reduced over connected configurations.
