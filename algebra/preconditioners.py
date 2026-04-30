@@ -19,6 +19,12 @@ favorable spectral properties (e.g., eigenvalues clustered around 1, lower
 condition number), leading to faster convergence of iterative methods like CG,
 MINRES, GMRES. The matrix M should approximate A in some sense, while the
 operation M^{-1}r should be computationally inexpensive.
+
+----------------------------------------------------------------------------
+File        : general_python/algebra/preconditioners.py
+Author      : Maksymilian Kliczkowski
+Date        : 2025-02-02
+Version     : 1.0
 """
 
 # Import the required modules
@@ -464,6 +470,7 @@ class Preconditioner(ABC):
     
     @sigma.setter
     def sigma(self, value):
+        """Set the diagonal regularization and refresh cached apply state."""
         self._sigma = value
         self._update_instance_apply_func() # Recompile apply(r) if data changes
     
@@ -478,6 +485,7 @@ class Preconditioner(ABC):
 
     @tol_big.setter
     def tol_big(self, value):
+        """Set the large sentinel value used by safe inverse kernels."""
         self._TOLERANCE_BIG = value
         
     @property
@@ -487,6 +495,7 @@ class Preconditioner(ABC):
     
     @tol_small.setter
     def tol_small(self, value):
+        """Set the threshold below which values are treated as numerically zero."""
         self._TOLERANCE_SMALL = value
     
     @property
@@ -496,6 +505,7 @@ class Preconditioner(ABC):
 
     @zero.setter
     def zero(self, value):
+        """Set the replacement value used for zero or near-zero pivots."""
         self._zero = value
     
     # -----------------------------------------------------------------
@@ -906,10 +916,12 @@ class JacobiPreconditioner(Preconditioner):
     # Expose zero_replacement for tests/consumers expecting that name
     @property
     def zero_replacement(self) -> float:
+        """Value substituted for unsafe diagonal entries in Jacobi setup."""
         return self._zero
 
     @zero_replacement.setter
     def zero_replacement(self, value: float):
+        """Set the Jacobi replacement value for zero or tiny diagonal entries."""
         self._zero = value
     
     # -----------------------------------------------------------------
@@ -1212,6 +1224,11 @@ class SSORPreconditioner(Preconditioner):
     
     @omega.setter
     def omega(self, value: float):
+        """Set the SSOR relaxation parameter.
+
+        Changing this value affects future setup calls; call :meth:`set` again
+        to rebuild cached factors for an already configured preconditioner.
+        """
         if not (0 < value < 2):
             raise ValueError("omega must be in (0, 2)")
         self._omega = value
@@ -1394,6 +1411,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
     
     @fill_factor.setter
     def fill_factor(self, value: float): 
+        """Set the maximum fill-in multiplier for sparse incomplete factors."""
         if value <= 0:
             raise ValueError("fill_factor must be positive.")
         self._fill_factor = value
@@ -1405,6 +1423,7 @@ class IncompleteCholeskyPreconditioner(Preconditioner):
     
     @drop_tol.setter
     def drop_tol(self, value: Optional[float]): 
+        """Set the sparse factor drop tolerance."""
         if value is not None and value < 0:
             raise ValueError("drop_tol must be non-negative.")
         self._drop_tol = value
@@ -1634,6 +1653,7 @@ class ILUPreconditioner(Preconditioner):
 
     @fill_factor.setter
     def fill_factor(self, value: float):
+        """Set the maximum fill-in multiplier for sparse ILU factors."""
         if value <= 0:
             raise ValueError("fill_factor must be positive.")
         self._fill_factor = value
@@ -1645,6 +1665,7 @@ class ILUPreconditioner(Preconditioner):
 
     @drop_tol.setter
     def drop_tol(self, value: Optional[float]):
+        """Set the sparse ILU drop tolerance."""
         if value is not None and value < 0:
             raise ValueError("drop_tol must be non-negative.")
         self._drop_tol = value

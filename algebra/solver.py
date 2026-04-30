@@ -1,15 +1,20 @@
-r'''
-Linear System Solver Interface
-==========================
+r"""Abstract interfaces for backend-aware linear-system solvers.
 
-Defines the abstract interface and helper structures for solving linear systems ($Ax = b$), potentially using left preconditioning ($M^{-1}Ax = M^{-1}b$) or right preconditioning ($A M^{-1} y = b,\ x = M^{-1}y$).  Supports different backends (NumPy, JAX) and promotes a static-method-based interface for solver algorithms, allowing for easier compilation (e.g., JIT).
+The module defines shared types and base classes for algorithms that solve
+linear systems of the form ``A x = b``. Implementations may operate on explicit
+matrices, matrix-vector callables, or Fisher/Gram factors and can use optional
+left preconditioning through callables of the form ``r -> M^{-1} r``.
 
----------------------------------------------------------
-file            : general_python/algebra/solver.py
-author          : Maksymilian Kliczkowski
-license         : MIT
----------------------------------------------------------
-'''
+The base interface is intentionally compatible with NumPy and JAX. Static
+solver kernels are preferred for algorithm implementations because they are
+easier to JIT-compile and reuse from configured solver instances.
+
+-----------------------------------------------
+File    : general_python/algebra/solver.py
+Author  : Maksymilian Kliczkowski
+email   : maxgrom97@gmail.com
+-----------------------------------------------
+"""
 
 import numpy as np
 import numba
@@ -1063,26 +1068,48 @@ class Solver(ABC):
     # -------------------------------------------------------------------------
     
     @property
-    def solution(self) -> Optional[Array]:      return self._last_solution
+    def solution(self) -> Optional[Array]:
+        """Solution vector from the most recent instance solve, if any."""
+        return self._last_solution
+
     @property
-    def converged(self) -> Optional[bool]:      return self._last_converged
+    def converged(self) -> Optional[bool]:
+        """Whether the most recent instance solve reported convergence."""
+        return self._last_converged
+
     @property
-    def iterations(self) -> Optional[int]:      return self._last_iterations
+    def iterations(self) -> Optional[int]:
+        """Iteration count from the most recent instance solve."""
+        return self._last_iterations
+
     @property
-    def residual_norm(self) -> Optional[float]: return self._last_residual_norm
+    def residual_norm(self) -> Optional[float]:
+        """Final residual norm from the most recent instance solve."""
+        return self._last_residual_norm
 
     # -------------------------------------------------------------------------
     #! Properties for Configuration (Read-only access)
     # -------------------------------------------------------------------------
     
     @property
-    def backend_str(self) -> str:               return self._backend_str
+    def backend_str(self) -> str:
+        """Normalized backend name used by this solver."""
+        return self._backend_str
+
     @property
-    def dtype(self) -> Type:                    return self._dtype
+    def dtype(self) -> Type:
+        """Default dtype used by this solver instance."""
+        return self._dtype
+
     @property
-    def default_eps(self) -> float:             return self._default_eps
+    def default_eps(self) -> float:
+        """Default convergence tolerance for instance solves."""
+        return self._default_eps
+
     @property
-    def default_maxiter(self) -> int:           return self._default_maxiter
+    def default_maxiter(self) -> int:
+        """Default maximum iteration count for instance solves."""
+        return self._default_maxiter
 
     # -------------------------------------------------------------------------
 
@@ -1186,4 +1213,6 @@ def sym_ortho(a, b, backend: str = "default"):
 
     return _sym_ortho(a, b, backend)
 
+# -----------------------------------------------------------------------------
+#! EOF
 # -----------------------------------------------------------------------------

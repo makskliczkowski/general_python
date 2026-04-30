@@ -484,6 +484,18 @@ def get_hardware_info() -> Tuple[int, int]:
 
 @dataclass
 class RNGManager:
+    """Container for synchronized random-number generator state.
+
+    Attributes
+    ----------
+    np_rng
+        NumPy random generator used by NumPy-backed helpers.
+    jax_rng
+        JAX PRNG key or key-like state used by JAX-backed helpers.
+    py_rng
+        Python ``random.Random`` instance for standard-library randomness.
+    """
+
     np_rng  : np.random.Generator   | None
     jax_rng : Any                   | None
     py_rng  : py_random.Random      | None
@@ -1152,6 +1164,24 @@ class BackendManager:
         return jrn.split(root_key, n) if JAX_AVAILABLE else [None] * n
 
 def pad_array(x, target_size: int, pad_value, *, backend=None):
+    """Pad a one-dimensional array to ``target_size`` with ``pad_value``.
+
+    Parameters
+    ----------
+    x
+        Input one-dimensional NumPy or JAX array.
+    target_size
+        Desired output length. Must be at least ``x.shape[0]``.
+    pad_value
+        Value used to initialize positions beyond the input length.
+    backend
+        Optional array module. If omitted, the backend is inferred from ``x``.
+
+    Returns
+    -------
+    array-like
+        Array with shape ``(target_size,)`` and the same dtype as ``x``.
+    """
     xp  = backend or (jnp if (JAX_AVAILABLE and is_jax_array(x)) else np)
     out = xp.full((target_size,), pad_value, dtype=x.dtype)
     if xp is np:

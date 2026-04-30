@@ -83,6 +83,8 @@ import numpy as np
 # ----------------------------------------------------------------------
 
 class PhaseType(Enum):
+    """Semantic categories for training phases."""
+
     PRE_TRAINING        = auto()
     MAIN                = auto()
     REFINEMENT          = auto()
@@ -338,6 +340,11 @@ class PhaseScheduler:
     
     @property
     def current_phase(self) -> LearningPhase:
+        """Currently active learning phase.
+
+        If all configured phases are exhausted, the final phase is returned so
+        callers can continue querying terminal settings.
+        """
         if self._current_phase_idx >= len(self.phases):
             return self.phases[-1]
         return self.phases[self._current_phase_idx]

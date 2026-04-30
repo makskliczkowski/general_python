@@ -10,6 +10,12 @@ Features:
 - High-precision monotonic clock (nanoseconds).
 - Automatic synchronization for JAX arrays (blocks until ready).
 - Detailed reporting with laps and mean/std stats.
+
+-----------------------------------------------
+File    : general_python/common/timer.py
+Author  : Maksymilian Kliczkowski
+email   : maxgrom97@gmail.com
+-----------------------------------------------
 """
 
 from __future__ import annotations
@@ -26,6 +32,8 @@ import logging
 _now_ns: Callable[[], int] = time.perf_counter_ns
 
 class TimerState(Enum):
+    """Lifecycle states reported by :attr:`Timer.state`."""
+
     RUNNING     = "running"
     PAUSED      = "paused"
     STOPPED     = "stopped"
@@ -197,6 +205,7 @@ class Timer:
 
     @property
     def state(self) -> TimerState:
+        """Current timer lifecycle state."""
         if self._start_ns is not None:
             return TimerState.RUNNING
         if self._paused:
@@ -230,6 +239,7 @@ class Timer:
             raise ValueError("unit must be one of {'auto','s','ms','us','ns'}")
 
     def format_elapsed(self) -> str:
+        """Return elapsed time formatted in the configured display unit."""
         v, u    = self._format_unit(self.elapsed_s())
         if u == "s":
             hours_dot_min_sec = v / 3600
@@ -247,6 +257,13 @@ class Timer:
     ################################################################################
 
     def report(self, include_laps: bool = True) -> str:
+        """Build a human-readable timing report.
+
+        Parameters
+        ----------
+        include_laps
+            Include named lap timings when any have been recorded.
+        """
         parts           = [f"{self.name or 'Timer'}: {self.format_elapsed()}"]
         if include_laps and self._laps_ns:
             laps_sec, laps_names    = self.laps()

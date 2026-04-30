@@ -1,17 +1,35 @@
-"""Shared scientific utilities used by QES.
+"""Reusable scientific Python utilities for numerical research.
 
-``QES.general_python`` is a lightweight facade over the reusable utility
-packages used by the algebra, model, NQS, and plotting layers. It lazy-loads
-subpackages so ``import QES`` and ``import QES.general_python`` stay cheap.
+``general_python`` collects backend-aware algebra, lattice, physics, plotting,
+and machine-learning helpers behind a small lazy-loading facade. The package is
+intended to be usable as an open library: importing the top level is cheap,
+optional dependencies are loaded only when their subpackages are accessed, and
+public helpers expose stable names for interactive work and documentation.
 
-Public subpackages
+Public Subpackages
 ------------------
-- ``algebra``: backend-neutral algebra helpers, random utilities, and solvers.
-- ``common``: logging, dtype conversion, HDF5/result containers, plotting glue.
-- ``lattices``: lattice definitions, regions, neighbor tables, and k-space paths.
-- ``maths``: numerical helper functions.
-- ``physics``: entropy, density-matrix, spectral, and statistical utilities.
-- ``ml``: generic neural-network and optimizer utilities used by NQS.
+algebra
+    Backend-neutral linear algebra, random utilities, ODE integrators, and
+    iterative solvers.
+common
+    Logging, plotting, file IO, result containers, lazy data entries, and
+    runtime helpers.
+lattices
+    Lattice definitions, neighbor tables, reciprocal-space paths, and region
+    utilities.
+maths
+    Numerical helper functions, statistics, fitting, and random-matrix tools.
+physics
+    Density-matrix, entropy, operator, spectral, thermal, and statistical
+    physics utilities.
+ml
+    Lightweight neural-network, scheduler, and training-phase utilities.
+
+Notes
+-----
+The top-level module uses :func:`__getattr__` to load submodules on demand.
+Prefer importing concrete APIs from their subpackages in library code, e.g.
+``from general_python.algebra import choose_solver``.
 
 ----------------------------------------------------------------------------
 Author      : Maksymilian Kliczkowski
@@ -73,7 +91,23 @@ _LAZY_CACHE: dict[str, Any] = {}
 
 
 def __getattr__(name: str) -> Any:
-    """Lazy-load submodules on demand."""
+    """Resolve a lazily exported submodule or compatibility alias.
+
+    Parameters
+    ----------
+    name
+        Public attribute requested from :mod:`general_python`.
+
+    Returns
+    -------
+    Any
+        Imported module or exported object.
+
+    Raises
+    ------
+    AttributeError
+        If ``name`` is not part of the maintained public surface.
+    """
     if name in _LAZY_CACHE:
         return _LAZY_CACHE[name]
 
@@ -94,7 +128,7 @@ def __getattr__(name: str) -> Any:
 
 
 def list_capabilities() -> list[str]:
-    """List available capabilities."""
+    """Return the names exported by the top-level package."""
     return sorted(set(__all__))
 
 
@@ -104,12 +138,18 @@ def __dir__() -> list[str]:
 
 
 def list_available_modules() -> list[str]:
-    """Return list of available submodules."""
+    """Return lazily importable public subpackage names."""
     return sorted(_SUBMODULES)
 
 
 def get_module_description(module_name: str) -> str:
-    """Return a brief description of the module."""
+    """Return a one-line description for a public submodule.
+
+    Parameters
+    ----------
+    module_name
+        Submodule or alias name, for example ``"algebra"`` or ``"random"``.
+    """
     descriptions = {
         "algebra"       : "Algebraic structures, eigensolvers, random utilities, and backend operations.",
         "common"        : "Common utilities for logging, file I/O, plotting, and result containers.",

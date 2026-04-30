@@ -10,6 +10,5 @@ recursive-include maths *
 recursive-include ml *
 recursive-include physics *
 recursive-include run_scripts *
-recursive-include tests *
 global-exclude *.py[cod]
 global-exclude __pycache__

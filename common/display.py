@@ -265,6 +265,19 @@ def display_superposition(terms : Sequence[Tuple[complex, int]],
                         *, 
                         label   : str | None = None,
                         to_bin  : Callable[[int, int], str] | None = None) -> None:
+    r"""Render a computational-basis superposition in a notebook.
+
+    Parameters
+    ----------
+    terms
+        Sequence of ``(amplitude, state)`` pairs.
+    ns
+        Number of sites or bits used to format integer basis states.
+    label
+        Optional text label prepended to the rendered expression.
+    to_bin
+        Optional custom integer-to-binary formatter.
+    """
     latex = superposition(terms, ns, to_bin=to_bin)
     if label:
         latex = fr"\text{{{label}: }}\,{latex}"

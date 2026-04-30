@@ -1,13 +1,10 @@
-'''
-Directories handler. Reading, writing, creating directories.
+"""Path and directory helpers built on :class:`pathlib.Path`.
 
-----------------------------------------------
-file    : general_python/common/directories.py
-author  : Maksymilian Kliczkowski
-email   : maksymilian.kliczkowski@pwr.edu.pl
-version : 2.0
-----------------------------------------------
-'''
+The :class:`Directories` wrapper keeps legacy convenience methods available
+while exposing a path-like object that can be passed to standard-library APIs.
+It covers path joining, directory creation, file discovery, copying, and common
+serialization helpers used by analysis scripts.
+"""
 
 import os
 import random
@@ -22,10 +19,14 @@ kPS         = os.sep
 #################################################################################
 
 class staticproperty(property):
+    """Descriptor for exposing a zero-argument function as a static property."""
+
     def __get__(self, owner_self, owner_cls):         
         return self.fget()
 
 class classproperty(property):
+    """Descriptor for exposing a classmethod-like function as a property."""
+
     def __get__(self, owner_self, owner_cls):
         return self.fget(owner_cls)
 

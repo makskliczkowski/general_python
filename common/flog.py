@@ -1,19 +1,16 @@
-'''
-This module provides a logger class for handling console and file logging with verbosity control.
-It includes methods for printing messages with different log levels, formatting titles, and measuring execution time.
-and it is designed to be used in a quantum computing context, specifically for the Quantum EigenSolver package.
+"""Small logging helpers with verbosity, indentation, color, and file output.
 
-@note If one wants to use file logging, the environment variable PYLOGFILE should be set to a non-zero value.
-@note If one wants to disable colored output, the environment variable PYLOGCOLORS should be set to '0'.
+The :class:`Logger` wrapper keeps the public API lightweight while avoiding
+duplicate notebook handlers and optionally mirroring logs to a file. Console
+colors can be disabled with ``PYLOGCOLORS=0``; file logging is enabled by
+setting ``PYLOGFILE`` to a non-empty path-like value.
 
--------------------------------------------------------
-file        :   general_python/common/flog.py
-author      :   Maksymilian Kliczkowski
-email       :   maksymilian.kliczkowski@pwr.edu.pl
-date        :   2025-05-01
-description :   This module provides a logger class for handling console and file logging with verbosity control.
--------------------------------------------------------
-'''
+-----------------------------------------------
+File    : general_python/common/flog.py
+Author  : Maksymilian Kliczkowski
+email   : maxgrom97@gmail.com
+-----------------------------------------------
+"""
 
 __name__        = "flog"
 __version__     = "1.1.0"
@@ -161,7 +158,10 @@ class Colors:
 _ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
 
 class StripAnsiFormatter(logging.Formatter):
+    """Formatter that removes ANSI color escape sequences from log records."""
+
     def format(self, record):
+        """Format ``record`` and strip terminal color codes from the result."""
         # Format the message using the parent class (inserts time, level, etc.)
         msg = super().format(record)
         # Strip the ANSI codes from the entire formatted string
@@ -466,7 +466,9 @@ class Logger:
             msg = self.colorize(msg, color)
         self.logger.info(Logger.print(msg, lvl))
         
-    def inf(self, msg: str, lvl=0, verbose=True, color=None):   return self.info(msg, lvl, verbose, color)
+    def inf(self, msg: str, lvl=0, verbose=True, color=None):
+        """Alias for :meth:`info`."""
+        return self.info(msg, lvl, verbose, color)
 
     # --------------------------------------------------------------
     
@@ -486,7 +488,9 @@ class Logger:
             msg = self.colorize(msg, color)
         self.logger.debug(Logger.print(msg, lvl))
         
-    def dbg(self, msg: str, lvl=0, verbose=True, color=None):   return self.debug(msg, lvl, verbose, color)
+    def dbg(self, msg: str, lvl=0, verbose=True, color=None):
+        """Alias for :meth:`debug`."""
+        return self.debug(msg, lvl, verbose, color)
 
     # --------------------------------------------------------------
     
@@ -505,7 +509,9 @@ class Logger:
             msg = self.colorize(msg, color)
         self.logger.warning(Logger.print(msg, lvl))
         
-    def warn(self, msg: str, lvl=0, verbose=True, color='yellow'): return self.warning(msg, lvl, verbose, color)
+    def warn(self, msg: str, lvl=0, verbose=True, color='yellow'):
+        """Alias for :meth:`warning`."""
+        return self.warning(msg, lvl, verbose, color)
 
     # --------------------------------------------------------------
 
@@ -525,12 +531,15 @@ class Logger:
             msg = self.colorize(msg, 'red')
         self.logger.error(Logger.print(msg, lvl))
         
-    def err(self, msg: str, lvl=0, verbose=True, color='red'): return self.error(msg, lvl, verbose, color)    
+    def err(self, msg: str, lvl=0, verbose=True, color='red'):
+        """Alias for :meth:`error`."""
+        return self.error(msg, lvl, verbose, color)    
         
     # --------------------------------------------------------------
     
     @classmethod
     def endl(cls, n: int):
+        """Print ``n`` blank lines through the logger break-line helper."""
         return cls.breakline(n)
     
     @staticmethod

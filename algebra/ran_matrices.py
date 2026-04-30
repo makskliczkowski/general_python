@@ -9,6 +9,11 @@ well-known constructions:
 - CUE: Haar unitary via QR of complex Ginibre with phase-fix on R
 
 Also exposes CUE_QR explicitly.
+-----------------------------------------------
+File    : general_python/algebra/ran_matrices.py
+Author  : Maksymilian Kliczkowski
+email   : maxgrom97@gmail.com
+-----------------------------------------------
 """
 
 from __future__ import annotations
@@ -214,6 +219,8 @@ def cue(n: int, use_tenpy: bool = True, simple: bool = True) -> np.ndarray:
 
 
 class RMT:
+    """String constants for supported random-matrix ensembles."""
+
     GOE = "GOE"
     GUE = "GUE"
     COE = "COE"
@@ -222,6 +229,24 @@ class RMT:
 
 
 def random_matrix(n: Union[int, Tuple[int, int]], kind: Union[str, RMT] = RMT.GOE, **kwargs) -> np.ndarray:
+    """Generate a random matrix from one of the supported ensembles.
+
+    Parameters
+    ----------
+    n
+        Matrix dimension. If a shape tuple is supplied, the first element is
+        used; ensembles in this module generate square matrices.
+    kind
+        Ensemble identifier: ``"GOE"``, ``"GUE"``, ``"COE"``, ``"CRE"``, or
+        ``"CUE"``.
+    **kwargs
+        Extra keyword arguments forwarded to the ensemble-specific generator.
+
+    Returns
+    -------
+    numpy.ndarray
+        Random square matrix sampled from the selected ensemble.
+    """
     if isinstance(n, tuple):
         n = n[0]
     kind = str(kind).upper()
@@ -239,10 +264,11 @@ def random_matrix(n: Union[int, Tuple[int, int]], kind: Union[str, RMT] = RMT.GO
 
 
 def list_capabilities() -> Dict[str, Tuple[str, ...]]:
+    """Return available ensembles, backends, and provider implementation."""
     return {
-        "ensembles": (RMT.GOE, RMT.GUE, RMT.COE, RMT.CRE, RMT.CUE),
-        "backends": ("numpy",) + (("jax",) if _JAX_AVAILABLE else tuple()),
-        "providers": ("tenpy" if _TENPY_AVAILABLE else "builtin",),
+        "ensembles" : (RMT.GOE, RMT.GUE, RMT.COE, RMT.CRE, RMT.CUE),
+        "backends"  : ("numpy",) + (("jax",) if _JAX_AVAILABLE else tuple()),
+        "providers" : ("tenpy" if _TENPY_AVAILABLE else "builtin",),
     }
 
 

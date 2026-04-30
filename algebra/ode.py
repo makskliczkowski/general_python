@@ -1,6 +1,13 @@
-"""
-This is a module for solving ordinary differential equations (ODEs)
-It provides a set of classes and methods to define and solve initial value problems (IVPs)
+"""Initial-value ODE integrators with NumPy and optional JAX backends.
+
+The module provides a compact interface for explicit one-step methods used in
+simulation loops where the caller owns time evolution state. Integrators return
+``(y_next, dt, info)`` and do not impose a global solver object or trajectory
+storage.
+
+Use :func:`choose_ode` for string-based construction or instantiate
+:class:`Euler`, :class:`Heun`, :class:`AdaptiveHeun`, :class:`RK`, and
+:class:`ScipyRK` directly when full configuration is needed.
 
 -----------------------------------------------
 File    : general_python/algebra/ode.py
@@ -137,6 +144,16 @@ class IVP(ABC):
     # -------------------------------------------------------
     
     def dt(self, h: float = 0.0, i: int = 0) -> float:
+        """Return the step size used for step index ``i``.
+
+        Parameters
+        ----------
+        h
+            Optional external step-size proposal. Fixed-step integrators ignore
+            it and return their configured ``dt``.
+        i
+            Optional integration step index.
+        """
         return self._dt
     
     def set_dt(self, dt: float):
@@ -161,6 +178,12 @@ class IVP(ABC):
         raise NotImplementedError
 
     def update(self, y, h: float, f, t: float, **rhs_args):
+        """Advance ``y`` by one step and return only the updated state.
+
+        This convenience method discards the ``dt`` and auxiliary info returned
+        by :meth:`step`. Subclasses can override it if they need custom update
+        semantics.
+        """
         # Default: call step then return state
         yout, _ = self.step(f, t, y, **rhs_args)
         return yout
@@ -384,6 +407,28 @@ class AdaptiveHeun(IVP):
         self.max_step   = max_step
 
     def step(self, f, t: float, y, norm_fun=None, **rhs_args):
+        """Perform one adaptive Heun step with local error control.
+
+        Parameters
+        ----------
+        f
+            Right-hand side callable.
+        t
+            Current time.
+        y
+            Current state.
+        norm_fun
+            Optional norm function used for the local error estimate. Defaults
+            to the active backend's vector norm.
+        **rhs_args
+            Extra keyword arguments forwarded to ``f``.
+
+        Returns
+        -------
+        tuple
+            ``(y_next, dt_used, info)`` where ``info`` contains the last
+            right-hand-side metadata returned by ``f``.
+        """
         if norm_fun is None:
             norm_fun = self.xp.linalg.norm
 
@@ -474,6 +519,7 @@ class RK(IVP):
 
     @property
     def order(self) -> int:
+        """Return the number of stages in the configured Butcher tableau."""
         return len(self.b)
 
     @classmethod

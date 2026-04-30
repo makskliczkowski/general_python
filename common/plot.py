@@ -544,6 +544,8 @@ colorQualitative                    =   'tab20'
 ########################## functions ##########################
 
 class CustomFormatter(mticker.Formatter):
+    """Matplotlib formatter backed by a Python format string."""
+
     def __init__(self, fmt="{x:.2f}"):
         """
         Initialize the object with a format string.
@@ -557,6 +559,8 @@ class CustomFormatter(mticker.Formatter):
         return self.fmt.format(x=x)
 
 class PercentFormatter(mticker.PercentFormatter):
+    """Percent formatter with concise defaults for publication plots."""
+
     def __init__(self, decimals=2, symbol='%'):
         """
         Initialize the object with a format string.
@@ -568,6 +572,8 @@ class PercentFormatter(mticker.PercentFormatter):
         super().__init__(decimals=decimals, symbol=symbol)
 
 class MathTextSciFormatter(mticker.Formatter):
+    """Scientific-notation formatter that renders exponents as math text."""
+
     def __init__(self, fmt="%1.2e"):
         """
         Initialize the object with a format string.
@@ -690,13 +696,16 @@ class IgnoredAxis:
 
     @property
     def is_disabled(self) -> bool:
+        """Return ``True`` for compatibility with regular axes checks."""
         return True
 
     def set_warn(self, enabled: bool = True):
+        """Enable or disable warnings for ignored axis operations."""
         self._qes_axis_warn = bool(enabled)
         return self
 
     def description(self) -> str:
+        """Return a compact description of the disabled axis target."""
         bits = []
         if self._qes_axis_names:
             bits.append(f"name={self._qes_axis_names}")
@@ -759,11 +768,13 @@ class AxesList(list):
 
     @property
     def shape(self) -> Optional[Tuple[int, int]]:
+        """Grid shape ``(nrows, ncols)`` when known, otherwise ``None``."""
         if self.nrows is None or self.ncols is None:
             return None
         return (self.nrows, self.ncols)
 
     def first(self):
+        """Return the first axis or raise if the container is empty."""
         if len(self) == 0:
             raise IndexError("AxesList is empty.")
         return self[0]
@@ -774,21 +785,26 @@ class AxesList(list):
 
     @property
     def panel_names(self) -> List[str]:
+        """Names of registered semantic panels."""
         return list(self._panel_map.keys())
 
     def has_panel(self, name: str) -> bool:
+        """Return whether a semantic panel name is registered."""
         return str(name) in self._panel_map
 
     def panel(self, name: str):
+        """Return the axis or nested axes registered for ``name``."""
         key = str(name)
         if key not in self._panel_map:
             raise KeyError(f"Unknown panel '{name}'. Available: {self.panel_names}")
         return self._panel_map[key]
 
     def panels(self) -> Dict[str, Any]:
+        """Return a copy of the semantic panel map."""
         return dict(self._panel_map)
 
     def rename_panel(self, old: str, new: str):
+        """Rename a semantic panel while preserving its mapped axes."""
         old_k, new_k = str(old), str(new)
         if old_k not in self._panel_map:
             raise KeyError(f"Unknown panel '{old}'.")
@@ -803,6 +819,7 @@ class AxesList(list):
 
  
     def select(self, *names: str):
+        """Return an :class:`AxesList` containing the named panels."""
         selected = [self.panel(name) for name in names]
         flat = []
         for entry in selected:
@@ -820,6 +837,7 @@ class AxesList(list):
     # ---------------------------------
 
     def as_grid(self):
+        """Return axes as a rectangular object array using stored grid shape."""
         if self.shape is None:
             raise ValueError("Grid shape is unknown for this AxesList.")
         
@@ -829,6 +847,7 @@ class AxesList(list):
         return np.asarray(self, dtype=object).reshape(self.nrows, self.ncols)
 
     def at(self, row: int, col: int):
+        """Return the axis at grid location ``(row, col)``."""
         if self.shape is None:
             raise ValueError("Grid shape is unknown for this AxesList.")
         return self[row, col]
@@ -844,6 +863,7 @@ class AxesList(list):
         return self[rows, cols]
 
     def row(self, row: int):
+        """Return one grid row as an :class:`AxesList`."""
         if self.shape is None:
             raise ValueError("Grid shape is unknown for this AxesList.")
         start   = row * self.ncols
@@ -851,6 +871,7 @@ class AxesList(list):
         return AxesList(self[start:end], nrows=1, ncols=self.ncols)
 
     def col(self, col: int):
+        """Return one grid column as an :class:`AxesList`."""
         if self.shape is None:
             raise ValueError("Grid shape is unknown for this AxesList.")
         return AxesList([self[r, col] for r in range(self.nrows)], nrows=self.nrows, ncols=1)

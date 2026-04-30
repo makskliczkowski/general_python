@@ -78,10 +78,12 @@ class BaseSchedulerLogger(ABC):
 
     @property
     def logger(self) -> Optional['Logger']:
+        """Logger used for scheduler diagnostics, if one is configured."""
         return self._logger
     
     @logger.setter
     def logger(self, logger: 'Logger'):
+        """Set the logger used for scheduler diagnostics."""
         self._logger = logger
 
 # ##############################################################################
@@ -147,6 +149,7 @@ class EarlyStopping(BaseSchedulerLogger):
 
     @classmethod
     def from_kwargs(cls, **kwargs):
+        """Create an :class:`EarlyStopping` instance from common keyword names."""
         patience = kwargs.get(
             "patience",
             kwargs.get(
@@ -165,18 +168,23 @@ class EarlyStopping(BaseSchedulerLogger):
         return cls(patience=patience, min_delta=min_delta, logger=logger)
 
     def reset(self):
+        """Reset the stored best metric and patience counter."""
         self._best_metric           = _INF
         self._epoch_since_best      = 0
         self._stop_training         = False
 
     @property
-    def best_metric(self) -> float: return self._best_metric
+    def best_metric(self) -> float:
+        """Best metric observed since initialization or last reset."""
+        return self._best_metric
 
 # ##############################################################################
 #! Base Parameters & Schedulers
 # ##############################################################################
 
 class SchedulerType(enum.Enum):
+    """Supported learning-rate scheduler families."""
+
     CONSTANT    = 0
     EXPONENTIAL = 1
     STEP        = 2
@@ -191,6 +199,8 @@ class SchedulerType(enum.Enum):
         return self.__str__()
 
 class Parameters(BaseSchedulerLogger, ABC):
+    """Base class for stateful learning-rate schedules."""
+    
     
     def __init__(self, 
                 initial_lr     : float,
@@ -247,19 +257,27 @@ class Parameters(BaseSchedulerLogger, ABC):
 
     #! Common Properties
     @property
-    def lr(self)                    -> float: return self._lr
+    def lr(self)                    -> float:
+        """Most recently emitted learning rate."""
+        return self._lr
     
     @property       
-    def history(self)               -> List[float]: return self._lr_history
+    def history(self)               -> List[float]:
+        """Learning-rate values emitted so far."""
+        return self._lr_history
     
     @property
-    def early_stopping(self)        -> Optional[EarlyStopping]: return self._early_stopping
+    def early_stopping(self)        -> Optional[EarlyStopping]:
+        """Attached early-stopping monitor, if configured."""
+        return self._early_stopping
 
     #! ES Proxies
     def set_early_stopping(self, patience: int, min_delta: float = 1e-3):
+        """Attach a new early-stopping monitor to this scheduler."""
         self._early_stopping = EarlyStopping(patience, min_delta, self._logger)
 
     def check_stop(self, _metric) -> bool:
+        """Return whether the attached early-stopping monitor requests stop."""
         if self._early_stopping: return self._early_stopping(_metric)
         return False
 
@@ -268,6 +286,8 @@ class Parameters(BaseSchedulerLogger, ABC):
 # ##############################################################################
 
 class ConstantScheduler(Parameters):
+    """Scheduler that always returns the initial learning rate."""
+
     def __init__(self, initial_lr: float, max_epochs: int, lr_clamp=None, logger=None, es=None, **kwargs):
         super().__init__(initial_lr, max_epochs, lr_decay=1.0, lr_clamp=lr_clamp, logger=logger, es=es)
         self._typek = SchedulerType.CONSTANT
@@ -334,6 +354,8 @@ class StepDecayScheduler(Parameters):
 # ------------------------------------------------------------------------------
 
 class CosineAnnealingScheduler(Parameters):
+    """Cosine annealing schedule from ``initial_lr`` to ``min_lr``."""
+
     def __init__(self, initial_lr: float, max_epochs: int, min_lr: float = 0.0, lr_clamp=None, logger=None, es=None, **kwargs):
         super().__init__(initial_lr, max_epochs, lr_decay=0.0, lr_clamp=lr_clamp, logger=logger, es=es)
         self.min_lr     = min_lr

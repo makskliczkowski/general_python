@@ -131,24 +131,30 @@ class FitterParams(object):
         self._funct  = funct
     
     def get_popt(self):
+        """Optimized fit parameters."""
         return self._popt
     
     def get_pcov(self):
+        """Estimated covariance matrix of the fitted parameters."""
         return self._pcov
     
     def get_fun(self):
+        """Fitted callable."""
         return self._funct
     
     @property
     def popt(self):
+        """Optimized fit parameters."""
         return self._popt
     
     @property
     def pcov(self):
+        """Estimated covariance matrix of the fitted parameters."""
         return self._pcov
 
     @property
     def funct(self):
+        """Fitted callable."""
         return self._funct
     
     def __call__(self, x):
@@ -182,6 +188,7 @@ class Fitter:
     ###################################################
     
     def apply(self, x : np.ndarray):
+        """Evaluate the current fitted function at ``x``."""
         return self._fitter.funct(x) 
         
     ###################################################
@@ -800,4 +807,3 @@ def mod_round(a: int, b: int) -> int:
     return int(m)
 
 #################################################################################
-

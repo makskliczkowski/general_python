@@ -7,13 +7,12 @@ name            = "general-python-utils"
 version         = "1.1.0"
 description     = "A comprehensive Python library for mathematical computations, machine learning, and physics simulations"
 authors         = [{ name = "Maksymilian Kliczkowski", email = "maxgrom97@gmail.com" }]
-license         = {text = "MIT"}
+license         = "MIT"
 readme          = "README.md"
 requires-python = ">=3.8"
 classifiers     = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -91,7 +90,6 @@ packages            = [
     "general_python.physics.spectral.krylov",
     "general_python.physics.spectral.quadratic",
     "general_python.run_scripts",
-    "general_python.tests",
 ]
 
 [tool.setuptools.package-dir]
@@ -105,4 +103,3 @@ include             = '\.pyi?$'
 [tool.isort]
 profile             = "black"
 multi_line_output   = 3
-

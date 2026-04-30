@@ -381,6 +381,12 @@ def int2base_numba(n            : int,
                    value_true   : float,
                    value_false  : float,
                    out          : np.ndarray):
+    """Fill ``out`` with the fixed-width bit representation of ``n``.
+
+    ``out[0]`` receives the most-significant bit. Set bits are written as
+    ``value_true`` and unset bits as ``value_false``. The function is Numba-safe
+    and mutates the supplied output array in place.
+    """
     # out: preallocated 1D array length=size
     nn = np.uint64(n)
     for i in range(size):
@@ -429,6 +435,11 @@ def int2base(n          : int,
 
 @numba.njit(inline="always")
 def base2int_binary(vec) -> np.int64:
+    """Interpret a binary vector as an integer.
+
+    The first element is treated as the most-significant bit. Any non-zero
+    element is interpreted as ``1``.
+    """
     
     size = vec.shape[0]
     if size <= 0 or size > 63:
