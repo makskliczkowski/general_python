@@ -143,6 +143,8 @@ def mean_entropy(df : pd.DataFrame, row : int):
     return np.mean(ent_np[row])
 
 class HamiltonianProperties:
+    """Namespace for analytic Hamiltonian and spectral-property helpers."""
+    
     
     @staticmethod
     def hilbert_schmidt_norm(mat : np.ndarray):
@@ -157,6 +159,7 @@ class HamiltonianProperties:
         return np.trace(np.matmul(mat, np.conj(mat).T)) / mat.shape[0]
 
 class StatMeasures:
+    """Namespace for statistical measures of spectra and eigenstates."""
 
     @staticmethod
     def moments(arr : np.ndarray, axis = None):

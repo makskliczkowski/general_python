@@ -199,6 +199,7 @@ class Operators:
     
     @staticmethod
     def name2title(f_name):
+        """Convert an encoded operator name into a LaTeX-style title."""
         if Operators.OPERATOR_SEP in f_name:
             f_name_split = f_name.split(Operators.OPERATOR_SEP)
             elem_part    = f_name_split[-1]

@@ -349,6 +349,8 @@ def purity(eigvals: np.ndarray) -> float:
 
 @unique
 class Entanglement(Enum):
+    """Entropy and entanglement measure identifiers."""
+
     VN          = 1
     RENYI       = 2
     TSALLIS     = 3
@@ -520,6 +522,8 @@ def topological_entropy(
 ####################################
 
 class Fractal:
+    """Fractal-dimension estimators for state amplitudes."""
+    
     
     @staticmethod
     def fractal_dim_s_info(S_lp1, S_l, lp1, l):

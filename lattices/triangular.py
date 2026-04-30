@@ -74,9 +74,11 @@ class TriangularLattice(Lattice):
         return base + self._basis[0] + z * self._a3
 
     def get_norm(self, x: int, y: int, z: int):
+        """Return the Euclidean norm of integer coordinate offsets."""
         return np.sqrt(x**2 + y**2 + z**2)
 
     def get_nn_direction(self, site, direction):
+        """Return the nearest neighbor associated with a lattice direction."""
         # For triangular lattice, directions can be mapped to 0-5 for 6 neighbors
         mapping = {LatticeDirection.X: 0, LatticeDirection.Y: 1, LatticeDirection.Z: 2}
         idx     = mapping.get(direction, -1)
@@ -195,6 +197,7 @@ class TriangularLattice(Lattice):
         return self._nnn
 
     def site_index(self, x, y, z):
+        """Convert integer cell coordinates to a linear site index."""
         return z * (self.Lx * self.Ly) + y * self.Lx + x
 
     @staticmethod

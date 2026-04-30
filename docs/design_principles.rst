@@ -45,6 +45,24 @@ When algorithms have known conditioning issues, APIs should prefer:
 - Prefer small public entry points plus internal helpers.
 - Validate behavior with automated tests and documentation builds.
 
+6. Documentation as API surface
+-------------------------------
+
+Public docstrings are part of the library contract. They should be written for
+external users, not only for project maintainers. A good docstring states what
+the object does, what inputs it accepts, what it returns, and what numerical or
+backend assumptions affect correctness.
+
+Use NumPy-style sections for public functions and methods:
+
+- ``Parameters`` for inputs and shape conventions.
+- ``Returns`` for output type and shape.
+- ``Raises`` for expected validation errors.
+- ``Notes`` for stability, determinism, randomness, and backend behavior.
+
+Do not include file headers, author blocks, or changelog text in module
+docstrings. Keep that information in project metadata and release notes.
+
 Practical workflow
 ------------------
 

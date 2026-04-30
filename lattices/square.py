@@ -252,6 +252,7 @@ class SquareLattice(Lattice):
     # ---------------------------------------------------------------------------------
     
     def get_nn_forward_num_max(self):
+        """Maximum number of forward nearest-neighbor bonds per square-lattice site."""
         return 2 * self.dim
     
     def get_nn_forward(self, site: int, num: int = -1):

@@ -427,6 +427,7 @@ class AdaptiveScheduler(Parameters):
         return self._update_and_log_lr(self._lr)
 
     def reset(self):
+        """Reset plateau-tracking state while keeping scheduler configuration."""
         self._cooldown_counter  = 0
         self._best_metric       = _INF
         self._num_bad_epochs    = 0

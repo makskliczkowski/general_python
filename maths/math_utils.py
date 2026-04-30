@@ -632,6 +632,7 @@ class Fitter:
     
     @staticmethod
     def lorentzian_system_size(param):
+        """Return a Lorentzian model whose width is scaled by system size."""
         def lorentzian(x, g = 1.0, v = 1.0):
             return v * (g / param[0]) / ( (x)**2 + (g / param[0])**2 )
         return lorentzian
@@ -647,6 +648,7 @@ class Fitter:
                       centers   = [],
                       params    = [],
                       bounds    = None):
+        """Fit a parametric distribution to histogram bin edges and counts."""
         
         if len(centers) == 0:
             if len(edges) <= 1:

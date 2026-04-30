@@ -1682,10 +1682,12 @@ class Plotter:
     
     @staticmethod
     def ensure_list(x):
+        """Return ``x`` as a list-like container for axis utilities."""
         return x if isinstance(x, (list, tuple, np.ndarray)) else [x]
 
     @staticmethod
     def unify_limits(axes, which='y'):
+        """Set all axes to the shared x or y limits."""
         
         # Unify the limits of the given axes for either 'x' or 'y' axis.
         axes    = Plotter.ensure_list(axes)
@@ -5628,6 +5630,7 @@ class Plotter:
     
     @staticmethod
     def set_transparency(ax, alpha = 0.0):
+        """Set the background patch transparency for an axis."""
         ax.patch.set_alpha(alpha)
     
     ################### L E G E N D ###################
@@ -6153,6 +6156,7 @@ class Plotter:
     # alias
     @staticmethod
     def savefig(directory, filename, format, dpi, adjust, fig = None, **kwargs):
+        """Alias for :meth:`save_fig` with the historical lowercase name."""
         return Plotter.save_fig(directory, filename, format=format, dpi=dpi, adjust=adjust, fig=fig, **kwargs)
     
     ###############################
@@ -6173,6 +6177,7 @@ class Plotter:
                       vmin      = None,
                       vmax      = None,
                       **kwargs):
+        """Plot a sequence of pivoted DataFrame heatmaps on a shared figure."""
         import seaborn as sns
         
         size        = len(dfs)
@@ -6224,6 +6229,8 @@ class Plotter:
 ##########################################################################
 
 class PlotterSave:
+    """File-output helpers for simple plot-adjacent data artifacts."""
+    
     
 #################################################
 

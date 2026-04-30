@@ -30,13 +30,6 @@ Notes
 The top-level module uses :func:`__getattr__` to load submodules on demand.
 Prefer importing concrete APIs from their subpackages in library code, e.g.
 ``from general_python.algebra import choose_solver``.
-
-----------------------------------------------------------------------------
-Author      : Maksymilian Kliczkowski
-Date        : 2025-02-02
-Version     : 1.1.0
-Changelog   :
-- 1.1.0: Added lazy loading for submodules and common exports, improved documentation, and added capability listing functions.
 """
 
 import importlib
