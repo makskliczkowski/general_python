@@ -26,17 +26,19 @@ copyright   : (c) 2026 by Maksymilian Kliczkowski. All rights reserved.
 
 import  numpy as np
 import  scipy.linalg as la
+import  numba
 from    typing import Tuple, Union, List, Optional, Any
 
 # -----------------------------------------------------------------------------
 #! Fermionic Sign Correction
 # -----------------------------------------------------------------------------
 
+@numba.njit(parallel=True, cache=True)
 def _fermionic_parity_signs_fast(ns: int, order: Tuple[int, ...]) -> np.ndarray:
     """
-    Optimized version of fermionic parity sign computation using bit manipulation.
+    Optimized version of fermionic parity sign computation using Numba and bit manipulation.
     
-    Computes signs for all 2^ns basis states in O(2^ns * k^2) where k is the
+    Computes signs for all 2^ns basis states in O(2^ns * k) where k is the
     number of inverted pairs in the permutation.
     
     Parameters
@@ -59,29 +61,38 @@ def _fermionic_parity_signs_fast(ns: int, order: Tuple[int, ...]) -> np.ndarray:
         inv_order[old_site] = new_pos
     
     # Find all inverted pairs (i < j but inv_order[i] > inv_order[j])
-    inverted_pairs = []
+    inverted_pairs_i = []
+    inverted_pairs_j = []
     for i in range(ns):
         for j in range(i + 1, ns):
             if inv_order[i] > inv_order[j]:
-                inverted_pairs.append((i, j))
+                inverted_pairs_i.append(i)
+                inverted_pairs_j.append(j)
     
-    if not inverted_pairs:
+    if len(inverted_pairs_i) == 0:
         # No inversions, all signs are +1
         return np.ones(dim, dtype=np.float64)
     
-    # Compute total parity for each basis state
-    # parity = sum over inverted pairs of (both_occupied)
-    states = np.arange(dim, dtype=np.uint64)
-    parity = np.zeros(dim, dtype=np.int64)
-    
-    for i, j in inverted_pairs:
-        mask_i = np.uint64(1 << i)
-        mask_j = np.uint64(1 << j)
-        both_occ = ((states & mask_i) != 0) & ((states & mask_j) != 0)
-        parity += both_occ.astype(np.int64)
-    
-    # Sign is (-1)^parity
-    return np.where(parity & 1, -1.0, 1.0)
+    num_pairs = len(inverted_pairs_i)
+    pair_masks = np.empty(num_pairs, dtype=np.uint64)
+    for idx in range(num_pairs):
+        pair_masks[idx] = np.uint64((1 << inverted_pairs_i[idx]) | (1 << inverted_pairs_j[idx]))
+
+    res = np.empty(dim, dtype=np.float64)
+    for state in numba.prange(dim):
+        parity = 0
+        state_u = np.uint64(state)
+        for idx in range(num_pairs):
+            mask = pair_masks[idx]
+            if (state_u & mask) == mask:
+                parity += 1
+
+        if parity & 1:
+            res[state] = -1.0
+        else:
+            res[state] = 1.0
+
+    return res
 
 
 # -----------------------------------------------------------------------------
