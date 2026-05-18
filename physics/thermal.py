@@ -28,7 +28,6 @@ except ImportError:
 if JAX_AVAILABLE:
     import jax.numpy as jnp
     import jax
-    from functools import partial
 else:
     jax = None
     jnp = np
@@ -571,5 +570,5 @@ __all__ = [
 ]
 
 # =============================================================================
-#! End of file
+# ! End of file
 # =============================================================================
