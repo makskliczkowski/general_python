@@ -263,9 +263,7 @@ def static_susceptibility(
         # T=0: sum over excited states
         E_0         = eigvals[0]
         
-        # ⚡ Bolt Optimization: Vectorized Python loop calculating chi_static
-        # using NumPy array masking and np.sum().
-        # This replaces an O(N) loop with highly optimized C array operations, yielding 20x+ speedup.
+        # Vectorized over excited states with boolean masking.
         energy_diff         = eigvals[1:] - E_0
         matrix_element_sq   = np.abs(A_q_eigen[0, 1:])**2
 
