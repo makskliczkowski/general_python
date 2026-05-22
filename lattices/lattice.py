@@ -213,7 +213,7 @@ class Lattice(ABC):
         self._rvectors      = Backend.zeros((self._ns, 3))          # allowed values of the real space vectors
         self._kvectors      = Backend.zeros((self._ns, 3))          # allowed values of the inverse space vectors
         # initialize dft matrix
-        self._dft           = Backend.zeros((self._ns, self._ns), dtype = complex) # Discrete Fourier Transform matrix for the lattice model
+        self._dft           = None # Discrete Fourier Transform matrix for the lattice model
         
         # symmetries for momenta (if one uses the symmetry,
         # returning to original one may result in using normalization)
@@ -695,6 +695,8 @@ class Lattice(ABC):
     @property
     def dft(self):
         ''' Return the discrete Fourier transform (DFT) matrix for the lattice. '''
+        if self._dft is None:
+            self.calculate_dft_matrix()
         return self._dft
     @dft.setter
     def dft(self, value):           self._dft = value
